@@ -36,7 +36,7 @@ func layout(t *rapid.T, lines [][]string) string {
 var (
 	genKebab = rapid.StringMatching(`[a-z][a-z0-9]{0,4}(-[a-z0-9]{1,3})?`)
 	genUpper = rapid.StringMatching(`[A-Z][a-z0-9]{0,5}`)
-	genLower = rapid.StringMatching(`[a-z][A-Za-z0-9]{0,5}`)
+	genLower = rapid.StringMatching(`[a-z][A-Za-z0-9]{0,5}`).Filter(func(s string) bool { return s != "true" && s != "false" && s != "none" })
 	genText  = rapid.StringMatching(`[a-z中文][a-z 中文]{0,8}[a-z中文]`)
 )
 

@@ -3,10 +3,17 @@ package syntax
 import (
 	"bytes"
 	"strings"
+
+	"github.com/mattn/go-runewidth"
 )
 
-// maxWidth is the width a value line may take, in bytes as columns are counted (docs/format.md §3.1).
+// maxWidth is the display width a value line may take (docs/format.md §3.1).
 const maxWidth = 100
+
+// widths measures display width with East Asian wide characters as two
+// columns. It is fixed rather than taken from the locale, so that fmt prints
+// the same bytes everywhere.
+var widths = &runewidth.Condition{EastAsianWidth: false, StrictEmojiNeutral: true}
 
 // Print writes the file in the canonical format of docs/format.md §3: one
 // blank line before each top-level declaration or comment group, none inside
@@ -188,7 +195,7 @@ func limitLine(l *Limit) string {
 		}
 		return head + " in {" + strings.Join(members, ", ") + "}"
 	}
-	return head + " " + l.Op + " " + l.Low + ".." + l.High
+	return head + " " + l.Op + " " + string(l.Low) + ".." + string(l.High)
 }
 
 // value writes v after prefix, then suffix: on one line when that line fits in
@@ -196,7 +203,7 @@ func limitLine(l *Limit) string {
 func (pr *printer) value(prefix string, v Value, suffix string) {
 	flat := flatValue(v)
 	open, items, closer := parts(v)
-	if len(items) == 0 || 2*pr.indent+len(prefix)+len(flat)+len(suffix) <= maxWidth {
+	if len(items) == 0 || 2*pr.indent+widths.StringWidth(prefix+flat+suffix) <= maxWidth {
 		pr.line(prefix + flat + suffix)
 		return
 	}
@@ -244,13 +251,13 @@ func keyText(k Key) string {
 	case k.String != nil:
 		return quote(string(*k.String))
 	}
-	return *k.Number
+	return string(*k.Number)
 }
 
 func flatValue(v Value) string {
 	switch v := v.(type) {
 	case *NumberValue:
-		return v.Text
+		return string(v.Text)
 	case *StringValue:
 		return quote(string(v.Text))
 	case *BoolValue:

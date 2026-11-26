@@ -38,6 +38,39 @@ func (s *Summary) Capture(values []string) error {
 	return nil
 }
 
+// Number is a number in its canonical form (docs/format.md §2): no leading
+// zeros in the integer part, no -0, and no trailing zeros in the fraction
+// beyond its first digit. Parsing normalizes it, so fmt prints it canonical.
+type Number string
+
+func (n *Number) Capture(values []string) error {
+	*n = Number(canonicalNumber(values[0]))
+	return nil
+}
+
+func canonicalNumber(s string) string {
+	sign, digits := "", s
+	if strings.HasPrefix(s, "-") {
+		sign, digits = "-", s[1:]
+	}
+	whole, fraction, decimal := strings.Cut(digits, ".")
+	whole = strings.TrimLeft(whole, "0")
+	if whole == "" {
+		whole = "0"
+	}
+	if decimal {
+		fraction = strings.TrimRight(fraction, "0")
+		if fraction == "" {
+			fraction = "0"
+		}
+		whole += "." + fraction
+	}
+	if strings.Trim(whole, "0.") == "" {
+		sign = ""
+	}
+	return sign + whole
+}
+
 // CommentText is what follows `//` on a comment line, without trailing spaces.
 type CommentText string
 
@@ -254,12 +287,13 @@ type About struct {
 	Refs []Ref `parser:"'about' @@ ( ',' @@ )* NL"`
 }
 
-// Symbol is a `forall`; Domain describes a generated symbol and is nil otherwise.
+// Symbol is a `forall`; Domain describes a generated symbol and is nil
+// otherwise. Domain and the labels of fragments follow the rules of summaries.
 type Symbol struct {
 	Pos    lexer.Position
 	Name   Lower    `parser:"'forall' @Ident ':'"`
 	Type   TypeExpr `parser:"@@"`
-	Domain *Text    `parser:"( 'generated' @String )? NL"`
+	Domain *Summary `parser:"( 'generated' @String )? NL"`
 }
 
 // Limit is a `where`: an enum subset when Members is set, otherwise a range
@@ -269,8 +303,8 @@ type Limit struct {
 	Path    []Lower `parser:"'where' @Ident ( '.' @Ident )*"`
 	Members []Lower `parser:"( 'in' '{' @Ident ( ',' @Ident )* '}'"`
 	Op      string  `parser:"| @( 'in' | 'size' )"`
-	Low     string  `parser:"  @Number '..'"`
-	High    string  `parser:"  @Number ) NL"`
+	Low     Number  `parser:"  @Number '..'"`
+	High    Number  `parser:"  @Number ) NL"`
 }
 
 // CaseDecl is a declared case; Summary is nil when absent.
@@ -349,19 +383,19 @@ type Alt struct {
 
 type Branch struct {
 	Pos   lexer.Position
-	Label Text       `parser:"@String '{' NL"`
+	Label Summary    `parser:"@String '{' NL"`
 	Lines []StepLine `parser:"@@* '}'"`
 }
 
 type Opt struct {
 	Pos   lexer.Position
-	Label Text       `parser:"'opt' @String '{' NL"`
+	Label Summary    `parser:"'opt' @String '{' NL"`
 	Lines []StepLine `parser:"@@* '}' NL"`
 }
 
 type Loop struct {
 	Pos   lexer.Position
-	Label Text       `parser:"'loop' @String '{' NL"`
+	Label Summary    `parser:"'loop' @String '{' NL"`
 	Lines []StepLine `parser:"@@* '}' NL"`
 }
 
@@ -371,10 +405,9 @@ type Loop struct {
 // its line after the opening bracket, around commas and before the closing one.
 type Value interface{ value() }
 
-// NumberValue keeps the number as written.
 type NumberValue struct {
 	Pos  lexer.Position
-	Text string `parser:"@Number"`
+	Text Number `parser:"@Number"`
 }
 
 type StringValue struct {
@@ -441,7 +474,7 @@ type Key struct {
 	Pos    lexer.Position
 	Name   *Lower  `parser:"  @Ident"`
 	String *Text   `parser:"| @String"`
-	Number *string `parser:"| @Number"`
+	Number *Number `parser:"| @Number"`
 }
 
 func (*Comment) decl()       {}

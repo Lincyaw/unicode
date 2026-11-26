@@ -29,8 +29,8 @@ type Parsed struct {
 //uc:realizes syntax.parse
 func Parse(path string, kind FileKind, src []byte) Parsed {
 	at := locator{path: path, src: src}
-	if d, ok := forbidden(at); ok {
-		return Parsed{Diagnostics: []diag.Diagnostic{d}}
+	if diags := forbidden(at); len(diags) > 0 {
+		return Parsed{Diagnostics: diags}
 	}
 	text := src
 	if !bytes.HasSuffix(text, []byte("\n")) {
@@ -70,23 +70,31 @@ func (l locator) diagnostic(offset int, code, message, fix string) diag.Diagnost
 	}
 }
 
-// forbidden finds the first character that no file may contain.
-func forbidden(at locator) (diag.Diagnostic, bool) {
+// forbidden reports the characters that no file may contain; a run of the
+// same problem counts once.
+func forbidden(at locator) []diag.Diagnostic {
+	var diags []diag.Diagnostic
+	last := ""
 	for off := 0; off < len(at.src); {
 		r, size := utf8.DecodeRune(at.src[off:])
+		code, message, fix := "", "", ""
 		switch {
 		case r == utf8.RuneError && size <= 1:
-			return at.diagnostic(off, "syntax.invalid-utf8", "文件在这里不是合法的 UTF-8 编码", "把文件保存为 UTF-8 文本"), true
+			code, message, fix = "syntax.invalid-utf8", "文件在这里不是合法的 UTF-8 编码", "把文件保存为 UTF-8 文本"
 		case r == '\t':
-			return at.diagnostic(off, "syntax.tab", "文件中不能有制表符", "把制表符换成空格；字符串中的制表符写作 \\t"), true
+			code, message, fix = "syntax.tab", "文件中不能有制表符", "把制表符换成空格；字符串中的制表符写作 \\t"
 		case r == '\r':
-			return at.diagnostic(off, "syntax.carriage-return", "文件中不能有回车符，换行只用 LF", "把 CRLF 换行改成 LF"), true
+			code, message, fix = "syntax.carriage-return", "文件中不能有回车符，换行只用 LF", "把 CRLF 换行改成 LF"
 		case r != '\n' && unicode.IsControl(r):
-			return at.diagnostic(off, "syntax.control-character", fmt.Sprintf("文件中不能有控制字符 %U", r), "删去这个控制字符"), true
+			code, message, fix = "syntax.control-character", fmt.Sprintf("文件中不能有控制字符 %U", r), "删去这个控制字符"
 		}
+		if code != "" && code != last {
+			diags = append(diags, at.diagnostic(off, code, message, fix))
+		}
+		last = code
 		off += size
 	}
-	return diag.Diagnostic{}, false
+	return diags
 }
 
 // tokenError is a problem in one token, found while mapping it.
@@ -158,6 +166,13 @@ func parseError(at locator, err error) diag.Diagnostic {
 			return at.diagnostic(t.Pos.Offset, "syntax.comment-in-value", "值的内部不能写注释", "把注释移到这个赋值之上")
 		case t.Type == symbols["Comment"]:
 			return at.diagnostic(t.Pos.Offset, "syntax.trailing-comment", "注释必须独占一行", "把注释移到它所说明的那一行之上")
+		case strings.HasPrefix(expected, "；应当是 <nl> ") || expected == "；应当是 <nl>":
+			if t.Value == "}" {
+				return at.diagnostic(t.Pos.Offset, "syntax.brace-position", "} 必须写在行首", "把 } 移到下一行的行首")
+			}
+			if at.after(t.Pos.Offset) == '{' {
+				return at.diagnostic(t.Pos.Offset, "syntax.brace-position", "{ 必须写在行尾", "把 { 之后的内容移到下一行")
+			}
 		}
 		return at.diagnostic(t.Pos.Offset, "syntax.unexpected-token", fmt.Sprintf("这里不应当是 %s%s", describe(t), expected),
 			"按 docs/format.md §3 的语法改写这一行")
@@ -171,6 +186,15 @@ func parseError(at locator, err error) diag.Diagnostic {
 }
 
 var symbols = ucLexer.Symbols()
+
+// after returns the last character before offset that is not a space.
+func (l locator) after(offset int) byte {
+	before := bytes.TrimRight(l.src[:min(offset, len(l.src))], " ")
+	if len(before) == 0 {
+		return 0
+	}
+	return before[len(before)-1]
+}
 
 // startsLine tells whether only spaces stand before offset on its line.
 func (l locator) startsLine(offset int) bool {

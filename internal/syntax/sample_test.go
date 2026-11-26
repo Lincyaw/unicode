@@ -1,6 +1,7 @@
 package syntax
 
 import (
+	"slices"
 	"strings"
 	"unicode"
 
@@ -32,17 +33,10 @@ func genKebab(t *rapid.T, label string) Kebab {
 
 func genUpper(t *rapid.T, label string) Upper { return Upper(upperNames.Draw(t, label)) }
 
+// genLower draws a lower-camel name, which may be a keyword but not a reserved literal.
 func genLower(t *rapid.T, label string) Lower {
-	return Lower(rapid.OneOf(lowerNames, lowerNames, lowerNames, rapid.SampledFrom(keywords)).Draw(t, label))
-}
-
-// genValueName is a name that a value may be, so not one of the literals.
-func genValueName(t *rapid.T) Lower {
-	for {
-		if n := genLower(t, "name"); n != "true" && n != "false" && n != "none" {
-			return n
-		}
-	}
+	gen := rapid.OneOf(lowerNames, lowerNames, lowerNames, rapid.SampledFrom(keywords))
+	return Lower(gen.Filter(func(s string) bool { return !slices.Contains(reserved, s) }).Draw(t, label))
 }
 
 // interestingRunes are the characters strings are mostly made of: the ones
@@ -74,11 +68,16 @@ func genOptSummary(t *rapid.T, label string) *Summary {
 	return &s
 }
 
-func genNumber(t *rapid.T, integer bool) string {
-	if integer {
-		return rapid.StringMatching(`-?[0-9]{1,4}`).Draw(t, "int")
+// genNumber draws a number in its canonical form; the writer may spell it otherwise.
+func genNumber(t *rapid.T, integer bool) Number {
+	whole := rapid.StringMatching(`0|[1-9][0-9]{0,3}`).Draw(t, "whole")
+	if !integer && rapid.Bool().Draw(t, "fraction?") {
+		whole += "." + rapid.StringMatching(`0|[0-9]{0,2}[1-9]`).Draw(t, "fraction")
 	}
-	return rapid.StringMatching(`-?[0-9]{1,4}(\.[0-9]{1,3})?`).Draw(t, "number")
+	if whole != "0" && whole != "0.0" && rapid.Bool().Draw(t, "negative") {
+		whole = "-" + whole
+	}
+	return Number(whole)
 }
 
 // some draws between 0 and max items.
@@ -185,7 +184,7 @@ func genValue(t *rapid.T, depth int) Value {
 		}
 		return &BoolValue{Value: Boolean(rapid.Bool().Draw(t, "bool"))}
 	case 3, 4:
-		return &NameValue{Name: genValueName(t)}
+		return &NameValue{Name: genLower(t, "name")}
 	case 5:
 		return &CallValue{Op: genLower(t, "op"), Args: some(t, 3, func() Arg {
 			return Arg{Name: genLower(t, "param"), Value: genValue(t, depth-1)}
@@ -253,7 +252,7 @@ func genType(t *rapid.T) *TypeDecl {
 func genSymbol(t *rapid.T) *Symbol {
 	s := &Symbol{Name: genLower(t, "symbol"), Type: genTypeExpr(t, 2)}
 	if rapid.IntRange(0, 3).Draw(t, "generated") == 0 {
-		domain := genString(t, "domain")
+		domain := genSummary(t, "domain")
 		s.Domain = &domain
 	}
 	return s
@@ -317,13 +316,13 @@ func genStep(t *rapid.T, depth int) StepLine {
 	case 4:
 		a := &Alt{}
 		for range rapid.IntRange(1, 3).Draw(t, "branches") {
-			a.Branches = append(a.Branches, Branch{Label: genString(t, "label"), Lines: genSteps[StepLine](t, depth)})
+			a.Branches = append(a.Branches, Branch{Label: genSummary(t, "label"), Lines: genSteps[StepLine](t, depth)})
 		}
 		return a
 	case 5:
-		return &Opt{Label: genString(t, "label"), Lines: genSteps[StepLine](t, depth)}
+		return &Opt{Label: genSummary(t, "label"), Lines: genSteps[StepLine](t, depth)}
 	}
-	return &Loop{Label: genString(t, "label"), Lines: genSteps[StepLine](t, depth)}
+	return &Loop{Label: genSummary(t, "label"), Lines: genSteps[StepLine](t, depth)}
 }
 
 func genFlow(t *rapid.T) *FlowDecl {
@@ -594,7 +593,7 @@ func (w *writer) node(n any) {
 			w.names(n.Members, ",")
 			w.tok("}")
 		} else {
-			w.tok(n.Op, n.Low, "..", n.High)
+			w.tok(n.Op, w.number(n.Low), "..", w.number(n.High))
 		}
 	case *CaseDecl:
 		w.tok("case", string(n.Name))
@@ -713,9 +712,30 @@ func (w *writer) typeExpr(t TypeExpr) {
 	}
 }
 
+// number spells a canonical number with leading zeros, trailing zeros in its
+// fraction, or a minus on zero, all of which parsing normalizes away.
+func (w *writer) number(n Number) string {
+	sign, digits := "", string(n)
+	if strings.HasPrefix(digits, "-") {
+		sign, digits = "-", digits[1:]
+	}
+	if sign == "" && strings.Trim(digits, "0.") == "" && rapid.Bool().Draw(w.t, "minusZero") {
+		sign = "-"
+	}
+	digits = strings.Repeat("0", rapid.IntRange(0, 2).Draw(w.t, "leadingZeros")) + digits
+	if strings.Contains(digits, ".") {
+		digits += strings.Repeat("0", rapid.IntRange(0, 2).Draw(w.t, "trailingZeros"))
+	}
+	return sign + digits
+}
+
 // value writes v; between its items it may break the line.
 func (w *writer) value(v Value) {
 	open, items, closer := parts(v)
+	if n, ok := v.(*NumberValue); ok {
+		w.tok(w.number(n.Text))
+		return
+	}
 	if open == "" {
 		w.tok(flatValue(v))
 		return

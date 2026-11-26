@@ -17,7 +17,7 @@ import (
 // check reports what the grammar's tags cannot say: which declarations a file
 // of each kind holds and in what order, the order and number of the members of
 // each block, the three name classes, the forms of references, well-formed
-// summaries, and the few rules of docs/format.md §3 that need a form.
+// summaries, reserved names, and the few rules of docs/format.md §3 that need a form.
 func check(at locator, f *File) []diag.Diagnostic {
 	c := &checker{at: at}
 	c.file(f)
@@ -303,12 +303,15 @@ func (c *checker) walk(v reflect.Value, pos lexer.Position) {
 }
 
 func (c *checker) integers(l Limit) {
-	for _, n := range []string{l.Low, l.High} {
-		if strings.Contains(n, ".") {
+	for _, n := range []Number{l.Low, l.High} {
+		if strings.Contains(string(n), ".") {
 			c.report(l.Pos, "syntax.not-an-integer", fmt.Sprintf("大小的界限必须是整数，不能是 %s", n), "把界限改成整数")
 		}
 	}
 }
+
+// reserved are the literals of values, which no lower-camel name may be.
+var reserved = []string{"true", "false", "none"}
 
 func matcher(pattern string) func(string) bool { return regexp.MustCompile(pattern).MatchString }
 
@@ -333,6 +336,9 @@ func (c *checker) text(v reflect.Value, pos lexer.Position) {
 	s := v.String()
 	if class, ok := classes[v.Type()]; ok && !class.pattern(s) {
 		c.report(pos, "syntax.invalid-name", fmt.Sprintf("名称 %s 必须用%s", s, class.name), "把它改成"+class.name)
+	}
+	if v.Type() == reflect.TypeFor[Lower]() && slices.Contains(reserved, s) {
+		c.report(pos, "syntax.reserved-name", fmt.Sprintf("%s 是保留字，不能用作名称", s), "换一个名称；true、false 和 none 是值的字面量")
 	}
 	if v.Type() != reflect.TypeFor[Summary]() {
 		return

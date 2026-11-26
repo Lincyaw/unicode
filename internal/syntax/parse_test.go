@@ -85,7 +85,8 @@ var lineFragments = []string{
 	"type E enum \"e\" {\n  field f: int\n}\n", "type R record \"r\" {\n  field f: ,\n  field a: int }\n",
 	"property p invariant \"p\" {\n  about x\n  case c {\n    x = ,\n    y = {: 1}\n  }\n}\n",
 	"property p invariant \"p\" {\n  about a.B-c\n  where x size 1.5..2\n}\n", "flow f \"f\" {\n  on E {\n  }\n}\n",
-	"actor p person \"p\" {\n  op f()\n}\n",
+	"actor p person \"p\" {\n  op f()\n}\n", "op true(false: int)\n", "flow f \"f\" {\n  alt \"\" {\n  }\n}\n",
+	"where x in 007..-0.50\n",
 }
 
 // splices are what a byte edit puts in place of the bytes it removes.
