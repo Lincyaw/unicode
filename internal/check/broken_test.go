@@ -165,13 +165,13 @@ var breakages = []breakage{
 		if uniform(w.t, 3) == 0 {
 			t := choose(w, w.types)
 			twin := t.code + "Twin"
-			w.node(twin, graph.LayerCode, graph.NodeKindType, "struct", "code", map[string][]string{"name": {name(t.id)}, "fields": t.fields})
+			w.node(twin, graph.LayerCode, graph.NodeKindType, "struct", "code", map[string][]string{"name": {name(t.id)}, "fields": t.codeFields})
 			w.extracted(graph.EdgeKindContains, w.parentOf(t.code), twin)
 			w.declared(graph.EdgeKindRealizes, twin, t.id)
 			return t.id
 		}
 		o := choose(w, w.ops)
-		twin := w.function(w.parentOf(o.code), o.code+"Twin", name(o.id), o.signature, o.kind)
+		twin := w.function(w.parentOf(o.code), o.code+"Twin", name(o.id), o.codeSignature, o.kind)
 		if o.kind != "func" {
 			w.edge(graph.EdgeKindRealizes, twin, o.id, graph.SourceDerived, nil)
 		} else {
@@ -209,7 +209,22 @@ var breakages = []breakage{
 	}},
 	{"check.signature-mismatch", func(w *world) string {
 		o := choose(w, w.ops)
-		w.setAttr(o.code, "signature", []string{"(z: bool)"})
+		code := o.codeSignature
+		switch uniform(w.t, 3) {
+		case 0:
+			code = "(z: bool)"
+		case 1:
+			// The code raises where the design does not, or the other way round.
+			if trimmed, ok := strings.CutSuffix(code, " raises error"); ok {
+				code = trimmed
+			} else {
+				code += " raises error"
+			}
+		default:
+			// A Go result list, which no operation's signature matches.
+			code = "(" + strings.Join(parameters(code), ", ") + ") -> (int, string)"
+		}
+		w.setAttr(o.code, "signature", []string{code})
 		return o.id
 	}},
 	{"check.missing-field", func(w *world) string {
@@ -219,8 +234,11 @@ var breakages = []breakage{
 	}},
 	{"check.field-type-mismatch", func(w *world) string {
 		t := choose(w, w.types)
-		w.setAttr(t.id, "fields", append(slices.Clone(t.fields), "extra: int"))
-		w.setAttr(t.code, "fields", append(slices.Clone(t.fields), "extra: string"))
+		// A field of another type; an event passed by pointer, which only an
+		// object may be; or a value where the design wants a pointer.
+		pair := choose(w, [][2]string{{"int", "string"}, {"k0.T1", "optional<k0.T1>"}, {"optional<k0.T0>", "k0.T0"}})
+		w.setAttr(t.id, "fields", append(slices.Clone(t.fields), "extra: "+pair[0]))
+		w.setAttr(t.code, "fields", append(slices.Clone(t.codeFields), "extra: "+pair[1]))
 		return t.id
 	}},
 	{"check.missing-implements", func(w *world) string { return w.relation(graph.EdgeKindImplements) }},

@@ -226,7 +226,7 @@ func (c *checker) matches(id, r string) {
 			fmt.Sprintf("rename %s to the name that %s maps to", r, name(id)))
 	}
 	if c.byID[id].Kind == graph.NodeKindOp {
-		if want, got := c.attr(id, "signature"), c.attr(r, "signature"); got != want {
+		if want, got := c.attr(id, "signature"), c.attr(r, "signature"); !c.sameSignature(want, got, r) {
 			c.fail("check.signature-mismatch", id, graph.StatusContradicted, at,
 				fmt.Sprintf("the signature of %s is %s, but %s, which realizes it, has %s", id, want, r, got),
 				fmt.Sprintf("change the signature of %s to %s, or change the design", r, want))
@@ -245,7 +245,7 @@ func (c *checker) matches(id, r string) {
 			c.fail("check.missing-field", id, graph.StatusContradicted, at,
 				fmt.Sprintf("the design gives %s the field %s, but %s, which realizes it, has no field %s", id, f, r, n),
 				fmt.Sprintf("add the field %s to %s", f, r))
-		case got != typ:
+		case !c.sameType(typ, got):
 			c.fail("check.field-type-mismatch", id, graph.StatusContradicted, at,
 				fmt.Sprintf("the field %s of %s has the type %s, but in %s, which realizes it, the type %s", n, id, typ, r, got),
 				fmt.Sprintf("give the field %s of %s the type %s, or change the design", n, r, typ))
