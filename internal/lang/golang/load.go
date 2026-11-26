@@ -50,7 +50,10 @@ func load(root string, srcRoots []string) (loaded, error) {
 	if len(patterns) == 0 {
 		return loaded{root: abs}, nil
 	}
-	all, err := packages.Load(&packages.Config{Mode: loadMode, Dir: abs, Tests: true}, patterns...)
+	// Extraction needs no version control stamps; making them fails in a
+	// checkout whose git status cannot be read.
+	cfg := &packages.Config{Mode: loadMode, Dir: abs, Tests: true, BuildFlags: []string{"-buildvcs=false"}}
+	all, err := packages.Load(cfg, patterns...)
 	if err != nil {
 		return loaded{}, err
 	}
