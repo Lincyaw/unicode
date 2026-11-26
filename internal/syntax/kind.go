@@ -33,7 +33,7 @@ const systemFilePath = "design/system.uc"
 //
 //uc:realizes syntax.kindOf
 func KindOf(p string) (FileKind, error) {
-	if p != path.Clean(p) || path.Ext(p) != ".uc" || path.Base(p) == ".uc" {
+	if p != path.Clean(p) || !strings.HasSuffix(p, ".uc") {
 		return "", NotADesignFile{}
 	}
 	switch {
