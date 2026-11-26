@@ -1,0 +1,134 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - depguard
+  settings:
+    depguard:
+      rules:
+        diag:
+          list-mode: lax
+          files: ["**/internal/diag/**"]
+          allow:
+            - $gostd
+          deny:
+            - pkg: github.com/lincyaw/unicode/internal
+              desc: "组件 diag 只能依赖 无（design/diag.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+        graph:
+          list-mode: lax
+          files: ["**/internal/graph/**"]
+          allow:
+            - github.com/lincyaw/unicode/internal/diag
+          deny:
+            - pkg: github.com/lincyaw/unicode/internal
+              desc: "组件 graph 只能依赖 diag（design/graph.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+        syntax:
+          list-mode: lax
+          files: ["**/internal/syntax/**"]
+          allow:
+            - github.com/lincyaw/unicode/internal/diag
+          deny:
+            - pkg: github.com/lincyaw/unicode/internal
+              desc: "组件 syntax 只能依赖 diag（design/syntax.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+        design:
+          list-mode: lax
+          files: ["**/internal/design/**"]
+          allow:
+            - github.com/lincyaw/unicode/internal/syntax
+            - github.com/lincyaw/unicode/internal/graph
+            - github.com/lincyaw/unicode/internal/diag
+          deny:
+            - pkg: github.com/lincyaw/unicode/internal
+              desc: "组件 design 只能依赖 syntax、graph、diag（design/design.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+        lang:
+          list-mode: lax
+          files: ["**/internal/lang/*.go"]
+          allow:
+            - github.com/lincyaw/unicode/internal/graph
+            - github.com/lincyaw/unicode/internal/diag
+          deny:
+            - pkg: github.com/lincyaw/unicode/internal
+              desc: "组件 lang 只能依赖 graph、diag（design/lang.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+        lang-golang:
+          list-mode: lax
+          files: ["**/internal/lang/golang/**"]
+          allow:
+            - github.com/lincyaw/unicode/internal/lang
+            - github.com/lincyaw/unicode/internal/graph
+            - github.com/lincyaw/unicode/internal/diag
+          deny:
+            - pkg: github.com/lincyaw/unicode/internal
+              desc: "组件 lang.golang 只能依赖 lang、graph、diag（design/lang/golang.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+            - pkg: github.com/lincyaw/unicode/internal/lang/python
+              desc: "组件 lang.golang 不依赖 lang.python（design/lang/golang.uc 的 uses）；要依赖它，先改设计中的 uses"
+        lang-python:
+          list-mode: lax
+          files: ["**/internal/lang/python/**"]
+          allow:
+            - github.com/lincyaw/unicode/internal/lang
+            - github.com/lincyaw/unicode/internal/graph
+            - github.com/lincyaw/unicode/internal/diag
+          deny:
+            - pkg: github.com/lincyaw/unicode/internal
+              desc: "组件 lang.python 只能依赖 lang、graph、diag（design/lang/python.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+            - pkg: github.com/lincyaw/unicode/internal/lang/golang
+              desc: "组件 lang.python 不依赖 lang.golang（design/lang/python.uc 的 uses）；要依赖它，先改设计中的 uses"
+        check:
+          list-mode: lax
+          files: ["**/internal/check/**"]
+          allow:
+            - github.com/lincyaw/unicode/internal/graph
+            - github.com/lincyaw/unicode/internal/diag
+          deny:
+            - pkg: github.com/lincyaw/unicode/internal
+              desc: "组件 check 只能依赖 graph、diag（design/check.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+        query:
+          list-mode: lax
+          files: ["**/internal/query/**"]
+          allow:
+            - github.com/lincyaw/unicode/internal/graph
+          deny:
+            - pkg: github.com/lincyaw/unicode/internal
+              desc: "组件 query 只能依赖 graph（design/query.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+        view:
+          list-mode: lax
+          files: ["**/internal/view/**"]
+          allow:
+            - github.com/lincyaw/unicode/internal/graph
+          deny:
+            - pkg: github.com/lincyaw/unicode/internal
+              desc: "组件 view 只能依赖 graph（design/view.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+        gen:
+          list-mode: lax
+          files: ["**/internal/gen/**"]
+          allow:
+            - github.com/lincyaw/unicode/internal/graph
+            - github.com/lincyaw/unicode/internal/lang
+            - github.com/lincyaw/unicode/internal/diag
+          deny:
+            - pkg: github.com/lincyaw/unicode/internal
+              desc: "组件 gen 只能依赖 graph、lang、diag（design/gen.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+            - pkg: github.com/lincyaw/unicode/internal/lang/golang
+              desc: "组件 gen 不依赖 lang.golang（design/gen.uc 的 uses）；要依赖它，先改设计中的 uses"
+            - pkg: github.com/lincyaw/unicode/internal/lang/python
+              desc: "组件 gen 不依赖 lang.python（design/gen.uc 的 uses）；要依赖它，先改设计中的 uses"
+        run:
+          list-mode: lax
+          files: ["**/internal/run/**"]
+          allow:
+            - github.com/lincyaw/unicode/internal/graph
+            - github.com/lincyaw/unicode/internal/lang
+            - github.com/lincyaw/unicode/internal/syntax
+            - github.com/lincyaw/unicode/internal/diag
+          deny:
+            - pkg: github.com/lincyaw/unicode/internal
+              desc: "组件 run 只能依赖 graph、lang、syntax、diag（design/run.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+            - pkg: github.com/lincyaw/unicode/internal/lang/golang
+              desc: "组件 run 不依赖 lang.golang（design/run.uc 的 uses）；要依赖它，先改设计中的 uses"
+            - pkg: github.com/lincyaw/unicode/internal/lang/python
+              desc: "组件 run 不依赖 lang.python（design/run.uc 的 uses）；要依赖它，先改设计中的 uses"
+
+formatters:
+  enable:
+    - gofmt

@@ -14,7 +14,7 @@
 
 - 文件是 UTF-8 文本，以 LF 换行，不含制表符，行尾没有空格。缩进为两个空格。
 - 注释独占一行，以 `//` 开头。
-- 字符串用双引号括起，写在一行之内，只有 `\"` 和 `\\` 两种转义。摘要字符串不能为空，首尾不能有空白。
+- 字符串用双引号括起，写在一行之内。转义只有四种：`\"`、`\\`、`\n`（换行）和 `\t`（制表符）；用例中的多行文本因此也写在一行之内。摘要字符串不能为空，首尾不能有空白，不含换行和制表符。
 - 数是十进制写法：`Int` 为整数 `-?[0-9]+`，`Number` 为整数或小数 `-?[0-9]+(\.[0-9]+)?`。
 - 名称分三种写法：
 
@@ -80,7 +80,7 @@ PropertyDecl  = "property" Kebab PropertyForm String "{" NL
                 { Symbol } { Limit } { CaseDecl }
                 "}" NL .
 PropertyForm  = "invariant" | "postcondition" | "relation" | "transition" .
-Symbol        = "forall" Lower ":" TypeExpr NL .
+Symbol        = "forall" Lower ":" TypeExpr [ "generated" String ] NL .
 Limit         = "where" SymbolPath ( "in" Number ".." Number
                                    | "in" "{" Lower { "," Lower } "}"
                                    | "size" Int ".." Int ) NL .
@@ -100,6 +100,7 @@ RecordedCase  = "case" Kebab ( "coverage" | "counterexample" ) "{" NL { Lower "=
 - 类型的成员按 `label`、`extends`、`implements`、`field` 或 `value`、`op` 的顺序排列。`value` 只出现在 `enum` 中，`field` 不出现在 `enum` 和 `interface` 中。
 - 流程的成员按 `forall`、`where`、步骤、`case` 的顺序排列；性质的成员按 `about`、`forall`、`where`、`case` 的顺序排列。
 - `{` 总在行尾，`}` 总在行首。`alt` 的分支写作 `} else "标签" {`。
+- 空白与空行：顶层声明之间恰好空一行，块内不空行，文件末尾恰有一个换行；注释紧贴在它之后的声明之上，缩进与该声明相同。逗号之后一个空格；`:` 之前没有空格、之后一个空格；`->`、`->>`、`=`、`emits` 两边各一个空格；`<` `>` `(` `)` `[` `]` 和值的 `{` `}` 内侧都没有空格；区间写作 `1..10`。
 - 调用后面的 `{ … }` 是这次调用的子步骤，即接收方在这次调用中做的事；`on` 写在调用的 `}` 之后。
 - 系统、参与者、组件、类型、流程和性质都必须有摘要；操作和用例的摘要可以省略。
 - 顶层组件必须写 `focus`；子组件省略 `focus` 时，取父组件的关注度。
@@ -127,10 +128,11 @@ RecordedCase  = "case" Kebab ( "coverage" | "counterexample" ) "{" NL { Lower "=
 
 ## 4 绑定
 
-绑定写在代码中声明的正上方，参数都是字面量，语言后端不执行代码也能读出。绑定只有两种：
+绑定写在代码中声明的正上方，参数都是字面量，语言后端不执行代码也能读出。绑定只有三种：
 
 - **`realizes <标识>`**：写在类型或自由函数上，表示它落实这个类型，或容器、外部系统直接提供的这个操作。落实外部系统的操作的，是调用该外部系统的客户端函数。方法上不写绑定；方法按名称映射对应到它所在类型落实的那个类型的操作（[design.md](design.md) §4）。
-- **`checks <标识>`**：写在谓词上，表示它检查这条性质或这个流程。谓词的参数就是性质或流程的符号；驱动由 `gen` 生成（[design.md](design.md) §6.2）。
+- **`checks <标识>`**：写在谓词上，表示它检查这条性质或这个流程。谓词的参数就是性质或流程的符号；驱动由 `gen` 生成（[design.md](design.md) §6.2）。一个函数至多带一个 `checks`。
+- **`generates <标识>`**：写在生成器函数上，标识是性质或流程的标识后接 `.` 和一个生成的符号的名称，表示它给出这个符号的生成器。同一个生成器可以用于几个符号，每个符号写一行 `generates`。
 
 ### 4.1 Go
 
@@ -153,11 +155,16 @@ func Charge(amount int) (string, error) {
 func checkTotalIsSum(t rapid.TB, order Order) {
 	// 断言 order.Total() 等于各行数量乘单价之和
 }
+
+//uc:generates syntax.format-is-stable.sample
+func genSample() *rapid.Generator[Sample] {
+	// 生成合法的语法树，再以随意的空白打印成文本
+}
 ```
 
 ### 4.2 Python
 
-绑定是 `uc` 包的装饰器。模块只能写作 `import uc`，不能取别名，也不能用 `from uc import`。装饰器只能写作 `@uc.realizes("<标识>")` 或 `@uc.checks("<标识>")`，只有一个字符串字面量参数：
+绑定是 `uc` 包的装饰器。模块只能写作 `import uc`，不能取别名，也不能用 `from uc import`。装饰器只能写作 `@uc.realizes("<标识>")`、`@uc.checks("<标识>")` 或 `@uc.generates("<标识>")`，只有一个字符串字面量参数：
 
 ```python
 import uc
