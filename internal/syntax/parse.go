@@ -113,7 +113,7 @@ func (l locator) unexpected(u *participle.UnexpectedTokenError) diag.Diagnostic 
 			"finish the last line, and close every { with a } on a line of its own")
 	}
 	line := l.line(off)
-	key := line.construct()
+	key := line.construct(l.inValue(off))
 	first := len(line) > 0 && line[0].Pos.Offset == off
 	value := key == "assignment" || key == "literal" || key == "where"
 	switch {
@@ -121,7 +121,7 @@ func (l locator) unexpected(u *participle.UnexpectedTokenError) diag.Diagnostic 
 		return l.diagnostic(off, "syntax.comment-in-value", "a value may not contain a comment", "move the comment above the assignment")
 	case t.Type == symbols["Comment"]:
 		return l.diagnostic(off, "syntax.trailing-comment", "a comment must be on a line of its own", "move the comment onto its own line, above what it describes")
-	case key == "else":
+	case key == "else" && l.closesBranch(line[0].Pos.Offset):
 		return l.diagnostic(line[0].Pos.Offset, "syntax.misplaced-else", "else must follow the previous branch's } on the same line",
 			`join this line to the } above it: } else "label" {`)
 	case t.Value == "}" && !first && !value:
@@ -163,6 +163,7 @@ var constructs = map[string]construct{
 	"implements": {"implements line", "implements Type", "in a type's block"},
 	"field":      {"field", "field name: type", "in a type's block"},
 	"value":      {"enum value", "value name", "in an enum's block"},
+	"else":       {"branch introduced by else", `} else "label" {, on the line of the } that closes the previous branch`, "only right after a branch of an alt fragment, on the line of its }"},
 	"literal":    {"value", "a number, a string, true, false, none, an enum value, [item, ...], {key: value, ...} or op(param: value, ...), broken across lines only after an opening bracket, around commas and before a closing bracket", "in an assignment"},
 	"op":         {"operation declaration", `op name(param: type, ...), then optionally -> type, raises Type, ..., handles Type and "summary" in this order`, "at the top level of a component file, in a type's block or in an external actor's block"},
 	"flow":       {"flow declaration", `flow name "summary" {`, "at the top level of a component file"},
@@ -181,6 +182,9 @@ var constructs = map[string]construct{
 	"assignment": {"assignment", "symbol = value", "in a case's block"},
 	"unknown":    {"line", "a declaration or member that starts with a keyword, a step (sender -> op(args)) or an assignment (symbol = value)", "in a block"},
 }
+
+// unnamed are the constructs that no keyword starts.
+var unnamed = []string{step, "assignment", "literal", "unknown"}
 
 // lineTokens are the tokens of one line, without spaces.
 type lineTokens []lexer.Token
@@ -212,8 +216,8 @@ func (l locator) line(offset int) lineTokens {
 // construct names the kind of the line: its first keyword, a misplaced else,
 // a step, an assignment, a closing brace, part of a broken value, or unknown.
 // A first word followed by ->, ->>, . or emits starts a step, as in
-// docs/format.md §3.
-func (ts lineTokens) construct() string {
+// docs/format.md §3. Any other line inside a value (inValue) is part of it.
+func (ts lineTokens) construct(inValue bool) string {
 	if len(ts) == 0 {
 		return "unknown"
 	}
@@ -221,6 +225,7 @@ func (ts lineTokens) construct() string {
 	startsStep := len(ts) > 1 && (ts[1].Type == symbols["Arrow"] || ts[1].Type == symbols["SendArrow"] ||
 		ts[1].Value == "." || ts[1].Value == "emits")
 	_, keyword := constructs[first.Value]
+	keyword = keyword && !slices.Contains(unnamed, first.Value)
 	word := first.Type == symbols["Ident"]
 	switch {
 	case word && first.Value == "else" && !startsStep:
@@ -233,10 +238,75 @@ func (ts lineTokens) construct() string {
 		return "assignment"
 	case first.Value == "}":
 		return "close"
-	case !word || len(ts) == 1 || ts[1].Value == ":" || ts[1].Value == "," || ts[1].Value == "(":
+	case inValue:
 		return "literal"
 	}
 	return "unknown"
+}
+
+// inValue tells whether the line that holds offset lies inside a value: a
+// bracket that follows an = on an earlier line is still open there.
+func (l locator) inValue(offset int) bool {
+	start := bytes.LastIndexByte(l.src[:min(offset, len(l.src))], '\n') + 1
+	lex, err := ucLexer.LexString("", string(l.src[:start]))
+	if err != nil {
+		return false
+	}
+	var open []bool // for each open bracket, whether it belongs to a value
+	assigned := false
+	for {
+		t, err := lex.Next()
+		if err != nil || t.EOF() {
+			return len(open) > 0 && open[len(open)-1]
+		}
+		switch t.Value {
+		case "=":
+			assigned = true
+		case "[", "(", "{":
+			open = append(open, assigned || len(open) > 0 && open[len(open)-1])
+		case "]", ")", "}":
+			if len(open) > 0 {
+				open = open[:len(open)-1]
+			}
+		}
+		if t.Type == symbols["NL"] {
+			assigned = false
+		}
+	}
+}
+
+// closesBranch tells whether the line above the one at offset, past blank
+// lines and comments, is a } that closes a branch of an alt fragment.
+func (l locator) closesBranch(offset int) bool {
+	depth := 0
+	for end := bytes.LastIndexByte(l.src[:offset], '\n'); end >= 0; {
+		start := bytes.LastIndexByte(l.src[:end], '\n') + 1
+		ts := l.line(start)
+		end = start - 1
+		if depth == 0 {
+			if len(ts) == 0 || ts[0].Type == symbols["Comment"] {
+				continue
+			}
+			if len(ts) != 1 || ts[0].Value != "}" {
+				return false
+			}
+			depth = 1
+			continue
+		}
+		for i := len(ts) - 1; i >= 0; i-- {
+			switch ts[i].Value {
+			case "}":
+				depth++
+			case "{":
+				depth--
+			}
+			if depth == 0 {
+				opensBranch := len(ts) > 1 && ts[0].Value == "alt" && ts[1].Type == symbols["String"]
+				return opensBranch || len(ts) > 1 && ts[0].Value == "}" && ts[1].Value == "else"
+			}
+		}
+	}
+	return false
 }
 
 // after returns the last character before offset that is not a space.
