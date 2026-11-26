@@ -21,7 +21,9 @@ type Neighbor struct {
 // question about them (docs/design.md §7.3). Extras are the nodes that the
 // kind of a focus node adds beyond one edge. Details counts, for each focus
 // node, the distinct detail nodes one edge away or among its additions that
-// Neighbors and Extras do not list.
+// Neighbors and Extras do not list. Edges are the contains edges between
+// nodes of the slice, from which its trees are rebuilt: the ancestor chains
+// and a flow's step tree.
 //
 //uc:realizes query.Context
 type Context struct {
@@ -30,6 +32,7 @@ type Context struct {
 	Neighbors []Neighbor     `json:"neighbors"`
 	Extras    []graph.Node   `json:"extras"`
 	Details   map[string]int `json:"details"`
+	Edges     []graph.Edge   `json:"edges"`
 }
 
 // Slice returns the slice of the nodes ids: the nodes themselves, sorted by
@@ -38,7 +41,8 @@ type Context struct {
 // identity, the additions of each focus node that are not focus nodes
 // themselves. A detail node one edge away from a focus node f, or among
 // f's additions, is listed only when f or the node itself is in expand;
-// otherwise it is only counted under f.
+// otherwise it is only counted under f. Its edges are every contains edge
+// whose ends are both among the nodes it lists, sorted by kind, start and end.
 //
 //uc:realizes query.slice
 func Slice(g *graph.Graph, ids []string, expand []string) (Context, error) {
@@ -51,7 +55,7 @@ func Slice(g *graph.Graph, ids []string, expand []string) (Context, error) {
 		expanded[id] = true
 	}
 	ix := newIndex(g)
-	c := Context{Focus: []graph.Node{}, Neighbors: []Neighbor{}, Extras: []graph.Node{}, Details: map[string]int{}}
+	c := Context{Focus: []graph.Node{}, Neighbors: []Neighbor{}, Extras: []graph.Node{}, Details: map[string]int{}, Edges: []graph.Edge{}}
 	for _, f := range focus {
 		c.Focus = append(c.Focus, *g.Node(f))
 	}
@@ -87,6 +91,20 @@ func Slice(g *graph.Graph, ids []string, expand []string) (Context, error) {
 	}
 	for _, id := range slices.Sorted(maps.Keys(extras)) {
 		c.Extras = append(c.Extras, *g.Node(id))
+	}
+	listed := map[string]bool{}
+	for _, list := range [][]graph.Node{c.Focus, c.Ancestors, c.Extras} {
+		for _, n := range list {
+			listed[n.Id] = true
+		}
+	}
+	for _, n := range c.Neighbors {
+		listed[n.Node.Id] = true
+	}
+	for _, e := range g.Edges() {
+		if e.Kind == graph.EdgeKindContains && listed[e.From] && listed[e.To] {
+			c.Edges = append(c.Edges, e)
+		}
 	}
 	return c, nil
 }

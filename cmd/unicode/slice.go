@@ -25,9 +25,10 @@ func sliceCommand(g *globalOptions, stdout io.Writer) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "slice <id>...",
 		Short: "Give the least context that answers a question about the nodes (docs/design.md §7.3)",
-		Long: "slice gives the nodes, their ancestors, the salient nodes one edge away, what each node's kind adds, and\n" +
-			"the number of detail nodes it leaves out; --expand lists those of a node. Code is given by its position;\n" +
-			"with --with-code, the JSON's code maps each code type and function of the slice to the source of its declaration.",
+		Long: "slice gives the nodes, their ancestors, the salient nodes one edge away, what each node's kind adds, the\n" +
+			"contains edges among all of them, and the number of detail nodes it leaves out; --expand lists those of a\n" +
+			"node. Code is given by its position; with --with-code, the JSON's code maps each code type and function of\n" +
+			"the slice to the source of its declaration.",
 		Args:        cobra.MinimumNArgs(1),
 		Annotations: queryAnnotations(),
 		RunE: func(_ *cobra.Command, ids []string) error {
@@ -153,6 +154,7 @@ func sliceText(s sliceOutput) []byte {
 	}
 	section(&b, "neighbors", neighbors)
 	section(&b, "extras", nodeLines(s.Extras))
+	section(&b, "contains", edgeLines(s.Edges))
 	var details []string
 	for _, f := range slices.Sorted(maps.Keys(s.Details)) {
 		details = append(details, fmt.Sprintf("%s: %d detail nodes not listed; --expand %s lists them", f, s.Details[f], f))
