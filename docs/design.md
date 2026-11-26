@@ -144,6 +144,16 @@ type Backend interface {
 | step | `index`、`label`、`args` |
 | case | `values`（每项 `符号 = 值`）、`reason`（录制的用例） |
 
+代码层的节点由语言后端写出，属性的键如下。凡是名称，都先按反向的名称映射换回设计的写法（例如 Go 的 `UnitPrice` 写作 `unitPrice`），`check` 因此不必知道名称映射，直接与设计比较：
+
+| 种类 | 属性的键 |
+| --- | --- |
+| container（`package`、`file`） | `language`、`path`（文件的路径，或包的导入路径） |
+| type | `name`、`fields`（每项 `名称: 类型`）、`methods`（只有接口才有，每项 `名称 签名`） |
+| op（`func`、`method`） | `name`、`signature`、`testKind`（`none`、`example`、`property` 或 `fuzz`）、`stub`（函数体是未实现标记时为 `true`） |
+
+`calls` 边的属性 `sites` 列出每个调用位置，写作 `路径:行:列`。
+
 `extends`、`implements`、`uses`、订阅、调用、发起方和 `about` 都是边，不是属性。快照是 `{"nodes": [...], "edges": [...]}`：节点按标识排序，边按种类、起点、终点排序，属性的键按字典序排列。
 
 ### 5.3 需要代码才能判断的约束（M2）
@@ -160,7 +170,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 
 骨架只在缺少时生成一次，之后归人或 agent 所有。`gen` 只新增，从不改写已有的代码元素。它为以下各项生成骨架：
 
-- 每个没有落实的类型：带 `realizes` 绑定的类型，字段和操作按名称映射，方法体是未实现标记。
+- 每个没有落实的类型：带 `realizes` 绑定的类型，字段和操作按名称映射，方法体是未实现标记。未实现标记在 Go 中是 `panic("unicode: unimplemented")`，在 Python 中是 `raise NotImplementedError("unicode: unimplemented")`，函数体恰好是这一句时就是骨架。
 - 每个没有落实的、容器或外部系统直接提供的操作：带 `realizes` 绑定的自由函数。外部系统的操作，生成在 `uses` 它的容器中，作为客户端。
 - 每条没有谓词的性质和每个没有谓词的流程：带 `checks` 绑定的谓词，参数是它的符号。流程的谓词，函数体按步骤的次序列出要调用的操作。
 
