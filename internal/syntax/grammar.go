@@ -1,17 +1,17 @@
 package syntax
 
 import (
-	"strings"
-
 	"github.com/alecthomas/participle/v2"
 	"github.com/alecthomas/participle/v2/lexer"
 )
 
 // The grammar of docs/format.md §3, written as participle struct tags; these
 // structs are the syntax tree. Every block is a list of lines, comments
-// included, so the printer keeps each comment where it was. What a tag cannot
-// say (the order of declarations and members, the three name classes, the
-// forms of references, well-formed summaries) is checked by check.go.
+// included, so the printer keeps each comment where it was. The lines of a
+// block are taken in any order, and check.go checks the order afterwards, so
+// that a misplaced declaration or member gets its own diagnostic rather than
+// a grammar error. check.go also checks what a tag cannot say: the three name
+// classes, the forms of references, summaries and reserved names.
 
 // Kebab, Upper and Lower are names of the three classes of docs/format.md §2.
 type (
@@ -48,34 +48,11 @@ func (n *Number) Capture(values []string) error {
 	return nil
 }
 
-func canonicalNumber(s string) string {
-	sign, digits := "", s
-	if strings.HasPrefix(s, "-") {
-		sign, digits = "-", s[1:]
-	}
-	whole, fraction, decimal := strings.Cut(digits, ".")
-	whole = strings.TrimLeft(whole, "0")
-	if whole == "" {
-		whole = "0"
-	}
-	if decimal {
-		fraction = strings.TrimRight(fraction, "0")
-		if fraction == "" {
-			fraction = "0"
-		}
-		whole += "." + fraction
-	}
-	if strings.Trim(whole, "0.") == "" {
-		sign = ""
-	}
-	return sign + whole
-}
-
 // CommentText is what follows `//` on a comment line, without trailing spaces.
 type CommentText string
 
 func (c *CommentText) Capture(values []string) error {
-	*c = CommentText(strings.TrimRight(strings.TrimPrefix(values[0], "//"), " "))
+	*c = CommentText(commentText(values[0]))
 	return nil
 }
 
@@ -276,7 +253,7 @@ type FlowDecl struct {
 	Lines   []FlowLine `parser:"@@* '}' NL"`
 }
 
-// FlowLine is *Comment, *Symbol, *Limit, *CaseDecl or a step.
+// FlowLine is *Comment, *Symbol, *SubsetLimit, *IntervalLimit, *CaseDecl or a step.
 type FlowLine interface{ flowLine() }
 
 type PropertyDecl struct {
@@ -287,7 +264,7 @@ type PropertyDecl struct {
 	Lines   []PropertyLine `parser:"@@* '}' NL"`
 }
 
-// PropertyLine is *Comment, *About, *Symbol, *Limit or *CaseDecl.
+// PropertyLine is *Comment, *About, *Symbol, *SubsetLimit, *IntervalLimit or *CaseDecl.
 type PropertyLine interface{ propertyLine() }
 
 type About struct {
@@ -304,15 +281,20 @@ type Symbol struct {
 	Domain *Summary `parser:"( 'generated' @String )? NL"`
 }
 
-// Limit is a `where`: an enum subset when Members is set, otherwise a range
-// (Op "in") or a size (Op "size") from Low to High as written.
-type Limit struct {
+// SubsetLimit is a `where` that narrows an enum to some of its values.
+type SubsetLimit struct {
 	Pos     lexer.Position
-	Path    []Lower `parser:"'where' @Ident ( '.' @Ident )*"`
-	Members []Lower `parser:"( 'in' '{' @Ident ( ',' @Ident )* '}'"`
-	Op      string  `parser:"| @( 'in' | 'size' )"`
-	Low     Number  `parser:"  @Number '..'"`
-	High    Number  `parser:"  @Number ) NL"`
+	Path    []Lower `parser:"'where' @Ident ( '.' @Ident )* 'in'"`
+	Members []Lower `parser:"'{' @Ident ( ',' @Ident )* '}' NL"`
+}
+
+// IntervalLimit is a `where` that bounds a number (Op "in") or a size (Op "size").
+type IntervalLimit struct {
+	Pos  lexer.Position
+	Path []Lower `parser:"'where' @Ident ( '.' @Ident )*"`
+	Op   string  `parser:"@( 'in' | 'size' )"`
+	Low  Number  `parser:"@Number '..'"`
+	High Number  `parser:"@Number NL"`
 }
 
 // CaseDecl is a declared case; Summary is nil when absent.
@@ -526,24 +508,26 @@ func (*MapType) typeExpr()     {}
 func (*CallType) typeExpr()    {}
 func (*NamedType) typeExpr()   {}
 
-func (*Comment) flowLine()  {}
-func (*Symbol) flowLine()   {}
-func (*Limit) flowLine()    {}
-func (*CaseDecl) flowLine() {}
-func (*Call) flowLine()     {}
-func (*Send) flowLine()     {}
-func (*Emit) flowLine()     {}
-func (*On) flowLine()       {}
-func (*Async) flowLine()    {}
-func (*Alt) flowLine()      {}
-func (*Opt) flowLine()      {}
-func (*Loop) flowLine()     {}
+func (*Comment) flowLine()       {}
+func (*Symbol) flowLine()        {}
+func (*SubsetLimit) flowLine()   {}
+func (*IntervalLimit) flowLine() {}
+func (*CaseDecl) flowLine()      {}
+func (*Call) flowLine()          {}
+func (*Send) flowLine()          {}
+func (*Emit) flowLine()          {}
+func (*On) flowLine()            {}
+func (*Async) flowLine()         {}
+func (*Alt) flowLine()           {}
+func (*Opt) flowLine()           {}
+func (*Loop) flowLine()          {}
 
-func (*Comment) propertyLine()  {}
-func (*About) propertyLine()    {}
-func (*Symbol) propertyLine()   {}
-func (*Limit) propertyLine()    {}
-func (*CaseDecl) propertyLine() {}
+func (*Comment) propertyLine()       {}
+func (*About) propertyLine()         {}
+func (*Symbol) propertyLine()        {}
+func (*SubsetLimit) propertyLine()   {}
+func (*IntervalLimit) propertyLine() {}
+func (*CaseDecl) propertyLine()      {}
 
 func (*Comment) caseLine()    {}
 func (*Assignment) caseLine() {}
@@ -567,19 +551,6 @@ func (*NameValue) value()   {}
 func (*ListValue) value()   {}
 func (*BraceValue) value()  {}
 
-var ucLexer = lexer.MustSimple([]lexer.SimpleRule{
-	{Name: "Comment", Pattern: `//[^\n]*`},
-	{Name: "String", Pattern: `"(\\.|[^"\\\n])*"`},
-	{Name: "Number", Pattern: `-?[0-9]+(\.[0-9]+)?`},
-	{Name: "Ident", Pattern: `[A-Za-z][A-Za-z0-9]*(-[A-Za-z0-9]+)*`},
-	{Name: "SendArrow", Pattern: `->>`},
-	{Name: "Arrow", Pattern: `->`},
-	{Name: "DotDot", Pattern: `\.\.`},
-	{Name: "Punct", Pattern: `[{}()\[\]<>,:.=]`},
-	{Name: "NL", Pattern: `\n([ ]*\n)*`},
-	{Name: "Whitespace", Pattern: `[ ]+`},
-})
-
 // Steps come last in the unions: a line that starts with a keyword is that
 // construct unless it only parses as a step whose sender has the keyword's name.
 var ucParser = participle.MustBuild[File](
@@ -594,9 +565,9 @@ var ucParser = participle.MustBuild[File](
 	participle.Union[ComponentLine](&Comment{}, &Label{}, &Focus{}, &Paths{}, &Uses{}),
 	participle.Union[TypeLine](&Comment{}, &Label{}, &Extends{}, &Implements{}, &Field{}, &EnumValue{}, &OpDecl{}),
 	participle.Union[TypeExpr](&BuiltinType{}, &ElemType{}, &MapType{}, &CallType{}, &NamedType{}),
-	participle.Union[FlowLine](&Comment{}, &Symbol{}, &Limit{}, &CaseDecl{},
+	participle.Union[FlowLine](&Comment{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &CaseDecl{},
 		&On{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
-	participle.Union[PropertyLine](&Comment{}, &About{}, &Symbol{}, &Limit{}, &CaseDecl{}),
+	participle.Union[PropertyLine](&Comment{}, &About{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &CaseDecl{}),
 	participle.Union[CaseLine](&Comment{}, &Assignment{}),
 	participle.Union[StepLine](&Comment{}, &On{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
 	participle.Union[Value](&NumberValue{}, &StringValue{}, &CallValue{}, &BoolValue{}, &NoneValue{},

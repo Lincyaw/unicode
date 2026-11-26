@@ -40,9 +40,9 @@ func (c *checker) report(pos lexer.Position, code, message, fix string) {
 	c.diags = append(c.diags, c.at.diagnostic(pos.Offset, code, message, fix))
 }
 
-// order is the sequence in which the lines of one level must come. Keywords
-// joined by "|" share a rank; single ones may appear at most once. first is
-// the keyword of the first rank.
+// order is the sequence in which the lines of one level must come: the
+// keywords of each rank, the first rank first; the single ones may appear at
+// most once.
 type order struct {
 	what   string
 	code   string
@@ -51,92 +51,58 @@ type order struct {
 	single []string
 }
 
-func newOrder(what, code string, ranks []string, single ...string) order {
-	o := order{what: what, code: code, first: strings.Split(ranks[0], "|")[0], ranks: map[string]int{}, single: single}
+func newOrder(what, code string, ranks [][]string, single ...string) order {
+	o := order{what: what, code: code, first: ranks[0][0], ranks: map[string]int{}, single: single}
 	for i, group := range ranks {
-		for _, kw := range strings.Split(group, "|") {
+		for _, kw := range group {
 			o.ranks[kw] = i
 		}
 	}
 	return o
 }
 
+// step names the steps that start with a sender rather than a keyword.
+const step = "步骤"
+
 var (
 	fileOrders = map[FileKind]order{
-		FileKindSystem:    newOrder("系统文件", "syntax.declaration-order", []string{"system", "notation", "language", "actor"}, "system"),
-		FileKindComponent: newOrder("组件文件", "syntax.declaration-order", []string{"component", "type", "op", "flow", "property"}, "component"),
-		FileKindCorpus:    newOrder("录制文件", "syntax.declaration-order", []string{"corpus", "case"}, "corpus"),
+		FileKindSystem: newOrder("系统文件", "syntax.declaration-order",
+			[][]string{{"system"}, {"notation"}, {"language"}, {"actor"}}, "system"),
+		FileKindComponent: newOrder("组件文件", "syntax.declaration-order",
+			[][]string{{"component"}, {"type"}, {"op"}, {"flow"}, {"property"}}, "component"),
+		FileKindCorpus: newOrder("录制文件", "syntax.declaration-order", [][]string{{"corpus"}, {"case"}}, "corpus"),
 	}
-	componentOrder = newOrder("组件块", "syntax.member-order", []string{"label", "focus", "paths", "uses"}, "focus", "paths", "uses")
-	externalOrder  = newOrder("外部系统", "syntax.member-order", []string{"type", "op"})
-	typeOrder      = newOrder("类型", "syntax.member-order", []string{"label", "extends", "implements", "field|value", "op"})
-	flowOrder      = newOrder("流程", "syntax.member-order", []string{"forall", "where", "步骤|on|async|alt|opt|loop", "case"})
-	propertyOrder  = newOrder("性质", "syntax.member-order", []string{"about", "forall", "where", "case"}, "about")
+	languageOrder  = newOrder("language 块", "syntax.member-order", [][]string{{"root"}})
+	componentOrder = newOrder("组件块", "syntax.member-order", [][]string{{"label"}, {"focus"}, {"paths"}, {"uses"}}, "focus", "paths", "uses")
+	externalOrder  = newOrder("外部系统", "syntax.member-order", [][]string{{"type"}, {"op"}})
+	typeOrder      = newOrder("类型", "syntax.member-order", [][]string{{"label"}, {"extends"}, {"implements"}, {"field", "value"}, {"op"}})
+	flowOrder      = newOrder("流程", "syntax.member-order",
+		[][]string{{"forall"}, {"where"}, {step, "on", "async", "alt", "opt", "loop"}, {"case"}})
+	propertyOrder = newOrder("性质", "syntax.member-order", [][]string{{"about"}, {"forall"}, {"where"}, {"case"}}, "about")
 )
 
-// keyword names a line by the keyword it starts with; it is "" for a comment.
+var (
+	commentType = reflect.TypeFor[Comment]()
+	leadingWord = regexp.MustCompile(`^'([a-z]+)'`)
+)
+
+// keyword names a line by the keyword its grammar starts with, read from the
+// struct tag of its first field: "" for a comment, and step for a step that
+// starts with its sender.
 func keyword(line any) string {
-	switch line.(type) {
-	case *SystemDecl:
-		return "system"
-	case *NotationDecl:
-		return "notation"
-	case *LanguageDecl:
-		return "language"
-	case *PersonDecl, *ExternalDecl:
-		return "actor"
-	case *ComponentDecl:
-		return "component"
-	case *TypeDecl:
-		return "type"
-	case *OpDecl:
-		return "op"
-	case *FlowDecl:
-		return "flow"
-	case *PropertyDecl:
-		return "property"
-	case *CorpusDecl:
-		return "corpus"
-	case *RecordedCase, *CaseDecl:
-		return "case"
-	case *Root:
-		return "root"
-	case *Label:
-		return "label"
-	case *Focus:
-		return "focus"
-	case *Paths:
-		return "paths"
-	case *Uses:
-		return "uses"
-	case *Extends:
-		return "extends"
-	case *Implements:
-		return "implements"
-	case *Field:
-		return "field"
-	case *EnumValue:
-		return "value"
-	case *Symbol:
-		return "forall"
-	case *Limit:
-		return "where"
-	case *About:
-		return "about"
-	case *On:
-		return "on"
-	case *Async:
-		return "async"
-	case *Alt:
-		return "alt"
-	case *Opt:
-		return "opt"
-	case *Loop:
-		return "loop"
-	case *Call, *Send, *Emit:
-		return "步骤"
+	t := reflect.TypeOf(line).Elem()
+	if t == commentType {
+		return ""
 	}
-	return ""
+	for i := range t.NumField() {
+		if tag, ok := t.Field(i).Tag.Lookup("parser"); ok {
+			if m := leadingWord.FindStringSubmatch(tag); m != nil {
+				return m[1]
+			}
+			return step
+		}
+	}
+	return step
 }
 
 func position(line any) lexer.Position {
@@ -190,7 +156,7 @@ func (c *checker) file(f *File) {
 	for _, d := range f.Decls {
 		switch d := d.(type) {
 		case *LanguageDecl:
-			seen := lines(c, newOrder("language 块", "syntax.member-order", []string{"root"}), d.Lines)
+			seen := lines(c, languageOrder, d.Lines)
 			c.require(seen, "root", d.Pos, "language 块中至少要有一个 root", "在块中写上 root \"源码根目录\"")
 		case *ExternalDecl:
 			lines(c, externalOrder, d.Lines)
@@ -284,7 +250,7 @@ func (c *checker) walk(v reflect.Value, pos lexer.Position) {
 			pos = p.Interface().(lexer.Position)
 		}
 		c.reference(v, pos)
-		if l, ok := v.Interface().(Limit); ok && l.Op == "size" {
+		if l, ok := v.Interface().(IntervalLimit); ok && l.Op == "size" {
 			c.integers(l)
 		}
 		for i := range v.NumField() {
@@ -295,7 +261,7 @@ func (c *checker) walk(v reflect.Value, pos lexer.Position) {
 	}
 }
 
-func (c *checker) integers(l Limit) {
+func (c *checker) integers(l IntervalLimit) {
 	for _, n := range []Number{l.Low, l.High} {
 		if strings.Contains(string(n), ".") {
 			c.report(l.Pos, "syntax.not-an-integer", fmt.Sprintf("大小的界限必须是整数，不能是 %s", n), "把界限改成整数")

@@ -258,19 +258,18 @@ func genSymbol(t *rapid.T) *Symbol {
 	return s
 }
 
-func genLimit(t *rapid.T) *Limit {
-	l := &Limit{Path: []Lower{genLower(t, "path")}}
-	l.Path = append(l.Path, some(t, 2, func() Lower { return genLower(t, "path") })...)
+// genLimit draws a *SubsetLimit or an *IntervalLimit.
+func genLimit(t *rapid.T) any {
+	path := []Lower{genLower(t, "path")}
+	path = append(path, some(t, 2, func() Lower { return genLower(t, "path") })...)
 	switch rapid.IntRange(0, 2).Draw(t, "limit") {
 	case 0:
-		l.Op, l.Low, l.High = "in", genNumber(t, false), genNumber(t, false)
+		return &IntervalLimit{Path: path, Op: "in", Low: genNumber(t, false), High: genNumber(t, false)}
 	case 1:
-		l.Members = []Lower{genLower(t, "member")}
-		l.Members = append(l.Members, some(t, 2, func() Lower { return genLower(t, "member") })...)
-	default:
-		l.Op, l.Low, l.High = "size", genNumber(t, true), genNumber(t, true)
+		members := []Lower{genLower(t, "member")}
+		return &SubsetLimit{Path: path, Members: append(members, some(t, 2, func() Lower { return genLower(t, "member") })...)}
 	}
-	return l
+	return &IntervalLimit{Path: path, Op: "size", Low: genNumber(t, true), High: genNumber(t, true)}
 }
 
 func genAssignments(t *rapid.T) []CaseLine {
@@ -327,7 +326,7 @@ func genStep(t *rapid.T, depth int) StepLine {
 
 func genFlow(t *rapid.T) *FlowDecl {
 	ls := some(t, 2, func() FlowLine { return genSymbol(t) })
-	ls = append(ls, some(t, 3, func() FlowLine { return genLimit(t) })...)
+	ls = append(ls, some(t, 3, func() FlowLine { return genLimit(t).(FlowLine) })...)
 	ls = append(ls, genSteps[FlowLine](t, 3)...)
 	ls = append(ls, some(t, 2, func() FlowLine { return genCase(t) })...)
 	return &FlowDecl{Name: genKebab(t, "flow"), Summary: genSummary(t, "summary"), Lines: commented(t, ls)}
@@ -336,7 +335,7 @@ func genFlow(t *rapid.T) *FlowDecl {
 func genProperty(t *rapid.T) *PropertyDecl {
 	ls := []PropertyLine{&About{Refs: genRefs(t)}}
 	ls = append(ls, some(t, 2, func() PropertyLine { return genSymbol(t) })...)
-	ls = append(ls, some(t, 3, func() PropertyLine { return genLimit(t) })...)
+	ls = append(ls, some(t, 3, func() PropertyLine { return genLimit(t).(PropertyLine) })...)
 	ls = append(ls, some(t, 2, func() PropertyLine { return genCase(t) })...)
 	return &PropertyDecl{
 		Name: genKebab(t, "property"), Form: rapid.SampledFrom(propertyForms).Draw(t, "form"),
@@ -508,6 +507,9 @@ func writeOptBlock[L any](w *writer, ls []L) {
 }
 
 func (w *writer) file(f *File) {
+	for range max(0, rapid.IntRange(-2, 2).Draw(w.t, "leadingBlanks")) {
+		w.b.WriteString(w.spaces("blankSpaces", 2) + "\n")
+	}
 	for _, d := range f.Decls {
 		w.node(d)
 	}
@@ -585,16 +587,16 @@ func (w *writer) node(n any) {
 		if n.Domain != nil {
 			w.tok("generated", quote(string(*n.Domain)))
 		}
-	case *Limit:
+	case *SubsetLimit:
 		w.tok("where")
 		w.names(n.Path, ".")
-		if n.Members != nil {
-			w.tok("in", "{")
-			w.names(n.Members, ",")
-			w.tok("}")
-		} else {
-			w.tok(n.Op, w.number(n.Low), "..", w.number(n.High))
-		}
+		w.tok("in", "{")
+		w.names(n.Members, ",")
+		w.tok("}")
+	case *IntervalLimit:
+		w.tok("where")
+		w.names(n.Path, ".")
+		w.tok(n.Op, w.number(n.Low), "..", w.number(n.High))
 	case *CaseDecl:
 		w.tok("case", string(n.Name))
 		if n.Summary != nil {

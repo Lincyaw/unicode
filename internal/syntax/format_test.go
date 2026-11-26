@@ -2,8 +2,10 @@ package syntax
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -45,7 +47,7 @@ func checkFormatIsStable(t rapid.TB, sample Sample) {
 		t.Fatalf("合法的文本 s 解析出了诊断：%s\ns:\n%s", describeDiagnostics(first), sample.Text)
 	}
 	printed := first.File.Print()
-	if problem := canonicalProblem(printed); problem != "" {
+	if problem := cmp.Or(canonicalProblem(printed), spacingProblem(printed)); problem != "" {
 		t.Fatalf("s 解析后打印得到的 t 不是规范格式：%s\nt:\n%s", problem, printed)
 	}
 	second := Parse(path, sample.Kind, printed)
@@ -180,4 +182,52 @@ func canonicalProblem(text []byte) string {
 		return "块或值没有闭合"
 	}
 	return ""
+}
+
+// spacingProblem describes the first pair of tokens on one line of text whose
+// gap breaks the spacing of docs/format.md §3, or returns "".
+func spacingProblem(text []byte) string {
+	lex, err := ucLexer.LexString("", string(text))
+	if err != nil {
+		return "打印的结果不能分成记号：" + err.Error()
+	}
+	var prev lexer.Token
+	line := 1
+	for {
+		tok, err := lex.Next()
+		if err != nil || tok.EOF() {
+			return ""
+		}
+		switch tok.Type {
+		case symbols["Whitespace"]:
+			continue
+		case symbols["NL"], symbols["Comment"]:
+			prev = lexer.Token{}
+			line = tok.Pos.Line + strings.Count(tok.Value, "\n")
+			continue
+		}
+		if prev.Value != "" {
+			if gap, want := tok.Pos.Offset-prev.Pos.Offset-len(prev.Value), wantGap(prev, tok); gap != want {
+				return fmt.Sprintf("第 %d 行：%s 与 %s 之间有 %d 个空格，应当是 %d 个", line, prev.Value, tok.Value, gap, want)
+			}
+		}
+		prev = tok
+	}
+}
+
+// wantGap is the number of spaces §3 puts between two tokens on one line: none
+// before a comma, a colon, a closing bracket and around a dot or a range, none
+// inside brackets and before an opening parenthesis or angle bracket, and one
+// everywhere else, around ->, ->>, =, emits and after a comma or a colon included.
+func wantGap(a, b lexer.Token) int {
+	punct := func(t lexer.Token, values ...string) bool {
+		return (t.Type == symbols["Punct"] || t.Type == symbols["DotDot"]) && slices.Contains(values, t.Value)
+	}
+	switch {
+	case punct(b, ",", ":", ")", "]", ">", "}", ".", "..", "(", "<"):
+		return 0
+	case punct(a, "(", "[", "<", "{", ".", ".."):
+		return 0
+	}
+	return 1
 }

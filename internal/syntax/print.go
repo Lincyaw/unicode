@@ -116,8 +116,10 @@ func (pr *printer) node(n any) {
 			l += " generated " + quote(string(*n.Domain))
 		}
 		pr.line(l)
-	case *Limit:
-		pr.line(limitLine(n))
+	case *SubsetLimit:
+		pr.line("where " + names(n.Path, ".") + " in {" + names(n.Members, ", ") + "}")
+	case *IntervalLimit:
+		pr.line("where " + names(n.Path, ".") + " " + n.Op + " " + string(n.Low) + ".." + string(n.High))
 	case *CaseDecl:
 		head := "case " + string(n.Name)
 		if n.Summary != nil {
@@ -184,20 +186,12 @@ func opLine(o *OpDecl) string {
 	return l
 }
 
-func limitLine(l *Limit) string {
-	path := make([]string, len(l.Path))
-	for i, p := range l.Path {
-		path[i] = string(p)
+func names(ns []Lower, sep string) string {
+	s := make([]string, len(ns))
+	for i, n := range ns {
+		s[i] = string(n)
 	}
-	head := "where " + strings.Join(path, ".")
-	if l.Members != nil {
-		members := make([]string, len(l.Members))
-		for i, m := range l.Members {
-			members[i] = string(m)
-		}
-		return head + " in {" + strings.Join(members, ", ") + "}"
-	}
-	return head + " " + l.Op + " " + string(l.Low) + ".." + string(l.High)
+	return strings.Join(s, sep)
 }
 
 // value writes v after prefix, then suffix: on one line when that line fits in
@@ -306,15 +300,4 @@ func refs(rs []Ref) string {
 	return strings.Join(s, ", ")
 }
 
-func args(as []Lower) string {
-	s := make([]string, len(as))
-	for i, a := range as {
-		s[i] = string(a)
-	}
-	return "(" + strings.Join(s, ", ") + ")"
-}
-
-var quoter = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\t", `\t`)
-
-// quote writes s as a string literal with the four escapes of docs/format.md §2.
-func quote(s string) string { return `"` + quoter.Replace(s) + `"` }
+func args(as []Lower) string { return "(" + names(as, ", ") + ")" }
