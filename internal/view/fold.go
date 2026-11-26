@@ -26,16 +26,17 @@ type edgeKey struct {
 	from, to string
 }
 
-// unfolded are the views of a flow's participants, which the designer wrote
-// into the flow and which therefore never fold by focus.
-var unfolded = []ViewKind{ViewKindSequence, ViewKindActivity, ViewKindEvents}
+// focusFolding are the views that fold by focus (docs/design.md §7.2). The views of
+// a flow and the property view do not: what they draw was written by the
+// designer into the flow or the property.
+var focusFolding = []ViewKind{ViewKindArchitecture, ViewKindClass, ViewKindCalls, ViewKindCode, ViewKindDdd, ViewKindC4}
 
 // fold draws the salient nodes of a selection, folding support containers
-// and leaving out utility ones unless the view is one of unfolded; then it
+// and leaving out utility ones when the view is one of focusFolding; then it
 // draws what the expanded salient functions and reaches edges reveal; then
 // every edge between drawn nodes that the selection or an expansion picks.
 func (ix index) fold(kind ViewKind, input string, sel selection, expand []string) View {
-	f := folding{ix: ix, byFocus: !slices.Contains(unfolded, kind), exempt: map[string]bool{input: true},
+	f := folding{ix: ix, byFocus: slices.Contains(focusFolding, kind), exempt: map[string]bool{input: true},
 		drawn: map[string]bool{}, folded: map[string]bool{}, hidden: map[string]bool{}}
 	for _, id := range append(ix.enclosing(input), expand...) {
 		f.exempt[id] = true
