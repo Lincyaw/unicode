@@ -62,12 +62,12 @@ func withType(d *TypeDecl) func(*rapid.T, []Decl) []Decl {
 	return func(_ *rapid.T, ds []Decl) []Decl { return slices.Insert(ds, 1, Decl(d)) }
 }
 
-func record(lines ...TypeLine) *TypeDecl {
+func record(lines ...Member) *TypeDecl {
 	return &TypeDecl{Name: "Broken", Form: "record", Summary: "一个类型", Lines: lines}
 }
 
 func intField(name Lower) *Field {
-	return &Field{Name: name, Type: &BuiltinType{Name: "int"}}
+	return &Field{Name: name, Type: &Builtin{Name: "int"}}
 }
 
 // componentLines replaces the lines of the component declaration.
@@ -115,10 +115,10 @@ var breakages = []breakage{
 	edited("syntax.empty-summary", withType(&TypeDecl{Name: "Broken", Form: "record", Summary: ""})),
 	edited("syntax.summary-surrounding-space", withType(&TypeDecl{Name: "Broken", Form: "record", Summary: " 前面有空格"})),
 	edited("syntax.summary-tab-or-newline", withType(&TypeDecl{Name: "Broken", Form: "record", Summary: "两\n行"})),
-	edited("syntax.field-not-allowed", withType(&TypeDecl{Name: "Broken", Form: "enum", Summary: "一个枚举", Lines: []TypeLine{intField("a")}})),
+	edited("syntax.field-not-allowed", withType(&TypeDecl{Name: "Broken", Form: "enum", Summary: "一个枚举", Lines: []Member{intField("a")}})),
 	edited("syntax.value-outside-enum", withType(record(&EnumValue{Name: "a"}))),
 	edited("syntax.on-without-call", func(_ *rapid.T, ds []Decl) []Decl {
-		on := &On{Error: TypeRef{Segments: []string{"Failed"}}}
+		on := &OnBlock{Error: TypeRef{Segments: []string{"Failed"}}}
 		return append(ds, &FlowDecl{Name: "broken", Summary: "一个流程", Lines: []FlowLine{on}})
 	}),
 	edited("syntax.not-an-integer", func(_ *rapid.T, ds []Decl) []Decl {

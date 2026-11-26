@@ -138,7 +138,7 @@ func (pr *printer) node(n any) {
 		pr.line(ref(Ref(n.From)) + " ->> " + ref(Ref(n.Op)) + args(n.Args))
 	case *Emit:
 		pr.line(ref(Ref(n.From)) + " emits " + ref(Ref(n.Event)) + args(n.Args))
-	case *On:
+	case *OnBlock:
 		block(pr, "on "+ref(Ref(n.Error)), n.Lines)
 	case *Async:
 		block(pr, "async "+ref(Ref(n.Op)), n.Lines)
@@ -276,7 +276,7 @@ func flatValue(v Value) string {
 
 func typeExpr(t TypeExpr) string {
 	switch t := t.(type) {
-	case *BuiltinType:
+	case *Builtin:
 		return t.Name
 	case *NamedType:
 		return ref(Ref(t.Ref))

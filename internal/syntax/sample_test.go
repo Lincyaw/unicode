@@ -157,7 +157,7 @@ func genTypeExpr(t *rapid.T, depth int) TypeExpr {
 	}
 	switch kind {
 	case 0:
-		return &BuiltinType{Name: rapid.SampledFrom([]string{"bool", "int", "float", "string", "bytes", "time", "duration"}).Draw(t, "builtin")}
+		return &Builtin{Name: rapid.SampledFrom([]string{"bool", "int", "float", "string", "bytes", "time", "duration"}).Draw(t, "builtin")}
 	case 1:
 		return &NamedType{Ref: genTypeRef(t)}
 	case 2, 3:
@@ -234,17 +234,17 @@ func genType(t *rapid.T) *TypeDecl {
 	if rapid.IntRange(0, 2).Draw(t, "body") == 0 {
 		return d
 	}
-	ls := genLabels[TypeLine](t)
-	ls = append(ls, some(t, 1, func() TypeLine { return &Extends{Type: genTypeRef(t)} })...)
-	ls = append(ls, some(t, 1, func() TypeLine { return &Implements{Type: genTypeRef(t)} })...)
+	ls := genLabels[Member](t)
+	ls = append(ls, some(t, 1, func() Member { return &Extends{Type: genTypeRef(t)} })...)
+	ls = append(ls, some(t, 1, func() Member { return &Implements{Type: genTypeRef(t)} })...)
 	switch d.Form {
 	case "enum":
-		ls = append(ls, some(t, 3, func() TypeLine { return &EnumValue{Name: genLower(t, "value")} })...)
+		ls = append(ls, some(t, 3, func() Member { return &EnumValue{Name: genLower(t, "value")} })...)
 	case "interface":
 	default:
-		ls = append(ls, some(t, 3, func() TypeLine { return &Field{Name: genLower(t, "field"), Type: genTypeExpr(t, 2)} })...)
+		ls = append(ls, some(t, 3, func() Member { return &Field{Name: genLower(t, "field"), Type: genTypeExpr(t, 2)} })...)
 	}
-	ls = append(ls, some(t, 2, func() TypeLine { return genOp(t) })...)
+	ls = append(ls, some(t, 2, func() Member { return genOp(t) })...)
 	d.Lines = commented(t, ls)
 	return d
 }
@@ -295,33 +295,33 @@ func genSteps[L any](t *rapid.T, depth int) []L {
 		ls = append(ls, any(s).(L))
 		if _, ok := s.(*Call); ok {
 			for range max(0, rapid.IntRange(-1, 2).Draw(t, "ons")) {
-				ls = append(ls, any(&On{Error: genTypeRef(t), Lines: genSteps[StepLine](t, depth-1)}).(L))
+				ls = append(ls, any(&OnBlock{Error: genTypeRef(t), Lines: genSteps[Step](t, depth-1)}).(L))
 			}
 		}
 	}
 	return commented(t, ls)
 }
 
-func genStep(t *rapid.T, depth int) StepLine {
+func genStep(t *rapid.T, depth int) Step {
 	switch rapid.IntRange(0, 6).Draw(t, "step") {
 	case 0:
-		return &Call{From: genParticipant(t), Op: genOpRef(t), Args: genArgs(t), Lines: genSteps[StepLine](t, depth)}
+		return &Call{From: genParticipant(t), Op: genOpRef(t), Args: genArgs(t), Lines: genSteps[Step](t, depth)}
 	case 1:
 		return &Send{From: genParticipant(t), Op: genOpRef(t), Args: genArgs(t)}
 	case 2:
 		return &Emit{From: genParticipant(t), Event: genTypeRef(t), Args: genArgs(t)}
 	case 3:
-		return &Async{Op: genOpRef(t), Lines: genSteps[StepLine](t, depth)}
+		return &Async{Op: genOpRef(t), Lines: genSteps[Step](t, depth)}
 	case 4:
 		a := &Alt{}
 		for range rapid.IntRange(1, 3).Draw(t, "branches") {
-			a.Branches = append(a.Branches, Branch{Label: genSummary(t, "label"), Lines: genSteps[StepLine](t, depth)})
+			a.Branches = append(a.Branches, Branch{Label: genSummary(t, "label"), Lines: genSteps[Step](t, depth)})
 		}
 		return a
 	case 5:
-		return &Opt{Label: genSummary(t, "label"), Lines: genSteps[StepLine](t, depth)}
+		return &Opt{Label: genSummary(t, "label"), Lines: genSteps[Step](t, depth)}
 	}
-	return &Loop{Label: genSummary(t, "label"), Lines: genSteps[StepLine](t, depth)}
+	return &Loop{Label: genSummary(t, "label"), Lines: genSteps[Step](t, depth)}
 }
 
 func genFlow(t *rapid.T) *FlowDecl {
@@ -374,7 +374,7 @@ func genComponentDecls(t *rapid.T) []Decl {
 	if rapid.Bool().Draw(t, "uses?") {
 		ls = append(ls, &Uses{Refs: genRefs(t)})
 	}
-	path := ComponentPath{Segments: genSegments(t, func() string { return string(genKebab(t, "segment")) })}
+	path := Path{Segments: genSegments(t, func() string { return string(genKebab(t, "segment")) })}
 	ds := []Decl{&ComponentDecl{Path: path, Summary: genSummary(t, "summary"), Lines: commented(t, ls)}}
 	ds = append(ds, some(t, 3, func() Decl { return genType(t) })...)
 	ds = append(ds, some(t, 2, func() Decl { return genOp(t) })...)
@@ -667,7 +667,7 @@ func (w *writer) step(n any) {
 		w.tok("emits")
 		w.ref(n.Event.Segments)
 		w.args(n.Args)
-	case *On:
+	case *OnBlock:
 		w.tok("on")
 		w.ref(n.Error.Segments)
 		writeBlock(w, n.Lines)
@@ -693,7 +693,7 @@ func (w *writer) step(n any) {
 
 func (w *writer) typeExpr(t TypeExpr) {
 	switch t := t.(type) {
-	case *BuiltinType:
+	case *Builtin:
 		w.tok(t.Name)
 	case *NamedType:
 		w.ref(t.Ref.Segments)

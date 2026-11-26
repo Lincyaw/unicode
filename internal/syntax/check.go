@@ -212,7 +212,7 @@ func steps[L any](c *checker, ls []L) {
 		case *Call:
 			prev = "call"
 			steps(c, l.Lines)
-		case *On:
+		case *OnBlock:
 			steps(c, l.Lines)
 		case *Async:
 			steps(c, l.Lines)
@@ -324,10 +324,10 @@ type refForm struct {
 }
 
 var refForms = map[reflect.Type]refForm{
-	reflect.TypeFor[TypeRef]():       {"type reference", "[component.]Type, like Order or inventory.Stock", []nameClass{upperClass}, false},
-	reflect.TypeFor[OpRef]():         {"operation reference", "[component.][Type.]op, like parse, Order.total or inventory.Stock.reserve", []nameClass{lowerClass}, true},
-	reflect.TypeFor[Participant]():   {"sender", "an actor, a component or [component.]Type, like customer, payment or payment.Payments", []nameClass{kebabClass, upperClass}, false},
-	reflect.TypeFor[ComponentPath](): {"component path", "kebab-case names joined by ., like order or lang.golang", []nameClass{kebabClass}, false},
+	reflect.TypeFor[TypeRef]():     {"type reference", "[component.]Type, like Order or inventory.Stock", []nameClass{upperClass}, false},
+	reflect.TypeFor[OpRef]():       {"operation reference", "[component.][Type.]op, like parse, Order.total or inventory.Stock.reserve", []nameClass{lowerClass}, true},
+	reflect.TypeFor[Participant](): {"sender", "an actor, a component or [component.]Type, like customer, payment or payment.Payments", []nameClass{kebabClass, upperClass}, false},
+	reflect.TypeFor[Path]():        {"component path", "kebab-case names joined by ., like order or lang.golang", []nameClass{kebabClass}, false},
 }
 
 func (c *checker) reference(v reflect.Value, pos lexer.Position) {

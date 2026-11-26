@@ -57,17 +57,17 @@ func (c *CommentText) Capture(values []string) error {
 }
 
 // Ref is a dotted reference, resolved by the design component. TypeRef,
-// OpRef, Participant and ComponentPath are the forms the grammar uses.
+// OpRef, Participant and Path are the forms the grammar uses.
 type Ref struct {
 	Pos      lexer.Position
 	Segments []string `parser:"@Ident ( '.' @Ident )*"`
 }
 
 type (
-	TypeRef       Ref
-	OpRef         Ref
-	Participant   Ref
-	ComponentPath Ref
+	TypeRef     Ref
+	OpRef       Ref
+	Participant Ref
+	Path        Ref
 )
 
 // File is the syntax tree of one file: its declarations and comments in order.
@@ -137,7 +137,7 @@ type ExternalLine interface{ externalLine() }
 
 type ComponentDecl struct {
 	Pos     lexer.Position
-	Path    ComponentPath   `parser:"'component' @@"`
+	Path    Path            `parser:"'component' @@"`
 	Summary Summary         `parser:"@String '{' NL"`
 	Lines   []ComponentLine `parser:"@@* '}' NL"`
 }
@@ -167,14 +167,14 @@ type Uses struct {
 
 type TypeDecl struct {
 	Pos     lexer.Position
-	Name    Upper      `parser:"'type' @Ident"`
-	Form    string     `parser:"@( 'object' | 'record' | 'interface' | 'enum' | 'error' | 'event' )"`
-	Summary Summary    `parser:"@String"`
-	Lines   []TypeLine `parser:"( '{' NL @@* '}' )? NL"`
+	Name    Upper    `parser:"'type' @Ident"`
+	Form    string   `parser:"@( 'object' | 'record' | 'interface' | 'enum' | 'error' | 'event' )"`
+	Summary Summary  `parser:"@String"`
+	Lines   []Member `parser:"( '{' NL @@* '}' )? NL"`
 }
 
-// TypeLine is *Comment, *Label, *Extends, *Implements, *Field, *EnumValue or *OpDecl.
-type TypeLine interface{ typeLine() }
+// Member is *Comment, *Label, *Extends, *Implements, *Field, *EnumValue or *OpDecl.
+type Member interface{ member() }
 
 type Extends struct {
 	Pos  lexer.Position
@@ -214,11 +214,11 @@ type Param struct {
 	Type TypeExpr `parser:"@@"`
 }
 
-// TypeExpr is *BuiltinType, *ElemType, *MapType, *CallType or *NamedType.
+// TypeExpr is *Builtin, *ElemType, *MapType, *CallType or *NamedType.
 type TypeExpr interface{ typeExpr() }
 
-// BuiltinType is a builtin; a builtin's name followed by `.` starts a type reference instead.
-type BuiltinType struct {
+// Builtin is a builtin type; a builtin's name followed by `.` starts a type reference instead.
+type Builtin struct {
 	Pos  lexer.Position
 	Name string `parser:"@( 'bool' | 'int' | 'float' | 'string' | 'bytes' | 'time' | 'duration' ) (?! '.' )"`
 }
@@ -326,8 +326,8 @@ type RecordedCase struct {
 	Lines  []CaseLine `parser:"@@* '}' NL"`
 }
 
-// StepLine is *Comment or a step: *Call, *Send, *Emit, *On, *Async, *Alt, *Opt or *Loop.
-type StepLine interface{ stepLine() }
+// Step is *Comment or a step: *Call, *Send, *Emit, *OnBlock, *Async, *Alt, *Opt or *Loop.
+type Step interface{ step() }
 
 // Call is a synchronous call; Lines are what the receiver does during it.
 type Call struct {
@@ -335,7 +335,7 @@ type Call struct {
 	From  Participant `parser:"@@ '->'"`
 	Op    OpRef       `parser:"@@"`
 	Args  []Lower     `parser:"'(' ( @Ident ( ',' @Ident )* )? ')'"`
-	Lines []StepLine  `parser:"( '{' NL @@* '}' )? NL"`
+	Lines []Step      `parser:"( '{' NL @@* '}' )? NL"`
 }
 
 type Send struct {
@@ -352,17 +352,17 @@ type Emit struct {
 	Args  []Lower     `parser:"'(' ( @Ident ( ',' @Ident )* )? ')' NL"`
 }
 
-// On handles an error of the call before it.
-type On struct {
+// OnBlock handles an error of the call before it.
+type OnBlock struct {
 	Pos   lexer.Position
-	Error TypeRef    `parser:"'on' @@ '{' NL"`
-	Lines []StepLine `parser:"@@* '}' NL"`
+	Error TypeRef `parser:"'on' @@ '{' NL"`
+	Lines []Step  `parser:"@@* '}' NL"`
 }
 
 type Async struct {
 	Pos   lexer.Position
-	Op    OpRef      `parser:"'async' @@ '{' NL"`
-	Lines []StepLine `parser:"@@* '}' NL"`
+	Op    OpRef  `parser:"'async' @@ '{' NL"`
+	Lines []Step `parser:"@@* '}' NL"`
 }
 
 // Alt has one branch per label; every branch after the first is an `else`.
@@ -373,20 +373,20 @@ type Alt struct {
 
 type Branch struct {
 	Pos   lexer.Position
-	Label Summary    `parser:"@String '{' NL"`
-	Lines []StepLine `parser:"@@* '}'"`
+	Label Summary `parser:"@String '{' NL"`
+	Lines []Step  `parser:"@@* '}'"`
 }
 
 type Opt struct {
 	Pos   lexer.Position
-	Label Summary    `parser:"'opt' @String '{' NL"`
-	Lines []StepLine `parser:"@@* '}' NL"`
+	Label Summary `parser:"'opt' @String '{' NL"`
+	Lines []Step  `parser:"@@* '}' NL"`
 }
 
 type Loop struct {
 	Pos   lexer.Position
-	Label Summary    `parser:"'loop' @String '{' NL"`
-	Lines []StepLine `parser:"@@* '}' NL"`
+	Label Summary `parser:"'loop' @String '{' NL"`
+	Lines []Step  `parser:"@@* '}' NL"`
 }
 
 // Value is *NumberValue, *StringValue, *CallValue, *BoolValue, *NoneValue,
@@ -494,19 +494,19 @@ func (*Focus) componentLine()   {}
 func (*Paths) componentLine()   {}
 func (*Uses) componentLine()    {}
 
-func (*Comment) typeLine()    {}
-func (*Label) typeLine()      {}
-func (*Extends) typeLine()    {}
-func (*Implements) typeLine() {}
-func (*Field) typeLine()      {}
-func (*EnumValue) typeLine()  {}
-func (*OpDecl) typeLine()     {}
+func (*Comment) member()    {}
+func (*Label) member()      {}
+func (*Extends) member()    {}
+func (*Implements) member() {}
+func (*Field) member()      {}
+func (*EnumValue) member()  {}
+func (*OpDecl) member()     {}
 
-func (*BuiltinType) typeExpr() {}
-func (*ElemType) typeExpr()    {}
-func (*MapType) typeExpr()     {}
-func (*CallType) typeExpr()    {}
-func (*NamedType) typeExpr()   {}
+func (*Builtin) typeExpr()   {}
+func (*ElemType) typeExpr()  {}
+func (*MapType) typeExpr()   {}
+func (*CallType) typeExpr()  {}
+func (*NamedType) typeExpr() {}
 
 func (*Comment) flowLine()       {}
 func (*Symbol) flowLine()        {}
@@ -516,7 +516,7 @@ func (*CaseDecl) flowLine()      {}
 func (*Call) flowLine()          {}
 func (*Send) flowLine()          {}
 func (*Emit) flowLine()          {}
-func (*On) flowLine()            {}
+func (*OnBlock) flowLine()       {}
 func (*Async) flowLine()         {}
 func (*Alt) flowLine()           {}
 func (*Opt) flowLine()           {}
@@ -532,15 +532,15 @@ func (*CaseDecl) propertyLine()      {}
 func (*Comment) caseLine()    {}
 func (*Assignment) caseLine() {}
 
-func (*Comment) stepLine() {}
-func (*Call) stepLine()    {}
-func (*Send) stepLine()    {}
-func (*Emit) stepLine()    {}
-func (*On) stepLine()      {}
-func (*Async) stepLine()   {}
-func (*Alt) stepLine()     {}
-func (*Opt) stepLine()     {}
-func (*Loop) stepLine()    {}
+func (*Comment) step() {}
+func (*Call) step()    {}
+func (*Send) step()    {}
+func (*Emit) step()    {}
+func (*OnBlock) step() {}
+func (*Async) step()   {}
+func (*Alt) step()     {}
+func (*Opt) step()     {}
+func (*Loop) step()    {}
 
 func (*NumberValue) value() {}
 func (*StringValue) value() {}
@@ -563,13 +563,13 @@ var ucParser = participle.MustBuild[File](
 	participle.Union[LanguageLine](&Comment{}, &Root{}),
 	participle.Union[ExternalLine](&Comment{}, &TypeDecl{}, &OpDecl{}),
 	participle.Union[ComponentLine](&Comment{}, &Label{}, &Focus{}, &Paths{}, &Uses{}),
-	participle.Union[TypeLine](&Comment{}, &Label{}, &Extends{}, &Implements{}, &Field{}, &EnumValue{}, &OpDecl{}),
-	participle.Union[TypeExpr](&BuiltinType{}, &ElemType{}, &MapType{}, &CallType{}, &NamedType{}),
+	participle.Union[Member](&Comment{}, &Label{}, &Extends{}, &Implements{}, &Field{}, &EnumValue{}, &OpDecl{}),
+	participle.Union[TypeExpr](&Builtin{}, &ElemType{}, &MapType{}, &CallType{}, &NamedType{}),
 	participle.Union[FlowLine](&Comment{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &CaseDecl{},
-		&On{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
+		&OnBlock{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
 	participle.Union[PropertyLine](&Comment{}, &About{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &CaseDecl{}),
 	participle.Union[CaseLine](&Comment{}, &Assignment{}),
-	participle.Union[StepLine](&Comment{}, &On{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
+	participle.Union[Step](&Comment{}, &OnBlock{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
 	participle.Union[Value](&NumberValue{}, &StringValue{}, &CallValue{}, &BoolValue{}, &NoneValue{},
 		&NameValue{}, &ListValue{}, &BraceValue{}),
 )
