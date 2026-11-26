@@ -53,3 +53,4 @@
 36. **时序、活动和事件视图不按关注度折叠。** 流程的参与者是设计者写进这个流程的，折叠会让发往支撑组件的消息和事件消失（m3-query 在商店例子上发现）。另外：`Context` 增加按种类补充的 `extras`；`get` 和 `refs` 补上性质；`reaches` 的展开标识写作 `reaches <起点> <终点>`。见 [design.md](design.md) §7.2，`design/query.uc`、`design/view.uc`。
 37. **合并 m2-check 时定下的理解：** 绑定目标不存在由推导报告（`graph.unresolved-binding`），不另设 `dangling()`；`conform` 的参数叫 `g`，避免与包名 `graph` 同名；代码层的 `refers` 也包括函数体中构造或使用的类型，这样在函数体中发布的事件也能通过 `emit` 步骤的检查。接口方法作为 `abstract` 节点（决定 32）尚未在两条线中实现，由后续的开发线完成。
 38. **切片的按种类补充写定在 design.md §7.3。** 待办：`Context` 目前只有节点，流程步骤的嵌套无法从切片中还原，要给补充的节点加上它们之间的 `contains` 边，留给接线的开发线。
+39. **调用接口操作的子步骤，按分派检查：** 从实现该接口的代码类型中同名的方法出发，有一个能到达即可（[model.md](model.md) §10 第 22 条）。`check` 比较类型时按结构比较，以便放宽 `optional` 和 `raises error`。
