@@ -1,0 +1,296 @@
+# 设计文件与代码绑定
+
+设计层的节点和边写在设计文件中；代码元素与设计节点的对应写在代码里，称为**绑定**。两者都只有一种写法，工具链不接受其他写法。本文定义这两种写法。它们表达的节点和边见 [model.md](model.md)。
+
+## 1 文件
+
+- 设计文件都在仓库根目录下的 `design/` 中，扩展名为 `.uc`。`design/` 中不能有其他文件。
+- `design/system.uc` 是**系统文件**，声明系统、使用的记法、各语言的源码根目录和参与者。
+- 其余每个设计文件声明一个组件，文件路径由组件的标识决定：组件 `order` 在 `design/order.uc`，组件 `order.pricing` 在 `design/order/pricing.uc`。
+- 文件的内容必须与 `unicode fmt` 的输出逐字节相同，否则 `unicode check` 报错。
+
+## 2 词法
+
+- 文件是 UTF-8 文本，以 LF 换行，不含制表符，行尾没有空格。缩进为两个空格。
+- 注释独占一行，以 `//` 开头。
+- 字符串用双引号括起，写在一行之内，只有 `\"` 和 `\\` 两种转义。摘要字符串不能为空，首尾不能有空白。
+- 数是十进制写法：`Int` 为整数 `-?[0-9]+`，`Number` 为整数或小数 `-?[0-9]+(\.[0-9]+)?`。
+- 名称分三种写法：
+
+  | 写法 | 形式 | 用于 |
+  | --- | --- | --- |
+  | 短横线 | `[a-z][a-z0-9]*(-[a-z0-9]+)*` | 系统、组件的一段、参与者、流程、性质、用例、标签 |
+  | 大驼峰 | `[A-Z][A-Za-z0-9]*` | 类型 |
+  | 小驼峰 | `[a-z][A-Za-z0-9]*` | 操作、字段、参数、枚举值、符号 |
+
+- 引用的解析：
+  - 以小写段开头、多于一段的引用，是从根写起的绝对引用，例如 `inventory.Stock`、`order.pricing.Price`。
+  - 以类型开头的引用在当前组件中查找，例如 `Order`、`Order.total`。
+  - 只有一段的小写引用，先在当前组件中查找，再在根下查找，例如操作 `parseCart`、参与者 `customer`。
+
+## 3 语法
+
+声明一律按"关键字、名称、形式、摘要"的次序书写，例如 `type Order object "…"`、`property total-is-sum invariant "…"`。
+
+```ebnf
+SystemFile    = SystemDecl { NotationDecl } { LanguageDecl } { ActorDecl } .
+SystemDecl    = "system" Kebab String NL .
+NotationDecl  = "notation" ( "ddd" | "c4" ) NL .
+LanguageDecl  = "language" ( "go" | "python" ) "{" NL Root { Root } "}" NL .
+Root          = "root" String NL .
+ActorDecl     = "actor" Kebab ( "person" | "external" ) String NL .
+
+ComponentFile = ComponentDecl { TypeDecl } { OpDecl } { FlowDecl } { PropertyDecl } .
+ComponentDecl = "component" Path String "{" NL
+                { Label }
+                [ "focus" ( "core" | "support" | "utility" ) NL ]
+                "paths" String { "," String } NL
+                [ "uses" Path { "," Path } NL ]
+                "}" NL .
+Label         = "label" Kebab NL .
+
+TypeDecl      = "type" Upper TypeForm String [ "{" NL { Label } { Member } "}" ] NL .
+TypeForm      = "object" | "record" | "interface" | "enum" | "error" .
+Member        = "extends" TypeRef NL | "implements" TypeRef NL
+              | "field" Lower ":" TypeExpr NL | "value" Lower NL | OpDecl .
+OpDecl        = "op" Lower "(" [ Param { "," Param } ] ")" [ "->" TypeExpr ]
+                [ "raises" TypeRef { "," TypeRef } ] [ String ] NL .
+Param         = Lower ":" TypeExpr .
+TypeExpr      = Builtin | TypeRef
+              | ( "list" | "set" | "optional" ) "<" TypeExpr ">"
+              | "map" "<" TypeExpr "," TypeExpr ">" .
+Builtin       = "bool" | "int" | "float" | "string" | "bytes" | "time" | "duration" .
+
+FlowDecl      = "flow" Kebab String "{" NL { Step } "}" NL .
+Step          = Call { OnBlock } | Fragment .
+Call          = Participant "->" OpRef "(" [ Lower { "," Lower } ] ")" NL .
+OnBlock       = "on" TypeRef "{" NL { Step } "}" NL .
+Fragment      = "alt" String "{" NL { Step } { "}" "else" String "{" NL { Step } } "}" NL
+              | ( "opt" | "loop" ) String "{" NL { Step } "}" NL .
+
+PropertyDecl  = "property" Kebab PropertyForm String "{" NL
+                "about" Ref { "," Ref } NL
+                { "forall" Lower ":" TypeExpr NL }
+                { "where" SymbolPath Limit NL }
+                { CaseDecl }
+                "}" NL .
+PropertyForm  = "invariant" | "postcondition" | "relation" | "transition" .
+SymbolPath    = Lower { "." Lower } .
+Limit         = "in" Number ".." Number
+              | "in" "{" Lower { "," Lower } "}"
+              | "size" Int ".." Int .
+CaseDecl      = "case" Kebab [ String ] "{" NL { Lower "=" Value NL } "}" NL .
+Value         = Number | String | "true" | "false" | "none" | Lower
+              | "[" [ Value { "," Value } [ "," ] ] "]"
+              | "{" [ Entry { "," Entry } [ "," ] ] "}" .
+Entry         = ( Lower | String | Number ) ":" Value .
+```
+
+- 组件文件中的声明按组件、类型、操作、流程、性质的顺序分组。各组内部保持作者写的顺序，阅读顺序因此由作者决定。
+- 类型的成员按 `label`、`extends`、`implements`、`field` 或 `value`、`op` 的顺序排列。`value` 只出现在 `enum` 中，`field` 不出现在 `enum` 和 `interface` 中。
+- 性质的成员按 `about`、`forall`、`where`、`case` 的顺序排列。
+- `{` 总在行尾，`}` 总在行首。`alt` 的分支写作 `} else "标签" {`。
+- 系统、参与者、组件、类型、流程和性质都必须有摘要；操作和用例的摘要可以省略。
+- 顶层组件必须写 `focus`；子组件省略 `focus` 时，取父组件的关注度。
+- 标签必须属于 `notation` 声明过的记法（[model.md](model.md) §5）。
+
+### 3.1 值
+
+用例中的值按符号的类型解读：
+
+| 类型 | 写法 |
+| --- | --- |
+| `bool` | `true`、`false` |
+| `int`、`float` | 数 |
+| `string`、`bytes` | 字符串；`bytes` 取字符串的 UTF-8 编码 |
+| `time` | RFC 3339 的字符串，例如 `"2026-11-26T08:00:00Z"` |
+| `duration` | 字符串，例如 `"1h30m"` |
+| `enum` | 枚举值的名称，例如 `draft` |
+| `list<T>`、`set<T>` | `[v1, v2]` |
+| `map<K, V>` | `{"k": v}`，键按 K 的写法 |
+| `optional<T>` | `none` 或 T 的值 |
+| `record`、`object` | `{field: v, …}`，给出全部字段 |
+
+一个值能在 100 列之内写完时写在一行，元素之间用逗号分隔，最后一项之后没有逗号；写不完时，每个元素或字段各占一行，缩进一级，每一项之后都有逗号。
+
+## 4 绑定
+
+绑定写在代码中声明的正上方，参数都是字面量，语言后端不执行代码也能读出。绑定只有两种：
+
+- **`realizes <标识>`**：写在类型或自由函数上，表示它落实这个类型，或组件直接提供的这个操作。方法上不写绑定；方法按名称映射对应到它所在类型落实的那个类型的操作（[design.md](design.md) §4）。
+- **`checks <标识>`**：写在检查函数上，表示它检查这条性质或这个流程。一个函数可以带多个 `checks`，每个占一行。性质声明了符号时，检查函数是一个谓词，参数就是这些符号；它的驱动由 `gen` 生成（[design.md](design.md) §6）。
+
+### 4.1 Go
+
+绑定是声明的文档注释中的指令，独占一行，写作 `//uc:` 后接动词、一个空格和标识：
+
+```go
+//uc:realizes order.OrderService
+type OrderService struct {
+	stock    inventory.Stock
+	payments payment.Payments
+	orders   OrderRepository
+}
+
+//uc:checks order.total-is-sum
+func checkTotalIsSum(t rapid.TB, order Order) {
+	// 断言 order.Total() 等于各行数量乘单价之和
+}
+```
+
+### 4.2 Python
+
+绑定是 `uc` 包的装饰器。模块只能写作 `import uc`，不能取别名，也不能用 `from uc import`。装饰器只能写作 `@uc.realizes("<标识>")` 或 `@uc.checks("<标识>")`，只有一个字符串字面量参数：
+
+```python
+import uc
+
+@uc.realizes("order.OrderService")
+class OrderService:
+    def submit(self, cart: Cart) -> Order: ...
+
+@uc.checks("order.total-is-sum")
+def check_total_is_sum(order: Order) -> None:
+    expected = sum(line.quantity * line.unit_price for line in order.lines)
+    assert order.total() == expected, "订单总额不等于各行数量乘单价之和"
+```
+
+`uc` 包只依赖标准库。它的装饰器原样返回被装饰的对象，只在对象上记下标识，留给运行时取证（M6）使用。
+
+## 5 例子
+
+一个网上商店，下面是它的系统文件和订单、库存两个组件；支付组件 `payment` 从略。
+
+```
+// design/system.uc
+system shop "网上商店：浏览商品、下单、支付"
+
+notation ddd
+
+language python {
+  root "src"
+}
+
+actor customer person "在商店下单的人"
+```
+
+```
+// design/inventory.uc
+component inventory "库存：各商品的可用数量与预留" {
+  label bounded-context
+  focus support
+  paths "src/shop/inventory/**"
+}
+
+type StockItem record "一种商品及其数量" {
+  label value
+  field sku: string
+  field quantity: int
+}
+
+type OutOfStock error "某种商品的可用数量不足"
+
+type Stock object "各商品的可用数量" {
+  label aggregate
+  op reserve(items: list<StockItem>) raises OutOfStock "预留数量；任何一项不足时都不预留"
+  op release(items: list<StockItem>) "释放此前预留的数量"
+}
+
+property reserve-all-or-nothing postcondition "预留失败时，各商品的可用数量不变" {
+  about Stock.reserve
+}
+```
+
+```
+// design/order.uc
+component order "订单：从购物车生成订单，并管理订单的状态" {
+  label bounded-context
+  focus core
+  paths "src/shop/order/**"
+  uses inventory, payment
+}
+
+type OrderLine record "订单中的一行：商品、数量和单价" {
+  label value
+  field sku: string
+  field quantity: int
+  field unitPrice: int
+}
+
+type OrderStatus enum "订单的状态" {
+  value draft
+  value paid
+  value canceled
+}
+
+type Order object "一笔订单：行项目和状态，总额由行项目算出" {
+  label aggregate
+  field id: string
+  field lines: list<OrderLine>
+  field status: OrderStatus
+  op total() -> int "各行数量乘单价之和，单位为分"
+}
+
+type Cart record "顾客提交的购物车" {
+  label value
+  field lines: list<OrderLine>
+}
+
+type EmptyCart error "购物车为空"
+
+type OrderRepository interface "订单的持久化" {
+  label repository
+  op save(order: Order)
+}
+
+type OrderService object "下单：预留库存、扣款、保存订单" {
+  label domain-service
+  op submit(cart: Cart) -> Order raises EmptyCart, inventory.OutOfStock, payment.Declined "从购物车生成订单"
+}
+
+flow submit-order "顾客提交购物车，生成订单、预留库存并扣款" {
+  customer -> OrderService.submit(cart)
+  OrderService -> inventory.Stock.reserve(items)
+  OrderService -> payment.Payments.charge(orderId, amount)
+  on payment.Declined {
+    OrderService -> inventory.Stock.release(items)
+  }
+  OrderService -> OrderRepository.save(order)
+}
+
+property total-is-sum invariant "订单总额等于各行数量乘单价之和" {
+  about Order.total
+  forall order: Order
+  where order.lines size 0..20
+  where order.lines.quantity in 1..99
+  where order.lines.unitPrice in 0..1000000
+  case empty "没有行项目时总额为 0" {
+    order = {id: "o1", lines: [], status: draft}
+  }
+  case two-lines {
+    order = {
+      id: "o2",
+      lines: [{sku: "a", quantity: 2, unitPrice: 300}, {sku: "b", quantity: 1, unitPrice: 50}],
+      status: draft,
+    }
+  }
+}
+
+property declined-keeps-stock postcondition "扣款被拒时，提交前后各商品的可用数量相同" {
+  about OrderService.submit
+}
+```
+
+从这三个文件，各种记法分别取其中的一部分（视图的定义见 [design.md](design.md) §7）：
+
+- **DDD**：核心的 `order` 展开，支撑的 `inventory` 默认折叠成一个节点，点开后才显示其中的类型。`order` 中的聚合 `Order` 由值对象 `OrderLine` 组成，领域服务 `OrderService` 和仓储 `OrderRepository` 围绕着它；`order` 指向 `inventory` 和 `payment` 的箭头来自 `uses`。
+- **UML 类图**：各个类型及其字段和操作。`refers` 边来自字段类型（`Order` → `OrderLine`、`OrderStatus`）和操作签名。类图不需要标签。
+- **时序图和活动图**：同一个流程 `submit-order` 的两种画法。时序图的生命线依次为 `customer`、`OrderService`、`Stock`、`Payments`、`OrderRepository`；活动图把 `on payment.Declined` 画成扣款之后的一个分支。
+- **性质视图**：`total-is-sum` 约束 `Order.total`，带一个符号 `order`、三条限定和两个用例；它的检查是谓词 `check_total_is_sum`，由 `gen` 生成的驱动把生成器产生的输入和这两个用例逐个交给它。
+
+写好代码之后，`unicode check` 检查的内容包括：
+
+- `src/shop/order/` 下的每个文件归属于 `order`；`order` 的代码只导入 `inventory` 和 `payment` 的包。
+- `OrderService` 由一个带绑定的类落实，它的 `submit` 方法签名与设计一致。
+- 流程中的每一步都能在调用图中找到。
+- 每条性质都有检查；`total-is-sum` 的两个用例符合 `Order` 的类型和三条限定；生成的驱动与当前的设计一致。
