@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io/fs"
 	"maps"
 	"os"
@@ -148,10 +149,12 @@ func runMain(t rapid.TB, args []string) (int, string, string) {
 	if err1 != nil || err2 != nil {
 		t.Fatalf("前提不成立：建不了输出文件：%v %v", err1, err2)
 	}
-	savedOut, savedErr := os.Stdout, os.Stderr
-	os.Stdout, os.Stderr = stdout, stderr
-	code := Main(args)
-	os.Stdout, os.Stderr = savedOut, savedErr
+	code := func() int {
+		savedOut, savedErr := os.Stdout, os.Stderr
+		defer func() { os.Stdout, os.Stderr = savedOut, savedErr }()
+		os.Stdout, os.Stderr = stdout, stderr
+		return Main(args)
+	}()
 	out, err1 := readClosing(stdout)
 	errOut, err2 := readClosing(stderr)
 	if err1 != nil || err2 != nil {
@@ -173,6 +176,17 @@ func removeAll(t rapid.TB, dir string) {
 	}
 }
 
+// modes are the permissions a repository's files are written with; modeOf
+// picks one by the path, since a predicate takes only its symbols.
+var modes = []os.FileMode{0o644, 0o600, 0o755, 0o640}
+
+func modeOf(path string) os.FileMode {
+	h := fnv.New32a()
+	h.Write([]byte(path))
+	return modes[h.Sum32()%uint32(len(modes))]
+}
+
+// writeRepo writes the files into a new directory, each with the mode modeOf gives it.
 func writeRepo(t rapid.TB, files map[string]string) string {
 	root, err := os.MkdirTemp("", "unicode-repo-")
 	if err != nil {
@@ -183,7 +197,7 @@ func writeRepo(t rapid.TB, files map[string]string) string {
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatalf("前提不成立：建不了目录：%v", err)
 		}
-		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil || os.Chmod(full, modeOf(path)) != nil {
 			t.Fatalf("前提不成立：写不了 %s：%v", path, err)
 		}
 	}
@@ -205,6 +219,23 @@ func readRepo(t rapid.TB, root string) map[string]string {
 		t.Fatalf("读不出仓库中的文件：%v", err)
 	}
 	return files
+}
+
+// differsAt is the line and byte column of the first byte where a and b
+// differ, counted line by line.
+func differsAt(a, b string) (int, int) {
+	al, bl := strings.SplitAfter(a, "\n"), strings.SplitAfter(b, "\n")
+	for i := range al {
+		if i < len(bl) && al[i] == bl[i] {
+			continue
+		}
+		column := 1
+		for column <= len(al[i]) && i < len(bl) && column <= len(bl[i]) && al[i][column-1] == bl[i][column-1] {
+			column++
+		}
+		return i + 1, column
+	}
+	return len(al), len(al[len(al)-1]) + 1
 }
 
 //uc:checks cli.format-files
@@ -252,6 +283,12 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]string, check bool) {
 			t.Fatalf("诊断缺少诊断码、原因、修正或位置：%+v", d)
 		}
 		diagnosed[d.Path] = append(diagnosed[d.Path], d.Code)
+		if d.Code != "cli.not-canonical" {
+			continue
+		}
+		if line, column := differsAt(files[d.Path], string(canonical[d.Path])); d.Line != line || d.Column != column {
+			t.Fatalf("%s 的 cli.not-canonical 位于 %d:%d，与规范格式第一处不同的字节却在 %d:%d", d.Path, d.Line, d.Column, line, column)
+		}
 	}
 	for i, f := range report.Files {
 		p := paths[i]
@@ -270,6 +307,15 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]string, check bool) {
 	after := readRepo(t, jsonRoot)
 	if len(after) != len(files) {
 		t.Fatalf("unicode fmt 之后仓库中有 %d 个文件，之前有 %d 个", len(after), len(files))
+	}
+	for _, p := range paths {
+		info, err := os.Stat(filepath.Join(jsonRoot, filepath.FromSlash(p)))
+		if err != nil {
+			t.Fatalf("unicode fmt 之后读不到 %s：%v", p, err)
+		}
+		if info.Mode().Perm() != modeOf(p) {
+			t.Fatalf("%s 的权限在 unicode fmt 之后是 %v，之前是 %v", p, info.Mode().Perm(), modeOf(p))
+		}
 	}
 	for _, p := range paths {
 		switch {
