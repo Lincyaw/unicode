@@ -40,9 +40,9 @@ op kindOf(path: string) -> FileKind raises NotADesignFile "由仓库中的相对
 
 op parse(path: string, kind: FileKind, src: bytes) -> Parsed "按 format.md 的词法和语法解析一个文件"
 
-property kind-of-follows-path invariant "design/system.uc 是系统文件；design/ 下其余以 .uc 结尾的路径是组件文件；corpus/ 下以 .uc 结尾的路径是录制文件；其余路径都被拒绝" {
+property kind-of-follows-path invariant "design/system.uc 是系统文件；design/ 下其余文件名为 <名称>.uc、名称不为空的整洁路径是组件文件；corpus/ 下同样的路径是录制文件；其余路径都被拒绝，包括只叫 .uc 的文件和不整洁的路径（含 .、.. 或连续的 /）" {
   about kindOf
-  forall path: string generated "形如 design/…、corpus/… 和其他目录下的相对路径，扩展名有的是 .uc，有的不是"
+  forall path: string generated "形如 design/…、corpus/… 和其他目录下的相对路径，扩展名有的是 .uc，有的不是，有的文件名只是 .uc，有的路径不整洁"
 }
 
 property parse-is-total invariant "解析任何字节都会返回，不会崩溃；每条诊断的位置都在文件之内，写明修正的办法；诊断按行、列、诊断码排序" {
