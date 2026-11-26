@@ -54,3 +54,4 @@
 37. **合并 m2-check 时定下的理解：** 绑定目标不存在由推导报告（`graph.unresolved-binding`），不另设 `dangling()`；`conform` 的参数叫 `g`，避免与包名 `graph` 同名；代码层的 `refers` 也包括函数体中构造或使用的类型，这样在函数体中发布的事件也能通过 `emit` 步骤的检查。接口方法作为 `abstract` 节点（决定 32）尚未在两条线中实现，由后续的开发线完成。
 38. **切片的按种类补充写定在 design.md §7.3。** 待办：`Context` 目前只有节点，流程步骤的嵌套无法从切片中还原，要给补充的节点加上它们之间的 `contains` 边，留给接线的开发线。
 39. **调用接口操作的子步骤，按分派检查：** 从实现该接口的代码类型中同名的方法出发，有一个能到达即可（[model.md](model.md) §10 第 22 条）。`check` 比较类型时按结构比较，以便放宽 `optional` 和 `raises error`。
+40. **合并 m2-golang 时：** 接受它的抽取规则（见它的报告，写入 [design.md](design.md) §4、§5.2 的部分在此）；`lang.golang.Module` 增加预期的 `diagnostics`；代码层类型增加 `values`，`check` 才能比较枚举值。接口方法作为 `abstract` 节点、函数体中的 `refers`（决定 32、37）由后续的开发线完成。
