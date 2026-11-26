@@ -74,15 +74,18 @@ func validLines(t *rapid.T, kind syntax.FileKind) [][]string {
 	return lines
 }
 
-// pathKind is the kind of the file at the slash path p relative to the root
-// (docs/format.md §1), and false for a path that holds no design or corpus file.
+// pathKind is the kind of the file at the clean slash path p relative to the
+// root (docs/format.md §1), and false for a path that holds no design or
+// corpus file: one outside design/ and corpus/, or not named <name>.uc.
 func pathKind(p string) (syntax.FileKind, bool) {
+	named := strings.HasSuffix(p, ".uc") && len(path.Base(p)) > len(".uc")
 	switch {
+	case !named:
 	case p == "design/system.uc":
 		return syntax.FileKindSystem, true
-	case strings.HasPrefix(p, "design/") && strings.HasSuffix(p, ".uc"):
+	case strings.HasPrefix(p, "design/"):
 		return syntax.FileKindComponent, true
-	case strings.HasPrefix(p, "corpus/") && strings.HasSuffix(p, ".uc"):
+	case strings.HasPrefix(p, "corpus/"):
 		return syntax.FileKindCorpus, true
 	}
 	return "", false

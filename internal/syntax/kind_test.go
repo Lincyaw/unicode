@@ -2,6 +2,7 @@ package syntax
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -10,19 +11,24 @@ import (
 
 //uc:checks syntax.kind-of-follows-path
 func checkKindOfFollowsPath(t rapid.TB, path string) {
+	segs := strings.Split(path, "/")
+	clean := !slices.ContainsFunc(segs, func(s string) bool { return s == "" || s == "." || s == ".." })
+	name := segs[len(segs)-1]
+	named := len(segs) > 1 && strings.HasSuffix(name, ".uc") && len(name) > len(".uc")
 	var want FileKind
 	switch {
+	case !clean || !named:
 	case path == "design/system.uc":
 		want = FileKindSystem
-	case strings.HasPrefix(path, "design/") && strings.HasSuffix(path, ".uc"):
+	case segs[0] == "design":
 		want = FileKindComponent
-	case strings.HasPrefix(path, "corpus/") && strings.HasSuffix(path, ".uc"):
+	case segs[0] == "corpus":
 		want = FileKindCorpus
 	}
 	kind, err := KindOf(path)
 	switch {
 	case want == "" && err == nil:
-		t.Fatalf("KindOf(%q) gave the kind %s, yet the path is neither design/system.uc nor a .uc path under design/ or corpus/, so it should be rejected", path, kind)
+		t.Fatalf("KindOf(%q) gave the kind %s, yet the path is not a clean path to a file <name>.uc under design/ or corpus/, so it should be rejected", path, kind)
 	case want == "" && !errors.As(err, new(NotADesignFile)):
 		t.Fatalf("KindOf(%q) rejected the path with %v, which is not NotADesignFile", path, err)
 	case want != "" && err != nil:
@@ -43,9 +49,10 @@ var pathNames = rapid.OneOf(rapid.SampledFrom([]string{"system", "design", "corp
 // pathExtensions are .uc and what comes close to it.
 var pathExtensions = []string{".uc", ".uc", ".uc", "", ".UC", ".ucx", ".uc.bak", ".txt", "uc", ".u"}
 
-// genKindPath draws a clean slash-separated path relative to the root of a
-// repository, as the command line passes it: under design/, under corpus/
-// or elsewhere, ending in .uc or in something close to it.
+// genKindPath draws a slash-separated path relative to the root of a
+// repository: under design/, under corpus/ or elsewhere, ending in .uc, in a
+// file named only .uc or in something close to it, and now and then unclean,
+// with a segment . or .., a doubled / or a / at either end.
 //
 //uc:generates syntax.kind-of-follows-path.path
 func genKindPath() *rapid.Generator[string] {
@@ -61,10 +68,15 @@ func genKindPath() *rapid.Generator[string] {
 			}
 			segs = append(segs, base)
 		}
+		if rapid.IntRange(0, 3).Draw(t, "unclean?") == 0 {
+			// An empty segment doubles a / or, at either end, adds one.
+			segs = slices.Insert(segs, rapid.IntRange(0, len(segs)).Draw(t, "at"), rapid.SampledFrom([]string{".", "..", ""}).Draw(t, "segment"))
+		}
 		return strings.Join(segs, "/")
 	})
 	edges := rapid.SampledFrom([]string{"design/system.uc", "design/sub/system.uc", "corpus/system.uc", "system.uc",
-		"design/.uc", "corpus/.uc", "design/system.UC", "design/system.ucx", "design", "corpus", "design.uc"})
+		"design/.uc", "corpus/.uc", "corpus/sub/.uc", "design/..uc", "design/system.UC", "design/system.ucx", "design", "corpus", "design.uc",
+		"design/./system.uc", "design//x.uc", "design/../design/x.uc", "./design/x.uc", "/design/x.uc", "design/x.uc/", "corpus/sub/../x.uc"})
 	return rapid.OneOf(edges, drawn, drawn, drawn)
 }
 
