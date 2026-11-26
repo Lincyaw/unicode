@@ -20,22 +20,29 @@ var keywords = []string{
 	"call", "bool", "int", "float", "string", "bytes", "time", "duration", "core", "ddd",
 }
 
-func genName(c nameClass) *rapid.Generator[string] {
-	patterns := [...]string{
-		kebab: `[a-z][a-z0-9]{0,5}(-[a-z0-9]{1,4}){0,2}`,
-		upper: `[A-Z][A-Za-z0-9]{0,6}`,
-		lower: `[a-z][A-Za-z0-9]{0,6}`,
-	}
-	gen := rapid.StringMatching(patterns[c])
-	if c == upper {
-		return gen
-	}
-	return rapid.OneOf(gen, gen, gen, rapid.SampledFrom(keywords).Filter(c.match))
+var (
+	kebabNames = rapid.StringMatching(`[a-z][a-z0-9]{0,5}(-[a-z0-9]{1,4}){0,2}`)
+	upperNames = rapid.StringMatching(`[A-Z][A-Za-z0-9]{0,6}`)
+	lowerNames = rapid.StringMatching(`[a-z][A-Za-z0-9]{0,6}`)
+)
+
+func genKebab(t *rapid.T, label string) Kebab {
+	return Kebab(rapid.OneOf(kebabNames, kebabNames, kebabNames, rapid.SampledFrom(keywords)).Draw(t, label))
+}
+
+func genUpper(t *rapid.T, label string) Upper { return Upper(upperNames.Draw(t, label)) }
+
+func genLower(t *rapid.T, label string) Lower {
+	return Lower(rapid.OneOf(lowerNames, lowerNames, lowerNames, rapid.SampledFrom(keywords)).Draw(t, label))
 }
 
 // genValueName is a name that a value may be, so not one of the literals.
-func genValueName() *rapid.Generator[string] {
-	return genName(lower).Filter(func(s string) bool { return s != "true" && s != "false" && s != "none" })
+func genValueName(t *rapid.T) Lower {
+	for {
+		if n := genLower(t, "name"); n != "true" && n != "false" && n != "none" {
+			return n
+		}
+	}
 }
 
 // interestingRunes are the characters strings are mostly made of: the ones
@@ -48,81 +55,100 @@ func genRune() *rapid.Generator[rune] {
 }
 
 // genString is any string value: it may hold a newline or a tab, which the format escapes.
-func genString() *rapid.Generator[string] {
-	return rapid.StringOfN(rapid.OneOf(genRune(), genRune(), genRune(), rapid.SampledFrom([]rune{'\n', '\t'})), 0, 24, -1)
+func genString(t *rapid.T, label string) Text {
+	return Text(rapid.StringOfN(rapid.OneOf(genRune(), genRune(), genRune(), rapid.SampledFrom([]rune{'\n', '\t'})), 0, 24, -1).Draw(t, label))
 }
 
-func genSummary() *rapid.Generator[string] {
-	return rapid.StringOfN(genRune(), 1, 24, -1).Filter(func(s string) bool {
-		first, last := []rune(s)[0], []rune(s)[len([]rune(s))-1]
-		return !unicode.IsSpace(first) && !unicode.IsSpace(last)
-	})
+func genSummary(t *rapid.T, label string) Summary {
+	return Summary(rapid.StringOfN(genRune(), 1, 24, -1).Filter(func(s string) bool {
+		r := []rune(s)
+		return !unicode.IsSpace(r[0]) && !unicode.IsSpace(r[len(r)-1])
+	}).Draw(t, label))
 }
 
-func genOptSummary(t *rapid.T, label string) string {
-	if rapid.Bool().Draw(t, label+"?") {
-		return genSummary().Draw(t, label)
+func genOptSummary(t *rapid.T, label string) *Summary {
+	if !rapid.Bool().Draw(t, label+"?") {
+		return nil
 	}
-	return ""
+	s := genSummary(t, label)
+	return &s
 }
 
-// genComments draws up to two comments, none more often than not.
-func genComments(t *rapid.T, label string) []Comment {
-	n := max(0, rapid.IntRange(-2, 2).Draw(t, label+"#"))
-	var cs []Comment
-	for range n {
-		text := rapid.StringOfN(genRune(), 0, 20, -1).Draw(t, label)
-		cs = append(cs, Comment{Text: strings.TrimRight(text, " ")})
-	}
-	return cs
-}
-
-func genNumber(integer bool) *rapid.Generator[string] {
+func genNumber(t *rapid.T, integer bool) string {
 	if integer {
-		return rapid.StringMatching(`-?[0-9]{1,4}`)
+		return rapid.StringMatching(`-?[0-9]{1,4}`).Draw(t, "int")
 	}
-	return rapid.StringMatching(`-?[0-9]{1,4}(\.[0-9]{1,3})?`)
+	return rapid.StringMatching(`-?[0-9]{1,4}(\.[0-9]{1,3})?`).Draw(t, "number")
 }
 
 // some draws between 0 and max items.
-func some[V any](t *rapid.T, label string, max int, gen func(t *rapid.T, label string) V) []V {
-	n := rapid.IntRange(0, max).Draw(t, label+"#")
+func some[V any](t *rapid.T, max int, gen func() V) []V {
 	var out []V
-	for range n {
-		out = append(out, gen(t, label))
+	for range rapid.IntRange(0, max).Draw(t, "count") {
+		out = append(out, gen())
 	}
 	return out
 }
 
-func genSegments(t *rapid.T, label string, kebabs int, last ...nameClass) []string {
-	segs := some(t, label, kebabs, func(t *rapid.T, label string) string { return genName(kebab).Draw(t, label) })
-	c := rapid.SampledFrom(last).Draw(t, label+".class")
-	return append(segs, genName(c).Draw(t, label))
-}
-
-func genTypeRef(t *rapid.T, label string) Ref {
-	return Ref{Segments: genSegments(t, label, 2, upper)}
-}
-
-func genOpRef(t *rapid.T, label string) Ref {
-	segs := some(t, label, 2, func(t *rapid.T, label string) string { return genName(kebab).Draw(t, label) })
-	if rapid.Bool().Draw(t, label+".type?") {
-		segs = append(segs, genName(upper).Draw(t, label))
+// commented puts random comment lines between the lines and after the last.
+func commented[L any](t *rapid.T, ls []L) []L {
+	var out []L
+	for i := 0; i <= len(ls); i++ {
+		for range max(0, rapid.IntRange(-3, 2).Draw(t, "comments")) {
+			text := rapid.StringOfN(genRune(), 0, 20, -1).Draw(t, "comment")
+			out = append(out, any(&Comment{Text: CommentText(strings.TrimRight(text, " "))}).(L))
+		}
+		if i < len(ls) {
+			out = append(out, ls[i])
+		}
 	}
-	return Ref{Segments: append(segs, genName(lower).Draw(t, label))}
+	return out
 }
 
-func genParticipant(t *rapid.T, label string) Ref {
-	return Ref{Segments: genSegments(t, label, 2, kebab, upper)}
+func genSegments(t *rapid.T, last func() string) []string {
+	segs := some(t, 2, func() string { return string(genKebab(t, "segment")) })
+	return append(segs, last())
 }
 
-func genAnyRef(t *rapid.T, label string) Ref {
-	n := rapid.IntRange(1, 3).Draw(t, label+"#")
+func genTypeRef(t *rapid.T) TypeRef {
+	return TypeRef{Segments: genSegments(t, func() string { return string(genUpper(t, "type")) })}
+}
+
+func genOpRef(t *rapid.T) OpRef {
+	segs := some(t, 2, func() string { return string(genKebab(t, "segment")) })
+	if rapid.Bool().Draw(t, "type?") {
+		segs = append(segs, string(genUpper(t, "type")))
+	}
+	return OpRef{Segments: append(segs, string(genLower(t, "op")))}
+}
+
+func genParticipant(t *rapid.T) Participant {
+	return Participant{Segments: genSegments(t, func() string {
+		if rapid.Bool().Draw(t, "upper?") {
+			return string(genUpper(t, "type"))
+		}
+		return string(genKebab(t, "name"))
+	})}
+}
+
+func genRef(t *rapid.T) Ref {
 	var segs []string
-	for range n {
-		segs = append(segs, genName(rapid.SampledFrom([]nameClass{kebab, upper, lower}).Draw(t, label+".class")).Draw(t, label))
+	for range rapid.IntRange(1, 3).Draw(t, "segments") {
+		switch rapid.IntRange(0, 2).Draw(t, "class") {
+		case 0:
+			segs = append(segs, string(genKebab(t, "segment")))
+		case 1:
+			segs = append(segs, string(genUpper(t, "segment")))
+		default:
+			segs = append(segs, string(genLower(t, "segment")))
+		}
 	}
 	return Ref{Segments: segs}
+}
+
+func genRefs(t *rapid.T) []Ref {
+	refs := []Ref{genRef(t)}
+	return append(refs, some(t, 2, func() Ref { return genRef(t) })...)
 }
 
 func genTypeExpr(t *rapid.T, depth int) TypeExpr {
@@ -134,18 +160,13 @@ func genTypeExpr(t *rapid.T, depth int) TypeExpr {
 	case 0:
 		return &BuiltinType{Name: rapid.SampledFrom([]string{"bool", "int", "float", "string", "bytes", "time", "duration"}).Draw(t, "builtin")}
 	case 1:
-		return &NamedType{Ref: genTypeRef(t, "typeRef")}
+		return &NamedType{Ref: genTypeRef(t)}
 	case 2, 3:
-		return &ElemType{Kind: rapid.SampledFrom([]string{"list", "set", "optional"}).Draw(t, "elemKind"), Elem: genTypeExpr(t, depth-1)}
+		return &ElemType{Kind: rapid.SampledFrom([]string{"list", "set", "optional"}).Draw(t, "elem"), Elem: genTypeExpr(t, depth-1)}
 	case 4:
 		return &MapType{Key: genTypeExpr(t, depth-1), Value: genTypeExpr(t, depth-1)}
 	}
-	n := rapid.IntRange(1, 3).Draw(t, "callTargets")
-	c := &CallType{}
-	for range n {
-		c.Targets = append(c.Targets, genAnyRef(t, "callTarget"))
-	}
-	return c
+	return &CallType{Targets: genRefs(t)}
 }
 
 func genValue(t *rapid.T, depth int) Value {
@@ -155,319 +176,248 @@ func genValue(t *rapid.T, depth int) Value {
 	}
 	switch kind {
 	case 0:
-		return &NumberValue{Text: genNumber(false).Draw(t, "number")}
+		return &NumberValue{Text: genNumber(t, false)}
 	case 1:
-		return &StringValue{Text: genString().Draw(t, "string")}
+		return &StringValue{Text: genString(t, "string")}
 	case 2:
 		if rapid.Bool().Draw(t, "none?") {
-			return &NoneValue{}
+			return &NoneValue{None: true}
 		}
-		return &BoolValue{Value: rapid.Bool().Draw(t, "bool")}
+		return &BoolValue{Value: Boolean(rapid.Bool().Draw(t, "bool"))}
 	case 3, 4:
-		return &NameValue{Name: genValueName().Draw(t, "name")}
+		return &NameValue{Name: genValueName(t)}
 	case 5:
-		c := &CallValue{Op: genName(lower).Draw(t, "callOp")}
-		c.Args = some(t, "arg", 3, func(t *rapid.T, label string) Arg {
-			return Arg{Name: genName(lower).Draw(t, label), Value: genValue(t, depth-1)}
-		})
-		return c
+		return &CallValue{Op: genLower(t, "op"), Args: some(t, 3, func() Arg {
+			return Arg{Name: genLower(t, "param"), Value: genValue(t, depth-1)}
+		})}
 	case 6:
-		l := &ListValue{}
-		l.Items = some(t, "item", 6, func(t *rapid.T, _ string) Value { return genValue(t, depth-1) })
-		return l
+		return &ListValue{Items: some(t, 6, func() Value { return genValue(t, depth-1) })}
 	}
-	b := &BraceValue{}
-	b.Entries = some(t, "entry", 4, func(t *rapid.T, label string) Entry {
-		var key Value
-		switch rapid.IntRange(0, 2).Draw(t, "keyKind") {
+	return &BraceValue{Entries: some(t, 4, func() Entry {
+		var key Key
+		switch rapid.IntRange(0, 2).Draw(t, "key") {
 		case 0:
-			key = &NameValue{Name: genName(lower).Draw(t, label)}
+			name := genLower(t, "key")
+			key.Name = &name
 		case 1:
-			key = &StringValue{Text: genString().Draw(t, label)}
+			s := genString(t, "key")
+			key.String = &s
 		default:
-			key = &NumberValue{Text: genNumber(false).Draw(t, label)}
+			n := genNumber(t, false)
+			key.Number = &n
 		}
 		return Entry{Key: key, Value: genValue(t, depth-1)}
-	})
-	return b
+	})}
 }
 
-func genLabels(t *rapid.T) []Label {
-	return some(t, "label", 2, func(t *rapid.T, label string) Label {
-		return Label{Comments: genComments(t, "labelComment"), Name: genName(kebab).Draw(t, label)}
-	})
+func genLabels[L any](t *rapid.T) []L {
+	return some(t, 2, func() L { return any(&Label{Name: genKebab(t, "label")}).(L) })
 }
 
-func genOp(t *rapid.T, _ string) OpDecl {
-	o := OpDecl{Comments: genComments(t, "opComment"), Name: genName(lower).Draw(t, "opName")}
-	o.Params = some(t, "param", 3, func(t *rapid.T, label string) Param {
-		return Param{Name: genName(lower).Draw(t, label), Type: genTypeExpr(t, 2)}
-	})
+func genOp(t *rapid.T) *OpDecl {
+	o := &OpDecl{Name: genLower(t, "op"), Params: some(t, 3, func() Param {
+		return Param{Name: genLower(t, "param"), Type: genTypeExpr(t, 2)}
+	})}
 	if rapid.Bool().Draw(t, "result?") {
 		o.Result = genTypeExpr(t, 2)
 	}
-	o.Raises = some(t, "raises", 2, genTypeRef)
+	o.Raises = some(t, 2, func() TypeRef { return genTypeRef(t) })
 	if rapid.Bool().Draw(t, "handles?") {
-		h := genTypeRef(t, "handles")
+		h := genTypeRef(t)
 		o.Handles = &h
 	}
 	o.Summary = genOptSummary(t, "opSummary")
 	return o
 }
 
-func genType(t *rapid.T, _ string) TypeDecl {
-	d := TypeDecl{
-		Comments: genComments(t, "typeComment"),
-		Name:     genName(upper).Draw(t, "typeName"),
-		Form:     rapid.SampledFrom(typeForms).Draw(t, "typeForm"),
-		Summary:  genSummary().Draw(t, "typeSummary"),
-	}
-	if rapid.IntRange(0, 2).Draw(t, "typeBody") == 0 {
+func genType(t *rapid.T) *TypeDecl {
+	d := &TypeDecl{Name: genUpper(t, "type"), Form: rapid.SampledFrom(typeForms).Draw(t, "form"), Summary: genSummary(t, "summary")}
+	if rapid.IntRange(0, 2).Draw(t, "body") == 0 {
 		return d
 	}
-	d.Labels = genLabels(t)
-	supertype := func(t *rapid.T, label string) Supertype {
-		return Supertype{Comments: genComments(t, label+"Comment"), Type: genTypeRef(t, label)}
-	}
-	d.Extends = some(t, "extends", 1, supertype)
-	d.Implements = some(t, "implements", 1, supertype)
+	ls := genLabels[TypeLine](t)
+	ls = append(ls, some(t, 1, func() TypeLine { return &Extends{Type: genTypeRef(t)} })...)
+	ls = append(ls, some(t, 1, func() TypeLine { return &Implements{Type: genTypeRef(t)} })...)
 	switch d.Form {
 	case "enum":
-		d.Values = some(t, "enumValue", 3, func(t *rapid.T, label string) EnumValue {
-			return EnumValue{Comments: genComments(t, label+"Comment"), Name: genName(lower).Draw(t, label)}
-		})
+		ls = append(ls, some(t, 3, func() TypeLine { return &EnumValue{Name: genLower(t, "value")} })...)
 	case "interface":
 	default:
-		d.Fields = some(t, "field", 3, func(t *rapid.T, label string) Field {
-			return Field{Comments: genComments(t, label+"Comment"), Name: genName(lower).Draw(t, label), Type: genTypeExpr(t, 2)}
-		})
+		ls = append(ls, some(t, 3, func() TypeLine { return &Field{Name: genLower(t, "field"), Type: genTypeExpr(t, 2)} })...)
 	}
-	d.Ops = some(t, "typeOp", 2, genOp)
-	d.Trailing = genComments(t, "typeTrailing")
+	ls = append(ls, some(t, 2, func() TypeLine { return genOp(t) })...)
+	d.Lines = commented(t, ls)
 	return d
 }
 
-func genSymbol(t *rapid.T, label string) Symbol {
-	s := Symbol{Comments: genComments(t, label+"Comment"), Name: genName(lower).Draw(t, label), Type: genTypeExpr(t, 2)}
-	if rapid.IntRange(0, 3).Draw(t, label+"generated") == 0 {
-		s.Generated = true
-		s.Domain = genString().Draw(t, label+"Domain")
+func genSymbol(t *rapid.T) *Symbol {
+	s := &Symbol{Name: genLower(t, "symbol"), Type: genTypeExpr(t, 2)}
+	if rapid.IntRange(0, 3).Draw(t, "generated") == 0 {
+		domain := genString(t, "domain")
+		s.Domain = &domain
 	}
 	return s
 }
 
-func genLimit(t *rapid.T, label string) Limit {
-	n := rapid.IntRange(1, 3).Draw(t, label+"path#")
-	l := Limit{Comments: genComments(t, label+"Comment")}
-	for range n {
-		l.Path = append(l.Path, genName(lower).Draw(t, label+"path"))
-	}
-	switch rapid.IntRange(0, 2).Draw(t, label+"kind") {
+func genLimit(t *rapid.T) *Limit {
+	l := &Limit{Path: []Lower{genLower(t, "path")}}
+	l.Path = append(l.Path, some(t, 2, func() Lower { return genLower(t, "path") })...)
+	switch rapid.IntRange(0, 2).Draw(t, "limit") {
 	case 0:
-		l.Kind = LimitRange
-		l.Low, l.High = genNumber(false).Draw(t, "low"), genNumber(false).Draw(t, "high")
+		l.Op, l.Low, l.High = "in", genNumber(t, false), genNumber(t, false)
 	case 1:
-		l.Kind = LimitMembers
-		m := rapid.IntRange(1, 3).Draw(t, label+"members#")
-		for range m {
-			l.Members = append(l.Members, genName(lower).Draw(t, label+"member"))
-		}
+		l.Members = []Lower{genLower(t, "member")}
+		l.Members = append(l.Members, some(t, 2, func() Lower { return genLower(t, "member") })...)
 	default:
-		l.Kind = LimitSize
-		l.Low, l.High = genNumber(true).Draw(t, "low"), genNumber(true).Draw(t, "high")
+		l.Op, l.Low, l.High = "size", genNumber(t, true), genNumber(t, true)
 	}
 	return l
 }
 
-func genAssignment(t *rapid.T, label string) Assignment {
-	return Assignment{Comments: genComments(t, label+"Comment"), Symbol: genName(lower).Draw(t, label), Value: genValue(t, 3)}
+func genAssignments(t *rapid.T) []CaseLine {
+	return commented(t, some(t, 3, func() CaseLine { return &Assignment{Symbol: genLower(t, "symbol"), Value: genValue(t, 3)} }))
 }
 
-func genCase(t *rapid.T, label string) CaseDecl {
-	return CaseDecl{
-		Comments:    genComments(t, label+"Comment"),
-		Name:        genName(kebab).Draw(t, label),
-		Summary:     genOptSummary(t, label+"Summary"),
-		Assignments: some(t, label+"Assignment", 3, genAssignment),
-		Trailing:    genComments(t, label+"Trailing"),
-	}
+func genCase(t *rapid.T) *CaseDecl {
+	return &CaseDecl{Name: genKebab(t, "case"), Summary: genOptSummary(t, "caseSummary"), Lines: genAssignments(t)}
 }
 
-func genArgs(t *rapid.T) []string {
-	return some(t, "arg", 3, func(t *rapid.T, label string) string { return genName(lower).Draw(t, label) })
+func genArgs(t *rapid.T) []Lower {
+	return some(t, 3, func() Lower { return genLower(t, "arg") })
 }
 
-func genSteps(t *rapid.T, depth int) []Step {
-	max := 3
+// genSteps draws a step list; each call may be followed by `on` blocks.
+func genSteps[L any](t *rapid.T, depth int) []L {
 	if depth <= 0 {
-		max = 0
+		return nil
 	}
-	return some(t, "step", max, func(t *rapid.T, _ string) Step { return genStep(t, depth-1) })
-}
-
-func genStep(t *rapid.T, depth int) Step {
-	comments := genComments(t, "stepComment")
-	switch rapid.IntRange(0, 6).Draw(t, "stepKind") {
-	case 0:
-		s := &CallStep{Comments: comments, From: genParticipant(t, "from"), Op: genOpRef(t, "op"), Args: genArgs(t)}
-		s.Steps = genSteps(t, depth)
-		s.Trailing = genComments(t, "callTrailing")
-		s.Handlers = some(t, "on", 2, func(t *rapid.T, label string) OnBlock {
-			return OnBlock{Comments: genComments(t, label+"Comment"), Error: genTypeRef(t, label), Steps: genSteps(t, depth), Trailing: genComments(t, label+"Trailing")}
-		})
-		return s
-	case 1:
-		return &SendStep{Comments: comments, From: genParticipant(t, "from"), Op: genOpRef(t, "op"), Args: genArgs(t)}
-	case 2:
-		return &EmitStep{Comments: comments, From: genParticipant(t, "from"), Event: genTypeRef(t, "event"), Args: genArgs(t)}
-	case 3:
-		return &AsyncStep{Comments: comments, Op: genOpRef(t, "async"), Steps: genSteps(t, depth), Trailing: genComments(t, "asyncTrailing")}
-	case 4:
-		s := &AltStep{Comments: comments}
-		n := rapid.IntRange(1, 3).Draw(t, "branches")
-		for range n {
-			s.Branches = append(s.Branches, Branch{Label: genString().Draw(t, "branchLabel"), Steps: genSteps(t, depth), Trailing: genComments(t, "branchTrailing")})
-		}
-		return s
-	case 5:
-		return &OptStep{Comments: comments, Label: genString().Draw(t, "optLabel"), Steps: genSteps(t, depth), Trailing: genComments(t, "optTrailing")}
-	}
-	return &LoopStep{Comments: comments, Label: genString().Draw(t, "loopLabel"), Steps: genSteps(t, depth), Trailing: genComments(t, "loopTrailing")}
-}
-
-func genFlow(t *rapid.T, label string) FlowDecl {
-	return FlowDecl{
-		Comments: genComments(t, label+"Comment"),
-		Name:     genName(kebab).Draw(t, label),
-		Summary:  genSummary().Draw(t, label+"Summary"),
-		Symbols:  some(t, "symbol", 2, genSymbol),
-		Limits:   some(t, "limit", 3, genLimit),
-		Steps:    genSteps(t, 3),
-		Cases:    some(t, "case", 2, genCase),
-		Trailing: genComments(t, label+"Trailing"),
-	}
-}
-
-func genProperty(t *rapid.T, label string) PropertyDecl {
-	about := About{Comments: genComments(t, "aboutComment")}
-	n := rapid.IntRange(1, 3).Draw(t, "about#")
-	for range n {
-		about.Refs = append(about.Refs, genAnyRef(t, "about"))
-	}
-	return PropertyDecl{
-		Comments: genComments(t, label+"Comment"),
-		Name:     genName(kebab).Draw(t, label),
-		Form:     rapid.SampledFrom(propertyForms).Draw(t, label+"Form"),
-		Summary:  genSummary().Draw(t, label+"Summary"),
-		About:    about,
-		Symbols:  some(t, "symbol", 2, genSymbol),
-		Limits:   some(t, "limit", 3, genLimit),
-		Cases:    some(t, "case", 2, genCase),
-		Trailing: genComments(t, label+"Trailing"),
-	}
-}
-
-func genSystemFile(t *rapid.T) *SystemFile {
-	sf := &SystemFile{System: SystemDecl{
-		Comments: genComments(t, "systemComment"),
-		Name:     genName(kebab).Draw(t, "system"),
-		Summary:  genSummary().Draw(t, "systemSummary"),
-	}}
-	sf.Notations = some(t, "notation", 2, func(t *rapid.T, label string) NotationDecl {
-		return NotationDecl{Comments: genComments(t, label+"Comment"), Name: rapid.SampledFrom([]string{"ddd", "c4"}).Draw(t, label)}
-	})
-	sf.Languages = some(t, "language", 2, func(t *rapid.T, label string) LanguageDecl {
-		d := LanguageDecl{Comments: genComments(t, label+"Comment"), Name: rapid.SampledFrom([]string{"go", "python"}).Draw(t, label)}
-		n := rapid.IntRange(1, 2).Draw(t, "roots")
-		for range n {
-			d.Roots = append(d.Roots, Root{Comments: genComments(t, "rootComment"), Path: genString().Draw(t, "root")})
-		}
-		d.Trailing = genComments(t, label+"Trailing")
-		return d
-	})
-	sf.Actors = some(t, "actor", 3, func(t *rapid.T, label string) ActorDecl {
-		d := ActorDecl{
-			Comments: genComments(t, label+"Comment"),
-			Name:     genName(kebab).Draw(t, label),
-			Form:     rapid.SampledFrom([]string{"person", "external"}).Draw(t, label+"Form"),
-			Summary:  genSummary().Draw(t, label+"Summary"),
-		}
-		if d.Form == "external" {
-			d.Types = some(t, "actorType", 2, genType)
-			d.Ops = some(t, "actorOp", 2, genOp)
-			d.Trailing = genComments(t, label+"Trailing")
-		}
-		return d
-	})
-	return sf
-}
-
-func genComponentFile(t *rapid.T) *ComponentFile {
-	c := ComponentDecl{
-		Comments: genComments(t, "componentComment"),
-		Path:     genSegments(t, "componentPath", 2, kebab),
-		Summary:  genSummary().Draw(t, "componentSummary"),
-		Labels:   genLabels(t),
-		Paths:    Paths{Comments: genComments(t, "pathsComment")},
-		Trailing: genComments(t, "componentTrailing"),
-	}
-	if rapid.Bool().Draw(t, "focus?") {
-		c.Focus = &Focus{Comments: genComments(t, "focusComment"), Level: rapid.SampledFrom([]string{"core", "support", "utility"}).Draw(t, "focus")}
-	}
-	n := rapid.IntRange(1, 2).Draw(t, "paths#")
-	for range n {
-		c.Paths.Patterns = append(c.Paths.Patterns, genString().Draw(t, "paths"))
-	}
-	if rapid.Bool().Draw(t, "uses?") {
-		c.Uses = &Uses{Comments: genComments(t, "usesComment")}
-		m := rapid.IntRange(1, 3).Draw(t, "uses#")
-		for range m {
-			c.Uses.Refs = append(c.Uses.Refs, genAnyRef(t, "uses"))
-		}
-	}
-	return &ComponentFile{
-		Component:  c,
-		Types:      some(t, "type", 3, genType),
-		Ops:        some(t, "op", 2, genOp),
-		Flows:      some(t, "flow", 2, genFlow),
-		Properties: some(t, "property", 2, genProperty),
-	}
-}
-
-func genCorpusFile(t *rapid.T) *CorpusFile {
-	return &CorpusFile{
-		Corpus: CorpusDecl{Comments: genComments(t, "corpusComment"), Target: genAnyRef(t, "corpus")},
-		Cases: some(t, "recorded", 3, func(t *rapid.T, label string) RecordedCase {
-			return RecordedCase{
-				Comments:    genComments(t, label+"Comment"),
-				Name:        genName(kebab).Draw(t, label),
-				Reason:      rapid.SampledFrom([]string{"coverage", "counterexample"}).Draw(t, label+"Reason"),
-				Assignments: some(t, label+"Assignment", 3, genAssignment),
-				Trailing:    genComments(t, label+"Trailing"),
+	var ls []L
+	for range rapid.IntRange(0, 3).Draw(t, "steps") {
+		s := genStep(t, depth-1)
+		ls = append(ls, any(s).(L))
+		if _, ok := s.(*Call); ok {
+			for range max(0, rapid.IntRange(-1, 2).Draw(t, "ons")) {
+				ls = append(ls, any(&On{Error: genTypeRef(t), Lines: genSteps[StepLine](t, depth-1)}).(L))
 			}
-		}),
+		}
+	}
+	return commented(t, ls)
+}
+
+func genStep(t *rapid.T, depth int) StepLine {
+	switch rapid.IntRange(0, 6).Draw(t, "step") {
+	case 0:
+		return &Call{From: genParticipant(t), Op: genOpRef(t), Args: genArgs(t), Lines: genSteps[StepLine](t, depth)}
+	case 1:
+		return &Send{From: genParticipant(t), Op: genOpRef(t), Args: genArgs(t)}
+	case 2:
+		return &Emit{From: genParticipant(t), Event: genTypeRef(t), Args: genArgs(t)}
+	case 3:
+		return &Async{Op: genOpRef(t), Lines: genSteps[StepLine](t, depth)}
+	case 4:
+		a := &Alt{}
+		for range rapid.IntRange(1, 3).Draw(t, "branches") {
+			a.Branches = append(a.Branches, Branch{Label: genString(t, "label"), Lines: genSteps[StepLine](t, depth)})
+		}
+		return a
+	case 5:
+		return &Opt{Label: genString(t, "label"), Lines: genSteps[StepLine](t, depth)}
+	}
+	return &Loop{Label: genString(t, "label"), Lines: genSteps[StepLine](t, depth)}
+}
+
+func genFlow(t *rapid.T) *FlowDecl {
+	ls := some(t, 2, func() FlowLine { return genSymbol(t) })
+	ls = append(ls, some(t, 3, func() FlowLine { return genLimit(t) })...)
+	ls = append(ls, genSteps[FlowLine](t, 3)...)
+	ls = append(ls, some(t, 2, func() FlowLine { return genCase(t) })...)
+	return &FlowDecl{Name: genKebab(t, "flow"), Summary: genSummary(t, "summary"), Lines: commented(t, ls)}
+}
+
+func genProperty(t *rapid.T) *PropertyDecl {
+	ls := []PropertyLine{&About{Refs: genRefs(t)}}
+	ls = append(ls, some(t, 2, func() PropertyLine { return genSymbol(t) })...)
+	ls = append(ls, some(t, 3, func() PropertyLine { return genLimit(t) })...)
+	ls = append(ls, some(t, 2, func() PropertyLine { return genCase(t) })...)
+	return &PropertyDecl{
+		Name: genKebab(t, "property"), Form: rapid.SampledFrom(propertyForms).Draw(t, "form"),
+		Summary: genSummary(t, "summary"), Lines: commented(t, ls),
 	}
 }
+
+func genSystemDecls(t *rapid.T) []Decl {
+	ds := []Decl{&SystemDecl{Name: genKebab(t, "system"), Summary: genSummary(t, "summary")}}
+	ds = append(ds, some(t, 2, func() Decl {
+		return &NotationDecl{Name: rapid.SampledFrom([]string{"ddd", "c4"}).Draw(t, "notation")}
+	})...)
+	ds = append(ds, some(t, 2, func() Decl {
+		roots := []LanguageLine{&Root{Path: genString(t, "root")}}
+		roots = append(roots, some(t, 1, func() LanguageLine { return &Root{Path: genString(t, "root")} })...)
+		return &LanguageDecl{Name: rapid.SampledFrom([]string{"go", "python"}).Draw(t, "language"), Lines: commented(t, roots)}
+	})...)
+	return append(ds, some(t, 3, func() Decl {
+		a := &ActorDecl{Name: genKebab(t, "actor"), Form: rapid.SampledFrom([]string{"person", "external"}).Draw(t, "form"), Summary: genSummary(t, "summary")}
+		if a.Form == "external" {
+			ls := some(t, 2, func() ActorLine { return genType(t) })
+			a.Lines = commented(t, append(ls, some(t, 2, func() ActorLine { return genOp(t) })...))
+		}
+		return a
+	})...)
+}
+
+func genComponentDecls(t *rapid.T) []Decl {
+	ls := genLabels[ComponentLine](t)
+	if rapid.Bool().Draw(t, "focus?") {
+		ls = append(ls, &Focus{Level: rapid.SampledFrom([]string{"core", "support", "utility"}).Draw(t, "focus")})
+	}
+	paths := &Paths{Patterns: []Text{genString(t, "pattern")}}
+	paths.Patterns = append(paths.Patterns, some(t, 1, func() Text { return genString(t, "pattern") })...)
+	ls = append(ls, paths)
+	if rapid.Bool().Draw(t, "uses?") {
+		ls = append(ls, &Uses{Refs: genRefs(t)})
+	}
+	path := ComponentPath{Segments: genSegments(t, func() string { return string(genKebab(t, "segment")) })}
+	ds := []Decl{&ComponentDecl{Path: path, Summary: genSummary(t, "summary"), Lines: commented(t, ls)}}
+	ds = append(ds, some(t, 3, func() Decl { return genType(t) })...)
+	ds = append(ds, some(t, 2, func() Decl { return genOp(t) })...)
+	ds = append(ds, some(t, 2, func() Decl { return genFlow(t) })...)
+	return append(ds, some(t, 2, func() Decl { return genProperty(t) })...)
+}
+
+func genCorpusDecls(t *rapid.T) []Decl {
+	ds := []Decl{&CorpusDecl{Target: genRef(t)}}
+	return append(ds, some(t, 3, func() Decl {
+		return &RecordedCase{
+			Name: genKebab(t, "case"), Reason: rapid.SampledFrom([]string{"coverage", "counterexample"}).Draw(t, "reason"),
+			Lines: genAssignments(t),
+		}
+	})...)
+}
+
+var (
+	typeForms     = []string{"object", "record", "interface", "enum", "error", "event"}
+	propertyForms = []string{"invariant", "postcondition", "relation", "transition"}
+)
 
 func genFile(t *rapid.T) *File {
 	f := &File{Kind: rapid.SampledFrom([]FileKind{FileKindSystem, FileKindComponent, FileKindCorpus}).Draw(t, "kind")}
 	switch f.Kind {
 	case FileKindSystem:
-		f.System = genSystemFile(t)
+		f.Decls = genSystemDecls(t)
 	case FileKindComponent:
-		f.Component = genComponentFile(t)
+		f.Decls = genComponentDecls(t)
 	default:
-		f.Corpus = genCorpusFile(t)
+		f.Decls = genCorpusDecls(t)
 	}
-	f.Trailing = genComments(t, "fileTrailing")
+	f.Decls = commented(t, f.Decls)
 	return f
 }
 
 // writer writes a tree as text with random layout that the grammar allows:
 // any indentation, any number of spaces between tokens (none where the
-// tokens stay apart), trailing spaces, blank lines anywhere between lines,
-// optional braces around an empty optional block, values broken between their
-// items with an optional trailing comma, and any number of final newlines.
+// tokens stay apart), trailing spaces, blank lines between lines, braces
+// around an empty optional block, values broken between their items with an
+// optional trailing comma, and any number of final newlines.
 type writer struct {
 	t    *rapid.T
 	b    strings.Builder
@@ -503,19 +453,12 @@ func (w *writer) flush() {
 
 // needsSpace tells whether two tokens written together would lex as one.
 func needsSpace(a, b string) bool {
-	alnum := func(c byte) bool { return isLetter(c) || isDigit(c) }
+	alnum := func(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' }
 	return alnum(a[len(a)-1]) && (alnum(b[0]) || b[0] == '-' && len(b) > 1 && alnum(b[1]))
 }
 
-func (w *writer) comments(cs []Comment) {
-	for _, c := range cs {
-		w.tok("//" + c.Text)
-		w.flush()
-	}
-}
-
-func (w *writer) ref(r Ref) {
-	for i, s := range r.Segments {
+func (w *writer) ref(segs []string) {
+	for i, s := range segs {
 		if i > 0 {
 			w.tok(".")
 		}
@@ -528,179 +471,159 @@ func (w *writer) refs(rs []Ref) {
 		if i > 0 {
 			w.tok(",")
 		}
-		w.ref(r)
+		w.ref(r.Segments)
 	}
 }
 
-func (w *writer) open() {
-	w.tok("{")
-	w.flush()
+func (w *writer) names(ns []Lower, sep string) {
+	for i, n := range ns {
+		if i > 0 {
+			w.tok(sep)
+		}
+		w.tok(string(n))
+	}
 }
 
-func (w *writer) close(trailing []Comment) {
-	w.comments(trailing)
+func (w *writer) args(as []Lower) {
+	w.tok("(")
+	w.names(as, ",")
+	w.tok(")")
+}
+
+// block writes `{`, the lines and `}`; the caller ends the line.
+func writeBlock[L any](w *writer, ls []L) {
+	w.tok("{")
+	w.flush()
+	for _, l := range ls {
+		w.node(l)
+	}
 	w.tok("}")
 }
 
-// optBlock writes a block that may be left out when it has nothing in it.
-func (w *writer) optBlock(empty bool, members func(), trailing []Comment) {
-	if empty && len(trailing) == 0 && rapid.Bool().Draw(w.t, "noBraces") {
+// optBlock writes an optional block, which may be left out when it is empty.
+func writeOptBlock[L any](w *writer, ls []L) {
+	if len(ls) == 0 && rapid.Bool().Draw(w.t, "noBraces") {
 		return
 	}
-	w.open()
-	members()
-	w.close(trailing)
+	writeBlock(w, ls)
 }
 
 func (w *writer) file(f *File) {
-	switch {
-	case f.System != nil:
-		w.systemFile(f.System)
-	case f.Component != nil:
-		w.componentFile(f.Component)
-	case f.Corpus != nil:
-		w.corpusFile(f.Corpus)
+	for _, d := range f.Decls {
+		w.node(d)
 	}
-	w.comments(f.Trailing)
 	text := strings.TrimRight(w.b.String(), "\n ")
 	w.b.Reset()
 	w.b.WriteString(text + strings.Repeat("\n", rapid.IntRange(0, 2).Draw(w.t, "finalNewlines")))
 }
 
-func (w *writer) systemFile(sf *SystemFile) {
-	w.comments(sf.System.Comments)
-	w.tok("system", sf.System.Name, quote(sf.System.Summary))
-	w.flush()
-	for _, n := range sf.Notations {
-		w.comments(n.Comments)
+func (w *writer) node(n any) {
+	switch n := n.(type) {
+	case *Comment:
+		w.tok("//" + string(n.Text))
+	case *SystemDecl:
+		w.tok("system", string(n.Name), quote(string(n.Summary)))
+	case *NotationDecl:
 		w.tok("notation", n.Name)
-		w.flush()
-	}
-	for _, l := range sf.Languages {
-		w.comments(l.Comments)
-		w.tok("language", l.Name)
-		w.open()
-		for _, r := range l.Roots {
-			w.comments(r.Comments)
-			w.tok("root", quote(r.Path))
-			w.flush()
+	case *LanguageDecl:
+		w.tok("language", n.Name)
+		writeBlock(w, n.Lines)
+	case *Root:
+		w.tok("root", quote(string(n.Path)))
+	case *ActorDecl:
+		w.tok("actor", string(n.Name), n.Form, quote(string(n.Summary)))
+		if n.Form == "external" {
+			writeOptBlock(w, n.Lines)
 		}
-		w.close(l.Trailing)
-		w.flush()
-	}
-	for _, a := range sf.Actors {
-		w.comments(a.Comments)
-		w.tok("actor", a.Name, a.Form, quote(a.Summary))
-		if a.Form == "external" {
-			w.optBlock(len(a.Types)+len(a.Ops) == 0, func() {
-				for _, t := range a.Types {
-					w.typeDecl(t)
-				}
-				for _, o := range a.Ops {
-					w.opDecl(o)
-				}
-			}, a.Trailing)
+	case *ComponentDecl:
+		w.tok("component")
+		w.ref(n.Path.Segments)
+		w.tok(quote(string(n.Summary)))
+		writeBlock(w, n.Lines)
+	case *Label:
+		w.tok("label", string(n.Name))
+	case *Focus:
+		w.tok("focus", n.Level)
+	case *Paths:
+		w.tok("paths")
+		for i, p := range n.Patterns {
+			if i > 0 {
+				w.tok(",")
+			}
+			w.tok(quote(string(p)))
 		}
-		w.flush()
-	}
-}
-
-func (w *writer) componentFile(cf *ComponentFile) {
-	c := cf.Component
-	w.comments(c.Comments)
-	w.tok("component")
-	w.ref(Ref{Segments: c.Path})
-	w.tok(quote(c.Summary))
-	w.open()
-	w.labels(c.Labels)
-	if c.Focus != nil {
-		w.comments(c.Focus.Comments)
-		w.tok("focus", c.Focus.Level)
-		w.flush()
-	}
-	w.comments(c.Paths.Comments)
-	w.tok("paths")
-	for i, p := range c.Paths.Patterns {
-		if i > 0 {
-			w.tok(",")
-		}
-		w.tok(quote(p))
-	}
-	w.flush()
-	if c.Uses != nil {
-		w.comments(c.Uses.Comments)
+	case *Uses:
 		w.tok("uses")
-		w.refs(c.Uses.Refs)
-		w.flush()
+		w.refs(n.Refs)
+	case *TypeDecl:
+		w.tok("type", string(n.Name), n.Form, quote(string(n.Summary)))
+		writeOptBlock(w, n.Lines)
+	case *Extends:
+		w.tok("extends")
+		w.ref(n.Type.Segments)
+	case *Implements:
+		w.tok("implements")
+		w.ref(n.Type.Segments)
+	case *Field:
+		w.tok("field", string(n.Name), ":")
+		w.typeExpr(n.Type)
+	case *EnumValue:
+		w.tok("value", string(n.Name))
+	case *OpDecl:
+		w.opDecl(n)
+	case *FlowDecl:
+		w.tok("flow", string(n.Name), quote(string(n.Summary)))
+		writeBlock(w, n.Lines)
+	case *PropertyDecl:
+		w.tok("property", string(n.Name), n.Form, quote(string(n.Summary)))
+		writeBlock(w, n.Lines)
+	case *About:
+		w.tok("about")
+		w.refs(n.Refs)
+	case *Symbol:
+		w.tok("forall", string(n.Name), ":")
+		w.typeExpr(n.Type)
+		if n.Domain != nil {
+			w.tok("generated", quote(string(*n.Domain)))
+		}
+	case *Limit:
+		w.tok("where")
+		w.names(n.Path, ".")
+		if n.Members != nil {
+			w.tok("in", "{")
+			w.names(n.Members, ",")
+			w.tok("}")
+		} else {
+			w.tok(n.Op, n.Low, "..", n.High)
+		}
+	case *CaseDecl:
+		w.tok("case", string(n.Name))
+		if n.Summary != nil {
+			w.tok(quote(string(*n.Summary)))
+		}
+		writeBlock(w, n.Lines)
+	case *Assignment:
+		w.tok(string(n.Symbol), "=")
+		w.value(n.Value)
+	case *CorpusDecl:
+		w.tok("corpus")
+		w.ref(n.Target.Segments)
+	case *RecordedCase:
+		w.tok("case", string(n.Name), n.Reason)
+		writeBlock(w, n.Lines)
+	default:
+		w.step(n)
 	}
-	w.close(c.Trailing)
 	w.flush()
-	for _, t := range cf.Types {
-		w.typeDecl(t)
-	}
-	for _, o := range cf.Ops {
-		w.opDecl(o)
-	}
-	for _, f := range cf.Flows {
-		w.flow(f)
-	}
-	for _, p := range cf.Properties {
-		w.property(p)
-	}
 }
 
-func (w *writer) labels(ls []Label) {
-	for _, l := range ls {
-		w.comments(l.Comments)
-		w.tok("label", l.Name)
-		w.flush()
-	}
-}
-
-func (w *writer) typeDecl(t TypeDecl) {
-	w.comments(t.Comments)
-	w.tok("type", t.Name, t.Form, quote(t.Summary))
-	empty := len(t.Labels)+len(t.Extends)+len(t.Implements)+len(t.Fields)+len(t.Values)+len(t.Ops) == 0
-	w.optBlock(empty, func() {
-		w.labels(t.Labels)
-		for _, s := range t.Extends {
-			w.comments(s.Comments)
-			w.tok("extends")
-			w.ref(s.Type)
-			w.flush()
-		}
-		for _, s := range t.Implements {
-			w.comments(s.Comments)
-			w.tok("implements")
-			w.ref(s.Type)
-			w.flush()
-		}
-		for _, f := range t.Fields {
-			w.comments(f.Comments)
-			w.tok("field", f.Name, ":")
-			w.typeExpr(f.Type)
-			w.flush()
-		}
-		for _, v := range t.Values {
-			w.comments(v.Comments)
-			w.tok("value", v.Name)
-			w.flush()
-		}
-		for _, o := range t.Ops {
-			w.opDecl(o)
-		}
-	}, t.Trailing)
-	w.flush()
-}
-
-func (w *writer) opDecl(o OpDecl) {
-	w.comments(o.Comments)
-	w.tok("op", o.Name, "(")
+func (w *writer) opDecl(o *OpDecl) {
+	w.tok("op", string(o.Name), "(")
 	for i, p := range o.Params {
 		if i > 0 {
 			w.tok(",")
 		}
-		w.tok(p.Name, ":")
+		w.tok(string(p.Name), ":")
 		w.typeExpr(p.Type)
 	}
 	w.tok(")")
@@ -708,18 +631,63 @@ func (w *writer) opDecl(o OpDecl) {
 		w.tok("->")
 		w.typeExpr(o.Result)
 	}
-	if len(o.Raises) > 0 {
-		w.tok("raises")
-		w.refs(o.Raises)
+	for i, r := range o.Raises {
+		if i == 0 {
+			w.tok("raises")
+		} else {
+			w.tok(",")
+		}
+		w.ref(r.Segments)
 	}
 	if o.Handles != nil {
 		w.tok("handles")
-		w.ref(*o.Handles)
+		w.ref(o.Handles.Segments)
 	}
-	if o.Summary != "" {
-		w.tok(quote(o.Summary))
+	if o.Summary != nil {
+		w.tok(quote(string(*o.Summary)))
 	}
-	w.flush()
+}
+
+func (w *writer) step(n any) {
+	switch n := n.(type) {
+	case *Call:
+		w.ref(n.From.Segments)
+		w.tok("->")
+		w.ref(n.Op.Segments)
+		w.args(n.Args)
+		writeOptBlock(w, n.Lines)
+	case *Send:
+		w.ref(n.From.Segments)
+		w.tok("->>")
+		w.ref(n.Op.Segments)
+		w.args(n.Args)
+	case *Emit:
+		w.ref(n.From.Segments)
+		w.tok("emits")
+		w.ref(n.Event.Segments)
+		w.args(n.Args)
+	case *On:
+		w.tok("on")
+		w.ref(n.Error.Segments)
+		writeBlock(w, n.Lines)
+	case *Async:
+		w.tok("async")
+		w.ref(n.Op.Segments)
+		writeBlock(w, n.Lines)
+	case *Alt:
+		kw := "alt"
+		for _, br := range n.Branches {
+			w.tok(kw, quote(string(br.Label)))
+			writeBlock(w, br.Lines)
+			kw = "else"
+		}
+	case *Opt:
+		w.tok("opt", quote(string(n.Label)))
+		writeBlock(w, n.Lines)
+	case *Loop:
+		w.tok("loop", quote(string(n.Label)))
+		writeBlock(w, n.Lines)
+	}
 }
 
 func (w *writer) typeExpr(t TypeExpr) {
@@ -727,7 +695,7 @@ func (w *writer) typeExpr(t TypeExpr) {
 	case *BuiltinType:
 		w.tok(t.Name)
 	case *NamedType:
-		w.ref(t.Ref)
+		w.ref(t.Ref.Segments)
 	case *ElemType:
 		w.tok(t.Kind, "<")
 		w.typeExpr(t.Elem)
@@ -742,92 +710,6 @@ func (w *writer) typeExpr(t TypeExpr) {
 		w.tok("call", "<")
 		w.refs(t.Targets)
 		w.tok(">")
-	}
-}
-
-func (w *writer) flow(f FlowDecl) {
-	w.comments(f.Comments)
-	w.tok("flow", f.Name, quote(f.Summary))
-	w.open()
-	w.symbols(f.Symbols)
-	w.limits(f.Limits)
-	w.steps(f.Steps)
-	w.cases(f.Cases)
-	w.close(f.Trailing)
-	w.flush()
-}
-
-func (w *writer) property(p PropertyDecl) {
-	w.comments(p.Comments)
-	w.tok("property", p.Name, p.Form, quote(p.Summary))
-	w.open()
-	w.comments(p.About.Comments)
-	w.tok("about")
-	w.refs(p.About.Refs)
-	w.flush()
-	w.symbols(p.Symbols)
-	w.limits(p.Limits)
-	w.cases(p.Cases)
-	w.close(p.Trailing)
-	w.flush()
-}
-
-func (w *writer) symbols(ss []Symbol) {
-	for _, s := range ss {
-		w.comments(s.Comments)
-		w.tok("forall", s.Name, ":")
-		w.typeExpr(s.Type)
-		if s.Generated {
-			w.tok("generated", quote(s.Domain))
-		}
-		w.flush()
-	}
-}
-
-func (w *writer) limits(ls []Limit) {
-	for _, l := range ls {
-		w.comments(l.Comments)
-		w.tok("where")
-		w.ref(Ref{Segments: l.Path})
-		switch l.Kind {
-		case LimitRange:
-			w.tok("in", l.Low, "..", l.High)
-		case LimitMembers:
-			w.tok("in", "{")
-			for i, m := range l.Members {
-				if i > 0 {
-					w.tok(",")
-				}
-				w.tok(m)
-			}
-			w.tok("}")
-		case LimitSize:
-			w.tok("size", l.Low, "..", l.High)
-		}
-		w.flush()
-	}
-}
-
-func (w *writer) cases(cs []CaseDecl) {
-	for _, c := range cs {
-		w.comments(c.Comments)
-		w.tok("case", c.Name)
-		if c.Summary != "" {
-			w.tok(quote(c.Summary))
-		}
-		w.open()
-		w.assignments(c.Assignments)
-		w.close(c.Trailing)
-		w.flush()
-	}
-}
-
-func (w *writer) assignments(as []Assignment) {
-	for _, a := range as {
-		w.comments(a.Comments)
-		w.tok(a.Symbol, "=")
-		w.value(a.Value)
-		w.flush()
 	}
 }
 
@@ -853,107 +735,8 @@ func (w *writer) value(v Value) {
 		breakable()
 		if i < len(items)-1 || rapid.Bool().Draw(w.t, "trailingComma") {
 			w.tok(",")
+			breakable()
 		}
 	}
-	breakable()
 	w.tok(closer)
-}
-
-func (w *writer) steps(steps []Step) {
-	for _, s := range steps {
-		w.step(s)
-	}
-}
-
-func (w *writer) stepBlock(steps []Step, trailing []Comment) {
-	w.open()
-	w.steps(steps)
-	w.close(trailing)
-}
-
-func (w *writer) step(s Step) {
-	switch s := s.(type) {
-	case *CallStep:
-		w.comments(s.Comments)
-		w.ref(s.From)
-		w.tok("->")
-		w.ref(s.Op)
-		w.args(s.Args)
-		w.optBlock(len(s.Steps) == 0, func() { w.steps(s.Steps) }, s.Trailing)
-		w.flush()
-		for _, h := range s.Handlers {
-			w.comments(h.Comments)
-			w.tok("on")
-			w.ref(h.Error)
-			w.stepBlock(h.Steps, h.Trailing)
-			w.flush()
-		}
-	case *SendStep:
-		w.comments(s.Comments)
-		w.ref(s.From)
-		w.tok("->>")
-		w.ref(s.Op)
-		w.args(s.Args)
-		w.flush()
-	case *EmitStep:
-		w.comments(s.Comments)
-		w.ref(s.From)
-		w.tok("emits")
-		w.ref(s.Event)
-		w.args(s.Args)
-		w.flush()
-	case *AsyncStep:
-		w.comments(s.Comments)
-		w.tok("async")
-		w.ref(s.Op)
-		w.stepBlock(s.Steps, s.Trailing)
-		w.flush()
-	case *AltStep:
-		w.comments(s.Comments)
-		for i, br := range s.Branches {
-			if i == 0 {
-				w.tok("alt", quote(br.Label))
-			} else {
-				w.tok("else", quote(br.Label))
-			}
-			w.stepBlock(br.Steps, br.Trailing)
-		}
-		w.flush()
-	case *OptStep:
-		w.comments(s.Comments)
-		w.tok("opt", quote(s.Label))
-		w.stepBlock(s.Steps, s.Trailing)
-		w.flush()
-	case *LoopStep:
-		w.comments(s.Comments)
-		w.tok("loop", quote(s.Label))
-		w.stepBlock(s.Steps, s.Trailing)
-		w.flush()
-	}
-}
-
-func (w *writer) args(as []string) {
-	w.tok("(")
-	for i, a := range as {
-		if i > 0 {
-			w.tok(",")
-		}
-		w.tok(a)
-	}
-	w.tok(")")
-}
-
-func (w *writer) corpusFile(cf *CorpusFile) {
-	w.comments(cf.Corpus.Comments)
-	w.tok("corpus")
-	w.ref(cf.Corpus.Target)
-	w.flush()
-	for _, c := range cf.Cases {
-		w.comments(c.Comments)
-		w.tok("case", c.Name, c.Reason)
-		w.open()
-		w.assignments(c.Assignments)
-		w.close(c.Trailing)
-		w.flush()
-	}
 }

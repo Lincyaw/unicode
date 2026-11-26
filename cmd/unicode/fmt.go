@@ -46,17 +46,17 @@ type fmtReport struct {
 
 // runFmt rewrites, or with --check only reports, every design and corpus file
 // that is not in the canonical format. A file with diagnostics is never written.
-func runFmt(root string, o options, stdout, stderr io.Writer) int {
-	paths, err := fmtPaths(root, o.paths)
+func runFmt(root string, o options, args []string, stdout, stderr io.Writer) error {
+	paths, err := fmtPaths(root, args)
 	if err != nil {
-		return usageError(stderr, err)
+		return err
 	}
 	report := fmtReport{Files: []fileReport{}, Diagnostics: []diagnosticJSON{}}
 	var diags []diag.Diagnostic
 	for _, rel := range paths {
 		status, ds, err := formatFile(root, rel, o.check)
 		if err != nil {
-			return write(stderr, fmt.Appendf(nil, "unicode：%v\n", err), exitUnexpected)
+			return &exitError{code: exitUnexpected, err: err}
 		}
 		report.Files = append(report.Files, fileReport{Path: rel, Status: status})
 		diags = append(diags, ds...)
@@ -67,30 +67,32 @@ func runFmt(root string, o options, stdout, stderr io.Writer) int {
 			Message: d.Message, Fix: d.Fix,
 		})
 	}
-	code := exitOK
-	if len(diags) > 0 {
-		code = exitDiagnostics
-	}
-	if o.format == "json" {
-		out, err := json.MarshalIndent(report, "", "  ")
-		if err != nil {
-			return write(stderr, fmt.Appendf(nil, "unicode：%v\n", err), exitUnexpected)
-		}
-		return write(stdout, append(out, '\n'), code)
-	}
 	var out, errOut []byte
-	for _, f := range report.Files {
-		if f.Status == statusRewritten || f.Status == statusNotCanonical {
-			out = fmt.Appendln(out, f.Path)
+	if o.format == "json" {
+		if out, err = json.MarshalIndent(report, "", "  "); err != nil {
+			return &exitError{code: exitUnexpected, err: err}
+		}
+		out = append(out, '\n')
+	} else {
+		for _, f := range report.Files {
+			if f.Status == statusRewritten || f.Status == statusNotCanonical {
+				out = fmt.Appendln(out, f.Path)
+			}
+		}
+		for _, d := range diags {
+			errOut = fmt.Appendf(errOut, "%s:%d:%d: %s: %s（修正：%s）\n", d.Position.Path, d.Position.Line, d.Position.Column, d.Code, d.Message, d.Fix)
 		}
 	}
-	for _, d := range diags {
-		errOut = fmt.Appendf(errOut, "%s:%d:%d: %s: %s（修正：%s）\n", d.Position.Path, d.Position.Line, d.Position.Column, d.Code, d.Message, d.Fix)
+	if _, err := stdout.Write(out); err != nil {
+		return &exitError{code: exitUnexpected}
 	}
-	if write(stdout, out, code) == exitUnexpected {
-		return exitUnexpected
+	if _, err := stderr.Write(errOut); err != nil {
+		return &exitError{code: exitUnexpected}
 	}
-	return write(stderr, errOut, code)
+	if len(diags) > 0 {
+		return &exitError{code: exitDiagnostics}
+	}
+	return nil
 }
 
 // fmtPaths lists the files to format as sorted slash paths relative to root:
@@ -107,13 +109,13 @@ func fmtPaths(root string, args []string) ([]string, error) {
 	for _, a := range args {
 		abs, err := filepath.Abs(a)
 		if err != nil {
-			return nil, fmt.Errorf("路径 %s 不可用：%v", a, err)
+			return nil, usageError("路径 %s 不可用：%v", a, err)
 		}
 		if rel, err := filepath.Rel(root, abs); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return nil, fmt.Errorf("路径 %s 不在仓库根目录 %s 之内", a, root)
+			return nil, usageError("路径 %s 不在仓库根目录 %s 之内", a, root)
 		}
 		if _, err := os.Stat(abs); err != nil {
-			return nil, fmt.Errorf("路径 %s 不存在", a)
+			return nil, usageError("路径 %s 不存在", a)
 		}
 		tops = append(tops, abs)
 	}
@@ -133,7 +135,7 @@ func fmtPaths(root string, args []string) ([]string, error) {
 			return nil
 		})
 		if err != nil {
-			return nil, fmt.Errorf("读不出 %s 下的文件：%v", top, err)
+			return nil, &exitError{code: exitUnexpected, err: fmt.Errorf("读不出 %s 下的文件：%v", top, err)}
 		}
 	}
 	slices.Sort(paths)

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alecthomas/participle/v2/lexer"
 	"pgregory.net/rapid"
 )
 
@@ -79,7 +80,7 @@ func describeDiagnostics(p Parsed) string {
 	return b.String()
 }
 
-var posType = reflect.TypeFor[Pos]()
+var posType = reflect.TypeFor[lexer.Position]()
 
 // treeDifference returns the path of the first place where two trees differ,
 // ignoring positions and the difference between a nil and an empty slice.
