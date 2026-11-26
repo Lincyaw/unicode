@@ -2,6 +2,7 @@ package design
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/alecthomas/participle/v2/lexer"
@@ -102,4 +103,28 @@ func (l *loader) codeName(scope *entity, role nameRole, name, what string, f *sy
 				fmt.Sprintf("rename one of the two, so that the name mapping of docs/design.md §4 gives them different %s names", m.title))
 		}
 	}
+}
+
+// digitAfterDash finds a dash that a digit follows: upper camel case keeps no
+// trace of that dash, so a-2b and a2b map to the same A2b.
+var digitAfterDash = regexp.MustCompile(`-[0-9]`)
+
+// roundTrip reports the name of a property or a flow, e, whose predicate's
+// code name does not map back to it (docs/model.md §10 rule 30): a property
+// named flow-x, whose predicate a flow x's would be, or a name with a digit
+// right after a dash.
+func (l *loader) roundTrip(e *entity, role nameRole) {
+	var why, fix string
+	switch code := goName(role, e.name); {
+	case role == rolePredicate && strings.HasPrefix(e.name, "flow-"):
+		why = fmt.Sprintf("its predicate's Go name %s is the one that the predicate of a flow %s takes", code, strings.TrimPrefix(e.name, "flow-"))
+		fix = "rename the property so that its name does not start with flow-"
+	case digitAfterDash.MatchString(e.name):
+		why = fmt.Sprintf("a digit follows a dash, and its predicate's Go name %s keeps no trace of that dash", code)
+		fix = "rename it so that every segment after a dash starts with a letter"
+	default:
+		return
+	}
+	l.report(e.file, e.pos, "design.irreversible-name", e.id,
+		fmt.Sprintf("the name of %s does not map back from the code (docs/design.md §4): %s", describe(e), why), fix)
 }

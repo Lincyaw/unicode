@@ -483,6 +483,7 @@ func (l *loader) flowDecl(f *syntax.File, parent *entity, d *syntax.FlowDecl) {
 		return
 	}
 	l.codeNameOf(e, roleFlowPredicate)
+	l.roundTrip(e, roleFlowPredicate)
 	var symbols []*syntax.Symbol
 	var limits []any
 	var cases []*syntax.CaseDecl
@@ -513,6 +514,7 @@ func (l *loader) propertyDecl(f *syntax.File, parent *entity, d *syntax.Property
 		return
 	}
 	l.codeNameOf(e, rolePredicate)
+	l.roundTrip(e, rolePredicate)
 	var symbols []*syntax.Symbol
 	var limits []any
 	var cases []*syntax.CaseDecl
