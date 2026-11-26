@@ -15,14 +15,16 @@ import (
 )
 
 // Broken is a valid file with one edit that breaks a rule of docs/format.md:
-// its kind, its text, the line of the edit, and the code of the rule's diagnostic.
+// its kind, its text, the line and byte column of the edit, and the code of
+// the rule's diagnostic.
 //
 //uc:realizes syntax.Broken
 type Broken struct {
-	Kind FileKind
-	Text string
-	Line int
-	Code string
+	Kind   FileKind
+	Text   string
+	Line   int
+	Column int
+	Code   string
 }
 
 // A breakage draws a valid file and breaks one rule at a random site of it.
@@ -49,13 +51,24 @@ func uniform(t *rapid.T, n int) int {
 	}
 }
 
-// inserted puts a character that no file may contain at any byte of a valid sample.
+// inserted puts a character that no file may contain between two characters
+// of a valid sample, or at one of its ends.
 func inserted(code string, chars *rapid.Generator[string]) breakage {
 	return func(t *rapid.T) Broken {
 		s := genSample().Draw(t, "sample")
-		at := rapid.IntRange(0, len(s.Text)).Draw(t, "at")
-		return Broken{s.Kind, s.Text[:at] + chars.Draw(t, "char") + s.Text[at:], strings.Count(s.Text[:at], "\n") + 1, code}
+		var bounds []int
+		for i := range s.Text {
+			bounds = append(bounds, i)
+		}
+		at := rapid.SampledFrom(append(bounds, len(s.Text))).Draw(t, "at")
+		line, column := lineColumn(s.Text, at)
+		return Broken{s.Kind, s.Text[:at] + chars.Draw(t, "char") + s.Text[at:], line, column, code}
 	}
+}
+
+// lineColumn is the line and byte column of offset in text.
+func lineColumn(text string, offset int) (int, int) {
+	return strings.Count(text[:offset], "\n") + 1, offset - strings.LastIndexByte(text[:offset], '\n')
 }
 
 // controls are the control characters other than the tab, LF and CR, which have codes of their own.
@@ -72,17 +85,18 @@ var controls = func() []string {
 // A byte from 0x80 up, put anywhere in valid UTF-8, leaves a sequence that is not UTF-8.
 var nonUTF8 = rapid.Custom(func(t *rapid.T) string { return string([]byte{byte(rapid.IntRange(0x80, 0xff).Draw(t, "byte"))}) })
 
-// An edit breaks a rule at one site of a tree and returns the node on whose
-// first line the rule's diagnostic stands, or nil for the first line of the file.
+// An edit breaks a rule at one site of a tree and returns where the rule's
+// diagnostic stands, as the writer's mark: a node, the address of a value in
+// the tree, or nil for the start of the file.
 type edit func(t *rapid.T) any
 
 // edited draws a tree of one of kinds that has a site for the edit, makes it
 // at one of the sites, and writes the tree with random layout.
 func edited(code string, kinds []FileKind, sites func(f *File) []edit) breakage {
 	return func(t *rapid.T) Broken {
-		f, node := editedTree(t, kinds, sites)
-		text, line := written(t, f, node, "")
-		return Broken{f.Kind, text, line, code}
+		f, mark := editedTree(t, kinds, sites)
+		text, line, column := written(&writer{t: t, mark: mark}, f)
+		return Broken{f.Kind, text, line, column, code}
 	}
 }
 
@@ -93,32 +107,25 @@ func editedTree(t *rapid.T, kinds []FileKind, sites func(f *File) []edit) (*File
 	return f, es[rapid.IntRange(0, len(es)-1).Draw(t, "site")](t)
 }
 
-// written writes f with random layout, ending the first line of node with
-// comment when it is set, and returns the text and that line.
-func written(t *rapid.T, f *File, node any, comment string) (string, int) {
-	w := &writer{t: t, mark: node, markComment: comment}
+// written writes f with w, and returns the text and the line and column of w's mark.
+func written(w *writer, f *File) (string, int, int) {
 	w.file(f)
 	switch {
-	case node == nil:
-		return w.b.String(), 1
-	case w.markLine == 0:
-		panic(fmt.Sprintf("the writer never wrote the edited %T", node))
+	case w.mark == nil:
+		return w.b.String(), 1, 1
+	case w.markColumn == 0:
+		panic(fmt.Sprintf("the writer never wrote the edited %T", w.mark))
 	}
-	return w.b.String(), w.markLine
+	return w.b.String(), w.markLine, w.markColumn
 }
 
-// site is a value in a tree: the node on whose first line it stands, and
-// the type of the struct that holds it.
+// site is a value in a tree and the type of the struct that holds it.
 type site struct {
 	v     reflect.Value
-	node  any
 	owner reflect.Type
 }
 
 var (
-	branchType    = reflect.TypeFor[Branch]()
-	argType       = reflect.TypeFor[Arg]()
-	entryType     = reflect.TypeFor[Entry]()
 	flowLinesType = reflect.TypeFor[[]FlowLine]()
 	stepsType     = reflect.TypeFor[[]Step]()
 	// lineLists are the lists of lines of every level.
@@ -129,52 +136,33 @@ var (
 	}
 )
 
-// isNode tells whether the writer notes where n starts: a line of some level or a value.
-func isNode(n any) bool {
-	switch n.(type) {
-	case Decl, LanguageLine, ExternalLine, ComponentLine, Member, FlowLine, PropertyLine, CaseLine, Step, Value:
-		return true
-	}
-	return false
-}
-
 // sitesWhere returns the values in f's tree whose type match accepts.
 func sitesWhere(f *File, match func(reflect.Type) bool) []site {
 	var out []site
-	var walk func(v reflect.Value, node any, owner reflect.Type)
-	walk = func(v reflect.Value, node any, owner reflect.Type) {
+	var walk func(v reflect.Value, owner reflect.Type)
+	walk = func(v reflect.Value, owner reflect.Type) {
 		if match(v.Type()) {
-			out = append(out, site{v, node, owner})
+			out = append(out, site{v, owner})
 		}
 		switch v.Kind() {
 		case reflect.Interface, reflect.Pointer:
-			if v.IsNil() {
-				return
+			if !v.IsNil() {
+				walk(v.Elem(), owner)
 			}
-			if v.Kind() == reflect.Pointer && isNode(v.Interface()) {
-				node = v.Interface()
-			}
-			walk(v.Elem(), node, owner)
 		case reflect.Struct:
-			switch v.Type() {
-			case posType:
+			if v.Type() == posType {
 				return
-			case branchType:
-				node = v.Addr().Interface()
-			case argType, entryType:
-				// The name of an argument or an entry starts the line of its value.
-				node = v.FieldByName("Value").Interface()
 			}
 			for i := range v.NumField() {
-				walk(v.Field(i), node, v.Type())
+				walk(v.Field(i), v.Type())
 			}
 		case reflect.Slice:
 			for i := range v.Len() {
-				walk(v.Index(i), node, owner)
+				walk(v.Index(i), owner)
 			}
 		}
 	}
-	walk(reflect.ValueOf(f), nil, nil)
+	walk(reflect.ValueOf(f), nil)
 	return out
 }
 
@@ -375,8 +363,10 @@ func levels(f *File) []level {
 	return ls
 }
 
-// reordered moves a line after one of a higher rank, in the file's
-// declarations or, when blocks is set, in a block.
+// reordered moves a line after one of a higher rank, now and then with
+// other lines of a lower rank that lie between them, in the file's
+// declarations or, when blocks is set, in a block. The diagnostic of the
+// last line moved is the one to find, so that every misplaced line must get one.
 func reordered(blocks bool) func(f *File) []edit {
 	return func(f *File) []edit {
 		var es []edit
@@ -388,10 +378,19 @@ func reordered(blocks bool) func(f *File) []edit {
 			for i := range ls {
 				for j := i + 1; j < len(ls); j++ {
 					if ri, rj := lv.rank(ls[i]), lv.rank(ls[j]); ri >= 0 && ri < rj {
-						es = append(es, func(*rapid.T) any {
-							reflect.Copy(lv.lines.Slice(i, j), lv.lines.Slice(i+1, j+1))
-							lv.lines.Index(j).Set(reflect.ValueOf(ls[i]))
-							return ls[i]
+						es = append(es, func(t *rapid.T) any {
+							moved, kept := []any{ls[i]}, []any{}
+							for _, l := range ls[i+1 : j] {
+								if r := lv.rank(l); r >= 0 && r < rj && rapid.Bool().Draw(t, "moved") {
+									moved = append(moved, l)
+								} else {
+									kept = append(kept, l)
+								}
+							}
+							for k, l := range slices.Concat(kept, ls[j:j+1], moved) {
+								lv.lines.Index(i + k).Set(reflect.ValueOf(l))
+							}
+							return moved[len(moved)-1]
 						})
 					}
 				}
@@ -483,7 +482,7 @@ func renamed[N ~string](names *rapid.Generator[string]) func(f *File) []edit {
 	return func(f *File) []edit {
 		return each(sitesOf[N](f), func(t *rapid.T, s site) any {
 			s.v.SetString(names.Draw(t, "name"))
-			return s.node
+			return s.v.Addr().Interface()
 		})
 	}
 }
@@ -492,14 +491,18 @@ func renamed[N ~string](names *rapid.Generator[string]) func(f *File) []edit {
 func badSegment(f *File) []edit {
 	return each(sitesOf[Ref](f), func(t *rapid.T, s site) any {
 		segs := s.v.FieldByName("Segments")
-		segs.Index(rapid.IntRange(0, segs.Len()-1).Draw(t, "segment")).SetString(notAName.Draw(t, "name"))
-		return s.node
+		seg := segs.Index(rapid.IntRange(0, segs.Len()-1).Draw(t, "segment"))
+		seg.SetString(notAName.Draw(t, "name"))
+		return seg.Addr().Interface()
 	})
 }
 
 func typedRefs(f *File) []site {
 	return sitesWhere(f, func(ty reflect.Type) bool { _, ok := badLast[ty]; return ok })
 }
+
+// start is where the reference at s starts: its first segment.
+func start(s site) any { return s.v.FieldByName("Segments").Index(0).Addr().Interface() }
 
 // badEarlier puts a segment that is neither kebab-case nor a type before the
 // last segment of a random reference, in place of one or added.
@@ -513,7 +516,7 @@ func badEarlier(f *File) []edit {
 			segs = slices.Insert(segs, rapid.IntRange(0, len(segs)-1).Draw(t, "segment"), bad)
 		}
 		s.v.FieldByName("Segments").Set(reflect.ValueOf(segs))
-		return s.node
+		return start(s)
 	})
 }
 
@@ -523,7 +526,7 @@ func badLastSegment(f *File) []edit {
 		segs := slices.Clone(s.v.FieldByName("Segments").Interface().([]string))
 		segs[len(segs)-1] = badLast[s.v.Type()].Draw(t, "name")
 		s.v.FieldByName("Segments").Set(reflect.ValueOf(segs))
-		return s.node
+		return start(s)
 	})
 }
 
@@ -533,7 +536,7 @@ func reservedName(f *File) []edit {
 	ss := slices.DeleteFunc(sitesOf[Lower](f), func(s site) bool { return s.owner == reflect.TypeFor[NameValue]() })
 	return each(ss, func(t *rapid.T, s site) any {
 		s.v.SetString([]string{"true", "false", "none"}[uniform(t, 3)])
-		return s.node
+		return s.v.Addr().Interface()
 	})
 }
 
@@ -542,7 +545,7 @@ func summary(change func(t *rapid.T, s string) string) func(f *File) []edit {
 	return func(f *File) []edit {
 		return each(sitesOf[Summary](f), func(t *rapid.T, s site) any {
 			s.v.SetString(change(t, s.v.String()))
-			return s.node
+			return s.v.Addr().Interface()
 		})
 	}
 }
@@ -646,27 +649,30 @@ var fraction = rapid.Custom(func(t *rapid.T) Number {
 // fractionalSize puts a size limit among the limits of a random flow or
 // property, with a fraction as its low or, when high is set, its high bound.
 func fractionalSize(high bool) func(f *File) []edit {
-	limit := func(t *rapid.T) *IntervalLimit {
+	// limit returns the limit and the address of its fraction.
+	limit := func(t *rapid.T) (*IntervalLimit, any) {
 		l := &IntervalLimit{Path: []Lower{genLower(t, "path")}, Op: "size", Low: genNumber(t, true), High: genNumber(t, true)}
 		if high {
 			l.High = fraction.Draw(t, "high")
-		} else {
-			l.Low = fraction.Draw(t, "low")
+			return l, &l.High
 		}
-		return l
+		l.Low = fraction.Draw(t, "low")
+		return l, &l.Low
 	}
 	return func(f *File) []edit {
 		es := each(sitesOf[*FlowDecl](f), func(t *rapid.T, s site) any {
-			d, l := s.v.Interface().(*FlowDecl), limit(t)
+			d := s.v.Interface().(*FlowDecl)
+			l, bound := limit(t)
 			lo, hi := span(d.Lines, flowRank, 1)
 			d.Lines = slices.Insert(d.Lines, rapid.IntRange(lo, hi).Draw(t, "at"), FlowLine(l))
-			return l
+			return bound
 		})
 		return append(es, each(sitesOf[*PropertyDecl](f), func(t *rapid.T, s site) any {
-			d, l := s.v.Interface().(*PropertyDecl), limit(t)
+			d := s.v.Interface().(*PropertyDecl)
+			l, bound := limit(t)
 			lo, hi := span(d.Lines, propertyRank, 2)
 			d.Lines = slices.Insert(d.Lines, rapid.IntRange(lo, hi).Draw(t, "at"), PropertyLine(l))
-			return l
+			return bound
 		})...)
 	}
 }
@@ -680,16 +686,38 @@ func trailingComment(t *rapid.T) Broken {
 	f, node := editedTree(t, fileKinds, func(f *File) []edit {
 		return each(sitesWhere(f, isLine), func(_ *rapid.T, s site) any { return s.v.Interface() })
 	})
-	text, line := written(t, f, node, "//"+rapid.StringOfN(genRune(), 0, 12, -1).Draw(t, "comment"))
-	return Broken{f.Kind, text, line, "syntax.trailing-comment"}
+	text, line, column := written(&writer{t: t, mark: node, markComment: "//" + rapid.StringOfN(genRune(), 0, 12, -1).Draw(t, "comment")}, f)
+	return Broken{f.Kind, text, line, column, "syntax.trailing-comment"}
+}
+
+// misplacedElse writes the else of a random branch of a random alt on a line
+// of its own, below the } of the branch before it, with comments or blank
+// lines between them. The alt is one of the tree's or a new one put among
+// random steps; its branches hold steps, alts among them.
+func misplacedElse(t *rapid.T) Broken {
+	branch := func(t *rapid.T, a *Alt) any {
+		return &a.Branches[rapid.IntRange(1, len(a.Branches)-1).Draw(t, "branch")]
+	}
+	f, mark := editedTree(t, component, func(f *File) []edit {
+		alts := slices.DeleteFunc(sitesOf[*Alt](f), func(s site) bool { return len(s.v.Interface().(*Alt).Branches) < 2 })
+		es := each(alts, func(t *rapid.T, s site) any { return branch(t, s.v.Interface().(*Alt)) })
+		return append(es, each(stepLists(f), func(t *rapid.T, s site) any {
+			a := genAlt(t, 3, 2)
+			lo, hi := stepSpan(s.v)
+			insert(s.v, rapid.IntRange(lo, hi).Draw(t, "at"), a)
+			return branch(t, a)
+		})...)
+	})
+	text, line, column := written(&writer{t: t, mark: mark, elseApart: true}, f)
+	return Broken{f.Kind, text, line, column, "syntax.misplaced-else"}
 }
 
 // rawLines are lines the writer writes as they are, for edits that no tree
-// can hold; at is the index of the line that breaks the rule. They may stand
-// in a list of lines of any level.
+// can hold; the rule is broken on the line of index at, col bytes into it.
+// They may stand in a list of lines of any level.
 type rawLines struct {
-	lines []string
-	at    int
+	lines   []string
+	at, col int
 }
 
 func (*rawLines) decl()          {}
@@ -714,8 +742,9 @@ var (
 
 func (w *writer) raw(r *rawLines) {
 	for i, l := range r.lines {
-		if i == r.at {
+		if i == r.at && any(r) == w.mark {
 			w.at(r)
+			w.markOffset = r.col
 		}
 		w.tok(l)
 		w.flush()
@@ -734,7 +763,7 @@ func insertedLines(code string, kinds []FileKind, lists []reflect.Type, raw func
 	})
 }
 
-func rawAt(at int, ls ...string) *rawLines { return &rawLines{lines: ls, at: at} }
+func rawAt(at, col int, ls ...string) *rawLines { return &rawLines{lines: ls, at: at, col: col} }
 
 var (
 	declLists = []reflect.Type{reflect.TypeFor[[]Decl]()}
@@ -746,20 +775,23 @@ var (
 
 func label(t *rapid.T) string { return quote(string(genSummary(t, "label"))) }
 
-// A string with an escape other than the four.
+// A string with an escape other than the four; the rule is broken at its backslash.
 func badEscape(t *rapid.T) *rawLines {
 	x := rapid.SampledFrom([]string{"q", "x", "u", "a", "0", " ", "{", "中"}).Draw(t, "escape")
-	return rawAt(0, words.Draw(t, "word")+` "`+plain.Draw(t, "before")+`\`+x+plain.Draw(t, "after")+`"`)
+	before := words.Draw(t, "word") + ` "` + plain.Draw(t, "before")
+	return rawAt(0, len(before), before+`\`+x+plain.Draw(t, "after")+`"`)
 }
 
 func unterminated(t *rapid.T) *rawLines {
-	return rawAt(0, words.Draw(t, "word")+` "`+plain.Draw(t, "text"))
+	word := words.Draw(t, "word")
+	return rawAt(0, len(word)+1, word+` "`+plain.Draw(t, "text"))
 }
 
 // A character that no token holds, outside strings and comments.
 func strayCharacter(t *rapid.T) *rawLines {
 	c := rapid.SampledFrom([]string{"@", "#", "$", "%", "&", "*", "!", "?", ";", "~", "^", "|", "+", "_", "'", "`", `\`, "中", "é", " ", "　"}).Draw(t, "char")
-	return rawAt(0, words.Draw(t, "word")+" "+c+" "+words.Draw(t, "word"))
+	word := words.Draw(t, "word")
+	return rawAt(0, len(word)+1, word+" "+c+" "+words.Draw(t, "word"))
 }
 
 // An assignment whose value breaks its line for a comment.
@@ -775,20 +807,19 @@ func commentInValue(t *rapid.T) *rawLines {
 	if rapid.Bool().Draw(t, "item") {
 		head += map[string]string{"]": "1,", "}": "a: 1,", ")": "a: 1,"}[closer]
 	}
-	return rawAt(1, head, "//"+plain.Draw(t, "comment"), closer)
+	return rawAt(1, 0, head, "//"+plain.Draw(t, "comment"), closer)
 }
 
+// What follows a { on its line; the rule is broken there.
 func openBrace(t *rapid.T) *rawLines {
-	return rawAt(0, "type "+string(genUpper(t, "type"))+" record "+label(t)+" { label "+string(genKebab(t, "label")), "}")
+	head := "type " + string(genUpper(t, "type")) + " record " + label(t) + " { "
+	return rawAt(0, len(head), head+"label "+string(genKebab(t, "label")), "}")
 }
 
+// A } after a member on its line; the rule is broken at the }.
 func closeBrace(t *rapid.T) *rawLines {
-	return rawAt(1, "type "+string(genUpper(t, "type"))+" record "+label(t)+" {", "label "+string(genKebab(t, "label"))+" }")
-}
-
-// An else on its own line after the } of an alt's branch.
-func misplacedElse(t *rapid.T) *rawLines {
-	return rawAt(2, "alt "+label(t)+" {", "}", "else "+label(t)+" {", "}")
+	member := "label " + string(genKebab(t, "label")) + " "
+	return rawAt(1, len(member), "type "+string(genUpper(t, "type"))+" record "+label(t)+" {", member+"}")
 }
 
 // An else on its own line after the } of a block that is no branch of an alt.
@@ -805,30 +836,57 @@ func elseAfterBlock(t *rapid.T) *rawLines {
 		block = []string{"async " + string(genLower(t, "op")) + " {"}
 	}
 	ls := append(block, "}", "else "+label(t)+" {", "}")
-	return rawAt(len(ls)-2, ls...)
+	return rawAt(len(ls)-2, 0, ls...)
 }
 
 // A word alone on a line, outside any value.
-func loneWord(t *rapid.T) *rawLines { return rawAt(0, words.Draw(t, "word")) }
+func loneWord(t *rapid.T) *rawLines { return rawAt(0, 0, words.Draw(t, "word")) }
 
-// Top-level declarations that break the grammar.
+// Top-level declarations that break the grammar, each at the token where it departs from it.
 func badDecl(t *rapid.T) *rawLines {
 	switch rapid.IntRange(0, 3).Draw(t, "decl") {
 	case 0:
-		return rawAt(0, "type "+string(genUpper(t, "type"))+" recor "+label(t))
+		head := "type " + string(genUpper(t, "type")) + " "
+		return rawAt(0, len(head), head+"recor "+label(t))
 	case 1:
-		return rawAt(0, "op "+string(genLower(t, "op"))+"("+string(genLower(t, "param"))+" int)")
+		head := "op " + string(genLower(t, "op")) + "(" + string(genLower(t, "param")) + " "
+		return rawAt(0, len(head), head+"int)")
 	case 2:
-		return rawAt(0, "actor "+string(genKebab(t, "actor"))+" person "+label(t)+" {", "}")
+		head := "actor " + string(genKebab(t, "actor")) + " person " + label(t) + " "
+		return rawAt(0, len(head), head+"{", "}")
 	}
-	return rawAt(1, "flow "+string(genKebab(t, "flow"))+" "+label(t)+" {", "field "+string(genLower(t, "field"))+": int", "}")
+	return rawAt(1, 0, "flow "+string(genKebab(t, "flow"))+" "+label(t)+" {", "field "+string(genLower(t, "field"))+": int", "}")
 }
+
+// Lines that the grammar breaks at one token, one for each class of line
+// that no keyword starts: a step, an assignment, an item of a value broken
+// across lines, and a } that closes no block.
+func badStep(t *rapid.T) *rawLines {
+	head := string(genKebab(t, "sender")) + " -> " + string(genLower(t, "op")) + "(" + string(genLower(t, "arg")) + " "
+	return rawAt(0, len(head), head+string(genLower(t, "arg"))+")")
+}
+
+func badAssignment(t *rapid.T) *rawLines {
+	head := string(genLower(t, "symbol")) + " = "
+	if rapid.Bool().Draw(t, "list?") {
+		head += "[" + string(genNumber(t, false)) + " "
+		return rawAt(0, len(head), head+string(genNumber(t, false))+"]")
+	}
+	return rawAt(0, len(head), head+",")
+}
+
+func badItem(t *rapid.T) *rawLines {
+	item := string(genNumber(t, false)) + " "
+	return rawAt(1, len(item), string(genLower(t, "symbol"))+" = [", item+string(genNumber(t, false)), "]")
+}
+
+func strayClose(*rapid.T) *rawLines { return rawAt(0, 0, "}") }
 
 // unexpectedEnd ends a valid sample with a block that the file ends inside.
 func unexpectedEnd(t *rapid.T) Broken {
 	s := genSample().Draw(t, "sample")
 	text := strings.TrimRight(s.Text, "\n ") + "\n\ntype " + string(genUpper(t, "type")) + " record " + label(t) + " {\n  label " + string(genKebab(t, "label")) + "\n"
-	return Broken{s.Kind, text, strings.Count(text, "\n") + 1, "syntax.unexpected-end"}
+	return Broken{s.Kind, text, strings.Count(text, "\n") + 1, 1, "syntax.unexpected-end"}
 }
 
 var (
@@ -847,10 +905,14 @@ var breakages = []breakage{
 
 	oneOf(trailingComment, insertedLines("syntax.comment-in-value", []FileKind{FileKindComponent, FileKindCorpus}, caseLists, commentInValue),
 		insertedLines("syntax.brace-position", fileKinds, declLists, openBrace), insertedLines("syntax.brace-position", fileKinds, declLists, closeBrace),
-		insertedLines("syntax.misplaced-else", component, stepTypes, misplacedElse)),
+		misplacedElse),
 	oneOf(insertedLines("syntax.unexpected-token", component, stepTypes, elseAfterBlock),
 		insertedLines("syntax.unexpected-token", fileKinds, lineLists, loneWord),
 		insertedLines("syntax.unexpected-token", fileKinds, declLists, badDecl), unexpectedEnd),
+	oneOf(insertedLines("syntax.unexpected-token", component, stepTypes, badStep),
+		insertedLines("syntax.unexpected-token", []FileKind{FileKindComponent, FileKindCorpus}, caseLists, badAssignment),
+		insertedLines("syntax.unexpected-token", []FileKind{FileKindComponent, FileKindCorpus}, caseLists, badItem),
+		insertedLines("syntax.unexpected-token", fileKinds, declLists, strayClose)),
 
 	oneOf(edited("syntax.declaration-order", fileKinds, reordered(false)), edited("syntax.member-order", designKinds, reordered(true))),
 	oneOf(edited("syntax.duplicate-member", fileKinds, duplicated), edited("syntax.missing-header", fileKinds, headless),
@@ -898,11 +960,13 @@ func genBroken() *rapid.Generator[Broken] {
 func checkRejectsBrokenText(t rapid.TB, broken Broken) {
 	parsed := Parse(samplePaths[broken.Kind], broken.Kind, []byte(broken.Text))
 	if parsed.File != nil {
-		t.Fatalf("text broken on line %d should get %s, yet it parsed into a tree\ntext:\n%s", broken.Line, broken.Code, numbered(broken.Text))
+		t.Fatalf("text broken at %d:%d should get %s, yet it parsed into a tree\ntext:\n%s", broken.Line, broken.Column, broken.Code, numbered(broken.Text))
 	}
-	if !slices.ContainsFunc(parsed.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == broken.Code && d.Position.Line == broken.Line }) {
-		t.Fatalf("text broken on line %d should get %s on that line, yet it got:%s\ntext:\n%s",
-			broken.Line, broken.Code, describeDiagnostics(parsed), numbered(broken.Text))
+	if !slices.ContainsFunc(parsed.Diagnostics, func(d diag.Diagnostic) bool {
+		return d.Code == broken.Code && d.Position.Line == broken.Line && d.Position.Column == broken.Column
+	}) {
+		t.Fatalf("text broken at %d:%d should get %s there, yet it got:%s\ntext:\n%s",
+			broken.Line, broken.Column, broken.Code, describeDiagnostics(parsed), numbered(broken.Text))
 	}
 }
 

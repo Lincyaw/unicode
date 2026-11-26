@@ -22,7 +22,7 @@ import (
 func check(at locator, f *File) []diag.Diagnostic {
 	c := &checker{at: at}
 	c.file(f)
-	c.walk(reflect.ValueOf(f.Decls), lexer.Position{})
+	c.walk(reflect.ValueOf(f.Decls), false)
 	slices.SortStableFunc(c.diags, func(a, b diag.Diagnostic) int {
 		return cmp.Or(cmp.Compare(a.Position.Line, b.Position.Line), cmp.Compare(a.Position.Column, b.Position.Column), strings.Compare(a.Code, b.Code))
 	})
@@ -32,6 +32,7 @@ func check(at locator, f *File) []diag.Diagnostic {
 type checker struct {
 	at    locator
 	diags []diag.Diagnostic
+	next  int // the offset up to which walk has placed the tree's tokens
 }
 
 func (c *checker) report(pos lexer.Position, code, message, fix string) {
@@ -84,23 +85,31 @@ var (
 	leadingWord = regexp.MustCompile(`^'([a-z]+)'`)
 )
 
-// keyword names a line by the keyword its grammar starts with, read from the
-// struct tag of its first field: "" for a comment, and step for a step that
-// starts with its sender.
+// keyword names a line by the keyword its grammar starts with: "" for a
+// comment, and step for a step that starts with its sender.
 func keyword(line any) string {
 	t := reflect.TypeOf(line).Elem()
 	if t == commentType {
 		return ""
 	}
+	if kw := lead(t); kw != "" {
+		return kw
+	}
+	return step
+}
+
+// lead is the keyword that the grammar of the struct type t starts with, read
+// from the struct tag of its first field, or "" when it starts otherwise.
+func lead(t reflect.Type) string {
 	for i := range t.NumField() {
 		if tag, ok := t.Field(i).Tag.Lookup("parser"); ok {
 			if m := leadingWord.FindStringSubmatch(tag); m != nil {
 				return m[1]
 			}
-			return step
+			return ""
 		}
 	}
-	return step
+	return ""
 }
 
 func position(line any) lexer.Position {
@@ -226,45 +235,70 @@ func steps[L any](c *checker, ls []L) {
 	}
 }
 
-var positionType = reflect.TypeFor[lexer.Position]()
+var (
+	positionType  = reflect.TypeFor[lexer.Position]()
+	refType       = reflect.TypeFor[Ref]()
+	lowerType     = reflect.TypeFor[Lower]()
+	summaryType   = reflect.TypeFor[Summary]()
+	textType      = reflect.TypeFor[Text]()
+	numberType    = reflect.TypeFor[Number]()
+	isStringToken = ofType("String")
+	isNumberToken = ofType("Number")
+)
 
-// walk checks every name, reference and summary in the tree by its type; a
-// diagnostic stands at the start of the line or reference that holds it.
-func (c *checker) walk(v reflect.Value, pos lexer.Position) {
+func ofType(name string) func(lexer.Token) bool {
+	return func(t lexer.Token) bool { return t.Type == symbols[name] }
+}
+
+func isWord(s string) func(lexer.Token) bool {
+	return func(t lexer.Token) bool { return t.Type == symbols["Ident"] && t.Value == s }
+}
+
+// walk checks every name, reference, summary and size bound in the tree by
+// its type. It visits the tree in the order of the text and places each of
+// these tokens in the source, so that a diagnostic stands at the token it is
+// about; sizeBound is set inside a size limit.
+func (c *checker) walk(v reflect.Value, sizeBound bool) {
 	switch v.Kind() {
 	case reflect.Pointer, reflect.Interface:
 		if !v.IsNil() {
-			c.walk(v.Elem(), pos)
+			c.walk(v.Elem(), sizeBound)
 		}
 	case reflect.Slice:
 		for i := range v.Len() {
-			c.walk(v.Index(i), pos)
+			c.walk(v.Index(i), sizeBound)
 		}
 	case reflect.Struct:
 		if v.Type() == positionType {
 			return
 		}
 		if p := v.FieldByName("Pos"); p.IsValid() {
-			pos = p.Interface().(lexer.Position)
+			// What a node holds comes after the keyword it starts with, which may be spelled like a name.
+			c.next = max(c.next, p.Interface().(lexer.Position).Offset+len(lead(v.Type())))
 		}
-		c.reference(v, pos)
-		if l, ok := v.Interface().(IntervalLimit); ok && l.Op == "size" {
-			c.integers(l)
+		if c.reference(v) {
+			return
 		}
+		l, ok := v.Interface().(IntervalLimit)
 		for i := range v.NumField() {
-			c.walk(v.Field(i), pos)
+			c.walk(v.Field(i), ok && l.Op == "size")
 		}
 	case reflect.String:
-		c.text(v, pos)
+		c.text(v, sizeBound)
 	}
 }
 
-func (c *checker) integers(l IntervalLimit) {
-	for _, n := range []Number{l.Low, l.High} {
-		if strings.Contains(string(n), ".") {
-			c.report(l.Pos, "syntax.not-an-integer", fmt.Sprintf("a size bound must be an integer, not %s", n), "make the bound an integer")
+// place finds the first token from next to the end of its line that match
+// accepts, moves next past it and returns its position; when none does, it
+// returns the position of next.
+func (c *checker) place(match func(lexer.Token) bool) lexer.Position {
+	for _, t := range c.at.tokens(c.next) {
+		if match(t) {
+			c.next = t.Pos.Offset + len(t.Value)
+			return t.Pos
 		}
 	}
+	return lexer.Position{Offset: c.next}
 }
 
 // reserved are the literals of values, which no lower-camel name may be.
@@ -289,17 +323,32 @@ var (
 	}
 )
 
-func (c *checker) text(v reflect.Value, pos lexer.Position) {
+func (c *checker) text(v reflect.Value, sizeBound bool) {
 	s := v.String()
-	if class, ok := classes[v.Type()]; ok && !class.pattern(s) {
-		c.report(pos, "syntax.invalid-name", fmt.Sprintf("the name %s must be written %s", s, class.name), "rename it "+class.name)
+	switch v.Type() {
+	case summaryType:
+		c.summary(s, c.place(isStringToken))
+	case textType:
+		c.place(isStringToken)
+	case numberType:
+		if pos := c.place(isNumberToken); sizeBound && strings.Contains(s, ".") {
+			c.report(pos, "syntax.not-an-integer", fmt.Sprintf("a size bound must be an integer, not %s", s), "make the bound an integer")
+		}
 	}
-	if v.Type() == reflect.TypeFor[Lower]() && slices.Contains(reserved, s) {
-		c.report(pos, "syntax.reserved-name", fmt.Sprintf("%s is reserved and may not be a name", s), "choose another name; true, false and none are literal values")
-	}
-	if v.Type() != reflect.TypeFor[Summary]() {
+	class, ok := classes[v.Type()]
+	if !ok {
 		return
 	}
+	pos := c.place(isWord(s))
+	if !class.pattern(s) {
+		c.report(pos, "syntax.invalid-name", fmt.Sprintf("the name %s must be written %s", s, class.name), "rename it "+class.name)
+	}
+	if v.Type() == lowerType && slices.Contains(reserved, s) {
+		c.report(pos, "syntax.reserved-name", fmt.Sprintf("%s is reserved and may not be a name", s), "choose another name; true, false and none are literal values")
+	}
+}
+
+func (c *checker) summary(s string, pos lexer.Position) {
 	first, _ := utf8.DecodeRuneInString(s)
 	last, _ := utf8.DecodeLastRuneInString(s)
 	switch {
@@ -328,21 +377,27 @@ var refForms = map[reflect.Type]refForm{
 	reflect.TypeFor[Path]():        {"component path", "kebab-case names joined by ., like order or lang.golang", []nameClass{kebabClass}, false},
 }
 
-func (c *checker) reference(v reflect.Value, pos lexer.Position) {
-	if v.Type() == reflect.TypeFor[Ref]() {
-		for _, s := range v.Interface().(Ref).Segments {
-			if !kebabClass.pattern(s) && !upperClass.pattern(s) && !lowerClass.pattern(s) {
-				c.report(pos, "syntax.invalid-name", fmt.Sprintf("%s in a reference is not a valid name", s), "write each segment in kebab-case, UpperCamelCase or lowerCamelCase")
-				return
-			}
-		}
-		return
-	}
-	form, ok := refForms[v.Type()]
-	if !ok {
-		return
+// reference places the segments of a reference and checks them, and tells
+// whether v is a reference.
+func (c *checker) reference(v reflect.Value) bool {
+	form, typed := refForms[v.Type()]
+	if !typed && v.Type() != refType {
+		return false
 	}
 	segs := v.FieldByName("Segments").Interface().([]string)
+	at := make([]lexer.Position, len(segs))
+	for i, s := range segs {
+		at[i] = c.place(isWord(s))
+	}
+	if !typed {
+		for i, s := range segs {
+			if !kebabClass.pattern(s) && !upperClass.pattern(s) && !lowerClass.pattern(s) {
+				c.report(at[i], "syntax.invalid-name", fmt.Sprintf("%s in a reference is not a valid name", s), "write each segment in kebab-case, UpperCamelCase or lowerCamelCase")
+				return true
+			}
+		}
+		return true
+	}
 	valid := slices.ContainsFunc(form.last, func(nc nameClass) bool { return nc.pattern(segs[len(segs)-1]) })
 	rest := segs[:len(segs)-1]
 	if form.typeBefore && len(rest) > 0 && upperClass.pattern(rest[len(rest)-1]) {
@@ -352,7 +407,8 @@ func (c *checker) reference(v reflect.Value, pos lexer.Position) {
 		valid = valid && kebabClass.pattern(s)
 	}
 	if !valid {
-		c.report(pos, "syntax.invalid-reference", fmt.Sprintf("the %s %s is not written %s", form.what, strings.Join(segs, "."), form.example),
+		c.report(at[0], "syntax.invalid-reference", fmt.Sprintf("the %s %s is not written %s", form.what, strings.Join(segs, "."), form.example),
 			"rewrite the reference as "+form.example)
 	}
+	return true
 }
