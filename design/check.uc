@@ -19,7 +19,7 @@ type Broken record "一张合乎约束的图做了一处违反某条约束的改
   field code: string
 }
 
-op conform(graph: graph.Graph) -> Checked "在推导过的图上，检查需要代码才能判断的约束（design.md §5.3）"
+op conform(g: graph.Graph) -> Checked "在推导过的图上，检查需要代码才能判断的约束（design.md §5.3）"
 
 property accepts-conforming-graph invariant "合乎约束的图推导、检查之后没有诊断，每个声明项的状态都是 verified" {
   about conform

@@ -101,7 +101,7 @@ DDD、UML 类图、时序图、活动图、事件风暴和 C4 都是**记法**�
 | `uses` | container → container、actor | 声明 | 允许的依赖 |
 | `extends` | type → type | 声明；抽取 | 继承或嵌入 |
 | `implements` | type → type | 声明；抽取 | 实现接口 |
-| `refers` | type → type；op → type；property、flow → type | 声明；抽取 | 字段、参数、返回值、错误或符号引用的类型 |
+| `refers` | type → type；op → type；property、flow → type | 声明；抽取 | 字段、参数、返回值、错误或符号引用的类型；代码层的 op 另有函数体中构造或使用的类型 |
 | `subscribes` | op → type | 声明 | 操作订阅的事件 |
 | `imports` | container → container | 抽取 | 文件导入包 |
 | `calls` | op → op | 抽取 | 静态解析到的调用；属性中列出每个调用位置 |
