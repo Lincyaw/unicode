@@ -114,14 +114,19 @@ func (x *extraction) signature(sig *types.Signature) string {
 }
 
 // addShapes adds the attrs that are written in the design's notation, once
-// every binding is known: a function's signature, a struct's exported fields
-// and an interface's exported methods. Unexported names map back to no
-// design name, so they are left out.
+// every binding is known: an operation's name, a predicate's being its
+// property's or flow's, and signature; a struct's exported fields, since an
+// unexported name maps back to no design name; and a string type's enum values.
 func (x *extraction) addShapes() {
 	for _, d := range x.declared {
 		n := x.nodes[d.id]
 		switch {
 		case d.fn != nil:
+			name := designName(d.fn.Name())
+			if x.predicates[d.id] {
+				name = predicateName(d.fn.Name())
+			}
+			n.Attrs["name"] = []string{name}
 			n.Attrs["signature"] = []string{x.signature(d.fn.Signature())}
 		case typeForm(d.name) == "struct":
 			fields := []string{}
@@ -131,14 +136,9 @@ func (x *extraction) addShapes() {
 				}
 			}
 			n.Attrs["fields"] = fields
-		case typeForm(d.name) == "interface":
-			methods := []string{}
-			for m := range d.name.Type().Underlying().(*types.Interface).Methods() {
-				if token.IsExported(m.Name()) {
-					methods = append(methods, designName(m.Name())+" "+x.signature(m.Signature()))
-				}
-			}
-			n.Attrs["methods"] = methods
+		}
+		if values, ok := x.values[d.id]; ok {
+			n.Attrs["values"] = values
 		}
 	}
 }

@@ -16,14 +16,16 @@ import (
 // the declarations, write_test.go writes them as source, and expect_test.go
 // computes the nodes and edges that extraction should give.
 
-// Module is a random Go module: its files, and the nodes and edges that
-// extraction should give, each written by describeNode or describeEdge.
+// Module is a random Go module: its files, and the nodes, edges and
+// diagnostics that extraction should give, written by describeNode,
+// describeEdge and describeDiagnostic.
 //
 //uc:realizes lang.golang.Module
 type Module struct {
-	Files map[string]string
-	Nodes []string
-	Edges []string
+	Files       map[string]string
+	Nodes       []string
+	Edges       []string
+	Diagnostics []string
 }
 
 const modulePath = "example.com/m"
@@ -57,6 +59,7 @@ func genModule() *rapid.Generator[Module] {
 		}
 		for _, ty := range slices.Clone(w.types) {
 			w.drawMethods(ty)
+			w.drawConsts(ty)
 		}
 		for range rapid.IntRange(0, 5).Draw(t, "funcs") {
 			w.drawFunc(w.anyFile("funcFile"), "")
@@ -102,8 +105,8 @@ type gfile struct {
 	pkg   *gpkg
 	path  string // relative to the module's root
 	test  bool
-	doc   []string // the package's doc comment, its sentence first
-	decls []any    // *gtype, *ggroup, *gfunc or *gloose, in the order written
+	doc   []binding // the package's doc comment, its sentence first
+	decls []any     // *gtype, *ggroup, *gfunc, *gconst or *gloose, in the order written
 }
 
 type gtype struct {
@@ -123,13 +126,13 @@ type gtype struct {
 // ggroup is a parenthesized type declaration; its own doc comment binds nothing.
 type ggroup struct {
 	types []*gtype
-	doc   []string
+	doc   []binding
 }
 
 type gfield struct {
 	name string
 	typ  *gexpr
-	doc  []string
+	doc  []binding
 }
 
 type gsig struct {
@@ -137,6 +140,7 @@ type gsig struct {
 	name    string
 	params  []gparam
 	results []*gexpr
+	doc     []binding // an interface's method's
 }
 
 type gparam struct {
@@ -155,14 +159,21 @@ type gfunc struct {
 	doc      []binding
 }
 
-// gstmt is one statement of a body.
+// gstmt is one statement of a body, or a comment line in it.
 type gstmt struct {
-	kind   string // call, iface, closure, builtin, ref, rapid or comment
-	target *gfunc // what a call calls
-	via    *gtype // the type whose value a method is called on
-	method *gsig  // an interface's method
-	inner  *gstmt // a closure's statement
-	text   string // a comment's
+	kind    string // call, assign, iface, closure, builtin, ref, rapid or comment
+	target  *gfunc // what a call calls
+	via     *gtype // the type whose value a method is called on
+	method  *gsig  // an interface's method
+	inner   *gstmt // a closure's statement
+	name    string // an assignment's variable
+	comment binding
+}
+
+// gconst is a constant of a defined type.
+type gconst struct {
+	typ  *gtype
+	name string
 }
 
 // gloose is a declaration that is no node: a constant, a variable, an
@@ -170,7 +181,7 @@ type gstmt struct {
 type gloose struct {
 	kind string // const, var, trailing, init or floating
 	name string
-	doc  []string
+	doc  []binding
 }
 
 // gexpr is a type expression.
@@ -234,7 +245,7 @@ func (w *world) drawPackages() {
 	for _, p := range w.packages {
 		if rapid.Bool().Draw(w.t, "packageDoc") {
 			f := rapid.SampledFrom(p.files).Draw(w.t, "docFile")
-			f.doc = append([]string{"// Package " + p.name + w.words("packageWords") + "."}, w.misplaced("packageDocBindings")...)
+			f.doc = append([]binding{{text: "// Package " + p.name + w.words("packageWords") + "."}}, w.misplaced("packageDocBindings")...)
 		}
 	}
 }

@@ -6,12 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 
 	"pgregory.net/rapid"
 
+	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
 )
 
@@ -35,10 +35,9 @@ func describeAttrs(attrs map[string][]string) string {
 	return b.String()
 }
 
-// bindingCodes are the diagnostics a binding that is not well-formed gets.
-var bindingCodes = []string{
-	"lang.golang.unknown-binding-verb", "lang.golang.missing-binding-id", "lang.golang.invalid-binding-id",
-	"lang.golang.misplaced-binding", "lang.golang.duplicate-binding",
+// describeDiagnostic writes a diagnostic's code and place, without its column.
+func describeDiagnostic(d diag.Diagnostic) string {
+	return fmt.Sprintf("%s %s:%d", d.Code, d.Position.Path, d.Position.Line)
 }
 
 //uc:checks lang.golang.extracts-generated-module
@@ -61,73 +60,42 @@ func checkExtractsGeneratedModule(t rapid.TB, module Module) {
 	if err != nil {
 		t.Fatalf("Extract failed on the generated module, which is valid Go unless genModule wrote it wrong: %v\n%s", err, listing(module))
 	}
-	var nodes, edges []string
+	var nodes, edges, diagnostics []string
 	for _, n := range extracted.Fragment.Nodes {
 		nodes = append(nodes, describeNode(n))
 	}
-	wellFormed := 0
 	for _, e := range extracted.Fragment.Edges {
 		edges = append(edges, describeEdge(e))
-		switch {
-		case e.Kind == graph.EdgeKindGenerates:
-			wellFormed += len(e.Attrs["symbols"])
-		case e.Source == graph.SourceDeclared:
-			wellFormed++
-		}
 	}
-	if missing, extra := difference(module.Nodes, nodes), difference(nodes, module.Nodes); len(missing)+len(extra) > 0 {
-		t.Fatalf("extraction gives other nodes than the module has\nmissing:\n%s\nunexpected:\n%s\n%s",
-			strings.Join(missing, "\n"), strings.Join(extra, "\n"), listing(module))
-	}
-	if missing, extra := difference(module.Edges, edges), difference(edges, module.Edges); len(missing)+len(extra) > 0 {
-		t.Fatalf("extraction gives other edges than the module has\nmissing:\n%s\nunexpected:\n%s\n%s",
-			strings.Join(missing, "\n"), strings.Join(extra, "\n"), listing(module))
-	}
-	// Every //uc: line is a well-formed binding, now an edge, or gets exactly one diagnostic.
-	lines := bindingLines(module)
-	seen := map[string]bool{}
 	for _, d := range extracted.Diagnostics {
-		at := fmt.Sprintf("%s:%d:%d", d.Position.Path, d.Position.Line, d.Position.Column)
-		switch {
-		case !slices.Contains(bindingCodes, d.Code):
-			t.Fatalf("extraction gave the diagnostic %s at %s, which is not one of a binding: %s", d.Code, at, d.Message)
-		case !lines[at]:
-			t.Fatalf("extraction gave the diagnostic %s at %s, where no //uc: line starts\n%s", d.Code, at, listing(module))
-		case seen[at]:
-			t.Fatalf("extraction gave the //uc: line at %s more than one diagnostic\n%s", at, listing(module))
-		case d.Subject == "" || d.Message == "" || d.Fix == "":
-			t.Fatalf("the diagnostic %s at %s lacks its subject, cause or fix: %+v", d.Code, at, d)
+		diagnostics = append(diagnostics, describeDiagnostic(d))
+		if d.Subject == "" || d.Message == "" || d.Fix == "" {
+			t.Fatalf("the diagnostic %s lacks its subject, cause or fix: %+v", describeDiagnostic(d), d)
 		}
-		seen[at] = true
 	}
-	if len(lines) != wellFormed+len(extracted.Diagnostics) {
-		t.Fatalf("the module has %d //uc: lines; extraction read %d of them as bindings and gave %d diagnostics, "+
-			"so a line that is not a well-formed binding got no diagnostic\n%s", len(lines), wellFormed, len(extracted.Diagnostics), listing(module))
+	for _, c := range []struct {
+		what      string
+		want, got []string
+	}{{"nodes", module.Nodes, nodes}, {"edges", module.Edges, edges}, {"diagnostics", module.Diagnostics, diagnostics}} {
+		if missing, extra := difference(c.want, c.got), difference(c.got, c.want); len(missing)+len(extra) > 0 {
+			t.Fatalf("extraction gives other %s than the module has\nmissing:\n%s\nunexpected:\n%s\n%s",
+				c.what, strings.Join(missing, "\n"), strings.Join(extra, "\n"), listing(module))
+		}
 	}
 }
 
-// difference lists the entries of a that b lacks.
+// difference lists the entries of a that b lacks, counting repeats.
 func difference(a, b []string) []string {
+	left := slices.Clone(b)
 	var out []string
 	for _, s := range a {
-		if !slices.Contains(b, s) {
+		if i := slices.Index(left, s); i >= 0 {
+			left = slices.Delete(left, i, i+1)
+		} else {
 			out = append(out, "  "+s)
 		}
 	}
 	return out
-}
-
-// bindingLines are the places, as path:line:column, where a //uc: comment starts.
-func bindingLines(module Module) map[string]bool {
-	at := map[string]bool{}
-	for path, content := range module.Files {
-		for i, line := range strings.Split(content, "\n") {
-			if column := strings.Index(line, "//uc:"); column >= 0 && strings.HasSuffix(path, ".go") {
-				at[path+":"+strconv.Itoa(i+1)+":"+strconv.Itoa(column+1)] = true
-			}
-		}
-	}
-	return at
 }
 
 // listing writes the module's Go files with their line numbers.
