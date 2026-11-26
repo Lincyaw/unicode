@@ -1,0 +1,19 @@
+name: deep
+
+# The asynchronous deep verification stage (CLAUDE.md principle 9): once a day
+# on main, and on demand. It never gates a merge; a red run becomes a fix task.
+on:
+  schedule:
+    - cron: "0 19 * * *"
+  workflow_dispatch:
+
+jobs:
+  deep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make deep
