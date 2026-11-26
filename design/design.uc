@@ -13,6 +13,7 @@ type Sample record "一组合法的设计文件和录制文件，以及它们声
   field files: map<string, string>
   field nodes: list<string>
   field edges: list<string>
+  field attrs: map<string, map<string, list<string>>>
 }
 
 type Broken record "一组合法的文件做了一处违反某条约束的改动：文件、改动所在的路径和行，以及应当得到的诊断码" {
@@ -24,7 +25,7 @@ type Broken record "一组合法的文件做了一处违反某条约束的改动
 
 op load(files: list<syntax.File>) -> Loaded "解析引用，建出设计层的节点和边，检查只需设计就能判断的约束"
 
-property accepts-valid-design invariant "合法的设计载入之后没有诊断，图中恰有它声明的节点和边，标识按 model.md §7 写出" {
+property accepts-valid-design invariant "合法的设计载入之后没有诊断，图中恰有它声明的节点和边，标识按 model.md §7 写出；attrs 中列出的节点，属性恰是列出的那些" {
   about load
   forall sample: Sample generated "一组随机的合法文件：系统文件、若干层组件文件和录制文件，引用都能解析，满足只需设计就能判断的全部约束；节点和边写成标识，边写作 种类 起点 终点"
 }
