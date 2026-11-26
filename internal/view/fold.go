@@ -56,7 +56,7 @@ func (ix index) fold(kind ViewKind, input string, sel selection, expand []string
 			revealed[e] = true
 		}
 	}
-	v := View{Kind: kind, Nodes: []graph.Node{}, Edges: []graph.Edge{}, Folded: slices.Sorted(maps.Keys(f.folded)), Hidden: len(f.hidden)}
+	v := View{Kind: kind, Nodes: []graph.Node{}, Edges: []graph.Edge{}, Folded: append([]string{}, slices.Sorted(maps.Keys(f.folded))...), Hidden: len(f.hidden)}
 	if kind != ViewKindSequence && kind != ViewKindActivity {
 		slices.Sort(f.order)
 	}

@@ -45,11 +45,11 @@ func (e NotApplicable) Error() string {
 //
 //uc:realizes view.View
 type View struct {
-	Kind   ViewKind
-	Nodes  []graph.Node
-	Edges  []graph.Edge
-	Folded []string
-	Hidden int
+	Kind   ViewKind     `json:"kind"`
+	Nodes  []graph.Node `json:"nodes"`
+	Edges  []graph.Edge `json:"edges"`
+	Folded []string     `json:"folded"`
+	Hidden int          `json:"hidden"`
 }
 
 // Select picks the subgraph of the view kind for the node id and folds it

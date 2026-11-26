@@ -136,12 +136,24 @@ func sortJSON(ds []diagnosticJSON) []diagnosticJSON {
 // syntax.Parse, the canonical comparison and design.Load give them, run
 // directly. The CLI's own diagnostics (cli.*) carry only their code and position.
 func expectedDiagnostics(files map[string]RepoFile) []diagnosticJSON {
+	want, trees := readExpected(files)
+	return append(want, diagnosticsJSON(design.Load(trees).Diagnostics)...)
+}
+
+// readExpected gives the diagnostics of reading the design and corpus files
+// as syntax.KindOf, syntax.Parse and the canonical comparison give them, and
+// the trees of the files that parse; the other files of the repository are
+// not read.
+func readExpected(files map[string]RepoFile) ([]diagnosticJSON, []syntax.File) {
 	var want []diagnosticJSON
 	var trees []syntax.File
 	cli := func(code, path string, line, column int) {
 		want = append(want, diagnosticJSON{Code: code, Subject: path, Path: path, Line: line, Column: column})
 	}
 	for _, p := range slices.Sorted(maps.Keys(files)) {
+		if !strings.HasPrefix(p, "design/") && !strings.HasPrefix(p, "corpus/") {
+			continue
+		}
 		f := files[p]
 		kind, err := syntax.KindOf(p)
 		switch {
@@ -163,7 +175,7 @@ func expectedDiagnostics(files map[string]RepoFile) []diagnosticJSON {
 		}
 		trees = append(trees, *parsed.File)
 	}
-	return append(want, diagnosticsJSON(design.Load(trees).Diagnostics)...)
+	return want, trees
 }
 
 //uc:checks cli.check-design
@@ -181,13 +193,24 @@ func checkFlowCheckDesign(t rapid.TB, files map[string]RepoFile, designOnly bool
 	if !maps.Equal(readRepo(t, root), files) {
 		t.Fatalf("unicode check changed the repository")
 	}
+	want := sortJSON(expectedDiagnostics(files))
 	if !designOnly {
-		if code != exitUsage || stdout != "" || !strings.Contains(stderr, "--design-only") {
-			t.Fatalf("unicode check without --design-only should be a usage error that names --design-only, yet it exited with %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		var report codeReport
+		if err := json.Unmarshal([]byte(stdout), &report); err != nil || report.Diagnostics == nil || report.Statuses == nil || stderr != "" {
+			t.Fatalf("stdout of unicode check --format json is not its report {\"diagnostics\": [...], \"statuses\": {...}}, or it wrote to stderr: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+		}
+		if wantCode := map[bool]int{false: exitOK, true: exitDiagnostics}[len(report.Diagnostics) > 0]; code != wantCode {
+			t.Fatalf("unicode check exited with %d, yet it reported %d diagnostics", code, len(report.Diagnostics))
+		}
+		for _, w := range want {
+			if !slices.ContainsFunc(report.Diagnostics, func(g diagnosticJSON) bool {
+				return g.Code == w.Code && g.Path == w.Path && g.Line == w.Line && g.Column == w.Column && (strings.HasPrefix(g.Code, "cli.") || g == w)
+			}) {
+				t.Fatalf("unicode check without --design-only leaves out the diagnostic %+v, which the files' design alone gives", w)
+			}
 		}
 		return
 	}
-	want := sortJSON(expectedDiagnostics(files))
 	wantCode := exitOK
 	if len(want) > 0 {
 		wantCode = exitDiagnostics
@@ -237,5 +260,149 @@ func TestFlowCheckDesign(t *testing.T) {
 func FuzzFlowCheckDesign(f *testing.F) {
 	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
 		checkFlowCheckDesign(t, genCheckFiles().Draw(t, "files"), rapid.IntRange(0, 4).Draw(t, "designOnly") > 0)
+	}))
+}
+
+// replace changes the first old in the file at path to new.
+func replace(files map[string]string, path, old, new string) {
+	files[path] = strings.Replace(files[path], old, new, 1)
+}
+
+// codeBreaks change a drawn repository in one place of component c, so that
+// it violates one constraint of the design, of the code or of the bindings
+// between them, its code does not load, or it configures a language that has
+// no backend; some changes cascade into further diagnostics.
+var codeBreaks = []func(t *rapid.T, r repo, c repoComponent, files map[string]string){
+	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+		files["design/"+c.name+".uc"] += "@\n"
+	},
+	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+		replace(files, "design/"+c.name+".uc", "\n", "\n\n")
+	},
+	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+		replace(files, "design/"+c.name+".uc", "field n: int", "field n: Nothing")
+	},
+	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+		replace(files, "design/"+c.name+".uc", "field n: int\n", "field n: int\n  field label: string\n")
+	},
+	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+		replace(files, "internal/"+c.name+"/"+c.name+".go", "//uc:realizes "+c.name+".Item\n", "")
+	},
+	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+		replace(files, "internal/"+c.name+"/"+c.name+".go", "func Make(n int) Item {\n\treturn Item{N: n}", "func Make(n int) *Item {\n\treturn &Item{N: n}")
+	},
+	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+		replace(files, "internal/"+c.name+"/"+c.name+".go", "return Item{N: n}", `panic("unicode: unimplemented")`)
+	},
+	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+		replace(files, "internal/"+c.name+"/"+c.name+"_test.go", "//uc:checks "+c.name+".keeps\n", "")
+	},
+	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+		replace(files, "internal/"+c.name+"/"+c.name+".go", "//uc:realizes "+c.name+".make", "//uc:realise "+c.name+".make")
+	},
+	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+		replace(files, "internal/"+c.name+"/"+c.name+".go", "//uc:realizes "+c.name+".make", "//uc:realizes "+c.name+".makeIt")
+	},
+	func(_ *rapid.T, _ repo, _ repoComponent, files map[string]string) {
+		files["internal/stray/stray.go"] = "// Package stray belongs to no component.\npackage stray\n"
+	},
+	func(t *rapid.T, r repo, _ repoComponent, files map[string]string) {
+		// A component calls into an earlier one that it does not use; the earlier never imports the later.
+		type pair struct{ from, to string }
+		var pairs []pair
+		for i, c := range r.components {
+			for _, o := range r.components[:i] {
+				if o.name != c.uses {
+					pairs = append(pairs, pair{c.name, o.name})
+				}
+			}
+		}
+		if len(pairs) == 0 {
+			return
+		}
+		p := rapid.SampledFrom(pairs).Draw(t, "undeclared")
+		files["internal/"+p.from+"/extra.go"] = fmt.Sprintf("package %s\n\nimport \"%s/internal/%s\"\n\nfunc makeOther() { _ = %s.Make(1) }\n", p.from, modulePath, p.to, p.to)
+	},
+	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+		files["internal/"+c.name+"/"+c.name+".go"] += "\nfunc broken() int { return undefined }\n"
+	},
+	func(_ *rapid.T, _ repo, _ repoComponent, files map[string]string) {
+		replace(files, "design/system.uc", "actor who", "language python {\n  root \"py\"\n}\n\nactor who")
+	},
+	func(_ *rapid.T, _ repo, _ repoComponent, files map[string]string) {
+		replace(files, "design/system.uc", `root "."`, `root "src"`)
+	},
+}
+
+// genCodeRepo draws a small repository of design files and Go code that
+// agree everywhere, or that one of codeBreaks has changed in one place.
+//
+//uc:generates cli.check-code.files
+func genCodeRepo() *rapid.Generator[map[string]RepoFile] {
+	return rapid.Custom(func(t *rapid.T) map[string]RepoFile {
+		r := drawRepo(t)
+		texts := r.texts(t)
+		if rapid.IntRange(0, 3).Draw(t, "broken?") > 0 {
+			c := rapid.SampledFrom(r.components).Draw(t, "brokenComponent")
+			codeBreaks[rapid.IntRange(0, len(codeBreaks)-1).Draw(t, "break")](t, r, c, texts)
+		}
+		return repoFiles(texts)
+	})
+}
+
+//uc:checks cli.check-code
+func checkFlowCheckCode(t rapid.TB, files map[string]RepoFile) {
+	root := writeRepo(t, files)
+	defer removeAll(t, filepath.Dir(root))
+	want, statuses := checkDirectly(t, root, files)
+	wantCode := exitOK
+	if len(want) > 0 {
+		wantCode = exitDiagnostics
+	}
+	code, stdout, stderr := runMain(t, []string{"--root", root, "--format", "json", "check"})
+	if code != wantCode || stderr != "" {
+		t.Fatalf("unicode check --format json exited with %d instead of %d, or wrote to stderr\nstdout: %s\nstderr: %s", code, wantCode, stdout, stderr)
+	}
+	if !maps.Equal(readRepo(t, root), files) {
+		t.Fatalf("unicode check changed the repository")
+	}
+	var report codeReport
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil || report.Diagnostics == nil || report.Statuses == nil {
+		t.Fatalf("stdout is not check's JSON report {\"diagnostics\": [...], \"statuses\": {...}}: %v\n%s", err, stdout)
+	}
+	if problem := sameDiagnostics(sortJSON(report.Diagnostics), want); problem != "" {
+		t.Fatalf("unicode check reports other diagnostics than Load, Extract, AddFragment, Derive and Conform give: %s", problem)
+	}
+	if !maps.Equal(report.Statuses, statuses) {
+		for _, id := range sortedKeys(statuses) {
+			if report.Statuses[id] != statuses[id] {
+				t.Fatalf("unicode check gives %s the status %q, yet Conform gives %q", id, report.Statuses[id], statuses[id])
+			}
+		}
+		t.Fatalf("unicode check gives statuses to items that Conform gives none: %v", report.Statuses)
+	}
+	code, stdout, stderr = runMain(t, []string{"--root", root, "check"})
+	if code != wantCode || stdout != "" {
+		t.Fatalf("with --format text, unicode check exited with %d instead of %d, or wrote to stdout: %s", code, wantCode, stdout)
+	}
+	if lines := strings.Count(stderr, "\n"); lines != len(report.Diagnostics) {
+		t.Fatalf("with --format text, stderr should have one line per diagnostic, %d in all, yet it has %d:\n%s", len(report.Diagnostics), lines, stderr)
+	}
+	for _, d := range report.Diagnostics {
+		if line := fmt.Sprintf("%s:%d:%d: %s: %s (fix: %s)\n", d.Path, d.Line, d.Column, d.Code, d.Message, d.Fix); !strings.Contains(stderr, line) {
+			t.Fatalf("with --format text, stderr lacks the diagnostic %q", line)
+		}
+	}
+}
+
+func TestFlowCheckCode(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		checkFlowCheckCode(t, genCodeRepo().Draw(t, "files"))
+	})
+}
+
+func FuzzFlowCheckCode(f *testing.F) {
+	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
+		checkFlowCheckCode(t, genCodeRepo().Draw(t, "files"))
 	}))
 }

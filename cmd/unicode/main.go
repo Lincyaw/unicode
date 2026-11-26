@@ -19,6 +19,8 @@ const (
 	exitOK          = 0
 	exitUnexpected  = 1
 	exitUsage       = 2
+	exitNotFound    = 3
+	exitEnvironment = 7
 	exitDiagnostics = 10
 )
 
@@ -26,7 +28,8 @@ const (
 var exitCodes = []struct {
 	code    int
 	meaning string
-}{{exitOK, "success"}, {exitUnexpected, "unexpected error"}, {exitUsage, "usage error"}, {exitDiagnostics, "diagnostics found"}}
+}{{exitOK, "success"}, {exitUnexpected, "unexpected error"}, {exitUsage, "usage error"}, {exitNotFound, "no such identity"},
+	{exitEnvironment, "environment error"}, {exitDiagnostics, "diagnostics found"}}
 
 func main() {
 	os.Exit(Main(os.Args[1:]))
@@ -82,7 +85,11 @@ func write(w io.Writer, out []byte, code int) int {
 type globalOptions struct {
 	root   string
 	format string
+	rev    string
 }
+
+// readsRev marks the commands that take --rev: the queries.
+const readsRev = "reads-rev"
 
 func rootCommand(stdout, stderr io.Writer) *cobra.Command {
 	g := &globalOptions{}
@@ -92,9 +99,12 @@ func rootCommand(stdout, stderr io.Writer) *cobra.Command {
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
-		PersistentPreRunE: func(*cobra.Command, []string) error {
+		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
 			if g.format != "text" && g.format != "json" {
 				return usageError("--format must be text or json, not %q", g.format)
+			}
+			if _, reads := c.Annotations[readsRev]; g.rev != "" && !reads {
+				return usageError("--rev applies only to the queries node, slice, impact and view, not to %s", c.CommandPath())
 			}
 			return nil
 		},
@@ -110,7 +120,9 @@ func rootCommand(stdout, stderr io.Writer) *cobra.Command {
 	flags := root.PersistentFlags()
 	flags.StringVar(&g.root, "root", "", "repository root (default: the nearest ancestor of the working directory that contains design/system.uc)")
 	flags.StringVar(&g.format, "format", "text", "output format: text or json")
-	root.AddCommand(fmtCommand(g, stdout, stderr), checkCommand(g, stdout, stderr))
+	flags.StringVar(&g.rev, "rev", "", "let a query read the graph of this commit instead of the working tree")
+	root.AddCommand(fmtCommand(g, stdout, stderr), checkCommand(g, stdout, stderr), buildCommand(g, stdout, stderr),
+		nodeCommand(g, stdout), sliceCommand(g, stdout), impactCommand(g, stdout), viewCommand(g, stdout))
 	return root
 }
 

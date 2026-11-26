@@ -18,9 +18,9 @@ func (e NotFound) Error() string { return fmt.Sprintf("the graph has no node %q"
 //
 //uc:realizes query.NodeView
 type NodeView struct {
-	Node     graph.Node
-	Outgoing []graph.Edge
-	Incoming []graph.Edge
+	Node     graph.Node   `json:"node"`
+	Outgoing []graph.Edge `json:"outgoing"`
+	Incoming []graph.Edge `json:"incoming"`
 }
 
 // Get returns the node id with its edges, each list sorted by kind, start and end.

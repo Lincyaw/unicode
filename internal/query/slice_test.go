@@ -1,6 +1,7 @@
 package query
 
 import (
+	"cmp"
 	"maps"
 	"reflect"
 	"slices"
@@ -118,6 +119,27 @@ func checkSliceIsMinimalContext(t rapid.TB, question Question) {
 	}
 	if !maps.Equal(got.Details, details) {
 		t.Fatalf("the slice counts the unexpanded detail nodes one edge away from each focus node or among its additions as %v, not %v", got.Details, details)
+	}
+
+	inSlice := maps.Clone(lineage)
+	maps.Copy(inSlice, extras)
+	for _, other := range want {
+		inSlice[other] = true
+	}
+	var contains []graph.Edge
+	for _, e := range question.Fragment.Edges {
+		if e.Kind == graph.EdgeKindContains && inSlice[e.From] && inSlice[e.To] {
+			contains = append(contains, e)
+		}
+	}
+	slices.SortFunc(contains, func(a, b graph.Edge) int { return cmp.Or(cmp.Compare(a.From, b.From), cmp.Compare(a.To, b.To)) })
+	if len(got.Edges) != len(contains) {
+		t.Fatalf("the slice gives %d contains edges, yet %d contains edges join two of its nodes\ngot: %+v\nwant: %+v", len(got.Edges), len(contains), got.Edges, contains)
+	}
+	for i, e := range got.Edges {
+		if !reflect.DeepEqual(e, contains[i]) {
+			t.Fatalf("edge %d of the slice is %+v, yet the contains edges that join two of its nodes, sorted by kind, start and end, have %+v there", i+1, e, contains[i])
+		}
 	}
 }
 

@@ -94,19 +94,20 @@ const (
 )
 
 // Node is one node of the graph. Attrs hold everything but the summary, as
-// lists of strings in the canonical format (docs/design.md §5.2).
+// lists of strings in the canonical format (docs/design.md §5.2). Its JSON
+// names are the design's; empty attrs are left out.
 //
 //uc:realizes graph.Node
 type Node struct {
-	Id      string
-	Kind    NodeKind
-	Form    string
-	Layer   Layer
-	Source  Source
-	Origin  diag.Position
-	Summary string
-	Salient bool
-	Attrs   map[string][]string
+	Id      string              `json:"id"`
+	Kind    NodeKind            `json:"kind"`
+	Form    string              `json:"form"`
+	Layer   Layer               `json:"layer"`
+	Source  Source              `json:"source"`
+	Origin  diag.Position       `json:"origin"`
+	Summary string              `json:"summary"`
+	Salient bool                `json:"salient"`
+	Attrs   map[string][]string `json:"attrs,omitempty"`
 }
 
 // Fragment is a set of nodes and edges: the code layer one backend extracts,
@@ -122,12 +123,12 @@ type Fragment struct {
 //
 //uc:realizes graph.Edge
 type Edge struct {
-	Kind   EdgeKind
-	From   string
-	To     string
-	Source Source
-	Origin diag.Position
-	Attrs  map[string][]string
+	Kind   EdgeKind            `json:"kind"`
+	From   string              `json:"from"`
+	To     string              `json:"to"`
+	Source Source              `json:"source"`
+	Origin diag.Position       `json:"origin"`
+	Attrs  map[string][]string `json:"attrs,omitempty"`
 }
 
 // DuplicateNode is the error of AddNode for an identity the graph already holds.

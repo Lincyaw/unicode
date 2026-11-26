@@ -4,9 +4,9 @@ package diag
 //
 //uc:realizes diag.Position
 type Position struct {
-	Path   string
-	Line   int
-	Column int
+	Path   string `json:"path"`
+	Line   int    `json:"line"`
+	Column int    `json:"column"`
 }
 
 // Diagnostic is one violation of a constraint. Code is stable and written
