@@ -28,9 +28,10 @@ type Sample record "一个合法文件的种类和文本，供性质使用" {
   field text: string
 }
 
-type Broken record "一个合法文件做了一处违反某条规则的改动：种类、文本，以及这处改动应当得到的诊断码" {
+type Broken record "一个合法文件做了一处违反某条规则的改动：种类、文本、改动所在的行，以及这处改动应当得到的诊断码" {
   field kind: FileKind
   field text: string
+  field line: int
   field code: string
 }
 
@@ -52,7 +53,7 @@ property format-is-stable relation "合法的文本 s 解析后打印得到 t：
   forall sample: Sample generated "一个合法的文件：随机的语法树，以随意而合法的空白和空行写成文本"
 }
 
-property rejects-broken-text invariant "合法的文件做一处违反某条规则的改动之后，解析给出这条规则的诊断，并且不给出语法树" {
+property rejects-broken-text invariant "合法的文件做一处违反某条规则的改动之后，解析在改动所在的行给出这条规则的诊断，并且不给出语法树" {
   about parse
-  forall broken: Broken generated "一个合法的文件做了一处违反 format.md 某条规则的改动，附上应当得到的诊断码"
+  forall broken: Broken generated "一个随机的合法文件，在随机的一处做了违反 format.md 某条规则的改动，附上改动所在的行和应当得到的诊断码"
 }

@@ -39,3 +39,5 @@
 22. **命令行的两处理解：JSON 模式下诊断是数据，写到标准输出；路径参数必须在 `design/` 或 `corpus/` 之内。改写文件用 renameio。** 见 [design.md](design.md) §3、§8。
 23. **工具链的界面文字统一用英文，文档仍用中文。** 诊断、帮助和命令行消息与 participle、cobra、pflag 和操作系统的英文提示一致，不必翻译；读库的报错时取它的结构化字段，不拆它的文字。见 `CLAUDE.md` 原则 7。
 24. **流程 `format-files` 的输入带上文件的权限位（`cli.RepoFile`）。** 谓词只能从符号取输入，权限要改写后保持不变，就必须是输入的一部分，而不是从路径的哈希推出来。
+25. **第二次评审后补强两条性质的输入。** `rejects-broken-text` 的输入带上改动所在的行，诊断必须落在这一行；`format-files` 增加路径参数 `targets`，验证路径参数的规则。原来的输入让多数改错的实现仍能通过。见 `design/syntax.uc`、`design/cli.uc`。
+26. **`design/` 和 `corpus/` 中的符号链接给出诊断 `cli.symlink`，不跟随，也不改写。** 见 [design.md](design.md) §8。
