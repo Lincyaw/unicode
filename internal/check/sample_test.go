@@ -51,6 +51,9 @@ type dtype struct {
 	home               *comp
 	fields, codeFields []string
 	ops                []*dop
+	// impls are, for an interface, the methods of each code type that
+	// implements it, by operation name.
+	impls []map[string]string
 }
 
 // dop is a design operation and its realizer: a method, an interface's
@@ -69,13 +72,15 @@ type checkable struct {
 }
 
 // step is a flow step: what it calls or emits, who sends it, the function
-// that realizes its operation, and the functions of its context that reach it.
+// that realizes its operation, and the functions of its context that reach
+// it; dispatch is the code interface whose implementations the context
+// comes from, or "".
 type step struct {
-	id, form, op, sender, traced string
-	context                      []string
-	event                        string
-	senderCode                   []string
-	home                         *comp
+	id, form, op, sender, traced, dispatch string
+	context                                []string
+	event                                  string
+	senderCode                             []string
+	home                                   *comp
 }
 
 func (w *world) pos(path string) diag.Position {
@@ -277,9 +282,9 @@ func (w *world) componentTypes(c *comp) {
 	forms := []string{"object"}
 	switch {
 	case c.id == "k0":
-		forms = append(forms, "event", "error")
+		forms = append(forms, "event", "error", "enum")
 	case rapid.Bool().Draw(w.t, "second"):
-		forms = append(forms, rapid.SampledFrom([]string{"event", "record", "error", "object"}).Draw(w.t, "form"))
+		forms = append(forms, rapid.SampledFrom([]string{"event", "record", "error", "object", "enum"}).Draw(w.t, "form"))
 	}
 	if rapid.Bool().Draw(w.t, "interface") {
 		forms = append(forms, "interface")
@@ -290,7 +295,7 @@ func (w *world) componentTypes(c *comp) {
 		case "object":
 			ops = append([]string{"run"}, w.subset("ops", []string{"stop"})...)
 		case "interface":
-			ops = []string{"run"}
+			ops = append([]string{"run"}, w.subset("ops", []string{"stop"})...)
 		}
 		w.designType(c, fmt.Sprintf("%s.T%d", c.id, j), form, c.pkg+fmt.Sprintf(".T%d", j), c.file, ops)
 	}
@@ -311,7 +316,13 @@ func (w *world) subset(label string, options []string) []string {
 
 func (w *world) designType(c *comp, id, form, code, file string, ops []string) *dtype {
 	t := &dtype{id: id, form: form, code: code, home: c}
-	if form != "interface" {
+	var values, codeValues []string
+	if form == "enum" {
+		values = append([]string{"draft"}, w.subset("values", []string{"paid", "canceled"})...)
+		// The code may have constants that the design does not name.
+		codeValues = append(slices.Clone(values), w.subset("extraValues", []string{"archived"})...)
+	}
+	if form != "interface" && form != "enum" {
 		for k := range rapid.IntRange(0, 2).Draw(w.t, "fields") {
 			d, c := w.typePair(objectOf(c), 1)
 			t.fields, t.codeFields = append(t.fields, fmt.Sprintf("f%d: %s", k, d)), append(t.codeFields, fmt.Sprintf("f%d: %s", k, c))
@@ -321,14 +332,14 @@ func (w *world) designType(c *comp, id, form, code, file string, ops []string) *
 	if c != nil {
 		parent = c.id
 	}
-	w.node(id, graph.LayerDesign, graph.NodeKindType, form, w.designFile(c), map[string][]string{"fields": t.fields})
+	w.node(id, graph.LayerDesign, graph.NodeKindType, form, w.designFile(c), map[string][]string{"fields": t.fields, "values": values})
 	w.declared(graph.EdgeKindContains, parent, id)
-	codeForm := "struct"
-	if form == "interface" {
-		codeForm = "interface"
+	codeForm := map[string]string{"interface": "interface", "enum": "defined"}[form]
+	if codeForm == "" {
+		codeForm = "struct"
 	}
 	w.node(code, graph.LayerCode, graph.NodeKindType, codeForm, strings.TrimPrefix(file, "file:"),
-		map[string][]string{"name": {name(id)}, "fields": t.codeFields})
+		map[string][]string{"name": {name(id)}, "fields": t.codeFields, "values": codeValues})
 	w.extracted(graph.EdgeKindContains, file, code)
 	w.declared(graph.EdgeKindRealizes, code, id)
 	for _, op := range ops {
@@ -347,8 +358,55 @@ func (w *world) designType(c *comp, id, form, code, file string, ops []string) *
 		m := w.function(code, code+".Other", "other", "()", methodForm(form))
 		w.edge(graph.EdgeKindRealizes, m, id+".other", graph.SourceDerived, nil)
 	}
+	if form == "interface" {
+		w.implementations(t, file)
+	}
 	w.types = append(w.types, t)
 	return t
+}
+
+// implementations adds one or two code types that implement an interface's
+// code type, outside the design. One may get its first method by embedding
+// a base type, which implements the interface only when that is its one
+// method, as Go's method sets decide.
+func (w *world) implementations(t *dtype, file string) {
+	at := strings.TrimPrefix(file, "file:")
+	for k := range rapid.IntRange(1, 2).Draw(w.t, "implementations") {
+		impl := fmt.Sprintf("%sImpl%d", t.code, k)
+		w.node(impl, graph.LayerCode, graph.NodeKindType, "struct", at, map[string][]string{"name": {fmt.Sprintf("%sImpl%d", name(t.id), k)}})
+		w.extracted(graph.EdgeKindContains, file, impl)
+		w.extracted(graph.EdgeKindImplements, impl, t.code)
+		methods := map[string]string{}
+		for i, o := range t.ops {
+			holder := impl
+			if i == 0 && rapid.Bool().Draw(w.t, "embeds") {
+				holder = impl + "Base"
+				w.node(holder, graph.LayerCode, graph.NodeKindType, "struct", at, map[string][]string{"name": {fmt.Sprintf("%sImpl%dBase", name(t.id), k)}})
+				w.extracted(graph.EdgeKindContains, file, holder)
+				w.extracted(graph.EdgeKindExtends, impl, holder)
+				if len(t.ops) == 1 {
+					w.extracted(graph.EdgeKindImplements, holder, t.code)
+				}
+			}
+			methods[name(o.id)] = w.function(holder, holder+"."+upper(name(o.id)), name(o.id), o.codeSignature, "method")
+		}
+		t.impls = append(t.impls, methods)
+	}
+}
+
+func (w *world) typeNamed(id string) *dtype {
+	for _, t := range w.types {
+		if t.id == id {
+			return t
+		}
+	}
+	return nil
+}
+
+// implMethod is the method of one of an interface's implementations that a
+// call of the operation named op dispatches to.
+func (w *world) implMethod(t *dtype, op string) string {
+	return rapid.SampledFrom(t.impls).Draw(w.t, "implementation")[op]
 }
 
 // methodForm is the form of the code methods of a type of the given design form.
@@ -420,7 +478,7 @@ func (w *world) checkables_(c *comp) {
 	flow := w.checkable(c, c.id+".f", graph.NodeKindFlow, "flow", flowSymbols)
 	n := 0
 	if c.id == "k0" {
-		w.callStep(c, flow.id, flow.id, &n, "call", c.id, c.helper, w.types[0].ops[0], 0)
+		w.callStep(c, flow.id, flow.id, &n, "call", c.id, c.helper, "", w.types[0].ops[0], 0)
 		w.emitStep(c, flow.id, flow.id, &n)
 	}
 	for range rapid.IntRange(0, 3).Draw(w.t, "steps") {
@@ -511,51 +569,55 @@ func (w *world) topStep(c *comp, flow, parent string, n *int) {
 		ops := w.callable(c)
 		senders := []string{"user", c.id}
 		for _, t := range w.types {
-			if t.home == c && t.form == "object" {
+			if t.home == c && (t.form == "object" || t.form == "interface") {
 				senders = append(senders, t.id)
 			}
 		}
 		sender := rapid.SampledFrom(senders).Draw(w.t, "sender")
-		var from string
-		switch {
+		var from, dispatch string
+		switch t := w.typeNamed(sender); {
 		case sender == c.id:
 			from = c.helper
-		case sender != "user":
-			for _, t := range w.types {
-				if t.id == sender {
-					from = t.ops[0].code
-				}
-			}
+		case t == nil:
+			// The person: rule 22 checks nothing.
+		case t.form == "interface":
+			// An interface sends through the methods of its implementations.
+			from, dispatch = w.implMethod(t, name(t.ops[0].id)), t.code
+		default:
+			from = t.ops[0].code
 		}
 		form := rapid.SampledFrom([]string{"call", "send"}).Draw(w.t, "callForm")
-		w.callStep(c, flow, parent, n, form, sender, from, rapid.SampledFrom(ops).Draw(w.t, "op"), 2)
+		w.callStep(c, flow, parent, n, form, sender, from, dispatch, rapid.SampledFrom(ops).Draw(w.t, "op"), 2)
 	}
 }
 
 // callStep adds a call or send step to op, sent by sender; from is the code
-// function of its context that calls op's function, or "" for the person.
-// A call may nest steps that its receiver sends, unless it calls an
-// interface: an abstract method calls nothing, so no step under it could be
-// reached.
-func (w *world) callStep(c *comp, flow, parent string, n *int, form, sender, from string, op *dop, depth int) {
+// function of its context that calls op's function, or "" for the person,
+// and dispatch the code interface whose implementation from is, or "". A
+// call may nest steps that its receiver sends; under a call of an
+// interface, an implementation's method calls them.
+func (w *world) callStep(c *comp, flow, parent string, n *int, form, sender, from, dispatch string, op *dop, depth int) {
 	id := w.newStep(flow, parent, form, n)
 	w.declared(graph.EdgeKindFrom, id, sender)
 	w.declared(graph.EdgeKindCalls, id, op.id)
-	s := &step{id: id, form: form, op: op.id, sender: sender, traced: op.code, home: c}
+	s := &step{id: id, form: form, op: op.id, sender: sender, traced: op.code, home: c, dispatch: dispatch}
 	if from != "" {
 		w.call(from, op.code)
 		s.context = []string{from}
 	}
 	w.steps = append(w.steps, s)
-	if form != "call" || op.home == nil || op.kind == "abstract" || depth == 0 {
+	if form != "call" || op.home == nil || depth == 0 {
 		return
 	}
-	receiver := op.home.id
+	receiver, inner, iface := op.home.id, op.code, ""
 	if op.owner != nil {
 		receiver = op.owner.id
 	}
+	if op.kind == "abstract" {
+		inner, iface = w.implMethod(op.owner, name(op.id)), op.owner.code
+	}
 	for range rapid.IntRange(0, 2).Draw(w.t, "subSteps") {
-		w.callStep(op.home, flow, id, n, "call", receiver, op.code, rapid.SampledFrom(w.callable(op.home)).Draw(w.t, "subOp"), depth-1)
+		w.callStep(op.home, flow, id, n, "call", receiver, inner, iface, rapid.SampledFrom(w.callable(op.home)).Draw(w.t, "subOp"), depth-1)
 	}
 }
 

@@ -134,8 +134,8 @@ func (c *checker) callStep(s graph.Node) {
 			fmt.Sprintf("realize %s in the code", op))
 		return
 	}
-	context, what := c.context(s.Id)
-	if len(context) == 0 {
+	context, what, checked := c.context(s.Id)
+	if !checked {
 		return
 	}
 	for _, from := range context {
@@ -152,41 +152,131 @@ func (c *checker) callStep(s graph.Node) {
 
 // context lists the functions from which the code must reach what a step
 // calls, and describes them: those that realize the operation of the
-// enclosing call or async; for an outermost step, those of its sender's
-// code. It lists none where rule 22 checks nothing, or where that code is
-// missing, which other rules report.
-func (c *checker) context(step string) ([]string, string) {
+// enclosing call or async; for an outermost step, the methods of its sender
+// type's code or the functions of its sender container's. Interfaces go by
+// dispatch: an abstract method stands for the same-named method of each
+// code type that implements its interface, and a code interface's methods
+// for those of each type that implements it. Checked is false where rule
+// 22 checks nothing, or where the code to start from is missing, which
+// other rules report.
+func (c *checker) context(step string) (functions []string, what string, checked bool) {
 	for _, a := range c.ancestors(step) {
 		if !c.is(a, graph.LayerDesign, graph.NodeKindStep) {
 			break
 		}
 		if c.is(a, graph.LayerDesign, graph.NodeKindStep, "call", "async") {
 			op := c.calledOp(a)
-			var out []string
+			var realizers, out []string
 			for _, e := range c.in[graph.EdgeKindRealizes][op] {
 				if c.isFunction(e.From) {
-					out = append(out, e.From)
+					realizers = append(realizers, e.From)
+					out = append(out, c.dispatch(e.From)...)
 				}
 			}
-			return out, "function that realizes " + op + " (the operation of the enclosing step " + a + ")"
+			return out, "function that realizes or, through an interface, implements " + op + " (the operation of the enclosing step " + a + ")", len(realizers) > 0
 		}
 	}
 	sender := c.sender(step)
 	switch {
 	case c.is(sender, graph.LayerDesign, graph.NodeKindType):
+		realizers := c.realizers(sender)
 		var out []string
-		for _, r := range c.realizers(sender) {
-			for _, m := range c.children[r] {
+		for _, r := range realizers {
+			types := []string{r}
+			if c.is(r, graph.LayerCode, graph.NodeKindType, "interface") {
+				types = append(types, c.implementers(r)...)
+			}
+			for _, t := range types {
+				out = append(out, c.methodsOf(t)...)
+			}
+		}
+		return out, "method of the code type that realizes the sender " + sender + ", or of a type that implements it", len(realizers) > 0
+	case c.isDesignContainer(sender):
+		return c.functionsOf(sender), "function in the code of the sender " + sender, true
+	}
+	return nil, "", false
+}
+
+// dispatch lists the functions that a call of fn may run: fn itself, or for
+// an interface's abstract method, the same-named method of each code type
+// that implements the interface.
+func (c *checker) dispatch(fn string) []string {
+	if !c.is(fn, graph.LayerCode, graph.NodeKindOp, "abstract") {
+		return []string{fn}
+	}
+	var out []string
+	for _, t := range c.implementers(c.parent[fn]) {
+		out = append(out, c.methodNamed(t, c.attr(fn, "name"))...)
+	}
+	return out
+}
+
+// implementers lists the code types that implement the code interface i.
+func (c *checker) implementers(i string) []string {
+	var out []string
+	for _, e := range c.in[graph.EdgeKindImplements][i] {
+		if c.is(e.From, graph.LayerCode, graph.NodeKindType) {
+			out = append(out, e.From)
+		}
+	}
+	return out
+}
+
+// embedded lists a code type and the types it embeds (extends), nearest
+// first, each embedding level after the one that embeds it.
+func (c *checker) embedded(t string) [][]string {
+	var levels [][]string
+	seen := map[string]bool{t: true}
+	for level := []string{t}; len(level) > 0; {
+		levels = append(levels, level)
+		var next []string
+		for _, x := range level {
+			for _, e := range c.out[graph.EdgeKindExtends][x] {
+				if !seen[e.To] && c.is(e.To, graph.LayerCode, graph.NodeKindType) {
+					seen[e.To] = true
+					next = append(next, e.To)
+				}
+			}
+		}
+		level = next
+	}
+	return levels
+}
+
+// methodsOf lists the methods of a code type, those it gets from the types
+// it embeds included.
+func (c *checker) methodsOf(t string) []string {
+	var out []string
+	for _, level := range c.embedded(t) {
+		for _, x := range level {
+			for _, m := range c.children[x] {
 				if c.isFunction(m) {
 					out = append(out, m)
 				}
 			}
 		}
-		return out, "method of the code type that realizes the sender " + sender
-	case c.isDesignContainer(sender):
-		return c.functionsOf(sender), "function in the code of the sender " + sender
 	}
-	return nil, ""
+	return out
+}
+
+// methodNamed lists the methods named name that a code type has, its own or,
+// failing those, the nearest that it gets from the types it embeds, as Go
+// selects them.
+func (c *checker) methodNamed(t, name string) []string {
+	for _, level := range c.embedded(t) {
+		var out []string
+		for _, x := range level {
+			for _, m := range c.children[x] {
+				if c.isFunction(m) && c.attr(m, "name") == name {
+					out = append(out, m)
+				}
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	return nil
 }
 
 func (c *checker) sender(step string) string {

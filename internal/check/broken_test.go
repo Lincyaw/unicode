@@ -241,6 +241,16 @@ var breakages = []breakage{
 		w.setAttr(t.code, "fields", append(slices.Clone(t.codeFields), "extra: "+pair[1]))
 		return t.id
 	}},
+	{"check.missing-value", func(w *world) string {
+		t := choose(w, where(w.types, func(t *dtype) bool { return t.form == "enum" }))
+		if uniform(w.t, 2) == 0 {
+			w.setAttr(t.id, "values", append(w.attr(t.id, "values"), "frozen"))
+		} else {
+			values := w.attr(t.code, "values")
+			w.setAttr(t.code, "values", slices.Delete(values, 0, 1))
+		}
+		return t.id
+	}},
 	{"check.missing-implements", func(w *world) string { return w.relation(graph.EdgeKindImplements) }},
 	{"check.missing-extends", func(w *world) string { return w.relation(graph.EdgeKindExtends) }},
 	{"check.missing-predicate", func(w *world) string {
@@ -275,9 +285,20 @@ var breakages = []breakage{
 		w.retarget(graph.EdgeKindCalls, s.id, s.op, orphan)
 		return s.id
 	}},
+	{"check.unreachable-step", unreachable},
 	{"check.unreachable-step", func(w *world) string {
-		s := choose(w, where(w.steps, func(s *step) bool { return len(s.context) > 0 }))
-		w.removeEdges(func(e graph.Edge) bool { return e.Kind == graph.EdgeKindCalls && e.To == s.traced })
+		// Through an interface: no implementation reaches the step, or no
+		// code type implements the interface at all.
+		dispatched := where(w.steps, func(s *step) bool { return s.dispatch != "" })
+		if len(dispatched) == 0 {
+			return unreachable(w)
+		}
+		s := choose(w, dispatched)
+		if uniform(w.t, 2) == 0 {
+			w.removeEdges(func(e graph.Edge) bool { return e.Kind == graph.EdgeKindCalls && e.To == s.traced })
+		} else {
+			w.removeEdges(func(e graph.Edge) bool { return e.Kind == graph.EdgeKindImplements && e.To == s.dispatch })
+		}
 		return s.id
 	}},
 	{"check.unreferenced-event", func(w *world) string {
@@ -302,6 +323,13 @@ var breakages = []breakage{
 		w.edge(graph.EdgeKindGenerates, twin, k.id, graph.SourceDeclared, map[string][]string{"symbols": {"s"}})
 		return k.id
 	}},
+}
+
+// unreachable cuts every call to the function that a step with a context traces to.
+func unreachable(w *world) string {
+	s := choose(w, where(w.steps, func(s *step) bool { return len(s.context) > 0 }))
+	w.removeEdges(func(e graph.Edge) bool { return e.Kind == graph.EdgeKindCalls && e.To == s.traced })
+	return s.id
 }
 
 // relation declares an implements or extends between two types that the
