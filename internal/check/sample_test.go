@@ -282,9 +282,9 @@ func (w *world) componentTypes(c *comp) {
 	forms := []string{"object"}
 	switch {
 	case c.id == "k0":
-		forms = append(forms, "event", "error")
+		forms = append(forms, "event", "error", "enum")
 	case rapid.Bool().Draw(w.t, "second"):
-		forms = append(forms, rapid.SampledFrom([]string{"event", "record", "error", "object"}).Draw(w.t, "form"))
+		forms = append(forms, rapid.SampledFrom([]string{"event", "record", "error", "object", "enum"}).Draw(w.t, "form"))
 	}
 	if rapid.Bool().Draw(w.t, "interface") {
 		forms = append(forms, "interface")
@@ -316,7 +316,13 @@ func (w *world) subset(label string, options []string) []string {
 
 func (w *world) designType(c *comp, id, form, code, file string, ops []string) *dtype {
 	t := &dtype{id: id, form: form, code: code, home: c}
-	if form != "interface" {
+	var values, codeValues []string
+	if form == "enum" {
+		values = append([]string{"draft"}, w.subset("values", []string{"paid", "canceled"})...)
+		// The code may have constants that the design does not name.
+		codeValues = append(slices.Clone(values), w.subset("extraValues", []string{"archived"})...)
+	}
+	if form != "interface" && form != "enum" {
 		for k := range rapid.IntRange(0, 2).Draw(w.t, "fields") {
 			d, c := w.typePair(objectOf(c), 1)
 			t.fields, t.codeFields = append(t.fields, fmt.Sprintf("f%d: %s", k, d)), append(t.codeFields, fmt.Sprintf("f%d: %s", k, c))
@@ -326,14 +332,14 @@ func (w *world) designType(c *comp, id, form, code, file string, ops []string) *
 	if c != nil {
 		parent = c.id
 	}
-	w.node(id, graph.LayerDesign, graph.NodeKindType, form, w.designFile(c), map[string][]string{"fields": t.fields})
+	w.node(id, graph.LayerDesign, graph.NodeKindType, form, w.designFile(c), map[string][]string{"fields": t.fields, "values": values})
 	w.declared(graph.EdgeKindContains, parent, id)
-	codeForm := "struct"
-	if form == "interface" {
-		codeForm = "interface"
+	codeForm := map[string]string{"interface": "interface", "enum": "defined"}[form]
+	if codeForm == "" {
+		codeForm = "struct"
 	}
 	w.node(code, graph.LayerCode, graph.NodeKindType, codeForm, strings.TrimPrefix(file, "file:"),
-		map[string][]string{"name": {name(id)}, "fields": t.codeFields})
+		map[string][]string{"name": {name(id)}, "fields": t.codeFields, "values": codeValues})
 	w.extracted(graph.EdgeKindContains, file, code)
 	w.declared(graph.EdgeKindRealizes, code, id)
 	for _, op := range ops {
