@@ -107,7 +107,7 @@ var changes = []func(files map[string]string, path string){
 func genCheckFiles() *rapid.Generator[map[string]RepoFile] {
 	return rapid.Custom(func(t *rapid.T) map[string]RepoFile {
 		if rapid.IntRange(0, 3).Draw(t, "random?") == 0 {
-			return genFiles().Draw(t, "random")
+			return genFiles(readableModes).Draw(t, "random")
 		}
 		texts := genDesign(t)
 		for range rapid.IntRange(0, 2).Draw(t, "changes") {

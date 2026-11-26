@@ -120,13 +120,16 @@ const symlinkMode = int(os.ModeSymlink | 0o777)
 
 func isSymlink(f RepoFile) bool { return os.FileMode(f.Mode)&os.ModeSymlink != 0 }
 
-// genRepoFile draws the content of a file at path and its permission bits,
-// which now and then let no one read it.
-func genRepoFile(t *rapid.T, path string) RepoFile {
-	return RepoFile{
-		Content: genFileContent(t, path),
-		Mode:    rapid.SampledFrom([]int{0o644, 0o600, 0o755, 0o640, 0o000}).Draw(t, "mode"),
-	}
+// readableModes are permission bits that let the owner read a file;
+// fileModes add bits that let no one read it.
+var (
+	readableModes = []int{0o644, 0o600, 0o755, 0o640}
+	fileModes     = append(slices.Clone(readableModes), 0o000)
+)
+
+// genRepoFile draws the content of a file at path and its permission bits among modes.
+func genRepoFile(t *rapid.T, path string, modes []int) RepoFile {
+	return RepoFile{Content: genFileContent(t, path), Mode: rapid.SampledFrom(modes).Draw(t, "mode")}
 }
 
 // genLink draws a symbolic link at link: to another file of files, to its own
@@ -141,14 +144,14 @@ func genLink(t *rapid.T, link string, files map[string]RepoFile) RepoFile {
 }
 
 // genFiles draws the design and corpus files of a repository, always with a
-// design/system.uc, and now and then a symbolic link among them. No other
-// directory of the repository holds a design/system.uc, which would make it
-// the root of a repository of its own.
+// design/system.uc, each with permission bits among modes, and now and then
+// a symbolic link among them. No other directory of the repository holds a
+// design/system.uc, which would make it the root of a repository of its own.
 //
 //uc:generates cli.format-files.files
-func genFiles() *rapid.Generator[map[string]RepoFile] {
+func genFiles(modes []int) *rapid.Generator[map[string]RepoFile] {
 	return rapid.Custom(func(t *rapid.T) map[string]RepoFile {
-		files := map[string]RepoFile{"design/system.uc": genRepoFile(t, "design/system.uc")}
+		files := map[string]RepoFile{"design/system.uc": genRepoFile(t, "design/system.uc", modes)}
 		for range rapid.IntRange(0, 6).Draw(t, "files") {
 			var path string
 			where := rapid.IntRange(0, 5).Draw(t, "where")
@@ -169,7 +172,7 @@ func genFiles() *rapid.Generator[map[string]RepoFile] {
 			case where == 5:
 				files[path] = genLink(t, path, files)
 			default:
-				files[path] = genRepoFile(t, path)
+				files[path] = genRepoFile(t, path, modes)
 			}
 		}
 		return files
@@ -632,7 +635,7 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]RepoFile, check bool, tar
 
 func TestFlowFormatFiles(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
-		files := genFiles().Draw(t, "files")
+		files := genFiles(fileModes).Draw(t, "files")
 		checkFlowFormatFiles(t, files, rapid.Bool().Draw(t, "check"), genTargets(files).Draw(t, "targets"),
 			genAt(files).Draw(t, "at"), rapid.Bool().Draw(t, "explicitRoot"))
 	})
@@ -640,7 +643,7 @@ func TestFlowFormatFiles(t *testing.T) {
 
 func FuzzFlowFormatFiles(f *testing.F) {
 	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		files := genFiles().Draw(t, "files")
+		files := genFiles(fileModes).Draw(t, "files")
 		checkFlowFormatFiles(t, files, rapid.Bool().Draw(t, "check"), genTargets(files).Draw(t, "targets"),
 			genAt(files).Draw(t, "at"), rapid.Bool().Draw(t, "explicitRoot"))
 	}))
