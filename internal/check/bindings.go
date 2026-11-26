@@ -1,0 +1,298 @@
+package check
+
+import (
+	"fmt"
+	"slices"
+	"strings"
+
+	"github.com/lincyaw/unicode/internal/graph"
+)
+
+// bindings checks rule 15: each binding names a design node of the kind its
+// place allows. Bindings to no node are graph.Derive's to report.
+func (c *checker) bindings() {
+	checks := map[string][]graph.Edge{}
+	for _, e := range c.edges {
+		if e.Source != graph.SourceDeclared {
+			continue
+		}
+		switch e.Kind {
+		case graph.EdgeKindRealizes:
+			c.realizesBinding(e)
+		case graph.EdgeKindChecks:
+			if !c.isFunction(e.From) || !c.isCheckable(e.To) {
+				c.wrongKind(e, "a predicate checks a property or a flow")
+			}
+			checks[e.From] = append(checks[e.From], e)
+		case graph.EdgeKindGenerates:
+			c.generatesBinding(e)
+		}
+	}
+	for _, f := range c.nodes {
+		if edges := checks[f.Id]; len(edges) > 1 {
+			var targets []string
+			for _, e := range edges {
+				targets = append(targets, e.To)
+				c.mark(edgeID(e), graph.StatusContradicted)
+			}
+			c.fail("check.multiple-checks", f.Id, graph.StatusContradicted, f.Origin,
+				fmt.Sprintf("%s carries %d checks bindings (%s), but a function is the predicate of one property or flow at most",
+					c.describe(f.Id), len(edges), strings.Join(targets, ", ")),
+				"keep one checks binding on the function, and give each other property or flow a predicate of its own")
+		}
+	}
+}
+
+func (c *checker) isCheckable(id string) bool {
+	return c.is(id, graph.LayerDesign, graph.NodeKindProperty) || c.is(id, graph.LayerDesign, graph.NodeKindFlow)
+}
+
+func (c *checker) realizesBinding(e graph.Edge) {
+	from := c.byID[e.From]
+	switch {
+	case c.is(e.From, graph.LayerCode, graph.NodeKindOp, "method"):
+		c.fail("check.method-binding", edgeID(e), graph.StatusContradicted, e.Origin,
+			fmt.Sprintf("the method %s carries a realizes binding to %s, but a method carries no realizes binding", e.From, e.To),
+			"remove the binding: a method realizes the operation that its name maps to, of the design type that its type realizes")
+	case from.Kind == graph.NodeKindType:
+		if !c.is(e.To, graph.LayerDesign, graph.NodeKindType) {
+			c.wrongKind(e, "a code type realizes a type")
+		}
+	case from.Kind == graph.NodeKindOp:
+		if !c.is(e.To, graph.LayerDesign, graph.NodeKindOp) || !c.providedDirectly(e.To) {
+			c.wrongKind(e, "a function outside any type realizes an operation that a component or an external system provides directly")
+		}
+	default:
+		c.wrongKind(e, "only code types and functions carry realizes bindings")
+	}
+}
+
+// providedDirectly tells whether an operation belongs to a container or an
+// actor rather than to a type.
+func (c *checker) providedDirectly(op string) bool {
+	p := c.parent[op]
+	return c.isDesignContainer(p) || c.is(p, graph.LayerDesign, graph.NodeKindActor)
+}
+
+func (c *checker) wrongKind(e graph.Edge, rule string) {
+	c.fail("check.wrong-binding-kind", edgeID(e), graph.StatusContradicted, e.Origin,
+		fmt.Sprintf("the %s binding of %s names %s, but %s", e.Kind, c.describe(e.From), c.describe(e.To), rule),
+		fmt.Sprintf("correct the identity in the %s binding of %s", e.Kind, e.From))
+}
+
+func (c *checker) generatesBinding(e graph.Edge) {
+	if !c.isFunction(e.From) || !c.isCheckable(e.To) {
+		c.wrongKind(e, "a generator generates a symbol of a property or a flow")
+		return
+	}
+	symbols := e.Attrs["symbols"]
+	if len(symbols) == 0 {
+		c.fail("check.not-generated-symbol", edgeID(e), graph.StatusContradicted, e.Origin,
+			fmt.Sprintf("the generates binding of %s names no symbol of %s", e.From, e.To),
+			fmt.Sprintf("write the binding as %s.<symbol>, naming a generated symbol", e.To))
+	}
+	for _, s := range symbols {
+		if !slices.Contains(c.generatedSymbols(e.To), s) {
+			c.fail("check.not-generated-symbol", edgeID(e), graph.StatusContradicted, e.Origin,
+				fmt.Sprintf("the generates binding of %s names %s.%s, which is not a generated symbol of %s", e.From, e.To, s, e.To),
+				fmt.Sprintf("name a symbol that %s marks generated, or remove the binding", e.To))
+		}
+	}
+}
+
+// symbol is a symbol of a flow or a property, from its `name: type` entry.
+type symbol struct {
+	name, typ string
+	generated bool
+}
+
+func (c *checker) symbols(id string) []symbol {
+	var out []symbol
+	for _, s := range c.byID[id].Attrs["symbols"] {
+		typ, generated := strings.CutSuffix(s, " generated")
+		name, typ, _ := strings.Cut(typ, ": ")
+		out = append(out, symbol{name, typ, generated})
+	}
+	return out
+}
+
+func (c *checker) generatedSymbols(id string) []string {
+	var out []string
+	for _, s := range c.symbols(id) {
+		if s.generated {
+			out = append(out, s.name)
+		}
+	}
+	return out
+}
+
+// realizer is a code element that realizes a design node: a code type, a
+// function, or the entry of a code interface's methods that realizes an
+// operation of the design interface it realizes.
+type realizer struct {
+	id        string
+	entry     bool
+	signature string
+}
+
+// realizers lists the code that realizes a design type or operation (rule 16):
+// a type through its binding; an operation of a type through a method, or the
+// entry of a code interface's methods; any other operation through the
+// binding of a function outside types. Bindings of the wrong kind count for nothing.
+func (c *checker) realizers(id string) []realizer {
+	var out []realizer
+	for _, e := range c.in[graph.EdgeKindRealizes][id] {
+		switch {
+		case c.byID[id].Kind == graph.NodeKindType:
+			if e.Source == graph.SourceDeclared && c.is(e.From, graph.LayerCode, graph.NodeKindType) {
+				out = append(out, realizer{id: e.From})
+			}
+		case c.is(e.From, graph.LayerCode, graph.NodeKindOp, "method"):
+			if e.Source == graph.SourceDerived {
+				out = append(out, realizer{id: e.From, signature: c.attr(e.From, "signature")})
+			}
+		case c.isFunction(e.From) && c.providedDirectly(id):
+			out = append(out, realizer{id: e.From, signature: c.attr(e.From, "signature")})
+		}
+	}
+	if c.byID[id].Kind != graph.NodeKindOp || !c.is(c.parent[id], graph.LayerDesign, graph.NodeKindType) {
+		return out
+	}
+	for _, t := range c.realizers(c.parent[id]) {
+		for _, m := range c.byID[t.id].Attrs["methods"] {
+			if n, signature, _ := strings.Cut(m, " "); n == name(id) {
+				out = append(out, realizer{id: t.id, entry: true, signature: signature})
+			}
+		}
+	}
+	return out
+}
+
+// realizations checks rules 16 to 18 for every design type and operation:
+// one code element realizes it, in a file of its container, with its name,
+// signature and fields.
+func (c *checker) realizations() {
+	for _, n := range c.nodes {
+		if n.Layer != graph.LayerDesign || n.Kind != graph.NodeKindType && n.Kind != graph.NodeKindOp {
+			continue
+		}
+		rs := c.realizers(n.Id)
+		switch {
+		case len(rs) == 0:
+			c.fail("check.unrealized", n.Id, graph.StatusMissing, n.Origin,
+				fmt.Sprintf("no code realizes %s", c.describe(n.Id)), c.realizeFix(n.Id))
+		case len(rs) > 1:
+			var ids []string
+			for _, r := range rs {
+				ids = append(ids, r.id)
+			}
+			c.fail("check.multiple-realizations", n.Id, graph.StatusContradicted, n.Origin,
+				fmt.Sprintf("%s is realized %d times, by %s, but exactly one code element realizes it", c.describe(n.Id), len(rs), strings.Join(ids, ", ")),
+				"keep one of them, and remove the bindings of the others or rename them")
+		case !rs[0].entry && c.attr(rs[0].id, "stub") == "true":
+			c.mark(n.Id, graph.StatusStub)
+		}
+		for _, r := range rs {
+			c.placed(n.Id, r)
+			c.matches(n.Id, r)
+		}
+	}
+}
+
+func (c *checker) realizeFix(id string) string {
+	home := c.home(id)
+	switch {
+	case c.byID[id].Kind == graph.NodeKindType:
+		return fmt.Sprintf("write a code type with the binding realizes %s in code that %s owns", id, home)
+	case !c.providedDirectly(id):
+		return fmt.Sprintf("give the code type that realizes %s a method named after %s", c.parent[id], name(id))
+	case c.is(home, graph.LayerDesign, graph.NodeKindActor):
+		return fmt.Sprintf("write a client function with the binding realizes %s in a component that uses %s", id, home)
+	}
+	return fmt.Sprintf("write a function with the binding realizes %s in code that %s owns", id, home)
+}
+
+// placed checks rule 17: the code that realizes a design node lies in a file
+// of the node's container; a client of an external system lies in a file of
+// a component that may use the system.
+func (c *checker) placed(id string, r realizer) {
+	if r.entry {
+		return
+	}
+	home, owners := c.home(id), c.owners(r.id)
+	switch {
+	case c.isDesignContainer(home) && !slices.Contains(owners, home):
+		c.fail("check.realization-outside-container", id, graph.StatusContradicted, c.byID[r.id].Origin,
+			fmt.Sprintf("%s realizes %s of %s, but its file %s belongs to %s", r.id, id, home, c.attr(c.fileOf(r.id), "path"), ownerList(owners)),
+			fmt.Sprintf("move %s into code that %s owns", r.id, home))
+	case c.is(home, graph.LayerDesign, graph.NodeKindActor, "external") &&
+		!slices.ContainsFunc(owners, func(o string) bool { return c.usesFrom(o, home) }):
+		c.fail("check.realization-outside-container", id, graph.StatusContradicted, c.byID[r.id].Origin,
+			fmt.Sprintf("the client %s realizes %s of the external system %s, but its file %s belongs to %s, which does not use %s",
+				r.id, id, home, c.attr(c.fileOf(r.id), "path"), ownerList(owners), home),
+			fmt.Sprintf("move %s into a component that uses %s", r.id, home))
+	}
+}
+
+func ownerList(owners []string) string {
+	if len(owners) == 0 {
+		return "no component"
+	}
+	return strings.Join(owners, " and ")
+}
+
+// matches checks rule 18: the realizing code carries the design node's name,
+// its operation's signature, and every field the design writes, of the same type.
+func (c *checker) matches(id string, r realizer) {
+	at := c.byID[r.id].Origin
+	if got := c.attr(r.id, "name"); !r.entry && got != name(id) {
+		c.fail("check.name-mismatch", id, graph.StatusContradicted, at,
+			fmt.Sprintf("%s realizes %s, but its name maps back to %s, not to %s", r.id, id, got, name(id)),
+			fmt.Sprintf("rename %s to the name that %s maps to", r.id, name(id)))
+	}
+	if c.byID[id].Kind == graph.NodeKindOp {
+		if want := c.attr(id, "signature"); r.signature != want {
+			c.fail("check.signature-mismatch", id, graph.StatusContradicted, at,
+				fmt.Sprintf("the signature of %s is %s, but %s, which realizes it, has %s", id, want, r.id, r.signature),
+				fmt.Sprintf("change the signature of %s to %s, or change the design", r.id, want))
+		}
+		return
+	}
+	code := map[string]string{}
+	for _, f := range c.byID[r.id].Attrs["fields"] {
+		n, typ, _ := strings.Cut(f, ": ")
+		code[n] = typ
+	}
+	for _, f := range c.byID[id].Attrs["fields"] {
+		n, typ, _ := strings.Cut(f, ": ")
+		switch got, ok := code[n]; {
+		case !ok:
+			c.fail("check.missing-field", id, graph.StatusContradicted, at,
+				fmt.Sprintf("the design gives %s the field %s, but %s, which realizes it, has no field %s", id, f, r.id, n),
+				fmt.Sprintf("add the field %s to %s", f, r.id))
+		case got != typ:
+			c.fail("check.field-type-mismatch", id, graph.StatusContradicted, at,
+				fmt.Sprintf("the field %s of %s has the type %s, but in %s, which realizes it, the type %s", n, id, typ, r.id, got),
+				fmt.Sprintf("give the field %s of %s the type %s, or change the design", n, r.id, typ))
+		}
+	}
+}
+
+// relations checks rule 19: an implements or extends between design types
+// holds between the code types that realize them.
+func (c *checker) relations() {
+	for _, e := range c.edges {
+		if e.Kind != graph.EdgeKindImplements && e.Kind != graph.EdgeKindExtends ||
+			!c.is(e.From, graph.LayerDesign, graph.NodeKindType) || !c.is(e.To, graph.LayerDesign, graph.NodeKindType) {
+			continue
+		}
+		from, to := c.realizers(e.From), c.realizers(e.To)
+		if len(from) != 1 || len(to) != 1 || c.has(e.Kind, from[0].id, to[0].id) {
+			continue
+		}
+		c.fail("check.missing-"+string(e.Kind), edgeID(e), graph.StatusContradicted, c.byID[from[0].id].Origin,
+			fmt.Sprintf("%s %s %s in the design, but %s, which realizes %s, does not %s %s, which realizes %s",
+				e.From, e.Kind, e.To, from[0].id, e.From, strings.TrimSuffix(string(e.Kind), "s"), to[0].id, e.To),
+			fmt.Sprintf("make %s %s %s in the code, or remove the %s from the design", from[0].id, strings.TrimSuffix(string(e.Kind), "s"), to[0].id, e.Kind))
+	}
+}
