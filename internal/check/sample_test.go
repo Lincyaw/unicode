@@ -321,8 +321,8 @@ func (w *world) designType(c *comp, id, form, code, file string, ops []string) *
 	var values, codeValues []string
 	if form == "enum" {
 		values = append([]string{"draft"}, w.subset("values", []string{"paid", "canceled"})...)
-		// The code may have constants that the design does not name.
-		codeValues = append(slices.Clone(values), w.subset("extraValues", []string{"archived"})...)
+		// The code declares the same values, in any order.
+		codeValues = rapid.Permutation(values).Draw(w.t, "codeValues")
 	}
 	if form != "interface" && form != "enum" {
 		for k := range rapid.IntRange(0, 2).Draw(w.t, "fields") {

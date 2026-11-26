@@ -272,6 +272,17 @@ var breakages = []breakage{
 		}
 		return t.id
 	}},
+	{"check.extra-value", func(w *world) string {
+		t := choose(w, where(w.types, func(t *dtype) bool { return t.form == "enum" }))
+		if uniform(w.t, 2) == 0 {
+			w.setAttr(t.code, "values", append(w.attr(t.code, "values"), "archived"))
+		} else {
+			values := w.attr(t.id, "values")
+			i := uniform(w.t, len(values))
+			w.setAttr(t.id, "values", slices.Delete(values, i, i+1))
+		}
+		return t.id
+	}},
 	{"check.missing-implements", func(w *world) string { return w.relation(graph.EdgeKindImplements) }},
 	{"check.missing-extends", func(w *world) string { return w.relation(graph.EdgeKindExtends) }},
 	{"check.missing-predicate", func(w *world) string {
