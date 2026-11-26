@@ -113,6 +113,37 @@ type Backend interface {
 
 相同的输入总是得到逐字节相同的输出。M3 起，抽取结果按文件缓存，键为文件的摘要和后端的版本，只重新抽取变了的文件。
 
+### 5.1 只需设计就能判断的约束
+
+`design` 载入设计文件和录制文件时检查以下各项，诊断码写作 `design.<短横线名称>`。`unicode check --design-only` 报出的就是它们，加上语法和规范格式的诊断。
+
+- [format.md](format.md) 中的语义规则：
+  - `design/system.uc` 恰有一个，`design/` 中其余每个文件声明的组件，其标识与文件路径相符；录制文件的路径与它指向的性质或流程的标识相符；
+  - 引用按 §2 的规则解析；
+  - 顶层组件写了 `focus`；
+  - 标签属于 `notation` 声明过的记法，并且能用在这种元素上。
+- [model.md](model.md) §10：
+  - 设计内部的第 1 至 6 条，流程的第 7 至 11 条；
+  - 符号与用例的第 23、25、26、27 条，以及第 24 条中"生成的符号不带限定"的一半；
+  - 第 29 条。
+
+其余约束要看代码，M2 由 `check` 检查。
+
+### 5.2 节点的属性
+
+图中每个节点的摘要字段是它的摘要（性质的是它的陈述），其余内容写在属性中。属性的值都是字符串的列表，类型和值都按规范格式写出，引用都写成从根起的标识：
+
+| 种类 | 属性的键 |
+| --- | --- |
+| container | `focus`、`labels`、`paths`（设计层）；`language`、`path`（代码层） |
+| type | `labels`、`fields`（每项 `名称: 类型`）、`values` |
+| op | `signature`（`(参数: 类型, …) -> 类型 raises 错误, …`） |
+| flow、property | `symbols`（每项 `名称: 类型`，生成的符号另加 ` generated`）、`limits`（每项是一条限定的规范写法） |
+| step | `index`、`label`、`args` |
+| case | `values`（每项 `符号 = 值`）、`reason`（录制的用例） |
+
+`extends`、`implements`、`uses`、订阅、调用、发起方和 `about` 都是边，不是属性。快照是 `{"nodes": [...], "edges": [...]}`：节点按标识排序，边按种类、起点、终点排序，属性的键按字典序排列。
+
 ## 6 生成与运行
 
 `unicode gen` 产生两类文件：骨架和生成文件。`unicode test` 运行生成的驱动。
@@ -261,6 +292,7 @@ type Backend interface {
 
 - **全局参数**：`--root DIR` 指定仓库根目录，缺省为向上找到的第一个含 `design/system.uc` 的目录；`--rev REV` 让查询读一个提交的快照，缺省读工作区。
 - **退出码**：0 成功；1 未知错误；2 参数错误；3 标识不存在；5 冲突（`gen` 要写的位置已有不同的内容）；7 环境错误（找不到 `python3` 或 Go 工具链）；10 存在诊断；11 有谓词未通过。
+- **`check --design-only`**：解析 `design/` 和 `corpus/` 下的全部文件，报出语法、规范格式和 §5.1 的诊断；JSON 为 `{"diagnostics": [...]}`。M2 之前，不带 `--design-only` 的 `check` 是参数错误。
 - **路径参数**：按工作目录解析，必须是根目录下 `design/` 或 `corpus/` 之内的文件或目录。路径不存在、不在这两个目录之内，或者找不到缺省的根目录，都是参数错误。目录会被遍历。`design/` 或 `corpus/` 中 `KindOf` 拒绝的文件给出诊断 `cli.not-a-design-file`，读不出的文件给出 `cli.unreadable-file`，符号链接给出诊断 `cli.symlink`，既不跟随读取，也不改写。全局参数也可以写在命令之后。
 - **改写与输出**：改写是原子的，并保留文件的权限，失败时不留下临时文件；写入或输出失败时退出码为 1。`cli.not-canonical` 的位置是与规范格式第一处不同的字节。`--help` 写到标准输出，退出码为 0。JSON 缩进两个空格。带 `--format json` 时，诊断是数据，写在标准输出的 JSON 中，标准错误只放日志；文本模式下，诊断写到标准错误，标准输出只列出改写了的或不是规范格式的文件。
 - **诊断的 JSON**：`{code, subject, path, line, column, message, fix}`。`code` 是稳定的诊断码，写作 `<组件>.<短横线名称>`，例如 `syntax.unexpected-token`；每条约束一个，与约束一起定义。`syntax` 和 `cli` 的诊断，对象是文件的路径。

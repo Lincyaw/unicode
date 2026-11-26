@@ -42,3 +42,4 @@
 25. **第二次评审后补强两条性质的输入。** `rejects-broken-text` 的输入带上改动所在的行，诊断必须落在这一行；`format-files` 增加路径参数 `targets`，验证路径参数的规则。原来的输入让多数改错的实现仍能通过。见 `design/syntax.uc`、`design/cli.uc`。
 26. **`design/` 和 `corpus/` 中的符号链接给出诊断 `cli.symlink`，不跟随，也不改写。** 见 [design.md](design.md) §8。
 27. **大批量的验证是合并之后的异步阶段，不阻塞开发。** 开发分支只跑一次 `make check` 就提交；变异测试、长时间的 fuzz 和大量的随机检查归 `make deep`，由单独的 agent 或定时的 CI 跑，结果成为修复任务。见 [design.md](design.md) §10，`CLAUDE.md` 原则 9。
+28. **M1 的第二部分：`graph` 与 `design` 的设计。** 节点的属性都是字符串的列表，类型、签名和值按规范格式写出，引用写成从根起的标识；M2 比较代码与设计时，把代码的签名归一化成同样的写法，直接比较字符串。节点的摘要按它自身内容的规范编码计算。只需设计就能判断的约束列在 [design.md](design.md) §5.1。
