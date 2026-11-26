@@ -860,7 +860,7 @@ func badDecl(t *rapid.T) *rawLines {
 
 // Lines that the grammar breaks at one token, one for each class of line
 // that no keyword starts: a step, an assignment, an item of a value broken
-// across lines, and a } that closes no block.
+// across lines, a } that closes no block, and a } with a word after it.
 func badStep(t *rapid.T) *rawLines {
 	head := string(genKebab(t, "sender")) + " -> " + string(genLower(t, "op")) + "(" + string(genLower(t, "arg")) + " "
 	return rawAt(0, len(head), head+string(genLower(t, "arg"))+")")
@@ -881,6 +881,10 @@ func badItem(t *rapid.T) *rawLines {
 }
 
 func strayClose(*rapid.T) *rawLines { return rawAt(0, 0, "}") }
+
+func afterClose(t *rapid.T) *rawLines {
+	return rawAt(2, 2, "type "+string(genUpper(t, "type"))+" record "+label(t)+" {", "label "+string(genKebab(t, "label")), "} "+words.Draw(t, "word"))
+}
 
 // unexpectedEnd ends a valid sample with a block that the file ends inside.
 func unexpectedEnd(t *rapid.T) Broken {
@@ -912,7 +916,8 @@ var breakages = []breakage{
 	oneOf(insertedLines("syntax.unexpected-token", component, stepTypes, badStep),
 		insertedLines("syntax.unexpected-token", []FileKind{FileKindComponent, FileKindCorpus}, caseLists, badAssignment),
 		insertedLines("syntax.unexpected-token", []FileKind{FileKindComponent, FileKindCorpus}, caseLists, badItem),
-		insertedLines("syntax.unexpected-token", fileKinds, declLists, strayClose)),
+		insertedLines("syntax.unexpected-token", fileKinds, declLists, strayClose),
+		insertedLines("syntax.unexpected-token", fileKinds, declLists, afterClose)),
 
 	oneOf(edited("syntax.declaration-order", fileKinds, reordered(false)), edited("syntax.member-order", designKinds, reordered(true))),
 	oneOf(edited("syntax.duplicate-member", fileKinds, duplicated), edited("syntax.missing-header", fileKinds, headless),
