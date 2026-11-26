@@ -48,7 +48,7 @@ op slice(g: graph.Graph, ids: list<string>, expand: list<string>) -> Context rai
 
 op impact(g: graph.Graph, ids: list<string>) -> list<Affected> raises NotFound "一组变更的节点影响到的显著节点"
 
-property slice-is-minimal-context invariant "切片恰好含有焦点、焦点的祖先链和焦点一步可达的显著节点；细节节点只计入个数，展开之后才列出；切片中的边都是图中的边" {
+property slice-is-minimal-context invariant "切片恰好含有焦点、焦点的祖先链、焦点一步可达的显著节点，以及按种类补充的显著节点：操作所属的类型和该类型的其余操作，性质沿 refers 经由类型能到达的类型，流程的整个步骤树和每一步 traces 到的函数；细节节点只计入个数，展开之后才列出；切片中的边都是图中的边" {
   about slice
   forall question: Question generated "一张随机的图，焦点和展开的标识取自图中的节点"
 }

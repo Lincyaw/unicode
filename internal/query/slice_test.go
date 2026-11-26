@@ -61,8 +61,18 @@ func checkSliceIsMinimalContext(t rapid.TB, question Question) {
 	listed := map[entry]bool{}
 	want := map[entry]string{}
 	details := map[string]int{}
+	extras := map[string]bool{}
 	for f := range focus {
 		counted := map[string]bool{}
+		for a := range added(question.Fragment, nodes, f) {
+			switch {
+			case focus[a]:
+			case nodes[a].Salient || expanded[f] || expanded[a]:
+				extras[a] = true
+			default:
+				counted[a] = true
+			}
+		}
 		for _, e := range question.Fragment.Edges {
 			if e.From != f && e.To != f {
 				continue
@@ -71,13 +81,14 @@ func checkSliceIsMinimalContext(t rapid.TB, question Question) {
 			if other == f {
 				other = e.To
 			}
-			switch {
-			case nodes[other].Salient || expanded[f] || expanded[other]:
+			if nodes[other].Salient || expanded[f] || expanded[other] {
 				want[entry{f, edgeKey{e.Kind, e.From, e.To}}] = other
-			case !counted[other]:
+			} else {
 				counted[other] = true
-				details[f]++
 			}
+		}
+		if len(counted) > 0 {
+			details[f] = len(counted)
 		}
 	}
 	for _, n := range got.Neighbors {
@@ -102,9 +113,55 @@ func checkSliceIsMinimalContext(t rapid.TB, question Question) {
 			}
 		}
 	}
-	if !maps.Equal(got.Details, details) {
-		t.Fatalf("the slice counts the unexpanded detail nodes one edge away from each focus node as %v, not %v", got.Details, details)
+	if problem := sameNodes(got.Extras, slices.Sorted(maps.Keys(extras)), nodes); problem != "" {
+		t.Fatalf("the slice's extras are not the salient or expanded nodes that the focus nodes' kinds add by §7.3, focus nodes excluded, sorted by identity: %s", problem)
 	}
+	if !maps.Equal(got.Details, details) {
+		t.Fatalf("the slice counts the unexpanded detail nodes one edge away from each focus node or among its additions as %v, not %v", got.Details, details)
+	}
+}
+
+// added returns what docs/design.md §7.3 adds for the kind of the focus node
+// f beyond one edge: an operation's containing type and that type's other
+// operations; the types a property reaches along refers edges through types;
+// a flow's steps at every depth and the ends of their traces edges.
+func added(f graph.Fragment, nodes map[string]graph.Node, focus string) map[string]bool {
+	found := map[string]bool{}
+	grow := func(kind graph.EdgeKind, from map[string]bool, of graph.NodeKind) {
+		for grown := true; grown; {
+			grown = false
+			for _, e := range f.Edges {
+				if e.Kind == kind && (e.From == focus || from[e.From]) && nodes[e.To].Kind == of && e.To != focus && !found[e.To] {
+					found[e.To], grown = true, true
+				}
+			}
+		}
+	}
+	switch nodes[focus].Kind {
+	case graph.NodeKindOp:
+		owners := map[string]bool{}
+		for _, e := range f.Edges {
+			if e.Kind == graph.EdgeKindContains && e.To == focus && nodes[e.From].Kind == graph.NodeKindType {
+				owners[e.From], found[e.From] = true, true
+			}
+		}
+		for _, e := range f.Edges {
+			if e.Kind == graph.EdgeKindContains && owners[e.From] && nodes[e.To].Kind == graph.NodeKindOp && e.To != focus {
+				found[e.To] = true
+			}
+		}
+	case graph.NodeKindProperty:
+		grow(graph.EdgeKindRefers, found, graph.NodeKindType)
+	case graph.NodeKindFlow:
+		grow(graph.EdgeKindContains, found, graph.NodeKindStep)
+		steps := maps.Clone(found)
+		for _, e := range f.Edges {
+			if e.Kind == graph.EdgeKindTraces && steps[e.From] {
+				found[e.To] = true
+			}
+		}
+	}
+	return found
 }
 
 func TestSliceIsMinimalContext(t *testing.T) {
