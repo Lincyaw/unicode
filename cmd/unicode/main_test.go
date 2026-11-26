@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"io/fs"
 	"maps"
 	"os"
@@ -91,12 +90,28 @@ func genFileContent(t *rapid.T, path string) string {
 	return rapid.SampledFrom([]string{"@\n" + text, text + "\n}\n", text + "type\n", strings.Replace(text, "{", "", 1)}).Draw(t, "invalid")
 }
 
+// RepoFile is a file of a repository: its content and permission bits.
+//
+//uc:realizes cli.RepoFile
+type RepoFile struct {
+	Content string
+	Mode    int
+}
+
+// genRepoFile draws the content of a file at path and its permission bits.
+func genRepoFile(t *rapid.T, path string) RepoFile {
+	return RepoFile{
+		Content: genFileContent(t, path),
+		Mode:    rapid.SampledFrom([]int{0o644, 0o600, 0o755, 0o640}).Draw(t, "mode"),
+	}
+}
+
 // genFiles draws the design and corpus files of a repository, always with a design/system.uc.
 //
 //uc:generates cli.format-files.files
-func genFiles() *rapid.Generator[map[string]string] {
-	return rapid.Custom(func(t *rapid.T) map[string]string {
-		files := map[string]string{"design/system.uc": genFileContent(t, "design/system.uc")}
+func genFiles() *rapid.Generator[map[string]RepoFile] {
+	return rapid.Custom(func(t *rapid.T) map[string]RepoFile {
+		files := map[string]RepoFile{"design/system.uc": genRepoFile(t, "design/system.uc")}
 		for range rapid.IntRange(0, 6).Draw(t, "files") {
 			var path string
 			switch rapid.IntRange(0, 4).Draw(t, "where") {
@@ -110,7 +125,7 @@ func genFiles() *rapid.Generator[map[string]string] {
 				path = rapid.SampledFrom([]string{"design/", "corpus/"}).Draw(t, "dir") + genKebab.Draw(t, "name") + ".txt"
 			}
 			if path != "design/system.uc" {
-				files[path] = genFileContent(t, path)
+				files[path] = genRepoFile(t, path)
 			}
 		}
 		return files
@@ -176,28 +191,18 @@ func removeAll(t rapid.TB, dir string) {
 	}
 }
 
-// modes are the permissions a repository's files are written with; modeOf
-// picks one by the path, since a predicate takes only its symbols.
-var modes = []os.FileMode{0o644, 0o600, 0o755, 0o640}
-
-func modeOf(path string) os.FileMode {
-	h := fnv.New32a()
-	h.Write([]byte(path))
-	return modes[h.Sum32()%uint32(len(modes))]
-}
-
-// writeRepo writes the files into a new directory, each with the mode modeOf gives it.
-func writeRepo(t rapid.TB, files map[string]string) string {
+// writeRepo writes the files into a new directory, each with its own mode.
+func writeRepo(t rapid.TB, files map[string]RepoFile) string {
 	root, err := os.MkdirTemp("", "unicode-repo-")
 	if err != nil {
 		t.Fatalf("setup failed: cannot create a temporary repository: %v", err)
 	}
-	for path, content := range files {
+	for path, f := range files {
 		full := filepath.Join(root, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatalf("setup failed: cannot create a directory: %v", err)
 		}
-		if err := os.WriteFile(full, []byte(content), 0o644); err != nil || os.Chmod(full, modeOf(path)) != nil {
+		if err := os.WriteFile(full, []byte(f.Content), 0o644); err != nil || os.Chmod(full, os.FileMode(f.Mode)) != nil {
 			t.Fatalf("setup failed: cannot write %s: %v", path, err)
 		}
 	}
@@ -239,7 +244,7 @@ func differsAt(a, b string) (int, int) {
 }
 
 //uc:checks cli.format-files
-func checkFlowFormatFiles(t rapid.TB, files map[string]string, check bool) {
+func checkFlowFormatFiles(t rapid.TB, files map[string]RepoFile, check bool) {
 	paths := make([]string, 0, len(files))
 	for p := range files {
 		paths = append(paths, p)
@@ -249,7 +254,7 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]string, check bool) {
 	canonical := map[string][]byte{}
 	wantCode := exitOK
 	for _, p := range paths {
-		want[p], canonical[p] = expectedStatus(p, files[p], check)
+		want[p], canonical[p] = expectedStatus(p, files[p].Content, check)
 		if want[p] == statusInvalid || want[p] == statusNotCanonical {
 			wantCode = exitDiagnostics
 		}
@@ -286,7 +291,7 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]string, check bool) {
 		if d.Code != "cli.not-canonical" {
 			continue
 		}
-		if line, column := differsAt(files[d.Path], string(canonical[d.Path])); d.Line != line || d.Column != column {
+		if line, column := differsAt(files[d.Path].Content, string(canonical[d.Path])); d.Line != line || d.Column != column {
 			t.Fatalf("the cli.not-canonical of %s stands at %d:%d, yet the first byte that differs from the canonical form is at %d:%d", d.Path, d.Line, d.Column, line, column)
 		}
 	}
@@ -313,13 +318,13 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]string, check bool) {
 		if err != nil {
 			t.Fatalf("after unicode fmt, %s cannot be read: %v", p, err)
 		}
-		if info.Mode().Perm() != modeOf(p) {
-			t.Fatalf("after unicode fmt the mode of %s is %v, before it was %v", p, info.Mode().Perm(), modeOf(p))
+		if mode := os.FileMode(files[p].Mode); info.Mode().Perm() != mode {
+			t.Fatalf("after unicode fmt the mode of %s is %v, before it was %v", p, info.Mode().Perm(), mode)
 		}
 	}
 	for _, p := range paths {
 		switch {
-		case (check || want[p] == statusInvalid) && after[p] != files[p]:
+		case (check || want[p] == statusInvalid) && after[p] != files[p].Content:
 			t.Fatalf("%s should not be rewritten (--check %v, status %s), yet it was", p, check, want[p])
 		case !check && want[p] != statusInvalid && after[p] != string(canonical[p]):
 			t.Fatalf("the valid file %s is not canonical after unicode fmt\nafter:\n%s\ncanonical:\n%s", p, after[p], canonical[p])
