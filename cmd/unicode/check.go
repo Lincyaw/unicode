@@ -64,7 +64,7 @@ func runCheckDesign(root, format string, stdout, stderr io.Writer) error {
 	}
 	diags = append(diags, design.Load(files).Diagnostics...)
 	sortDiagnostics(diags)
-	return writeReport(format, checkReport{Diagnostics: diagnosticsJSON(diags)}, diags, stdout, stderr)
+	return writeReport(format, checkReport{Diagnostics: diagnosticsJSON(diags)}, nil, diags, stdout, stderr)
 }
 
 // runCheckCode builds the graph, checks it with check.Conform and reports the
@@ -77,21 +77,21 @@ func runCheckCode(root, format string, stdout, stderr io.Writer) error {
 	checked := check.Conform(&g)
 	diags = append(diags, checked.Diagnostics...)
 	sortDiagnostics(diags)
-	return writeReport(format, codeReport{Diagnostics: diagnosticsJSON(diags), Statuses: checked.Statuses}, diags, stdout, stderr)
+	return writeReport(format, codeReport{Diagnostics: diagnosticsJSON(diags), Statuses: checked.Statuses}, nil, diags, stdout, stderr)
 }
 
 // writeReport writes a command's report: with --format json, the report on
-// standard output; otherwise one line per diagnostic on standard error. It
-// ends the command with exitDiagnostics when there are diagnostics.
-func writeReport(format string, report any, diags []diag.Diagnostic, stdout, stderr io.Writer) error {
-	var out, errOut []byte
+// standard output; otherwise text on standard output and one line per
+// diagnostic on standard error. It ends the command with exitDiagnostics
+// when there are diagnostics.
+func writeReport(format string, report any, text []byte, diags []diag.Diagnostic, stdout, stderr io.Writer) error {
+	out, errOut := text, diagnosticsText(diags)
 	if format == "json" {
 		var err error
 		if out, err = encodeJSON(report); err != nil {
 			return err
 		}
-	} else {
-		errOut = diagnosticsText(diags)
+		errOut = nil
 	}
 	if _, err := stdout.Write(out); err != nil {
 		return &exitError{code: exitUnexpected}

@@ -121,7 +121,7 @@ func rootCommand(stdout, stderr io.Writer) *cobra.Command {
 	flags.StringVar(&g.root, "root", "", "repository root (default: the nearest ancestor of the working directory that contains design/system.uc)")
 	flags.StringVar(&g.format, "format", "text", "output format: text or json")
 	flags.StringVar(&g.rev, "rev", "", "let a query read the graph of this commit instead of the working tree")
-	root.AddCommand(fmtCommand(g, stdout, stderr), checkCommand(g, stdout, stderr))
+	root.AddCommand(fmtCommand(g, stdout, stderr), checkCommand(g, stdout, stderr), buildCommand(g, stdout, stderr))
 	return root
 }
 
