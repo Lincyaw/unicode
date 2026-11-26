@@ -28,13 +28,18 @@ import (
 const unimplemented = "unicode: unimplemented"
 
 // extraction builds the code layer of the loaded packages: first a node for
-// every package, file, type, function and method, then the edges between them.
+// every package, file, type, function and method with the edges of their
+// bindings, then the attrs written in the design's notation, then the other
+// edges.
 type extraction struct {
-	root     string
-	nodes    map[string]graph.Node
-	edges    map[edgeKey]*graph.Edge
-	sites    map[edgeKey][]diag.Position
-	declared []declared
+	root        string
+	nodes       map[string]graph.Node
+	edges       map[edgeKey]*graph.Edge
+	sites       map[edgeKey][]diag.Position
+	declared    []declared
+	bindings    map[bindingKey]bool
+	realizes    map[string][]string // a type's identity to the design types it realizes
+	diagnostics []diag.Diagnostic
 }
 
 type edgeKey struct {
@@ -55,14 +60,18 @@ type declared struct {
 
 func extract(l loaded) lang.Extracted {
 	x := &extraction{
-		root:  l.root,
-		nodes: map[string]graph.Node{},
-		edges: map[edgeKey]*graph.Edge{},
-		sites: map[edgeKey][]diag.Position{},
+		root:     l.root,
+		nodes:    map[string]graph.Node{},
+		edges:    map[edgeKey]*graph.Edge{},
+		sites:    map[edgeKey][]diag.Position{},
+		bindings: map[bindingKey]bool{},
+		realizes: map[string][]string{},
 	}
 	for _, p := range l.packages {
 		x.addPackage(p)
 	}
+	x.addShapes()
+	x.addCandidates()
 	for _, d := range x.declared {
 		if d.name != nil {
 			x.addTypeEdges(d)
@@ -101,13 +110,16 @@ func (x *extraction) addPackage(p *packages.Package) {
 				x.addEdge(graph.EdgeKindImports, fileID, "go:"+imported, x.position(p, spec.Pos()))
 			}
 		}
+		docs := map[*ast.CommentGroup]bound{}
 		for _, decl := range f.syntax.Decls {
-			x.addDecl(p, f, fileID, decl)
+			x.addDecl(p, f, fileID, decl, docs)
 		}
+		x.readBindings(p, f, fileID, docs)
 	}
 }
 
-func (x *extraction) addDecl(p *packages.Package, f sourceFile, fileID string, decl ast.Decl) {
+// addDecl adds the nodes of a declaration and records whose doc comment is whose.
+func (x *extraction) addDecl(p *packages.Package, f sourceFile, fileID string, decl ast.Decl, docs map[*ast.CommentGroup]bound) {
 	switch decl := decl.(type) {
 	case *ast.GenDecl:
 		if decl.Tok != token.TYPE {
@@ -126,6 +138,9 @@ func (x *extraction) addDecl(p *packages.Package, f sourceFile, fileID string, d
 			})
 			x.addEdge(graph.EdgeKindContains, fileID, d.id, x.position(p, spec.Name.Pos()))
 			x.declared = append(x.declared, d)
+			if doc := typeDoc(decl, spec); doc != nil {
+				docs[doc] = bound{id: d.id, isType: true}
+			}
 		}
 	case *ast.FuncDecl:
 		fn, ok := p.TypesInfo.Defs[decl.Name].(*types.Func)
@@ -148,6 +163,9 @@ func (x *extraction) addDecl(p *packages.Package, f sourceFile, fileID string, d
 		})
 		x.addEdge(graph.EdgeKindContains, parent, d.id, x.position(p, decl.Name.Pos()))
 		x.declared = append(x.declared, d)
+		if decl.Doc != nil {
+			docs[decl.Doc] = bound{id: d.id}
+		}
 	}
 }
 
@@ -276,9 +294,13 @@ func (x *extraction) addEdge(kind graph.EdgeKind, from, to string, origin diag.P
 }
 
 // result writes the nodes sorted by identity, the edges by kind, start and
-// end, and each call's sites in the order of the source.
+// end, each call's sites in the order of the source, and the diagnostics by
+// position.
 func (x *extraction) result() lang.Extracted {
-	var out lang.Extracted
+	out := lang.Extracted{Diagnostics: x.diagnostics}
+	slices.SortFunc(out.Diagnostics, func(a, b diag.Diagnostic) int {
+		return cmp.Or(comparePositions(a.Position, b.Position), cmp.Compare(a.Code, b.Code))
+	})
 	for _, id := range slices.Sorted(maps.Keys(x.nodes)) {
 		out.Fragment.Nodes = append(out.Fragment.Nodes, x.nodes[id])
 	}
