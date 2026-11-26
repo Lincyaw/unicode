@@ -75,7 +75,7 @@ type Backend interface {
 }
 ```
 
-- **抽取**：后端读出 `container`、`type`、`op` 节点，以及 `contains`、`imports`、`calls`、`refers`、`extends`、`implements` 边。它同时读出代码中的绑定，写成 `realizes` 和 `checks` 边；绑定的写法不合格式时，给出诊断。后端产出的是代码层的图片段，格式与快照相同。
+- **抽取**：后端读出 `container`、`type`、`op` 节点，以及 `contains`、`imports`、`calls`、`refers`、`extends`、`implements` 边。它同时读出代码中的绑定，写成 `realizes`、`checks` 和 `generates` 边；绑定的写法不合格式时，给出诊断。带 `realizes` 绑定的类型，它的每个方法按反向的名称映射（例如 Go 的 `Submit` 对应 `submit`）得到一条到 `<类型的标识>.<操作名>` 的 `realizes` 边，来源为推导；推导时，终点不存在的这类边被丢掉，那些方法是细节。代码层 `op` 的 `signature` 属性按下面的类型映射归一化成设计的写法，引用写成从根起的标识，与设计层的签名直接按字符串比较。后端产出的是代码层的图片段，格式与快照相同。
 - **Go 后端**：在进程内用 `golang.org/x/tools/go/packages` 和 `go/types` 解析源码和类型。调用按静态类型解析，接口方法的调用解析到接口的方法。抽取包括 `_test.go` 文件：谓词、生成器和只供它们使用的类型都在其中，它们的绑定照常读取。
 - **Python 后端**：工具链内嵌一个只用标准库的抽取脚本，以 `python3 -I` 运行。脚本用 `ast` 解析源码，把图片段以 JSON 写到标准输出。调用按名称和导入关系解析，解析不到的调用不成边，只计数。生成在 Go 中按模板完成。
 - **运行**：后端用该语言的测试工具运行驱动，在进程内逐个输入记录覆盖：Go 用 `-cover` 构建，并用 `runtime/coverage` 在每个输入前后清零和读出计数；Python 用标准库的 `sys.monitoring`。覆盖只统计谓词沿 `exercises` 可达的函数，不含生成文件和谓词本身。
@@ -95,7 +95,9 @@ type Backend interface {
 - **类型映射**：归一化签名用设计的类型写法，各语言的写法与它一一对应。例如：
   - `int` 对应 Go 的 `int` 和 Python 的 `int`；
   - `list<T>` 对应 `[]T` 和 `list[T]`；
-  - `optional<T>` 对应 `*T` 和 `T | None`；
+  - `optional<T>` 对应 `*T` 和 `T | None`；`object` 类型在 Go 中按指针传递，`T` 和 `optional<T>` 都写作 `*T`；
+  - `bytes` 对应 `[]byte`，`set<T>` 对应 `map[T]struct{}`，`map<K, V>` 对应 `map[K]V`，`float` 对应 `float64`，`time` 和 `duration` 对应 `time.Time` 和 `time.Duration`；
+  - 落实设计类型的代码类型，写作该设计类型的标识；其余的代码类型写作它的代码标识，与设计的比较因此不相等；
   - `call<…>` 对应生成文件中的一个类型，名称由后端按名称映射给出。
 
   - `enum` 对应 Go 的 `type X string` 和常量 `X<值>`，常量的值是设计中枚举值的名称；对应 Python 的 `enum.Enum`，成员的值也是设计中的名称。
@@ -143,6 +145,12 @@ type Backend interface {
 | case | `values`（每项 `符号 = 值`）、`reason`（录制的用例） |
 
 `extends`、`implements`、`uses`、订阅、调用、发起方和 `about` 都是边，不是属性。快照是 `{"nodes": [...], "edges": [...]}`：节点按标识排序，边按种类、起点、终点排序，属性的键按字典序排列。
+
+### 5.3 需要代码才能判断的约束（M2）
+
+`check` 在推导过的图上检查以下各项，诊断码写作 `check.<短横线名称>`，并给出每个声明项的状态：[model.md](model.md) §10 的第 12、14 至 20、22 条，以及第 24 条中"每个生成的符号恰有一个 `generates` 绑定"的一半。第 21 条（没有手写的测试）和第 28 条（生成文件与 `gen` 一致）要等 `gen`，从 M4 起检查。推导由 `graph` 完成，路径模式用 doublestar 匹配。
+
+M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通过。
 
 ## 6 生成与运行
 

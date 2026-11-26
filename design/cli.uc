@@ -32,3 +32,37 @@ flow check-design "用户运行 unicode check --design-only：解析 design/ 和
     cli -> design.load(files)
   }
 }
+
+flow check-code "用户运行 unicode check：载入设计，抽取每种已配置语言的代码，合并、推导之后检查全部约束，输出诊断" {
+  forall files: map<string, RepoFile> generated "一个小仓库：设计文件和 Go 源码，有的处处合乎设计，有的在一处违反了某条约束"
+  user -> main(args) {
+    cli -> design.load(files)
+    cli -> lang.golang.newBackend()
+    cli -> lang.Backend.extract(root, srcRoots)
+    cli -> graph.Graph.addFragment(fragment)
+    cli -> graph.Graph.derive()
+    cli -> check.conform(graph)
+  }
+}
+
+flow build-snapshot "用户运行 unicode build：建出图，把快照写到 .unicode/graph.json；相同的仓库总是写出逐字节相同的快照" {
+  forall files: map<string, RepoFile> generated "一个合法的小仓库：设计文件、录制文件和 Go 源码"
+  user -> main(args) {
+    cli -> design.load(files)
+    cli -> lang.Backend.extract(root, srcRoots)
+    cli -> graph.Graph.addFragment(fragment)
+    cli -> graph.Graph.derive()
+    cli -> graph.Graph.encode()
+  }
+}
+
+flow query-graph "用户运行 node get、node search、node refs、slice、impact 或 view：JSON 输出与直接调用 query 和 view 得到的结果相同；标识不存在时退出码为 3" {
+  forall files: map<string, RepoFile> generated "一个合法的小仓库：设计文件、录制文件和 Go 源码"
+  forall command: list<string> generated "一条查询命令及其参数，标识取自这个仓库的图，有时是不存在的标识"
+  user -> main(args) {
+    cli -> design.load(files)
+    cli -> graph.Graph.derive()
+    cli -> query.slice(g, ids, expand)
+    cli -> view.select(g, kind, id, expand)
+  }
+}
