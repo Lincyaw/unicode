@@ -12,9 +12,9 @@ test:
 fmt-check:
 	go run ./cmd/unicode fmt --check
 
-# The toolchain checks its own design (M2 extends this to the code).
+# The toolchain checks itself: its design, its code and the bindings between them.
 self-check:
-	go run ./cmd/unicode check --design-only
+	go run ./cmd/unicode check
 
 # deep is the asynchronous stage after a merge (CLAUDE.md principle 9):
 # many rapid checks, a fuzz burst per Fuzz target, and mutation testing.

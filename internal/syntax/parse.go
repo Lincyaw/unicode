@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"reflect"
+	"regexp"
 	"slices"
 	"unicode/utf8"
 
@@ -136,10 +138,11 @@ func (l locator) unexpected(u *participle.UnexpectedTokenError) diag.Diagnostic 
 	// A line that no construct starts, that starts with else, or whose
 	// construct the block around it may not hold is wrong from its first token
 	// on; any other line is wrong where the parser stopped. Among steps, the
-	// parser reads a misplaced keyword as a sender and stops after it.
-	c, named := constructs[key]
+	// parser reads a misplaced keyword as a sender and stops after it. A }
+	// that gets here closed its block, and its line is wrong after it.
+	c := constructs[key]
 	misplaced := first
-	if !inValue && named && len(line) > 0 {
+	if !inValue && key != "close" && len(line) > 0 {
 		misplaced = !l.holds(line[0].Pos.Offset, key)
 	}
 	switch {
@@ -189,29 +192,90 @@ var constructs = map[string]construct{
 	"loop":       {"loop fragment", `loop "label" {`, "among a flow's steps"},
 	step:         {"step", "sender -> op(args) with an optional {, sender ->> op(args), or sender emits Event(args)", "among a flow's steps"},
 	"assignment": {"assignment", "symbol = value", "in a case's block"},
+	"close":      {"closing brace", `} alone on its line, or } else "label" { between two branches of an alt fragment`, "at the end of a block"},
 	"unknown":    {"line", "a declaration or member that starts with a keyword, a step (sender -> op(args)) or an assignment (symbol = value)", "in a block"},
 }
 
 // unnamed are the constructs that no keyword starts.
-var unnamed = []string{step, "assignment", "literal", "unknown"}
+var unnamed = []string{step, "assignment", "close", "literal", "unknown"}
 
 // blockLines are the constructs that the grammar lets each kind of block
-// hold, by the keyword of the line that opens it: "" for the top level, and
-// step for a block of steps.
-var blockLines = map[string][]string{
-	"":          {"system", "notation", "language", "actor", "component", "type", "op", "flow", "property", "corpus", "case"},
-	"language":  {"root"},
-	"actor":     {"type", "op"},
-	"component": {"label", "focus", "paths", "uses"},
-	"type":      {"label", "extends", "implements", "field", "value", "op"},
-	"flow":      {"forall", "where", "case", "on", "async", "alt", "opt", "loop", step},
-	"property":  {"about", "forall", "where", "case"},
-	"case":      {"assignment"},
-	step:        {"on", "async", "alt", "opt", "loop", step},
+// hold, by the construct of the line that opens it: "" for the top level,
+// and step for a call's block.
+var blockLines = grammarBlocks()
+
+// grammarBlocks reads blockLines from the grammar's unions: a block is a
+// slice of a union's members, and each member is a line of its construct.
+func grammarBlocks() map[string][]string {
+	members := map[reflect.Type][]any{}
+	for _, u := range unions {
+		members[u.iface] = u.members
+	}
+	blocks := map[string][]string{}
+	seen := map[reflect.Type]bool{}
+	var visit func(opener string, t reflect.Type)
+	visit = func(opener string, t reflect.Type) {
+		if seen[t] {
+			return
+		}
+		seen[t] = true
+		for field := range t.Fields() {
+			if field.Type.Kind() != reflect.Slice {
+				continue
+			}
+			for _, m := range members[field.Type.Elem()] {
+				key := lineConstruct(m)
+				if key == "" {
+					continue
+				}
+				if !slices.Contains(blocks[opener], key) {
+					blocks[opener] = append(blocks[opener], key)
+				}
+				visit(key, reflect.TypeOf(m).Elem())
+			}
+		}
+	}
+	visit("", reflect.TypeFor[File]())
+	return blocks
+}
+
+// leadingKeyword matches the keyword that a tag of the grammar starts with.
+var leadingKeyword = regexp.MustCompile(`^'([a-z]+)'`)
+
+// lineConstruct is the construct of the lines that a member of a union of
+// lines parses: the keyword that its first tag starts with; a step or an
+// assignment for a line that no keyword starts; "" for a comment, which
+// every block holds. Every construct has an entry in constructs, so that a
+// diagnostic can say how it is written and where it stands.
+func lineConstruct(member any) string {
+	key := ""
+	for field := range reflect.TypeOf(member).Elem().Fields() {
+		if tag, ok := field.Tag.Lookup("parser"); ok {
+			if m := leadingKeyword.FindStringSubmatch(tag); m != nil {
+				key = m[1]
+			}
+			break
+		}
+	}
+	if key == "" {
+		switch member.(type) {
+		case *Comment:
+			return ""
+		case *Assignment:
+			key = "assignment"
+		case Step:
+			key = step
+		}
+	}
+	if _, ok := constructs[key]; !ok {
+		panic(fmt.Sprintf("syntax: the grammar's %T is a line of no construct in constructs", member))
+	}
+	return key
 }
 
 // holds tells whether the block around the line that holds offset may hold
-// a line of the construct key. A block that blockLines does not name holds steps.
+// a line of the construct key. A block that blockLines does not name, a
+// branch of an alt fragment, holds steps.
 func (l locator) holds(offset int, key string) bool {
 	block := ""
 	if ts := l.opener(offset); len(ts) > 0 {

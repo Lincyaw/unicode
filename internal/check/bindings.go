@@ -218,7 +218,8 @@ func ownerList(owners []string) string {
 
 // matches checks rule 18: the realizing code carries the design node's name,
 // its operation's signature, and every field the design writes, of the same
-// type; and an enum's code type every value of the enum (decision 40).
+// type; and an enum's code type has a constant for exactly the enum's values
+// (decisions 40 and 43).
 func (c *checker) matches(id, r string) {
 	at := c.byID[r].Origin
 	if got := c.attr(r, "name"); got != name(id) {
@@ -252,11 +253,22 @@ func (c *checker) matches(id, r string) {
 				fmt.Sprintf("give the field %s of %s the type %s, or change the design", n, r, typ))
 		}
 	}
-	for _, v := range c.byID[id].Attrs["values"] {
-		if !slices.Contains(c.byID[r].Attrs["values"], v) {
+	if c.byID[id].Form != "enum" {
+		return
+	}
+	values, constants := c.byID[id].Attrs["values"], c.byID[r].Attrs["values"]
+	for _, v := range values {
+		if !slices.Contains(constants, v) {
 			c.fail("check.missing-value", id, graph.StatusContradicted, at,
 				fmt.Sprintf("the design gives the enum %s the value %s, but %s, which realizes it, has no constant for it", id, v, r),
 				fmt.Sprintf("declare the constant of the value %s for %s", v, r))
+		}
+	}
+	for _, v := range constants {
+		if !slices.Contains(values, v) {
+			c.fail("check.extra-value", id, graph.StatusContradicted, at,
+				fmt.Sprintf("%s, which realizes the enum %s, has a constant for the value %s, which the design does not give the enum", r, id, v),
+				fmt.Sprintf("remove the constant of the value %s from %s, or add the value %s to %s in the design", v, r, v, id))
 		}
 	}
 }

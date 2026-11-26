@@ -209,12 +209,33 @@ var breakages = []breakage{
 	}},
 	{"check.signature-mismatch", func(w *world) string {
 		o := choose(w, w.ops)
-		code := o.codeSignature
-		switch uniform(w.t, 3) {
+		params, rest, _ := splitParameters(o.codeSignature)
+		var code string
+		switch uniform(w.t, 5) {
 		case 0:
-			code = "(z: bool)"
+			// No type of the sample is bytes.
+			code = "(z: bytes)"
 		case 1:
+			// One parameter retyped, its name kept. An operation without
+			// parameters first gets one, in the design and in the code.
+			if len(params) == 0 {
+				_, designRest, _ := splitParameters(o.signature)
+				params = []string{"a: int"}
+				w.setAttr(o.id, "signature", []string{signatureOf(params, designRest)})
+			}
+			i := uniform(w.t, len(params))
+			n, _, _ := strings.Cut(params[i], ": ")
+			params[i] = n + ": bytes"
+			code = signatureOf(params, rest)
+		case 2:
+			// Two parameters reordered, each keeping its name: the design
+			// takes (a: int, b: string, …) and the code (b: string, a: int, …).
+			designParams, designRest, _ := splitParameters(o.signature)
+			w.setAttr(o.id, "signature", []string{signatureOf(append([]string{"a: int", "b: string"}, designParams...), designRest)})
+			code = signatureOf(append([]string{"b: string", "a: int"}, params...), rest)
+		case 3:
 			// The code raises where the design does not, or the other way round.
+			code = o.codeSignature
 			if trimmed, ok := strings.CutSuffix(code, " raises error"); ok {
 				code = trimmed
 			} else {
@@ -222,7 +243,7 @@ var breakages = []breakage{
 			}
 		default:
 			// A Go result list, which no operation's signature matches.
-			code = "(" + strings.Join(parameters(code), ", ") + ") -> (int, string)"
+			code = signatureOf(params, " -> (int, string)")
 		}
 		w.setAttr(o.code, "signature", []string{code})
 		return o.id
@@ -251,6 +272,17 @@ var breakages = []breakage{
 		}
 		return t.id
 	}},
+	{"check.extra-value", func(w *world) string {
+		t := choose(w, where(w.types, func(t *dtype) bool { return t.form == "enum" }))
+		if uniform(w.t, 2) == 0 {
+			w.setAttr(t.code, "values", append(w.attr(t.code, "values"), "archived"))
+		} else {
+			values := w.attr(t.id, "values")
+			i := uniform(w.t, len(values))
+			w.setAttr(t.id, "values", slices.Delete(values, i, i+1))
+		}
+		return t.id
+	}},
 	{"check.missing-implements", func(w *world) string { return w.relation(graph.EdgeKindImplements) }},
 	{"check.missing-extends", func(w *world) string { return w.relation(graph.EdgeKindExtends) }},
 	{"check.missing-predicate", func(w *world) string {
@@ -265,15 +297,24 @@ var breakages = []breakage{
 		return k.id
 	}},
 	{"check.predicate-signature", func(w *world) string {
+		breaking := uniform(w.t, 4)
 		k := choose(w, w.checkables)
+		if breaking == 3 {
+			k = choose(w, where(w.checkables, func(k *checkable) bool { return len(k.symbols) > 0 }))
+		}
 		params := parameters(w.attr(k.pred, "signature")[0])
-		switch uniform(w.t, 3) {
+		switch breaking {
 		case 0:
 			params = params[1:]
 		case 1:
 			params = append(params, "extra: int")
-		default:
+		case 2:
 			params[0] = "t: go:testing.T"
+		default:
+			// A symbol's parameter renamed: unlike an operation's
+			// parameters, a predicate's are its symbols by name (rule 20).
+			_, typ, _ := strings.Cut(params[1], ": ")
+			params[1] = "renamed: " + typ
 		}
 		w.setAttr(k.pred, "signature", []string{"(" + strings.Join(params, ", ") + ")"})
 		return k.id
@@ -323,6 +364,11 @@ var breakages = []breakage{
 		w.edge(graph.EdgeKindGenerates, twin, k.id, graph.SourceDeclared, map[string][]string{"symbols": {"s"}})
 		return k.id
 	}},
+}
+
+// signatureOf writes a signature from its parameters and what follows them.
+func signatureOf(params []string, rest string) string {
+	return "(" + strings.Join(params, ", ") + ")" + rest
 }
 
 // unreachable cuts every call to the function that a step with a context traces to.

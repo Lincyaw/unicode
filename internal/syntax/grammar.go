@@ -1,6 +1,8 @@
 package syntax
 
 import (
+	"reflect"
+
 	"github.com/alecthomas/participle/v2"
 	"github.com/alecthomas/participle/v2/lexer"
 )
@@ -551,25 +553,53 @@ func (*NameValue) value()   {}
 func (*ListValue) value()   {}
 func (*BraceValue) value()  {}
 
-// Steps come last in the unions: a line that starts with a keyword is that
-// construct unless it only parses as a step whose sender has the keyword's name.
-var ucParser = participle.MustBuild[File](
+// union is one union of the grammar: an interface of the syntax tree and its
+// members, in the order participle tries them.
+type union struct {
+	iface   reflect.Type
+	members []any
+	option  participle.Option
+}
+
+func unionOf[T any](members ...T) union {
+	u := union{iface: reflect.TypeFor[T](), option: participle.Union[T](members...)}
+	for _, m := range members {
+		u.members = append(u.members, m)
+	}
+	return u
+}
+
+// unions are the grammar's unions; parse.go reads from them which lines each
+// block holds. Steps come last in them: a line that starts with a keyword is
+// that construct unless it only parses as a step whose sender has the keyword's name.
+var unions = []union{
+	unionOf[Decl](&Comment{}, &SystemDecl{}, &NotationDecl{}, &LanguageDecl{}, &PersonDecl{}, &ExternalDecl{}, &ComponentDecl{},
+		&TypeDecl{}, &OpDecl{}, &FlowDecl{}, &PropertyDecl{}, &CorpusDecl{}, &RecordedCase{}),
+	unionOf[LanguageLine](&Comment{}, &Root{}),
+	unionOf[ExternalLine](&Comment{}, &TypeDecl{}, &OpDecl{}),
+	unionOf[ComponentLine](&Comment{}, &Label{}, &Focus{}, &Paths{}, &Uses{}),
+	unionOf[Member](&Comment{}, &Label{}, &Extends{}, &Implements{}, &Field{}, &EnumValue{}, &OpDecl{}),
+	unionOf[TypeExpr](&Builtin{}, &ElemType{}, &MapType{}, &CallType{}, &NamedType{}),
+	unionOf[FlowLine](&Comment{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &CaseDecl{},
+		&OnBlock{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
+	unionOf[PropertyLine](&Comment{}, &About{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &CaseDecl{}),
+	unionOf[CaseLine](&Comment{}, &Assignment{}),
+	unionOf[Step](&Comment{}, &OnBlock{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
+	unionOf[Value](&NumberValue{}, &StringValue{}, &CallValue{}, &BoolValue{}, &NoneValue{},
+		&NameValue{}, &ListValue{}, &BraceValue{}),
+}
+
+var ucParser = participle.MustBuild[File](append([]participle.Option{
 	participle.Lexer(byteColumns{ucLexer}),
 	participle.Elide("Whitespace"),
 	participle.Map(checkEscapes, "String"),
 	participle.UseLookahead(participle.MaxLookahead),
-	participle.Union[Decl](&Comment{}, &SystemDecl{}, &NotationDecl{}, &LanguageDecl{}, &PersonDecl{}, &ExternalDecl{}, &ComponentDecl{},
-		&TypeDecl{}, &OpDecl{}, &FlowDecl{}, &PropertyDecl{}, &CorpusDecl{}, &RecordedCase{}),
-	participle.Union[LanguageLine](&Comment{}, &Root{}),
-	participle.Union[ExternalLine](&Comment{}, &TypeDecl{}, &OpDecl{}),
-	participle.Union[ComponentLine](&Comment{}, &Label{}, &Focus{}, &Paths{}, &Uses{}),
-	participle.Union[Member](&Comment{}, &Label{}, &Extends{}, &Implements{}, &Field{}, &EnumValue{}, &OpDecl{}),
-	participle.Union[TypeExpr](&Builtin{}, &ElemType{}, &MapType{}, &CallType{}, &NamedType{}),
-	participle.Union[FlowLine](&Comment{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &CaseDecl{},
-		&OnBlock{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
-	participle.Union[PropertyLine](&Comment{}, &About{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &CaseDecl{}),
-	participle.Union[CaseLine](&Comment{}, &Assignment{}),
-	participle.Union[Step](&Comment{}, &OnBlock{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
-	participle.Union[Value](&NumberValue{}, &StringValue{}, &CallValue{}, &BoolValue{}, &NoneValue{},
-		&NameValue{}, &ListValue{}, &BraceValue{}),
-)
+}, unionOptions()...)...)
+
+func unionOptions() []participle.Option {
+	var out []participle.Option
+	for _, u := range unions {
+		out = append(out, u.option)
+	}
+	return out
+}

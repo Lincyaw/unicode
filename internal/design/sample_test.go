@@ -3,6 +3,7 @@ package design
 import (
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -256,14 +257,31 @@ func (d *designer) clashes(parent *gNode, kind, name string) bool {
 	return false
 }
 
-// freeName draws names for a member of parent until one clashes with none there.
+// freeName draws names for a member of parent until one clashes with none
+// there and maps back from the code.
 func (d *designer) freeName(parent *gNode, kind string, draw func() string) string {
 	for {
-		if name := draw(); !d.clashes(parent, kind, name) {
+		if name := draw(); !d.clashes(parent, kind, name) && gReversible(kind, name) {
 			return name
 		}
 	}
 }
+
+// gReversible tells whether the Go name of a member of the given kind and
+// name maps back to the name (docs/model.md §10 rule 30): a property's name
+// does not start with flow-, and in a property's or a flow's no digit
+// follows a dash.
+func gReversible(kind, name string) bool {
+	switch kind {
+	case "property":
+		return !strings.HasPrefix(name, "flow-") && !gDigitAfterDash.MatchString(name)
+	case "flow":
+		return !gDigitAfterDash.MatchString(name)
+	}
+	return true
+}
+
+var gDigitAfterDash = regexp.MustCompile(`-[0-9]`)
 
 func pick[T any](d *designer, label string, from []T) T {
 	return rapid.SampledFrom(from).Draw(d.t, label)

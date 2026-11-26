@@ -1,6 +1,7 @@
 package check
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/lincyaw/unicode/internal/graph"
@@ -169,16 +170,17 @@ func splitParameters(s string) ([]string, string, bool) {
 }
 
 // sameSignature tells whether the signature that the code function fn has
-// matches the design's: the same parameters and result by sameType; for a
-// language that writes errors, ` raises error` exactly when the design
-// raises any. A result list like (A, B) matches nothing.
+// matches the design's (rule 18): the parameters' types in order and the
+// result by sameType, whatever the parameters are named; for a language
+// that writes errors, ` raises error` exactly when the design raises any. A
+// result list like (A, B) matches nothing.
 func (c *checker) sameSignature(design, code, fn string) bool {
 	d, ok := parseSignature(design)
 	k, ok2 := parseSignature(code)
 	if !ok || !ok2 {
 		return design == code
 	}
-	if !c.sameParams(d.params, k.params) {
+	if !c.sameTypes(typesOf(d.params), typesOf(k.params)) {
 		return false
 	}
 	if (d.result == "") != (k.result == "") || d.result != "" && !c.sameType(d.result, k.result) {
@@ -191,17 +193,31 @@ func (c *checker) sameSignature(design, code, fn string) bool {
 }
 
 // sameParams tells whether the code's parameters match the design's, in
-// order, by name and by sameType.
+// order, by name and by sameType, as a predicate's match its symbols (rule 20).
 func (c *checker) sameParams(design, code []string) bool {
-	if len(design) != len(code) {
-		return false
+	return slices.Equal(namesOf(design), namesOf(code)) && c.sameTypes(typesOf(design), typesOf(code))
+}
+
+// sameTypes tells whether the code's types match the design's, in order, by sameType.
+func (c *checker) sameTypes(design, code []string) bool {
+	return slices.EqualFunc(design, code, c.sameType)
+}
+
+// namesOf and typesOf split parameters, each `name: type`, into their names and their types.
+func namesOf(params []string) []string {
+	var out []string
+	for _, p := range params {
+		n, _, _ := strings.Cut(p, ": ")
+		out = append(out, n)
 	}
-	for i := range design {
-		dn, dt, _ := strings.Cut(design[i], ": ")
-		kn, kt, _ := strings.Cut(code[i], ": ")
-		if dn != kn || !c.sameType(dt, kt) {
-			return false
-		}
+	return out
+}
+
+func typesOf(params []string) []string {
+	var out []string
+	for _, p := range params {
+		_, t, _ := strings.Cut(p, ": ")
+		out = append(out, t)
 	}
-	return true
+	return out
 }

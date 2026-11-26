@@ -17,4 +17,4 @@ jobs:
           version: v2.11
       - run: go test ./...
       - run: go run ./cmd/unicode fmt --check
-      - run: go run ./cmd/unicode check --design-only
+      - run: go run ./cmd/unicode check

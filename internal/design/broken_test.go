@@ -152,19 +152,6 @@ var breakages = map[string]breakage{
 	"design.name-collision": func(d *designer) (string, any) {
 		k := &d.skel
 		f := d.componentFile(k.top)
-		// fresh draws a kebab name for which free holds.
-		fresh := func(free func(name string) bool) string {
-			for {
-				if name := d.kebab("clash"); free(name) {
-					return name
-				}
-			}
-		}
-		property := func(name string) *syntax.PropertyDecl {
-			d.used[name] = true
-			about := &syntax.About{Refs: []syntax.Ref{{Segments: strings.Split(k.service.id, ".")}}}
-			return &syntax.PropertyDecl{Name: syntax.Kebab(name), Form: "invariant", Summary: "clash", Lines: []syntax.PropertyLine{about}}
-		}
 		switch count(d, "site", 0, 2) {
 		case 0:
 			// The type T and the operation t both take the Go name T.
@@ -175,21 +162,43 @@ var breakages = map[string]breakage{
 			return k.top.file, op
 		case 1:
 			// The predicates of the flow f and the property flow-f are both checkFlowF.
-			name := fresh(func(name string) bool { return !d.used["flow-"+name] && !d.clashes(k.top, "flow", name) })
-			second := property("flow-" + name)
+			name := d.fresh(func(name string) bool { return !d.used["flow-"+name] && !d.clashes(k.top, "flow", name) })
+			second := d.extraProperty("flow-" + name)
 			insertDecl(f, &syntax.FlowDecl{Name: syntax.Kebab(name), Summary: "clash"})
 			insertDecl(f, second)
 			return k.top.file, second
 		}
 		// The predicates of the properties p-7 and p7 are both checkP7.
 		digit := strconv.Itoa(rapid.IntRange(0, 9).Draw(d.t, "digit"))
-		base := fresh(func(name string) bool {
+		base := d.fresh(func(name string) bool {
 			return !d.used[name+"-"+digit] && !d.used[name+digit] && !d.clashes(k.top, "property", name+digit)
 		})
-		second := property(base + digit)
-		insertDecl(f, property(base+"-"+digit))
+		second := d.extraProperty(base + digit)
+		insertDecl(f, d.extraProperty(base+"-"+digit))
 		insertDecl(f, second)
 		return k.top.file, second
+	},
+	"design.irreversible-name": func(d *designer) (string, any) {
+		k := &d.skel
+		f := d.componentFile(k.top)
+		switch count(d, "site", 0, 2) {
+		case 0:
+			// The property flow-x, whose predicate checkFlowX a flow x's would be.
+			p := d.extraProperty("flow-" + d.fresh(func(name string) bool {
+				return !d.used["flow-"+name] && !d.clashes(k.top, "property", "flow-"+name)
+			}))
+			insertDecl(f, p)
+			return k.top.file, p
+		case 1:
+			// The property a-7, whose predicate checkA7 the property a7's would be.
+			name := d.digitAfterDash("property")
+			p := d.extraProperty(name)
+			insertDecl(f, p)
+			return k.top.file, p
+		}
+		fl := &syntax.FlowDecl{Name: syntax.Kebab(d.digitAfterDash("flow")), Summary: "irreversible"}
+		insertDecl(f, fl)
+		return k.top.file, fl
 	},
 	"design.missing-focus": func(d *designer) (string, any) {
 		c := d.skel.top.component
@@ -389,6 +398,34 @@ var breakages = map[string]breakage{
 		d.skel.propCase.Name = "r-0123abcd"
 		return d.skel.prop.file, d.skel.propCase
 	},
+}
+
+// fresh draws a kebab name for which free holds.
+func (d *designer) fresh(free func(name string) bool) string {
+	for {
+		if name := d.kebab("clash"); free(name) {
+			return name
+		}
+	}
+}
+
+// extraProperty declares a property of the skeleton's top component, about its service.
+func (d *designer) extraProperty(name string) *syntax.PropertyDecl {
+	d.used[name] = true
+	about := &syntax.About{Refs: []syntax.Ref{{Segments: strings.Split(d.skel.service.id, ".")}}}
+	return &syntax.PropertyDecl{Name: syntax.Kebab(name), Form: "invariant", Summary: "clash", Lines: []syntax.PropertyLine{about}}
+}
+
+// digitAfterDash draws an unused name for a property or a flow of the
+// skeleton's top component, with a digit right after a dash, like a-7 or a-7b.
+func (d *designer) digitAfterDash(kind string) string {
+	digit := strconv.Itoa(rapid.IntRange(0, 9).Draw(d.t, "digit"))
+	tail := rapid.StringMatching(`[a-z0-9]{0,2}`).Draw(d.t, "tail")
+	base := d.fresh(func(name string) bool {
+		return !d.used[name+"-"+digit+tail] && !d.clashes(d.skel.top, kind, name+"-"+digit+tail)
+	})
+	d.used[base+"-"+digit+tail] = true
+	return base + "-" + digit + tail
 }
 
 // refSite is a reference in a file's tree: its segments, which kind of
