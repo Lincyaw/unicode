@@ -18,10 +18,11 @@ type Neighbor record "从焦点一步可达的一个显著节点，以及经过�
   field node: graph.Node
 }
 
-type Context record "回答一个问题所需的最小上下文（design.md §7.3）" {
+type Context record "回答一个问题所需的最小上下文（design.md §7.3）：焦点、祖先、一步可达的显著节点、按种类补充的节点，以及每个焦点未列出的细节节点的个数" {
   field focus: list<graph.Node>
   field ancestors: list<graph.Node>
   field neighbors: list<Neighbor>
+  field extras: list<graph.Node>
   field details: map<string, int>
 }
 
@@ -55,6 +56,11 @@ property slice-is-minimal-context invariant "切片恰好含有焦点、焦点�
 property impact-is-reverse-reachability relation "影响恰是沿 design.md §7.4 的边反向能到达焦点的显著节点；每条路径都是图中的路径，并且最短" {
   about impact
   forall question: Question generated "一张随机的图，焦点取自图中的节点"
+}
+
+property get-shows-incident-edges invariant "get 给出的出边恰是起点为该节点的边，入边恰是终点为它的边；refs 恰是终点为它的边；不存在的标识得到 NotFound" {
+  about get, refs
+  forall question: Question generated "一张随机的图，焦点有的取自图中的节点，有的是不存在的标识"
 }
 
 property search-matches-text invariant "搜索的结果恰是标识或摘要包含这段文字、种类相符的节点" {

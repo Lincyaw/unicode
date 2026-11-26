@@ -36,7 +36,7 @@ type Request record "一张图和一次视图请求：视图的种类、输入�
 
 op select(g: graph.Graph, kind: ViewKind, id: string, expand: list<string>) -> View raises NotApplicable "按视图的种类选取子图并折叠"
 
-property view-is-folded-subgraph invariant "视图的节点和边都在图中，边的两端都在视图之中；不展开时没有细节节点，support 容器折叠成一个节点，utility 容器和指向它的依赖都不出现；展开的标识照 design.md §7.2 展开" {
+property view-is-folded-subgraph invariant "视图的节点和边都在图中，边的两端都在视图之中；不展开时没有细节节点；架构、类、调用、代码、DDD 和 C4 视图中，support 容器折叠成一个节点，utility 容器和指向它的依赖都不出现；时序、活动和事件视图不折叠；展开的标识照 design.md §7.2 展开" {
   about select
   forall request: Request generated "一张随机的图，带各种关注度的容器、显著和细节的函数，以及一次输入取自图中节点的视图请求"
 }

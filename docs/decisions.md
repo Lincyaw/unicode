@@ -50,3 +50,4 @@
 33. **第一次深度验证之后：** `make deep` 的 gremlins 改为在根目录下不带路径、不用缓存、放宽超时运行；`kindOf` 增加性质 `kind-of-follows-path`；语法诊断按位置排序，并且落在改动的列上；`format-files` 的输入增加工作目录、是否给出 `--root`，以及读不出的文件。27 个改变行为的变异原先没有被任何性质抓到。
 34. **昂贵的验证只在用户同意之后运行。** `make deep`（变异测试、长时间的 fuzz、大量的随机检查）不由任何开发线、评审、主会话或定时任务自行启动；一部分开发完成后，主会话汇报并提议，用户同意了再跑。CI 中的 `deep` 只保留手动触发。见 `CLAUDE.md` 原则 9，[design.md](design.md) §10。
 35. **合并 m1-design 时定下的理解：** 系统节点的标识是系统的名称；顶层组件不能叫 `system`；`system` 节点带上 `notations` 和 `roots`；`alt` 的分支写在 `contains` 边的 `branch` 上；`uses` 不能指向人；区间的下界不能大于上界；一条约束可以有几个诊断码。`make check` 从此包含工具链对自身设计的 `check --design-only`。见 [model.md](model.md) §7、[format.md](format.md) §1、§3，[design.md](design.md) §5.2、§8。
+36. **时序、活动和事件视图不按关注度折叠。** 流程的参与者是设计者写进这个流程的，折叠会让发往支撑组件的消息和事件消失（m3-query 在商店例子上发现）。另外：`Context` 增加按种类补充的 `extras`；`get` 和 `refs` 补上性质；`reaches` 的展开标识写作 `reaches <起点> <终点>`。见 [design.md](design.md) §7.2，`design/query.uc`、`design/view.uc`。
