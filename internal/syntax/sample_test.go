@@ -397,8 +397,14 @@ var (
 	propertyForms = []string{"invariant", "postcondition", "relation", "transition"}
 )
 
+var fileKinds = []FileKind{FileKindSystem, FileKindComponent, FileKindCorpus}
+
 func genFile(t *rapid.T) *File {
-	f := &File{Kind: rapid.SampledFrom([]FileKind{FileKindSystem, FileKindComponent, FileKindCorpus}).Draw(t, "kind")}
+	return genFileOf(t, rapid.SampledFrom(fileKinds).Draw(t, "kind"))
+}
+
+func genFileOf(t *rapid.T, kind FileKind) *File {
+	f := &File{Kind: kind}
 	switch f.Kind {
 	case FileKindSystem:
 		f.Decls = genSystemDecls(t)
@@ -416,13 +422,31 @@ func genFile(t *rapid.T) *File {
 // tokens stay apart), trailing spaces, blank lines between lines, braces
 // around an empty optional block, values broken between their items with an
 // optional trailing comma, and any number of final newlines.
+//
+// It records the line on which the node mark starts in markLine, and ends
+// that line with markComment when it is set. A node is a line of any level,
+// a value or a branch of an alt.
 type writer struct {
 	t    *rapid.T
 	b    strings.Builder
 	line []string
+
+	mark        any
+	markLine    int
+	markComment string
+	comment     string // markComment, until the marked node's first line ends
 }
 
 func (w *writer) tok(toks ...string) { w.line = append(w.line, toks...) }
+
+// at notes that the node n starts on the current line.
+func (w *writer) at(n any) {
+	if n != w.mark {
+		return
+	}
+	w.markLine = strings.Count(w.b.String(), "\n") + 1
+	w.comment = w.markComment
+}
 
 func (w *writer) spaces(label string, max int) string {
 	return strings.Repeat(" ", rapid.IntRange(0, max).Draw(w.t, label))
@@ -430,6 +454,10 @@ func (w *writer) spaces(label string, max int) string {
 
 // flush ends the current line, then writes blank lines.
 func (w *writer) flush() {
+	if w.comment != "" {
+		w.tok(w.comment)
+		w.comment = ""
+	}
 	w.b.WriteString(w.spaces("indent", 6))
 	for i, tok := range w.line {
 		if i > 0 {
@@ -519,6 +547,11 @@ func (w *writer) file(f *File) {
 }
 
 func (w *writer) node(n any) {
+	if r, ok := n.(*rawLines); ok {
+		w.raw(r)
+		return
+	}
+	w.at(n)
 	switch n := n.(type) {
 	case *Comment:
 		w.tok("//" + string(n.Text))
@@ -677,7 +710,8 @@ func (w *writer) step(n any) {
 		writeBlock(w, n.Lines)
 	case *Alt:
 		kw := "alt"
-		for _, br := range n.Branches {
+		for i, br := range n.Branches {
+			w.at(&n.Branches[i])
 			w.tok(kw, quote(string(br.Label)))
 			writeBlock(w, br.Lines)
 			kw = "else"
@@ -733,6 +767,7 @@ func (w *writer) number(n Number) string {
 
 // value writes v; between its items it may break the line.
 func (w *writer) value(v Value) {
+	w.at(v)
 	open, items, closer := parts(v)
 	if n, ok := v.(*NumberValue); ok {
 		w.tok(w.number(n.Text))
