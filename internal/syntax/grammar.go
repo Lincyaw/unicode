@@ -109,7 +109,7 @@ type Comment struct {
 }
 
 // Decl is a top-level line: *Comment, *SystemDecl, *NotationDecl,
-// *LanguageDecl, *ActorDecl, *ComponentDecl, *TypeDecl, *OpDecl, *FlowDecl,
+// *LanguageDecl, *PersonDecl, *ExternalDecl, *ComponentDecl, *TypeDecl, *OpDecl, *FlowDecl,
 // *PropertyDecl, *CorpusDecl or *RecordedCase. Which ones a file may hold
 // depends on its kind.
 type Decl interface{ decl() }
@@ -139,16 +139,24 @@ type Root struct {
 	Path Text `parser:"'root' @String NL"`
 }
 
-type ActorDecl struct {
+// PersonDecl is an actor of the form person, which has no block.
+type PersonDecl struct {
 	Pos     lexer.Position
-	Name    Kebab       `parser:"'actor' @Ident"`
-	Form    string      `parser:"@( 'person' | 'external' )"`
-	Summary Summary     `parser:"@String"`
-	Lines   []ActorLine `parser:"( '{' NL @@* '}' )? NL"`
+	Name    Kebab   `parser:"'actor' @Ident 'person'"`
+	Summary Summary `parser:"@String NL"`
 }
 
-// ActorLine is *Comment, *TypeDecl or *OpDecl.
-type ActorLine interface{ actorLine() }
+// ExternalDecl is an actor of the form external: the types and operations of
+// an external system that we use.
+type ExternalDecl struct {
+	Pos     lexer.Position
+	Name    Kebab          `parser:"'actor' @Ident 'external'"`
+	Summary Summary        `parser:"@String"`
+	Lines   []ExternalLine `parser:"( '{' NL @@* '}' )? NL"`
+}
+
+// ExternalLine is *Comment, *TypeDecl or *OpDecl.
+type ExternalLine interface{ externalLine() }
 
 type ComponentDecl struct {
 	Pos     lexer.Position
@@ -481,7 +489,8 @@ func (*Comment) decl()       {}
 func (*SystemDecl) decl()    {}
 func (*NotationDecl) decl()  {}
 func (*LanguageDecl) decl()  {}
-func (*ActorDecl) decl()     {}
+func (*PersonDecl) decl()    {}
+func (*ExternalDecl) decl()  {}
 func (*ComponentDecl) decl() {}
 func (*TypeDecl) decl()      {}
 func (*OpDecl) decl()        {}
@@ -493,9 +502,9 @@ func (*RecordedCase) decl()  {}
 func (*Comment) languageLine() {}
 func (*Root) languageLine()    {}
 
-func (*Comment) actorLine()  {}
-func (*TypeDecl) actorLine() {}
-func (*OpDecl) actorLine()   {}
+func (*Comment) externalLine()  {}
+func (*TypeDecl) externalLine() {}
+func (*OpDecl) externalLine()   {}
 
 func (*Comment) componentLine() {}
 func (*Label) componentLine()   {}
@@ -578,10 +587,10 @@ var ucParser = participle.MustBuild[File](
 	participle.Elide("Whitespace"),
 	participle.Map(checkEscapes, "String"),
 	participle.UseLookahead(participle.MaxLookahead),
-	participle.Union[Decl](&Comment{}, &SystemDecl{}, &NotationDecl{}, &LanguageDecl{}, &ActorDecl{}, &ComponentDecl{},
+	participle.Union[Decl](&Comment{}, &SystemDecl{}, &NotationDecl{}, &LanguageDecl{}, &PersonDecl{}, &ExternalDecl{}, &ComponentDecl{},
 		&TypeDecl{}, &OpDecl{}, &FlowDecl{}, &PropertyDecl{}, &CorpusDecl{}, &RecordedCase{}),
 	participle.Union[LanguageLine](&Comment{}, &Root{}),
-	participle.Union[ActorLine](&Comment{}, &TypeDecl{}, &OpDecl{}),
+	participle.Union[ExternalLine](&Comment{}, &TypeDecl{}, &OpDecl{}),
 	participle.Union[ComponentLine](&Comment{}, &Label{}, &Focus{}, &Paths{}, &Uses{}),
 	participle.Union[TypeLine](&Comment{}, &Label{}, &Extends{}, &Implements{}, &Field{}, &EnumValue{}, &OpDecl{}),
 	participle.Union[TypeExpr](&BuiltinType{}, &ElemType{}, &MapType{}, &CallType{}, &NamedType{}),

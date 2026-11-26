@@ -355,12 +355,12 @@ func genSystemDecls(t *rapid.T) []Decl {
 		return &LanguageDecl{Name: rapid.SampledFrom([]string{"go", "python"}).Draw(t, "language"), Lines: commented(t, roots)}
 	})...)
 	return append(ds, some(t, 3, func() Decl {
-		a := &ActorDecl{Name: genKebab(t, "actor"), Form: rapid.SampledFrom([]string{"person", "external"}).Draw(t, "form"), Summary: genSummary(t, "summary")}
-		if a.Form == "external" {
-			ls := some(t, 2, func() ActorLine { return genType(t) })
-			a.Lines = commented(t, append(ls, some(t, 2, func() ActorLine { return genOp(t) })...))
+		if rapid.Bool().Draw(t, "person?") {
+			return &PersonDecl{Name: genKebab(t, "actor"), Summary: genSummary(t, "summary")}
 		}
-		return a
+		ls := some(t, 2, func() ExternalLine { return genType(t) })
+		ls = append(ls, some(t, 2, func() ExternalLine { return genOp(t) })...)
+		return &ExternalDecl{Name: genKebab(t, "actor"), Summary: genSummary(t, "summary"), Lines: commented(t, ls)}
 	})...)
 }
 
@@ -529,11 +529,11 @@ func (w *writer) node(n any) {
 		writeBlock(w, n.Lines)
 	case *Root:
 		w.tok("root", quote(string(n.Path)))
-	case *ActorDecl:
-		w.tok("actor", string(n.Name), n.Form, quote(string(n.Summary)))
-		if n.Form == "external" {
-			writeOptBlock(w, n.Lines)
-		}
+	case *PersonDecl:
+		w.tok("actor", string(n.Name), "person", quote(string(n.Summary)))
+	case *ExternalDecl:
+		w.tok("actor", string(n.Name), "external", quote(string(n.Summary)))
+		writeOptBlock(w, n.Lines)
 	case *ComponentDecl:
 		w.tok("component")
 		w.ref(n.Path.Segments)

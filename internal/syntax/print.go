@@ -74,8 +74,10 @@ func (pr *printer) node(n any) {
 		block(pr, "language "+n.Name, n.Lines)
 	case *Root:
 		pr.line("root " + quote(string(n.Path)))
-	case *ActorDecl:
-		optBlock(pr, "actor "+string(n.Name)+" "+n.Form+" "+quote(string(n.Summary)), n.Lines)
+	case *PersonDecl:
+		pr.line("actor " + string(n.Name) + " person " + quote(string(n.Summary)))
+	case *ExternalDecl:
+		optBlock(pr, "actor "+string(n.Name)+" external "+quote(string(n.Summary)), n.Lines)
 	case *ComponentDecl:
 		block(pr, "component "+ref(Ref(n.Path))+" "+quote(string(n.Summary)), n.Lines)
 	case *Label:

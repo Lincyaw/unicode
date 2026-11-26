@@ -68,7 +68,7 @@ var (
 		FileKindCorpus:    newOrder("录制文件", "syntax.declaration-order", []string{"corpus", "case"}, "corpus"),
 	}
 	componentOrder = newOrder("组件块", "syntax.member-order", []string{"label", "focus", "paths", "uses"}, "focus", "paths", "uses")
-	actorOrder     = newOrder("外部系统", "syntax.member-order", []string{"type", "op"})
+	externalOrder  = newOrder("外部系统", "syntax.member-order", []string{"type", "op"})
 	typeOrder      = newOrder("类型", "syntax.member-order", []string{"label", "extends", "implements", "field|value", "op"})
 	flowOrder      = newOrder("流程", "syntax.member-order", []string{"forall", "where", "步骤|on|async|alt|opt|loop", "case"})
 	propertyOrder  = newOrder("性质", "syntax.member-order", []string{"about", "forall", "where", "case"}, "about")
@@ -83,7 +83,7 @@ func keyword(line any) string {
 		return "notation"
 	case *LanguageDecl:
 		return "language"
-	case *ActorDecl:
+	case *PersonDecl, *ExternalDecl:
 		return "actor"
 	case *ComponentDecl:
 		return "component"
@@ -192,8 +192,13 @@ func (c *checker) file(f *File) {
 		case *LanguageDecl:
 			seen := lines(c, newOrder("language 块", "syntax.member-order", []string{"root"}), d.Lines)
 			c.require(seen, "root", d.Pos, "language 块中至少要有一个 root", "在块中写上 root \"源码根目录\"")
-		case *ActorDecl:
-			c.actor(d)
+		case *ExternalDecl:
+			lines(c, externalOrder, d.Lines)
+			for _, l := range d.Lines {
+				if t, ok := l.(*TypeDecl); ok {
+					c.typeDecl(t)
+				}
+			}
 		case *ComponentDecl:
 			seen := lines(c, componentOrder, d.Lines)
 			c.require(seen, "paths", d.Pos, "组件块中必须有 paths", "在组件块中写上 paths \"路径模式\"")
@@ -205,18 +210,6 @@ func (c *checker) file(f *File) {
 		case *PropertyDecl:
 			seen := lines(c, propertyOrder, d.Lines)
 			c.require(seen, "about", d.Pos, "性质必须写 about", "在性质的块中第一行写上 about 和它约束的对象")
-		}
-	}
-}
-
-func (c *checker) actor(d *ActorDecl) {
-	if d.Form == "person" && len(d.Lines) > 0 {
-		c.report(d.Pos, "syntax.block-not-allowed", "人（person）不能带块：只有外部系统（external）有类型和操作", "删去这个块，或把形式改成 external")
-	}
-	lines(c, actorOrder, d.Lines)
-	for _, l := range d.Lines {
-		if t, ok := l.(*TypeDecl); ok {
-			c.typeDecl(t)
 		}
 	}
 }
