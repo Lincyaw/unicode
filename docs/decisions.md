@@ -35,3 +35,5 @@
 
     见 [format.md](format.md) §2、§3、§3.1，[design.md](design.md) §4、§8，[model.md](model.md) §10 第 18 条。
 20. **保留自定义格式加 participle，不换成 CUE 或 HCL。** 换了能省下打印，CUE 还能省下用例与类型、限定的校验；但流程会变得难读，而流程和签名一行写一个是设计文件好读、diff 好审的关键。见 [design.md](design.md) 附录 A-8。
+21. **第一次评审后补上一条性质：违反规则的文本会被拒绝。** 原有的性质只验证合法的文本和诊断的格式，把解析后的检查整个关掉也照样通过。见 `design/syntax.uc` 的 `rejects-broken-text`。
+22. **命令行的两处理解：JSON 模式下诊断是数据，写到标准输出；路径参数必须在 `design/` 或 `corpus/` 之内。改写文件用 renameio。** 见 [design.md](design.md) §3、§8。
