@@ -46,3 +46,4 @@
 29. **M2 的设计：`lang` 的接口、Go 后端、`graph` 的合并与推导、`check` 的代码约束、`check-code` 流程。** 方法到操作的落实由后端按反向的名称映射给出候选边，推导时丢掉终点不存在的，`graph` 因此不依赖 `lang`。代码的签名归一化成设计的写法，与设计层直接比较字符串。`check` 的性质在随机的图上验证，Go 后端的性质在随机生成的 Go 模块上验证，二者合起来由 `check-code` 流程和工具链自身的 `unicode check` 验证。Go 中对象类型按指针传递，`T` 和 `optional<T>` 都写作 `*T`。见 [design.md](design.md) §4、§5.3。
 30. **M3 的设计：`query`（节点、引用、搜索、切片、影响）和 `view`（选取与折叠）。** 二者只读图，性质在随机的图上验证，可以与 M2 并行开发；命令行的接线（`build`、`node`、`slice`、`impact`、`view`、`check`）放在最后一条开发线中统一完成。见 `design/query.uc`、`design/view.uc`。
 31. **名称映射之后不能撞名（[model.md](model.md) §10 第 30 条）。** M3 的实现中发现类型 `Slice` 与操作 `slice` 在 Go 中都映射成 `Slice`；查询的两个记录改名为 `Context` 和 `Affected`，同类的撞名今后在载入设计时就报出。
+32. **代码层契约的细节（Go 后端与 `check` 之间）：** 指针写作 `optional`，由 `check` 按设计中的形式放宽；末尾的 `error` 写作 `raises error`；接口中声明的方法也是 `op` 节点（形式 `abstract`），经由接口的调用因此能被追溯；`AddFragment` 不因绑定的目标不存在而失败，这类边留给 `check` 报告。见 [design.md](design.md) §5.2、[model.md](model.md) §3、§9。

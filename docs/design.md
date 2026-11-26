@@ -149,10 +149,10 @@ type Backend interface {
 | 种类 | 属性的键 |
 | --- | --- |
 | container（`package`、`file`） | `language`、`path`（文件的路径，或包的导入路径） |
-| type | `name`、`fields`（每项 `名称: 类型`）、`methods`（只有接口才有，每项 `名称 签名`） |
-| op（`func`、`method`） | `name`、`signature`、`testKind`（`none`、`example`、`property` 或 `fuzz`）、`stub`（函数体是未实现标记时为 `true`） |
+| type | `name`、`fields`（每项 `名称: 类型`；未导出的字段是细节，不列出） |
+| op（`func`、`method`、`abstract`） | `name`（带 `checks` 绑定的谓词，写作性质或流程的名称）、`signature`、`testKind`（`none`、`example`、`property` 或 `fuzz`）、`stub`（`true` 或 `false`） |
 
-`calls` 边的属性 `sites` 列出每个调用位置，写作 `路径:行:列`。
+`calls` 边的属性 `sites` 列出每个调用位置，写作 `路径:行:列`；`generates` 边的属性 `symbols` 列出符号的名称。Go 签名的写法：指针 `*T` 写作 `optional<T>`，`check` 比较时把设计中 `object` 类型的 `optional<X>` 与 `X` 视为相同；末尾的 `error` 写作 ` raises error`，与设计中非空的 `raises` 相符；谓词的第一个参数（`rapid.TB`）保留在签名中，比较符号时跳过。绑定边的终点是设计层的标识，`Graph.AddFragment` 不加入终点不在图中的边，而是留给 `check` 报出绑定的目标不存在。
 
 `extends`、`implements`、`uses`、订阅、调用、发起方和 `about` 都是边，不是属性。快照是 `{"nodes": [...], "edges": [...]}`：节点按标识排序，边按种类、起点、终点排序，属性的键按字典序排列。
 

@@ -38,7 +38,7 @@ DDD、UML 类图、时序图、活动图、事件风暴和 C4 都是**记法**�
 | --- | --- | --- | --- |
 | `container` | `system`（根，恰有一个）、`component` | `package`、`file` | 名称、摘要、关注度、标签；设计层另有拥有的路径，代码层另有语言和路径 |
 | `type` | `object`、`record`、`interface`、`enum`、`error`、`event` | 各语言的命名类型，例如 `class`、`struct`、`interface` | 名称、摘要、标签、字段、枚举值 |
-| `op` | `op` | `func`、`method` | 名称、摘要、签名、订阅的事件；代码层另有测试类别、是否为骨架 |
+| `op` | `op` | `func`、`method`、`abstract`（接口中声明的方法） | 名称、摘要、签名、订阅的事件；代码层另有测试类别、是否为骨架 |
 | `actor` | `person`、`external` | — | 名称、摘要 |
 | `flow` | `flow` | — | 名称、摘要、符号、限定 |
 | `step` | `call`、`send`、`emit`、`async`、`alt`、`opt`、`loop`、`on` | — | 序号、分支标签、实参 |
@@ -179,7 +179,7 @@ DDD、UML 类图、时序图、活动图、事件风暴和 C4 都是**记法**�
 ## 9 推导规则
 
 - **`owns`**：一个源文件归属于路径模式匹配它的设计层容器中最深的那个。
-- **方法的 `realizes`**：代码层类型 c `realizes` 设计层类型 t 时，t 的每个操作 o 由 c 中名为 o 的名称映射（[design.md](design.md) §4）的方法落实，得到 `realizes` 边。`interface` 中声明的方法不是 `op` 节点；对接口，比较的是 c 的签名属性中的那一项。
+- **方法的 `realizes`**：代码层类型 c `realizes` 设计层类型 t 时，t 的每个操作 o 由 c 中名为 o 的名称映射（[design.md](design.md) §4）的方法落实，得到 `realizes` 边。接口中声明的方法也是 `op` 节点，形式为 `abstract`；经由接口的调用，`calls` 边指向它。
 - **`depends`**：容器 A 拥有的某个文件导入了容器 B 拥有其文件的包，或者 A 拥有的某个函数调用了 B 拥有的某个函数，且 A ≠ B 时，有 `depends` A → B。A 拥有的函数调用了落实外部系统 X 的操作的客户端时，有 `depends` A → X。边的属性列出这些导入和调用，作为依据。
 - **`traces`**：`call` 或 `send` 步骤 s `calls` 设计层操作 o，而代码层操作 f `realizes` o 时，有 `traces` s → f。
 - **`exercises`**：从 `checks` 边的起点出发，沿 `calls` 能到达的每个函数 g，都有 `exercises` 边到 g。
