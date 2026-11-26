@@ -6,6 +6,7 @@ import (
 
 	"github.com/alecthomas/participle/v2/lexer"
 
+	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/syntax"
 )
 
@@ -31,6 +32,46 @@ func (r ref) text() string {
 		return r.target.id
 	}
 	return r.written
+}
+
+// named is the type that a named type expression names, or nil.
+func (t *typ) named() *entity {
+	if t.builtin != "" || t.kind != "" {
+		return nil
+	}
+	return t.refs[0].target
+}
+
+// resolved tells whether every reference in t resolves.
+func (t *typ) resolved() bool {
+	return !slices.ContainsFunc(t.allRefs(), func(r ref) bool { return r.target == nil })
+}
+
+// elem is what a limit's path passes through t to: the element of a list, a
+// set or an optional, the value of a map (docs/model.md §10 rule 25), or nil.
+func (t *typ) elem() *typ {
+	switch t.kind {
+	case "list", "set", "optional":
+		return t.elems[0]
+	case "map":
+		return t.elems[1]
+	}
+	return nil
+}
+
+// ops lists the operations a value of call<…> may call: each target
+// operation, and every operation of each target type.
+func (t *typ) ops() []*entity {
+	var out []*entity
+	for _, r := range t.refs {
+		switch {
+		case r.target.is(graph.NodeKindOp):
+			out = append(out, r.target)
+		case r.target != nil:
+			out = append(out, r.target.ops...)
+		}
+	}
+	return out
 }
 
 // typeOf resolves a type expression written in the declaration of from.

@@ -30,6 +30,7 @@ type entity struct {
 	focus   string    // a component's focus, inherited when it has none
 	fields  []member  // a type's fields
 	values  []string  // an enum's values
+	ops     []*entity // a type's operations, in the order written
 	params  []member  // an operation's parameters
 	raises  []*entity // an operation's errors
 	handles *entity   // the event an operation subscribes to

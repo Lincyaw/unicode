@@ -96,7 +96,7 @@ func (d *designer) callType() *gType {
 }
 
 // callOps lists the operations a value of call<…> may call.
-func callOps(t *gType) []*gNode {
+func gCallOps(t *gType) []*gNode {
 	var out []*gNode
 	for _, target := range t.targets {
 		if target.kind == "op" {
@@ -110,7 +110,7 @@ func callOps(t *gType) []*gNode {
 
 // elemOf is what a limit passes through to: the element of a list, set or
 // optional, the value of a map.
-func elemOf(t *gType) *gType {
+func gElemOf(t *gType) *gType {
 	switch t.kind {
 	case "list", "set", "optional":
 		return t.elems[0]
@@ -120,7 +120,7 @@ func elemOf(t *gType) *gType {
 	return nil
 }
 
-func fits(op string, t *gType) bool {
+func gFits(op string, t *gType) bool {
 	switch op {
 	case "in":
 		return t.builtin == "int" || t.builtin == "float"
@@ -143,8 +143,8 @@ type site struct {
 func sites(t *gType, path []string, depth int) []site {
 	var out []site
 	for _, op := range []string{"in", "size", "subset"} {
-		for x := t; x != nil; x = elemOf(x) {
-			if fits(op, x) {
+		for x := t; x != nil; x = gElemOf(x) {
+			if gFits(op, x) {
 				out = append(out, site{slices.Clone(path), op, x})
 				break
 			}
@@ -154,8 +154,8 @@ func sites(t *gType, path []string, depth int) []site {
 		return out
 	}
 	base := t
-	for elemOf(base) != nil {
-		base = elemOf(base)
+	for gElemOf(base) != nil {
+		base = gElemOf(base)
 	}
 	switch {
 	case base.named != nil && !base.named.recursive:
@@ -163,7 +163,7 @@ func sites(t *gType, path []string, depth int) []site {
 			out = append(out, sites(f.t, append(slices.Clone(path), f.name), depth+1)...)
 		}
 	case base.kind == "call":
-		for _, op := range callOps(base) {
+		for _, op := range gCallOps(base) {
 			for _, p := range op.params {
 				out = append(out, sites(p.t, append(slices.Clone(path), op.name, p.name), depth+1)...)
 			}
@@ -324,7 +324,7 @@ func (d *designer) value(t *gType, path []string, lims []gLimit, depth int) synt
 	case "map":
 		return d.mapValue(t, path, lims, depth)
 	case "call":
-		op := pick(d, "callOp", callOps(t))
+		op := pick(d, "callOp", gCallOps(t))
 		v := &syntax.CallValue{Op: syntax.Lower(op.name)}
 		for _, i := range rapid.Permutation(indexes(len(op.params))).Draw(d.t, "argOrder") {
 			p := op.params[i]
@@ -569,13 +569,13 @@ func (g *flowGen) senderHome(s *gNode) *gNode {
 	if s.kind == "person" || s.kind == "external" {
 		return g.d.system
 	}
-	return home(s)
+	return gHome(s)
 }
 
 func (g *flowGen) callable(sender *gNode) []*gNode {
 	var out []*gNode
 	for _, op := range g.d.ops {
-		if allowed(g.senderHome(sender), home(op)) {
+		if gAllowed(g.senderHome(sender), gHome(op)) {
 			out = append(out, op)
 		}
 	}

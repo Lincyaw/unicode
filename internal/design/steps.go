@@ -1,6 +1,8 @@
 package design
 
 import (
+	"fmt"
+	"slices"
 	"strconv"
 
 	"github.com/alecthomas/participle/v2/lexer"
@@ -121,37 +123,107 @@ func receiver(op *entity) *entity {
 }
 
 // invoke resolves the sender and the operation of a call or a send step e,
-// records its edges and checks it; it returns the operation, or nil.
+// records its edges and checks it (docs/model.md §10 rules 7 and 8); it
+// returns the operation, or nil.
 func (s *stepper) invoke(e *entity, from syntax.Participant, opRef syntax.OpRef, args int, w within) *entity {
 	l := s.l
-	s.sender(e, from, w)
+	sender := s.sender(e, from, w, acceptParticipant)
 	op := l.refer(e, s.scope, opRef.Segments, opRef.Pos, acceptOp)
 	l.edge(graph.EdgeKindCalls, e, op, e.file, opRef.Pos, graph.SourceDeclared, nil)
+	if op == nil {
+		return nil
+	}
+	if args != len(op.params) {
+		s.argumentCount(e, op.id, "parameters", args, len(op.params))
+	}
+	if sender != nil {
+		if from, to := s.senderHome(sender), home(op); !allowed(from, to) {
+			l.undeclared(e, opRef.Pos, from, to, op.id)
+		}
+	}
 	return op
 }
 
-// sender resolves the sender of a step and records its from edge.
-func (s *stepper) sender(e *entity, from syntax.Participant, w within) *entity {
+// senderHome is the container whose dependencies a sender's calls follow: an
+// actor's is the system, which contains it.
+func (s *stepper) senderHome(sender *entity) *entity {
+	if sender.kind == graph.NodeKindActor {
+		return sender.parent
+	}
+	return home(sender)
+}
+
+func (s *stepper) argumentCount(e *entity, target, what string, got, want int) {
+	s.l.report(e.file, e.pos, "design.argument-count", e.id,
+		fmt.Sprintf("the step passes %d arguments, but %s has %d %s", got, target, want, what),
+		fmt.Sprintf("pass exactly %d arguments", want))
+}
+
+// sender resolves the sender of a step, records its from edge, and checks
+// it against what the step is part of: within a call or an async, the
+// receiver acts, and a person acts only in the outermost steps (docs/model.md
+// §10 rules 7, 8 and 11).
+func (s *stepper) sender(e *entity, from syntax.Participant, w within, want accept) *entity {
 	l := s.l
-	sender := l.refer(e, s.scope, from.Segments, from.Pos, acceptParticipant)
+	sender := l.refer(e, s.scope, from.Segments, from.Pos, want)
 	l.edge(graph.EdgeKindFrom, e, sender, e.file, from.Pos, graph.SourceDeclared, nil)
+	switch {
+	case sender == nil || !w.inside:
+	case sender.is(graph.NodeKindActor, "person"):
+		l.report(e.file, from.Pos, "design.nested-person-sender", e.id,
+			fmt.Sprintf("the person %s sends a step inside a call or an async, but a person sends only outermost steps", sender.id),
+			"move the step out to the top of the flow, or let the receiver of the enclosing call send it")
+	case w.receiver != nil && sender != w.receiver:
+		l.report(e.file, from.Pos, "design.sender-not-receiver", e.id,
+			fmt.Sprintf("inside a call or an async, %s acts, not %s", w.receiver.id, sender.id),
+			"make "+w.receiver.id+" the sender, or move the step out of the enclosing call or async")
+	}
 	return sender
 }
 
+var acceptEmitter = accept{"a component or a type, since only code emits events", func(e *entity) bool {
+	return e.is(graph.NodeKindContainer, "component") || e.is(graph.NodeKindType)
+}}
+
+// emit checks an emit step (docs/model.md §10 rule 9).
 func (s *stepper) emit(e *entity, x *syntax.Emit, w within) {
 	l := s.l
-	s.sender(e, x.From, w)
+	s.sender(e, x.From, w, acceptEmitter)
 	event := l.refer(e, s.scope, x.Event.Segments, x.Event.Pos, acceptType)
 	l.edge(graph.EdgeKindEmits, e, event, e.file, x.Event.Pos, graph.SourceDeclared, nil)
-	if event != nil {
+	switch {
+	case event == nil:
+	case event.form != "event":
+		l.notAnEvent(e, x.Event.Pos, event, "a step can emit only an event")
+	case len(x.Args) != len(event.fields):
+		s.argumentCount(e, event.id, "fields", len(x.Args), len(event.fields))
+		s.emitted[event] = true
+	default:
 		s.emitted[event] = true
 	}
 }
 
+// on checks that an on block handles an error that the operation of the call
+// before it raises (docs/model.md §10 rule 10); call is nil when it did not resolve.
 func (s *stepper) on(e *entity, x *syntax.OnBlock, call *entity) {
 	l := s.l
 	handled := l.refer(e, s.scope, x.Error.Segments, x.Error.Pos, acceptType)
 	l.edge(graph.EdgeKindHandles, e, handled, e.file, x.Error.Pos, graph.SourceDeclared, nil)
+	if handled != nil && call != nil && !slices.Contains(call.raises, handled) {
+		l.report(e.file, x.Error.Pos, "design.unraised-error", e.id,
+			fmt.Sprintf("%s does not raise %s, so no on block can handle it after the call", call.id, handled.id),
+			fmt.Sprintf("handle one of the errors that %s raises, or add %s to its raises", call.id, handled.id))
+	}
 }
 
-func (s *stepper) async(e *entity, op *entity, pos lexer.Position) {}
+// async checks that an async follows what makes it run: an event emitted
+// before it that its operation subscribes to, or a send of its operation
+// before it (docs/model.md §10 rule 11).
+func (s *stepper) async(e *entity, op *entity, pos lexer.Position) {
+	if op == nil || s.sent[op] || op.handles != nil && s.emitted[op.handles] {
+		return
+	}
+	s.l.report(e.file, pos, "design.async-without-trigger", e.id,
+		fmt.Sprintf("nothing before the async starts %s: no earlier step emits an event it subscribes to, and none sends it", op.id),
+		fmt.Sprintf("emit an event that %s subscribes to, or send %s, before the async", op.id, op.id))
+}

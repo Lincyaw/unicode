@@ -1,8 +1,11 @@
 package design
 
 import (
+	"bytes"
 	"fmt"
 	"maps"
+	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -94,5 +97,98 @@ func TestAcceptsValidDesign(t *testing.T) {
 func FuzzAcceptsValidDesign(f *testing.F) {
 	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
 		checkAcceptsValidDesign(t, genSample().Draw(t, "sample"))
+	}))
+}
+
+var designCode = regexp.MustCompile(`^design\.[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+
+// wellFormed checks that every diagnostic has a code of the form
+// design.<kebab-name>, a cause, a fix, and a position in one of the files.
+func wellFormed(t rapid.TB, ds []diag.Diagnostic, files map[string]string) {
+	for _, d := range ds {
+		_, inFiles := files[d.Position.Path]
+		switch {
+		case !designCode.MatchString(d.Code):
+			t.Fatalf("the code %q is not of the form design.<kebab-name>", d.Code)
+		case d.Message == "" || d.Fix == "" || d.Subject == "":
+			t.Fatalf("the diagnostic %s lacks its subject, cause or fix: %+v", d.Code, d)
+		case d.Position.Line < 1 || d.Position.Column < 1:
+			t.Fatalf("the diagnostic %s stands at %d:%d, which is no position", d.Code, d.Position.Line, d.Position.Column)
+		case !inFiles && d.Code != "design.missing-system-file":
+			t.Fatalf("the diagnostic %s names the path %s, which is not one of the files", d.Code, d.Position.Path)
+		case inFiles && d.Position.Line > strings.Count(files[d.Position.Path], "\n")+1:
+			t.Fatalf("the diagnostic %s stands on line %d, past the end of %s", d.Code, d.Position.Line, d.Position.Path)
+		}
+	}
+}
+
+//uc:checks design.rejects-broken-design
+func checkRejectsBrokenDesign(t rapid.TB, broken Broken) {
+	loaded := Load(parseAll(t, broken.Files, slices.Sorted(maps.Keys(broken.Files))))
+	wellFormed(t, loaded.Diagnostics, broken.Files)
+	found := slices.ContainsFunc(loaded.Diagnostics, func(d diag.Diagnostic) bool {
+		return d.Code == broken.Code && d.Position.Path == broken.Path && d.Position.Line == broken.Line
+	})
+	if !found {
+		t.Fatalf("a change that breaks %s at %s:%d got no such diagnostic there; Load gave:%s\n%s",
+			broken.Code, broken.Path, broken.Line, listDiagnostics(loaded.Diagnostics), dump(broken.Files))
+	}
+}
+
+func TestRejectsBrokenDesign(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		checkRejectsBrokenDesign(t, genBroken().Draw(t, "broken"))
+	})
+}
+
+func FuzzRejectsBrokenDesign(f *testing.F) {
+	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
+		checkRejectsBrokenDesign(t, genBroken().Draw(t, "broken"))
+	}))
+}
+
+// genFiles draws the files of a valid design, or of one broken in one place.
+//
+//uc:generates design.load-ignores-file-order.files
+func genFiles() *rapid.Generator[map[string]string] {
+	return rapid.Custom(func(t *rapid.T) map[string]string {
+		if rapid.Bool().Draw(t, "valid") {
+			return genSample().Draw(t, "sample").Files
+		}
+		return genBroken().Draw(t, "broken").Files
+	})
+}
+
+func rotate[T any](s []T, by int) []T {
+	if len(s) == 0 {
+		return s
+	}
+	by %= len(s)
+	return append(slices.Clone(s[by:]), s[:by]...)
+}
+
+//uc:checks design.load-ignores-file-order
+func checkLoadIgnoresFileOrder(t rapid.TB, files map[string]string, rotation int) {
+	paths := slices.Sorted(maps.Keys(files))
+	sorted := Load(parseAll(t, files, paths))
+	rotated := Load(parseAll(t, files, rotate(paths, rotation)))
+	if a, b := sorted.Graph.Encode(), rotated.Graph.Encode(); !bytes.Equal(a, b) {
+		t.Fatalf("the files in another order load into another snapshot (rotated by %d)\nsorted:\n%s\nrotated:\n%s", rotation, a, b)
+	}
+	if !reflect.DeepEqual(sorted.Diagnostics, rotated.Diagnostics) {
+		t.Fatalf("the files in another order get other diagnostics (rotated by %d)\nsorted:%s\nrotated:%s",
+			rotation, listDiagnostics(sorted.Diagnostics), listDiagnostics(rotated.Diagnostics))
+	}
+}
+
+func TestLoadIgnoresFileOrder(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		checkLoadIgnoresFileOrder(t, genFiles().Draw(t, "files"), rapid.IntRange(0, 1000).Draw(t, "rotation"))
+	})
+}
+
+func FuzzLoadIgnoresFileOrder(f *testing.F) {
+	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
+		checkLoadIgnoresFileOrder(t, genFiles().Draw(t, "files"), rapid.IntRange(0, 1000).Draw(t, "rotation"))
 	}))
 }

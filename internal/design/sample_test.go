@@ -188,7 +188,7 @@ func (d *designer) declare(parent, n *gNode) *gNode {
 }
 
 // home is the component, external actor or system that holds n.
-func home(n *gNode) *gNode {
+func gHome(n *gNode) *gNode {
 	for x := n; x != nil; x = x.parent {
 		switch x.kind {
 		case "component", "external", "system":
@@ -199,7 +199,7 @@ func home(n *gNode) *gNode {
 }
 
 // allowed tells whether code in a may depend on b (docs/model.md §10 rule 13).
-func allowed(a, b *gNode) bool {
+func gAllowed(a, b *gNode) bool {
 	if a == b || b.kind == "component" && b.parent == a {
 		return true
 	}
@@ -515,7 +515,7 @@ func (d *designer) newTree(c *gNode) {
 func (d *designer) typesFor(a *gNode, forms ...string) []*gNode {
 	var out []*gNode
 	for _, t := range d.types {
-		if allowed(a, home(t)) && !t.recursive && (len(forms) == 0 || slices.Contains(forms, t.form)) {
+		if gAllowed(a, gHome(t)) && !t.recursive && (len(forms) == 0 || slices.Contains(forms, t.form)) {
 			out = append(out, t)
 		}
 	}
@@ -587,7 +587,7 @@ func (d *designer) refersTo(n *gNode, t *gType) {
 func (d *designer) addField(t *gNode, ft *gType) {
 	name := d.lower("field")
 	t.fields = append(t.fields, gField{name, ft})
-	t.typeDecl.Lines = append(t.typeDecl.Lines, &syntax.Field{Name: syntax.Lower(name), Type: d.expr(ft, home(t))})
+	t.typeDecl.Lines = append(t.typeDecl.Lines, &syntax.Field{Name: syntax.Lower(name), Type: d.expr(ft, gHome(t))})
 	d.refersTo(t, ft)
 }
 
@@ -598,7 +598,7 @@ func (d *designer) genFields() {
 		if t.parent.kind != "component" || t.recursive {
 			continue
 		}
-		a := home(t)
+		a := gHome(t)
 		others := slices.DeleteFunc(d.typesFor(a), func(o *gNode) bool { return o == t })
 		if len(others) > 0 && rapid.IntRange(0, 3).Draw(d.t, "extends?") == 0 {
 			super := pick(d, "super", others)

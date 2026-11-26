@@ -3,6 +3,7 @@ package design
 import (
 	"cmp"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -23,6 +24,8 @@ type Loaded struct {
 }
 
 const systemPath = "design/system.uc"
+
+var recordedName = regexp.MustCompile(`^r-[0-9a-f]{8}$`)
 
 // Load resolves the references of the design and corpus files, builds the
 // nodes and edges of the design layer (docs/model.md §3–§4, §7) and checks
@@ -46,9 +49,10 @@ func Load(files []syntax.File) Loaded {
 	for _, f := range byKind[syntax.FileKindCorpus] {
 		l.corpus(f)
 	}
-	for _, queue := range [][]func(){l.signatures, l.checks} {
-		for _, work := range queue {
-			work()
+	// Each stage may queue work for the next ones.
+	for _, queue := range []*[]func(){&l.uses, &l.signatures, &l.domains, &l.checks} {
+		for i := 0; i < len(*queue); i++ {
+			(*queue)[i]()
 		}
 	}
 	slices.SortFunc(l.diags, func(a, b diag.Diagnostic) int {
@@ -62,8 +66,10 @@ func Load(files []syntax.File) Loaded {
 // a fixed order (the system file, the components from the shallowest, their
 // members, the corpus files, each group by path), so that which of two clashing
 // declarations is the duplicate does not depend on the order of the files.
-// References are resolved once every node is declared: signatures first, since
-// the checks of flows, symbols and cases read them.
+// References are resolved once every node is declared, in stages: the uses of
+// components, which dependencies are checked against; the signatures of types
+// and operations and the symbols' types; the domains of symbols, which read the
+// fields of types; and the checks of steps and cases, which read all of it.
 type loader struct {
 	root       *entity
 	byID       map[string]*entity
@@ -71,7 +77,9 @@ type loader struct {
 	notations  map[string]bool
 	edges      []graph.Edge
 	seen       map[edgeKey]bool
+	uses       []func()
 	signatures []func()
+	domains    []func()
 	checks     []func()
 	diags      []diag.Diagnostic
 }
@@ -246,6 +254,11 @@ func (l *loader) components(files []*syntax.File) []component {
 		}
 		c.entity = e
 		l.componentLines(c, parent)
+		if len(segs) == 1 && !slices.ContainsFunc(c.decl.Lines, func(line syntax.ComponentLine) bool { _, ok := line.(*syntax.Focus); return ok }) {
+			l.report(c.file, c.decl.Pos, "design.missing-focus", id,
+				fmt.Sprintf("the top-level component %s has no focus", id),
+				"add focus core, focus support or focus utility to its block, after its labels")
+		}
 		declared = append(declared, c)
 	}
 	return declared
@@ -269,6 +282,7 @@ func (l *loader) componentLines(c component, parent *entity) {
 		switch line := line.(type) {
 		case *syntax.Label:
 			labels = append(labels, string(line.Name))
+			l.label(e, line)
 		case *syntax.Focus:
 			e.focus = line.Level
 		case *syntax.Paths:
@@ -287,7 +301,7 @@ func (l *loader) componentLines(c component, parent *entity) {
 	}
 	e.setAttr("labels", labels)
 	e.setAttr("paths", paths)
-	l.signatures = append(l.signatures, func() {
+	l.uses = append(l.uses, func() {
 		for _, r := range uses {
 			if target := l.refer(e, e, r.Segments, r.Pos, acceptUses); target != nil {
 				e.uses = append(e.uses, target)
@@ -321,13 +335,21 @@ func (l *loader) typeDecl(f *syntax.File, parent, scope *entity, d *syntax.TypeD
 		return
 	}
 	var labels []string
+	taken := map[string]bool{} // the names of the fields and values, which the operations may not take
 	for _, line := range d.Lines {
 		switch line := line.(type) {
 		case *syntax.Label:
 			labels = append(labels, string(line.Name))
+			l.label(e, line)
 		case *syntax.EnumValue:
 			e.values = append(e.values, string(line.Name))
+			l.unique(e, taken, string(line.Name), line.Pos)
+		case *syntax.Field:
+			l.unique(e, taken, string(line.Name), line.Pos)
 		case *syntax.OpDecl:
+			if taken[string(line.Name)] {
+				l.unique(e, taken, string(line.Name), line.Pos)
+			}
 			l.opDecl(f, e, scope, line)
 		}
 	}
@@ -340,14 +362,32 @@ func (l *loader) typeDecl(f *syntax.File, parent, scope *entity, d *syntax.TypeD
 				t := l.typeOf(e, scope, line.Type)
 				e.fields = append(e.fields, member{string(line.Name), t})
 				l.refers(e, t)
+				l.depends(e, t.allRefs())
 			case *syntax.Extends:
-				l.edge(graph.EdgeKindExtends, e, l.refer(e, scope, line.Type.Segments, line.Type.Pos, acceptType), f, line.Type.Pos, graph.SourceDeclared, nil)
+				l.supertype(e, scope, graph.EdgeKindExtends, line.Type)
 			case *syntax.Implements:
-				l.edge(graph.EdgeKindImplements, e, l.refer(e, scope, line.Type.Segments, line.Type.Pos, acceptType), f, line.Type.Pos, graph.SourceDeclared, nil)
+				l.supertype(e, scope, graph.EdgeKindImplements, line.Type)
 			}
 		}
 		e.setAttr("fields", members(e.fields))
 	})
+}
+
+func (l *loader) supertype(e, scope *entity, kind graph.EdgeKind, r syntax.TypeRef) {
+	target := l.refer(e, scope, r.Segments, r.Pos, acceptType)
+	l.edge(kind, e, target, e.file, r.Pos, graph.SourceDeclared, nil)
+	l.depends(e, []ref{{strings.Join(r.Segments, "."), r.Pos, target}})
+}
+
+// unique reports a member of e whose name an earlier one has (docs/model.md
+// §10 rule 2, read for the fields, values and operations of a type, the
+// parameters of an operation, and the symbols and cases of a flow or a property).
+func (l *loader) unique(e *entity, names map[string]bool, name string, pos lexer.Position) {
+	if names[name] {
+		l.report(e.file, pos, "design.duplicate-name", e.id,
+			fmt.Sprintf("%s has two members named %s", describe(e), name), "rename one of the two, or remove one")
+	}
+	names[name] = true
 }
 
 // refers records a refers edge from e to every type that t names.
@@ -368,22 +408,33 @@ func (l *loader) opDecl(f *syntax.File, parent, scope *entity, d *syntax.OpDecl)
 	if !l.declare(parent, e, nil) {
 		return
 	}
+	if parent.kind == graph.NodeKindType {
+		parent.ops = append(parent.ops, e)
+	}
+	params := map[string]bool{}
+	for _, p := range d.Params {
+		l.unique(e, params, string(p.Name), p.Pos)
+	}
 	l.signatures = append(l.signatures, func() {
 		for _, p := range d.Params {
 			t := l.typeOf(e, scope, p.Type)
 			e.params = append(e.params, member{string(p.Name), t})
 			l.refers(e, t)
+			l.depends(e, t.allRefs())
 		}
 		signature := "(" + strings.Join(members(e.params), ", ") + ")"
 		if d.Result != nil {
 			t := l.typeOf(e, scope, d.Result)
 			l.refers(e, t)
+			l.depends(e, t.allRefs())
 			signature += " -> " + t.text()
 		}
 		var raises []string
 		for _, r := range d.Raises {
 			target := l.refer(e, scope, r.Segments, r.Pos, acceptError)
-			raises = append(raises, ref{strings.Join(r.Segments, "."), r.Pos, target}.text())
+			written := ref{strings.Join(r.Segments, "."), r.Pos, target}
+			raises = append(raises, written.text())
+			l.depends(e, []ref{written})
 			if target != nil {
 				e.raises = append(e.raises, target)
 				l.edge(graph.EdgeKindRefers, e, target, f, r.Pos, graph.SourceDeclared, nil)
@@ -396,6 +447,8 @@ func (l *loader) opDecl(f *syntax.File, parent, scope *entity, d *syntax.OpDecl)
 		if d.Handles != nil {
 			e.handles = l.refer(e, scope, d.Handles.Segments, d.Handles.Pos, acceptType)
 			l.edge(graph.EdgeKindSubscribes, e, e.handles, f, d.Handles.Pos, graph.SourceDeclared, nil)
+			l.depends(e, []ref{{strings.Join(d.Handles.Segments, "."), d.Handles.Pos, e.handles}})
+			l.subscription(e, d.Handles.Pos)
 		}
 	})
 }
@@ -407,6 +460,7 @@ func (l *loader) flowDecl(f *syntax.File, parent *entity, d *syntax.FlowDecl) {
 	}
 	var symbols []*syntax.Symbol
 	var limits []any
+	var cases []*syntax.CaseDecl
 	var steps []syntax.Step
 	for _, line := range d.Lines {
 		switch line := line.(type) {
@@ -415,12 +469,13 @@ func (l *loader) flowDecl(f *syntax.File, parent *entity, d *syntax.FlowDecl) {
 		case *syntax.IntervalLimit, *syntax.SubsetLimit:
 			limits = append(limits, line)
 		case *syntax.CaseDecl:
+			cases = append(cases, line)
 			l.caseDecl(f, e, line)
 		case syntax.Step:
 			steps = append(steps, line)
 		}
 	}
-	l.inputs(e, parent, symbols, limits)
+	l.inputs(e, parent, symbols, limits, cases)
 	l.checks = append(l.checks, func() {
 		s := &stepper{l: l, flow: e, scope: parent, emitted: map[*entity]bool{}, sent: map[*entity]bool{}}
 		s.list(e, steps, within{}, "")
@@ -434,6 +489,7 @@ func (l *loader) propertyDecl(f *syntax.File, parent *entity, d *syntax.Property
 	}
 	var symbols []*syntax.Symbol
 	var limits []any
+	var cases []*syntax.CaseDecl
 	for _, line := range d.Lines {
 		switch line := line.(type) {
 		case *syntax.About:
@@ -447,10 +503,11 @@ func (l *loader) propertyDecl(f *syntax.File, parent *entity, d *syntax.Property
 		case *syntax.IntervalLimit, *syntax.SubsetLimit:
 			limits = append(limits, line)
 		case *syntax.CaseDecl:
+			cases = append(cases, line)
 			l.caseDecl(f, e, line)
 		}
 	}
-	l.inputs(e, parent, symbols, limits)
+	l.inputs(e, parent, symbols, limits, cases)
 }
 
 // caseDecl declares a declared case of a flow or a property.
@@ -461,6 +518,11 @@ func (l *loader) caseDecl(f *syntax.File, owner *entity, d *syntax.CaseDecl) {
 	}
 	if !l.declare(owner, e, nil) {
 		return
+	}
+	if recordedName.MatchString(e.name) {
+		l.report(f, d.Pos, "design.recorded-case-name", e.id,
+			fmt.Sprintf("the declared case %s has the name of a recorded case, r- and eight hex digits", e.name),
+			"rename the case; names of the form r-0123abcd are left to recorded cases")
 	}
 	e.setAttr("values", assignments(d.Lines))
 	l.checks = append(l.checks, func() { l.checkCase(e, owner, d.Lines) })
