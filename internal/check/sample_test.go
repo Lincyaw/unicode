@@ -47,18 +47,18 @@ type comp struct {
 }
 
 type dtype struct {
-	id, form, code string
-	home           *comp
-	fields         []string
-	ops            []*dop
+	id, form, code     string
+	home               *comp
+	fields, codeFields []string
+	ops                []*dop
 }
 
-// dop is a design operation and its realizer: a method, a function, or the
-// entry of a code interface's methods.
+// dop is a design operation and its realizer: a method, an interface's
+// abstract method, or a function.
 type dop struct {
-	id, signature, code, kind string
-	home                      *comp // nil for the external system's
-	owner                     *dtype
+	id, signature, code, codeSignature, kind string
+	home                                     *comp // nil for the external system's
+	owner                                    *dtype
 }
 
 type checkable struct {
@@ -142,10 +142,62 @@ func (w *world) designFile(c *comp) string {
 
 func upper(s string) string { return strings.ToUpper(s[:1]) + s[1:] }
 
-var (
-	signatures = []string{"()", "(n: int)", "(n: int) -> string", "(items: list<int>, name: string) -> bool", "(m: map<string, int>)"}
-	fieldTypes = []string{"int", "string", "list<string>", "map<string, int>", "optional<int>"}
-)
+// failure is the error type that operations raise: k0's third type.
+const failure = "k0.T2"
+
+// typePair draws a type as the design writes it and as the Go backend may
+// write it: an object type X is passed by pointer, so the code may write
+// optional<X> for X; object is an object type of the design.
+func (w *world) typePair(object string, depth int) (string, string) {
+	options := 4
+	if depth > 0 {
+		options = 6
+	}
+	switch rapid.IntRange(0, options-1).Draw(w.t, "type") {
+	case 0:
+		b := rapid.SampledFrom([]string{"int", "string", "bool", "optional<int>", "list<string>"}).Draw(w.t, "builtin")
+		return b, b
+	case 1:
+		return object, object
+	case 2:
+		return object, "optional<" + object + ">"
+	case 3:
+		return "optional<" + object + ">", "optional<" + object + ">"
+	case 4:
+		d, c := w.typePair(object, depth-1)
+		return "list<" + d + ">", "list<" + c + ">"
+	}
+	d, c := w.typePair(object, depth-1)
+	return "map<string, " + d + ">", "map<string, " + c + ">"
+}
+
+// signaturePair draws an operation's signature as the design writes it and
+// as the Go backend writes it: errors become ` raises error`.
+func (w *world) signaturePair(object string) (string, string) {
+	var design, code []string
+	for i := range rapid.IntRange(0, 2).Draw(w.t, "params") {
+		d, c := w.typePair(object, 1)
+		design, code = append(design, fmt.Sprintf("p%d: %s", i, d)), append(code, fmt.Sprintf("p%d: %s", i, c))
+	}
+	ds, cs := "("+strings.Join(design, ", ")+")", "("+strings.Join(code, ", ")+")"
+	if rapid.Bool().Draw(w.t, "result") {
+		d, c := w.typePair(object, 1)
+		ds, cs = ds+" -> "+d, cs+" -> "+c
+	}
+	if rapid.Bool().Draw(w.t, "raises") {
+		ds, cs = ds+" raises "+failure, cs+" raises error"
+	}
+	return ds, cs
+}
+
+// objectOf is the object type that a component's signatures and fields may
+// name: its first type.
+func objectOf(c *comp) string {
+	if c == nil {
+		return "k0.T0"
+	}
+	return c.id + ".T0"
+}
 
 // genSample draws a conforming graph.
 //
@@ -212,7 +264,7 @@ func (w *world) componentCode(c *comp) {
 
 func (w *world) function(parent, id, name, signature, form string) string {
 	w.node(id, graph.LayerCode, graph.NodeKindOp, form, strings.TrimPrefix(w.fileOfCode(id), "file:"),
-		map[string][]string{"name": {name}, "signature": {signature}, "testKind": {"none"}})
+		map[string][]string{"name": {name}, "signature": {signature}, "testKind": {"none"}, "stub": {"false"}})
 	w.extracted(graph.EdgeKindContains, parent, id)
 	return id
 }
@@ -225,9 +277,12 @@ func (w *world) componentTypes(c *comp) {
 	forms := []string{"object"}
 	switch {
 	case c.id == "k0":
-		forms = append(forms, "event")
+		forms = append(forms, "event", "error")
 	case rapid.Bool().Draw(w.t, "second"):
-		forms = append(forms, rapid.SampledFrom([]string{"event", "record", "interface", "error", "object"}).Draw(w.t, "form"))
+		forms = append(forms, rapid.SampledFrom([]string{"event", "record", "error", "object"}).Draw(w.t, "form"))
+	}
+	if rapid.Bool().Draw(w.t, "interface") {
+		forms = append(forms, "interface")
 	}
 	for j, form := range forms {
 		var ops []string
@@ -258,7 +313,8 @@ func (w *world) designType(c *comp, id, form, code, file string, ops []string) *
 	t := &dtype{id: id, form: form, code: code, home: c}
 	if form != "interface" {
 		for k := range rapid.IntRange(0, 2).Draw(w.t, "fields") {
-			t.fields = append(t.fields, fmt.Sprintf("f%d: %s", k, rapid.SampledFrom(fieldTypes).Draw(w.t, "fieldType")))
+			d, c := w.typePair(objectOf(c), 1)
+			t.fields, t.codeFields = append(t.fields, fmt.Sprintf("f%d: %s", k, d)), append(t.codeFields, fmt.Sprintf("f%d: %s", k, c))
 		}
 	}
 	parent := "x"
@@ -271,43 +327,48 @@ func (w *world) designType(c *comp, id, form, code, file string, ops []string) *
 	if form == "interface" {
 		codeForm = "interface"
 	}
-	attrs := map[string][]string{"name": {name(id)}, "fields": t.fields}
-	w.node(code, graph.LayerCode, graph.NodeKindType, codeForm, strings.TrimPrefix(file, "file:"), attrs)
+	w.node(code, graph.LayerCode, graph.NodeKindType, codeForm, strings.TrimPrefix(file, "file:"),
+		map[string][]string{"name": {name(id)}, "fields": t.codeFields})
 	w.extracted(graph.EdgeKindContains, file, code)
 	w.declared(graph.EdgeKindRealizes, code, id)
 	for _, op := range ops {
-		o := &dop{id: id + "." + op, signature: rapid.SampledFrom(signatures).Draw(w.t, "signature"), home: c, owner: t}
+		o := &dop{id: id + "." + op, home: c, owner: t}
+		o.signature, o.codeSignature = w.signaturePair(objectOf(c))
 		w.node(o.id, graph.LayerDesign, graph.NodeKindOp, "op", w.designFile(c), map[string][]string{"signature": {o.signature}})
 		w.declared(graph.EdgeKindContains, id, o.id)
-		if form == "interface" {
-			o.kind, o.code = "entry", code
-			attrs["methods"] = append(attrs["methods"], op+" "+o.signature)
-		} else {
-			o.kind = "method"
-			o.code = w.function(code, code+"."+upper(op), op, o.signature, "method")
-			w.edge(graph.EdgeKindRealizes, o.code, o.id, graph.SourceDerived, nil)
-		}
+		o.kind = methodForm(form)
+		o.code = w.function(code, code+"."+upper(op), op, o.codeSignature, o.kind)
+		w.edge(graph.EdgeKindRealizes, o.code, o.id, graph.SourceDerived, nil)
 		t.ops = append(t.ops, o)
 		w.ops = append(w.ops, o)
 	}
-	if form != "interface" && rapid.Bool().Draw(w.t, "detailMethod") {
+	if rapid.Bool().Draw(w.t, "detailMethod") {
 		// A method outside the design: its candidate names no operation.
-		m := w.function(code, code+".Other", "other", "()", "method")
+		m := w.function(code, code+".Other", "other", "()", methodForm(form))
 		w.edge(graph.EdgeKindRealizes, m, id+".other", graph.SourceDerived, nil)
 	}
 	w.types = append(w.types, t)
 	return t
 }
 
+// methodForm is the form of the code methods of a type of the given design form.
+func methodForm(form string) string {
+	if form == "interface" {
+		return "abstract"
+	}
+	return "method"
+}
+
 func (w *world) directOp(c *comp, id, code, file, opName string) *dop {
-	o := &dop{id: id, signature: rapid.SampledFrom(signatures).Draw(w.t, "signature"), home: c, kind: "func"}
+	o := &dop{id: id, home: c, kind: "func"}
+	o.signature, o.codeSignature = w.signaturePair(objectOf(c))
 	parent := "x"
 	if c != nil {
 		parent = c.id
 	}
 	w.node(id, graph.LayerDesign, graph.NodeKindOp, "op", w.designFile(c), map[string][]string{"signature": {o.signature}})
 	w.declared(graph.EdgeKindContains, parent, id)
-	o.code = w.function(file, code, opName, o.signature, "func")
+	o.code = w.function(file, code, opName, o.codeSignature, "func")
 	w.declared(graph.EdgeKindRealizes, o.code, id)
 	w.ops = append(w.ops, o)
 	return o
@@ -346,12 +407,17 @@ func (w *world) relations() {
 // predicate and the generators of its generated symbols; k0's property
 // always has a generated symbol.
 func (w *world) checkables_(c *comp) {
-	symbols := []string{"v: " + rapid.SampledFrom(fieldTypes).Draw(w.t, "symbolType")}
+	d, code := w.typePair(objectOf(c), 1)
+	symbols := [][2]string{{"v: " + d, "v: " + code}}
 	if c.id == "k0" || rapid.Bool().Draw(w.t, "generated") {
-		symbols = append(symbols, "s: string generated")
+		symbols = append(symbols, [2]string{"s: string generated", "s: string"})
 	}
 	w.checkable(c, c.id+".p", graph.NodeKindProperty, "invariant", symbols)
-	flow := w.checkable(c, c.id+".f", graph.NodeKindFlow, "flow", w.subset("flowSymbols", []string{"n: int"}))
+	var flowSymbols [][2]string
+	if rapid.Bool().Draw(w.t, "flowSymbol") {
+		flowSymbols = append(flowSymbols, [2]string{"n: int", "n: int"})
+	}
+	flow := w.checkable(c, c.id+".f", graph.NodeKindFlow, "flow", flowSymbols)
 	n := 0
 	if c.id == "k0" {
 		w.callStep(c, flow.id, flow.id, &n, "call", c.id, c.helper, w.types[0].ops[0], 0)
@@ -362,16 +428,20 @@ func (w *world) checkables_(c *comp) {
 	}
 }
 
-func (w *world) checkable(c *comp, id string, kind graph.NodeKind, form string, symbols []string) *checkable {
-	k := &checkable{id: id, home: c, symbols: symbols, generators: map[string]string{}}
-	w.node(id, graph.LayerDesign, kind, form, w.designFile(c), map[string][]string{"symbols": symbols})
+// checkable declares a property or a flow with its symbols, each as the
+// design writes it and as its predicate's parameter.
+func (w *world) checkable(c *comp, id string, kind graph.NodeKind, form string, symbols [][2]string) *checkable {
+	k := &checkable{id: id, home: c, generators: map[string]string{}}
+	for _, s := range symbols {
+		k.symbols = append(k.symbols, s[0])
+	}
+	w.node(id, graph.LayerDesign, kind, form, w.designFile(c), map[string][]string{"symbols": k.symbols})
 	w.declared(graph.EdgeKindContains, c.id, id)
 	params := []string{handle}
 	for _, s := range symbols {
-		symbol, generated := strings.CutSuffix(s, " generated")
-		params = append(params, symbol)
-		if generated {
-			n, _, _ := strings.Cut(symbol, ": ")
+		params = append(params, s[1])
+		if strings.HasSuffix(s[0], " generated") {
+			n, _, _ := strings.Cut(s[1], ": ")
 			gen := w.function(c.file, c.pkg+".gen"+upper(name(id))+upper(n), "gen", "()", "func")
 			w.edge(graph.EdgeKindGenerates, gen, id, graph.SourceDeclared, map[string][]string{"symbols": {n}})
 			k.generators[n] = gen
@@ -402,7 +472,7 @@ func (w *world) allowed(c *comp) []string {
 }
 
 // callable lists the operations that a flow step sent from c's code may
-// call: those of allowed components and systems, but not of interfaces.
+// call: those of allowed components and systems.
 func (w *world) callable(c *comp) []*dop {
 	allowed := w.allowed(c)
 	var out []*dop
@@ -411,7 +481,7 @@ func (w *world) callable(c *comp) []*dop {
 		if o.home != nil {
 			home = o.home.id
 		}
-		if slices.Contains(allowed, home) && o.kind != "entry" {
+		if slices.Contains(allowed, home) {
 			out = append(out, o)
 		}
 	}
@@ -464,7 +534,9 @@ func (w *world) topStep(c *comp, flow, parent string, n *int) {
 
 // callStep adds a call or send step to op, sent by sender; from is the code
 // function of its context that calls op's function, or "" for the person.
-// A call may nest steps that its receiver sends.
+// A call may nest steps that its receiver sends, unless it calls an
+// interface: an abstract method calls nothing, so no step under it could be
+// reached.
 func (w *world) callStep(c *comp, flow, parent string, n *int, form, sender, from string, op *dop, depth int) {
 	id := w.newStep(flow, parent, form, n)
 	w.declared(graph.EdgeKindFrom, id, sender)
@@ -475,7 +547,7 @@ func (w *world) callStep(c *comp, flow, parent string, n *int, form, sender, fro
 		s.context = []string{from}
 	}
 	w.steps = append(w.steps, s)
-	if form != "call" || op.home == nil || depth == 0 {
+	if form != "call" || op.home == nil || op.kind == "abstract" || depth == 0 {
 		return
 	}
 	receiver := op.home.id

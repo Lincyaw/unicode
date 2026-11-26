@@ -179,10 +179,15 @@ func (s *sampler) code(d sampleDesign) {
 	methods := map[string][]string{}
 	for i := range rapid.IntRange(0, 4).Draw(s.t, "codeTypes") {
 		f := s.pick("typeFile", files)
-		id := s.node(fmt.Sprintf("go:m/%s.C%d", path.Dir(f), i), LayerCode, NodeKindType, "struct", map[string][]string{"name": {fmt.Sprintf("C%d", i)}})
+		// An interface's methods are op nodes too, of the form abstract.
+		form, methodForm := rapid.SampledFrom([]string{"struct", "interface"}).Draw(s.t, "codeForm"), "method"
+		if form == "interface" {
+			methodForm = "abstract"
+		}
+		id := s.node(fmt.Sprintf("go:m/%s.C%d", path.Dir(f), i), LayerCode, NodeKindType, form, map[string][]string{"name": {fmt.Sprintf("C%d", i)}})
 		s.contains("file:"+f, id)
 		for _, name := range s.subset("method", []string{"run", "stop", "other"}) {
-			m := s.node(id+"."+strings.ToUpper(name[:1])+name[1:], LayerCode, NodeKindOp, "method", map[string][]string{"name": {name}})
+			m := s.node(id+"."+strings.ToUpper(name[:1])+name[1:], LayerCode, NodeKindOp, methodForm, map[string][]string{"name": {name}})
 			s.contains(id, m)
 			methods[id] = append(methods[id], m)
 			functions = append(functions, m)

@@ -8,11 +8,6 @@ import (
 	"github.com/lincyaw/unicode/internal/graph"
 )
 
-// testHandles is the type of the test handle that a predicate of each
-// language takes before its symbols (docs/design.md §4), keyed by the prefix
-// of the language's code identities (docs/model.md §7). Python predicates take none.
-var testHandles = map[string]string{"go:": "go:pgregory.net/rapid.TB"}
-
 // predicates checks rule 20: each property and flow has one predicate, whose
 // parameters, after the language's test handle, are its symbols.
 func (c *checker) predicates() {
@@ -47,12 +42,8 @@ func (c *checker) predicateSignature(p, pred string) {
 	for _, s := range c.symbols(p) {
 		want = append(want, s.name+": "+s.typ)
 	}
-	handle, prefix := "", ""
-	for pre, h := range testHandles {
-		if strings.HasPrefix(pred, pre) {
-			handle, prefix = h, pre
-		}
-	}
+	prefix, l := languageOf(pred)
+	handle := l.handle
 	rest, ok := params, true
 	if handle != "" {
 		ok = len(params) > 0 && strings.HasSuffix(params[0], ": "+handle)
@@ -60,7 +51,7 @@ func (c *checker) predicateSignature(p, pred string) {
 			rest = params[1:]
 		}
 	}
-	if !ok || !slices.Equal(rest, want) {
+	if !ok || !c.sameParams(want, rest) {
 		lead := ""
 		if handle != "" {
 			lead = fmt.Sprintf(", after a first parameter of the type %s that %s predicates take,", strings.TrimPrefix(handle, prefix), strings.TrimSuffix(prefix, ":"))
@@ -74,35 +65,6 @@ func (c *checker) predicateSignature(p, pred string) {
 	if c.attr(pred, "stub") == "true" {
 		c.mark(p, graph.StatusStub)
 	}
-}
-
-// parameters splits a signature `(a: T, b: map<K, V>) -> R raises E` into
-// its parameters, each `name: type`.
-func parameters(signature string) []string {
-	if !strings.HasPrefix(signature, "(") {
-		return nil
-	}
-	var params []string
-	depth, start := 0, 1
-	for i := 1; i < len(signature); i++ {
-		switch ch := signature[i]; {
-		case ch == '<' || ch == '(':
-			depth++
-		case depth > 0:
-			if ch == '>' || ch == ')' {
-				depth--
-			}
-		case ch == ',' || ch == ')':
-			if p := strings.TrimSpace(signature[start:i]); p != "" {
-				params = append(params, p)
-			}
-			if ch == ')' {
-				return params
-			}
-			start = i + 1
-		}
-	}
-	return params
 }
 
 // generators checks the half of rule 24 that needs the code: each generated
@@ -159,9 +121,7 @@ func (c *checker) calledOp(step string) string {
 
 func (c *checker) callStep(s graph.Node) {
 	op := c.calledOp(s.Id)
-	if op == "" || c.is(c.parent[op], graph.LayerDesign, graph.NodeKindType, "interface") {
-		// An operation of an interface is realized by its type's methods
-		// entry, which is no function to trace.
+	if op == "" {
 		return
 	}
 	var traced []string
@@ -216,7 +176,7 @@ func (c *checker) context(step string) ([]string, string) {
 	case c.is(sender, graph.LayerDesign, graph.NodeKindType):
 		var out []string
 		for _, r := range c.realizers(sender) {
-			for _, m := range c.children[r.id] {
+			for _, m := range c.children[r] {
 				if c.isFunction(m) {
 					out = append(out, m)
 				}
@@ -244,15 +204,12 @@ func (c *checker) emitStep(s graph.Node) {
 	if emits := c.out[graph.EdgeKindEmits][s.Id]; len(emits) > 0 {
 		event = emits[0].To
 	}
-	var events []string
-	for _, r := range c.realizers(event) {
-		events = append(events, r.id)
-	}
+	events := c.realizers(event)
 	var code []string
 	switch {
 	case c.is(sender, graph.LayerDesign, graph.NodeKindType):
 		for _, r := range c.realizers(sender) {
-			code = append(append(code, r.id), c.children[r.id]...)
+			code = append(append(code, r), c.children[r]...)
 		}
 	case c.isDesignContainer(sender):
 		for _, n := range c.nodes {
