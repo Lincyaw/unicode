@@ -135,6 +135,12 @@ func (c *checker) ancestors(id string) []string {
 
 func (c *checker) isFunction(id string) bool { return c.is(id, graph.LayerCode, graph.NodeKindOp) }
 
+// isMethod tells whether id is a code function that a code type holds: a
+// method, or an abstract method of an interface.
+func (c *checker) isMethod(id string) bool {
+	return c.isFunction(id) && c.is(c.parent[id], graph.LayerCode, graph.NodeKindType)
+}
+
 func (c *checker) isFile(id string) bool {
 	return c.is(id, graph.LayerCode, graph.NodeKindContainer, "file")
 }
@@ -191,6 +197,10 @@ func (c *checker) describe(id string) string {
 	switch {
 	case !ok:
 		return id
+	case n.Layer == graph.LayerCode && n.Kind == graph.NodeKindOp && n.Form == "func":
+		return "the function " + id
+	case n.Layer == graph.LayerCode && n.Form == "abstract":
+		return "the abstract method " + id
 	case n.Layer == graph.LayerCode:
 		return "the " + n.Form + " " + id
 	case n.Kind == graph.NodeKindContainer:

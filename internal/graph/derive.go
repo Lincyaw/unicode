@@ -211,8 +211,9 @@ func (d *derivation) owns() []diag.Diagnostic {
 	return diags
 }
 
-// methodRealizes keeps the candidates by which a method m of a code type c
-// realizes an operation o of a design type t that c realizes.
+// methodRealizes keeps the candidates by which a method m of a code type c,
+// an interface's abstract method included, realizes an operation o of a
+// design type t that c realizes.
 func (d *derivation) methodRealizes() {
 	candidates := slices.Clone(d.g.pending)
 	slices.SortFunc(candidates, func(a, b Edge) int { return cmp.Or(cmp.Compare(a.From, b.From), cmp.Compare(a.To, b.To)) })

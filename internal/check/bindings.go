@@ -50,9 +50,9 @@ func (c *checker) isCheckable(id string) bool {
 func (c *checker) realizesBinding(e graph.Edge) {
 	from := c.byID[e.From]
 	switch {
-	case c.is(e.From, graph.LayerCode, graph.NodeKindOp, "method"):
+	case c.isMethod(e.From):
 		c.fail("check.method-binding", edgeID(e), graph.StatusContradicted, e.Origin,
-			fmt.Sprintf("the method %s carries a realizes binding to %s, but a method carries no realizes binding", e.From, e.To),
+			fmt.Sprintf("%s carries a realizes binding to %s, but a method carries no realizes binding", c.describe(e.From), e.To),
 			"remove the binding: a method realizes the operation that its name maps to, of the design type that its type realizes")
 	case from.Kind == graph.NodeKindType:
 		if !c.is(e.To, graph.LayerDesign, graph.NodeKindType) {
@@ -126,43 +126,25 @@ func (c *checker) generatedSymbols(id string) []string {
 	return out
 }
 
-// realizer is a code element that realizes a design node: a code type, a
-// function, or the entry of a code interface's methods that realizes an
-// operation of the design interface it realizes.
-type realizer struct {
-	id        string
-	entry     bool
-	signature string
-}
-
 // realizers lists the code that realizes a design type or operation (rule 16):
-// a type through its binding; an operation of a type through a method, or the
-// entry of a code interface's methods; any other operation through the
-// binding of a function outside types. Bindings of the wrong kind count for nothing.
-func (c *checker) realizers(id string) []realizer {
-	var out []realizer
+// a type through its binding; an operation of a type through a method that
+// Derive matched to it, an interface's abstract methods included; any other
+// operation through the binding of a function outside types. Bindings of the
+// wrong kind count for nothing.
+func (c *checker) realizers(id string) []string {
+	var out []string
 	for _, e := range c.in[graph.EdgeKindRealizes][id] {
 		switch {
 		case c.byID[id].Kind == graph.NodeKindType:
 			if e.Source == graph.SourceDeclared && c.is(e.From, graph.LayerCode, graph.NodeKindType) {
-				out = append(out, realizer{id: e.From})
+				out = append(out, e.From)
 			}
-		case c.is(e.From, graph.LayerCode, graph.NodeKindOp, "method"):
+		case c.isMethod(e.From):
 			if e.Source == graph.SourceDerived {
-				out = append(out, realizer{id: e.From, signature: c.attr(e.From, "signature")})
+				out = append(out, e.From)
 			}
 		case c.isFunction(e.From) && c.providedDirectly(id):
-			out = append(out, realizer{id: e.From, signature: c.attr(e.From, "signature")})
-		}
-	}
-	if c.byID[id].Kind != graph.NodeKindOp || !c.is(c.parent[id], graph.LayerDesign, graph.NodeKindType) {
-		return out
-	}
-	for _, t := range c.realizers(c.parent[id]) {
-		for _, m := range c.byID[t.id].Attrs["methods"] {
-			if n, signature, _ := strings.Cut(m, " "); n == name(id) {
-				out = append(out, realizer{id: t.id, entry: true, signature: signature})
-			}
+			out = append(out, e.From)
 		}
 	}
 	return out
@@ -182,14 +164,10 @@ func (c *checker) realizations() {
 			c.fail("check.unrealized", n.Id, graph.StatusMissing, n.Origin,
 				fmt.Sprintf("no code realizes %s", c.describe(n.Id)), c.realizeFix(n.Id))
 		case len(rs) > 1:
-			var ids []string
-			for _, r := range rs {
-				ids = append(ids, r.id)
-			}
 			c.fail("check.multiple-realizations", n.Id, graph.StatusContradicted, n.Origin,
-				fmt.Sprintf("%s is realized %d times, by %s, but exactly one code element realizes it", c.describe(n.Id), len(rs), strings.Join(ids, ", ")),
+				fmt.Sprintf("%s is realized %d times, by %s, but exactly one code element realizes it", c.describe(n.Id), len(rs), strings.Join(rs, ", ")),
 				"keep one of them, and remove the bindings of the others or rename them")
-		case !rs[0].entry && c.attr(rs[0].id, "stub") == "true":
+		case c.attr(rs[0], "stub") == "true":
 			c.mark(n.Id, graph.StatusStub)
 		}
 		for _, r := range rs {
@@ -215,22 +193,19 @@ func (c *checker) realizeFix(id string) string {
 // placed checks rule 17: the code that realizes a design node lies in a file
 // of the node's container; a client of an external system lies in a file of
 // a component that may use the system.
-func (c *checker) placed(id string, r realizer) {
-	if r.entry {
-		return
-	}
-	home, owners := c.home(id), c.owners(r.id)
+func (c *checker) placed(id, r string) {
+	home, owners := c.home(id), c.owners(r)
 	switch {
 	case c.isDesignContainer(home) && !slices.Contains(owners, home):
-		c.fail("check.realization-outside-container", id, graph.StatusContradicted, c.byID[r.id].Origin,
-			fmt.Sprintf("%s realizes %s of %s, but its file %s belongs to %s", r.id, id, home, c.attr(c.fileOf(r.id), "path"), ownerList(owners)),
-			fmt.Sprintf("move %s into code that %s owns", r.id, home))
+		c.fail("check.realization-outside-container", id, graph.StatusContradicted, c.byID[r].Origin,
+			fmt.Sprintf("%s realizes %s of %s, but its file %s belongs to %s", r, id, home, c.attr(c.fileOf(r), "path"), ownerList(owners)),
+			fmt.Sprintf("move %s into code that %s owns", r, home))
 	case c.is(home, graph.LayerDesign, graph.NodeKindActor, "external") &&
 		!slices.ContainsFunc(owners, func(o string) bool { return c.usesFrom(o, home) }):
-		c.fail("check.realization-outside-container", id, graph.StatusContradicted, c.byID[r.id].Origin,
+		c.fail("check.realization-outside-container", id, graph.StatusContradicted, c.byID[r].Origin,
 			fmt.Sprintf("the client %s realizes %s of the external system %s, but its file %s belongs to %s, which does not use %s",
-				r.id, id, home, c.attr(c.fileOf(r.id), "path"), ownerList(owners), home),
-			fmt.Sprintf("move %s into a component that uses %s", r.id, home))
+				r, id, home, c.attr(c.fileOf(r), "path"), ownerList(owners), home),
+			fmt.Sprintf("move %s into a component that uses %s", r, home))
 	}
 }
 
@@ -243,23 +218,23 @@ func ownerList(owners []string) string {
 
 // matches checks rule 18: the realizing code carries the design node's name,
 // its operation's signature, and every field the design writes, of the same type.
-func (c *checker) matches(id string, r realizer) {
-	at := c.byID[r.id].Origin
-	if got := c.attr(r.id, "name"); !r.entry && got != name(id) {
+func (c *checker) matches(id, r string) {
+	at := c.byID[r].Origin
+	if got := c.attr(r, "name"); got != name(id) {
 		c.fail("check.name-mismatch", id, graph.StatusContradicted, at,
-			fmt.Sprintf("%s realizes %s, but its name maps back to %s, not to %s", r.id, id, got, name(id)),
-			fmt.Sprintf("rename %s to the name that %s maps to", r.id, name(id)))
+			fmt.Sprintf("%s realizes %s, but its name maps back to %s, not to %s", r, id, got, name(id)),
+			fmt.Sprintf("rename %s to the name that %s maps to", r, name(id)))
 	}
 	if c.byID[id].Kind == graph.NodeKindOp {
-		if want := c.attr(id, "signature"); r.signature != want {
+		if want, got := c.attr(id, "signature"), c.attr(r, "signature"); got != want {
 			c.fail("check.signature-mismatch", id, graph.StatusContradicted, at,
-				fmt.Sprintf("the signature of %s is %s, but %s, which realizes it, has %s", id, want, r.id, r.signature),
-				fmt.Sprintf("change the signature of %s to %s, or change the design", r.id, want))
+				fmt.Sprintf("the signature of %s is %s, but %s, which realizes it, has %s", id, want, r, got),
+				fmt.Sprintf("change the signature of %s to %s, or change the design", r, want))
 		}
 		return
 	}
 	code := map[string]string{}
-	for _, f := range c.byID[r.id].Attrs["fields"] {
+	for _, f := range c.byID[r].Attrs["fields"] {
 		n, typ, _ := strings.Cut(f, ": ")
 		code[n] = typ
 	}
@@ -268,12 +243,12 @@ func (c *checker) matches(id string, r realizer) {
 		switch got, ok := code[n]; {
 		case !ok:
 			c.fail("check.missing-field", id, graph.StatusContradicted, at,
-				fmt.Sprintf("the design gives %s the field %s, but %s, which realizes it, has no field %s", id, f, r.id, n),
-				fmt.Sprintf("add the field %s to %s", f, r.id))
+				fmt.Sprintf("the design gives %s the field %s, but %s, which realizes it, has no field %s", id, f, r, n),
+				fmt.Sprintf("add the field %s to %s", f, r))
 		case got != typ:
 			c.fail("check.field-type-mismatch", id, graph.StatusContradicted, at,
-				fmt.Sprintf("the field %s of %s has the type %s, but in %s, which realizes it, the type %s", n, id, typ, r.id, got),
-				fmt.Sprintf("give the field %s of %s the type %s, or change the design", n, r.id, typ))
+				fmt.Sprintf("the field %s of %s has the type %s, but in %s, which realizes it, the type %s", n, id, typ, r, got),
+				fmt.Sprintf("give the field %s of %s the type %s, or change the design", n, r, typ))
 		}
 	}
 }
@@ -287,12 +262,12 @@ func (c *checker) relations() {
 			continue
 		}
 		from, to := c.realizers(e.From), c.realizers(e.To)
-		if len(from) != 1 || len(to) != 1 || c.has(e.Kind, from[0].id, to[0].id) {
+		if len(from) != 1 || len(to) != 1 || c.has(e.Kind, from[0], to[0]) {
 			continue
 		}
-		c.fail("check.missing-"+string(e.Kind), edgeID(e), graph.StatusContradicted, c.byID[from[0].id].Origin,
+		c.fail("check.missing-"+string(e.Kind), edgeID(e), graph.StatusContradicted, c.byID[from[0]].Origin,
 			fmt.Sprintf("%s %s %s in the design, but %s, which realizes %s, does not %s %s, which realizes %s",
-				e.From, e.Kind, e.To, from[0].id, e.From, strings.TrimSuffix(string(e.Kind), "s"), to[0].id, e.To),
-			fmt.Sprintf("make %s %s %s in the code, or remove the %s from the design", from[0].id, strings.TrimSuffix(string(e.Kind), "s"), to[0].id, e.Kind))
+				e.From, e.Kind, e.To, from[0], e.From, strings.TrimSuffix(string(e.Kind), "s"), to[0], e.To),
+			fmt.Sprintf("make %s %s %s in the code, or remove the %s from the design", from[0], strings.TrimSuffix(string(e.Kind), "s"), to[0], e.Kind))
 	}
 }

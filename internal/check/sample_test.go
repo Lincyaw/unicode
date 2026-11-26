@@ -53,8 +53,8 @@ type dtype struct {
 	ops            []*dop
 }
 
-// dop is a design operation and its realizer: a method, a function, or the
-// entry of a code interface's methods.
+// dop is a design operation and its realizer: a method, an interface's
+// abstract method, or a function.
 type dop struct {
 	id, signature, code, kind string
 	home                      *comp // nil for the external system's
@@ -212,7 +212,7 @@ func (w *world) componentCode(c *comp) {
 
 func (w *world) function(parent, id, name, signature, form string) string {
 	w.node(id, graph.LayerCode, graph.NodeKindOp, form, strings.TrimPrefix(w.fileOfCode(id), "file:"),
-		map[string][]string{"name": {name}, "signature": {signature}, "testKind": {"none"}})
+		map[string][]string{"name": {name}, "signature": {signature}, "testKind": {"none"}, "stub": {"false"}})
 	w.extracted(graph.EdgeKindContains, parent, id)
 	return id
 }
@@ -227,7 +227,10 @@ func (w *world) componentTypes(c *comp) {
 	case c.id == "k0":
 		forms = append(forms, "event")
 	case rapid.Bool().Draw(w.t, "second"):
-		forms = append(forms, rapid.SampledFrom([]string{"event", "record", "interface", "error", "object"}).Draw(w.t, "form"))
+		forms = append(forms, rapid.SampledFrom([]string{"event", "record", "error", "object"}).Draw(w.t, "form"))
+	}
+	if rapid.Bool().Draw(w.t, "interface") {
+		forms = append(forms, "interface")
 	}
 	for j, form := range forms {
 		var ops []string
@@ -271,32 +274,35 @@ func (w *world) designType(c *comp, id, form, code, file string, ops []string) *
 	if form == "interface" {
 		codeForm = "interface"
 	}
-	attrs := map[string][]string{"name": {name(id)}, "fields": t.fields}
-	w.node(code, graph.LayerCode, graph.NodeKindType, codeForm, strings.TrimPrefix(file, "file:"), attrs)
+	w.node(code, graph.LayerCode, graph.NodeKindType, codeForm, strings.TrimPrefix(file, "file:"),
+		map[string][]string{"name": {name(id)}, "fields": t.fields})
 	w.extracted(graph.EdgeKindContains, file, code)
 	w.declared(graph.EdgeKindRealizes, code, id)
 	for _, op := range ops {
 		o := &dop{id: id + "." + op, signature: rapid.SampledFrom(signatures).Draw(w.t, "signature"), home: c, owner: t}
 		w.node(o.id, graph.LayerDesign, graph.NodeKindOp, "op", w.designFile(c), map[string][]string{"signature": {o.signature}})
 		w.declared(graph.EdgeKindContains, id, o.id)
-		if form == "interface" {
-			o.kind, o.code = "entry", code
-			attrs["methods"] = append(attrs["methods"], op+" "+o.signature)
-		} else {
-			o.kind = "method"
-			o.code = w.function(code, code+"."+upper(op), op, o.signature, "method")
-			w.edge(graph.EdgeKindRealizes, o.code, o.id, graph.SourceDerived, nil)
-		}
+		o.kind = methodForm(form)
+		o.code = w.function(code, code+"."+upper(op), op, o.signature, o.kind)
+		w.edge(graph.EdgeKindRealizes, o.code, o.id, graph.SourceDerived, nil)
 		t.ops = append(t.ops, o)
 		w.ops = append(w.ops, o)
 	}
-	if form != "interface" && rapid.Bool().Draw(w.t, "detailMethod") {
+	if rapid.Bool().Draw(w.t, "detailMethod") {
 		// A method outside the design: its candidate names no operation.
-		m := w.function(code, code+".Other", "other", "()", "method")
+		m := w.function(code, code+".Other", "other", "()", methodForm(form))
 		w.edge(graph.EdgeKindRealizes, m, id+".other", graph.SourceDerived, nil)
 	}
 	w.types = append(w.types, t)
 	return t
+}
+
+// methodForm is the form of the code methods of a type of the given design form.
+func methodForm(form string) string {
+	if form == "interface" {
+		return "abstract"
+	}
+	return "method"
 }
 
 func (w *world) directOp(c *comp, id, code, file, opName string) *dop {
@@ -402,7 +408,7 @@ func (w *world) allowed(c *comp) []string {
 }
 
 // callable lists the operations that a flow step sent from c's code may
-// call: those of allowed components and systems, but not of interfaces.
+// call: those of allowed components and systems.
 func (w *world) callable(c *comp) []*dop {
 	allowed := w.allowed(c)
 	var out []*dop
@@ -411,7 +417,7 @@ func (w *world) callable(c *comp) []*dop {
 		if o.home != nil {
 			home = o.home.id
 		}
-		if slices.Contains(allowed, home) && o.kind != "entry" {
+		if slices.Contains(allowed, home) {
 			out = append(out, o)
 		}
 	}
@@ -464,7 +470,9 @@ func (w *world) topStep(c *comp, flow, parent string, n *int) {
 
 // callStep adds a call or send step to op, sent by sender; from is the code
 // function of its context that calls op's function, or "" for the person.
-// A call may nest steps that its receiver sends.
+// A call may nest steps that its receiver sends, unless it calls an
+// interface: an abstract method calls nothing, so no step under it could be
+// reached.
 func (w *world) callStep(c *comp, flow, parent string, n *int, form, sender, from string, op *dop, depth int) {
 	id := w.newStep(flow, parent, form, n)
 	w.declared(graph.EdgeKindFrom, id, sender)
@@ -475,7 +483,7 @@ func (w *world) callStep(c *comp, flow, parent string, n *int, form, sender, fro
 		s.context = []string{from}
 	}
 	w.steps = append(w.steps, s)
-	if form != "call" || op.home == nil || depth == 0 {
+	if form != "call" || op.home == nil || op.kind == "abstract" || depth == 0 {
 		return
 	}
 	receiver := op.home.id

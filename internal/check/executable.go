@@ -159,9 +159,7 @@ func (c *checker) calledOp(step string) string {
 
 func (c *checker) callStep(s graph.Node) {
 	op := c.calledOp(s.Id)
-	if op == "" || c.is(c.parent[op], graph.LayerDesign, graph.NodeKindType, "interface") {
-		// An operation of an interface is realized by its type's methods
-		// entry, which is no function to trace.
+	if op == "" {
 		return
 	}
 	var traced []string
@@ -216,7 +214,7 @@ func (c *checker) context(step string) ([]string, string) {
 	case c.is(sender, graph.LayerDesign, graph.NodeKindType):
 		var out []string
 		for _, r := range c.realizers(sender) {
-			for _, m := range c.children[r.id] {
+			for _, m := range c.children[r] {
 				if c.isFunction(m) {
 					out = append(out, m)
 				}
@@ -244,15 +242,12 @@ func (c *checker) emitStep(s graph.Node) {
 	if emits := c.out[graph.EdgeKindEmits][s.Id]; len(emits) > 0 {
 		event = emits[0].To
 	}
-	var events []string
-	for _, r := range c.realizers(event) {
-		events = append(events, r.id)
-	}
+	events := c.realizers(event)
 	var code []string
 	switch {
 	case c.is(sender, graph.LayerDesign, graph.NodeKindType):
 		for _, r := range c.realizers(sender) {
-			code = append(append(code, r.id), c.children[r.id]...)
+			code = append(append(code, r), c.children[r]...)
 		}
 	case c.isDesignContainer(sender):
 		for _, n := range c.nodes {

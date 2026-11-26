@@ -117,7 +117,7 @@ var breakages = []breakage{
 		return "realizes " + c.helper + " " + o.id
 	}},
 	{"check.method-binding", func(w *world) string {
-		o := choose(w, where(w.ops, func(o *dop) bool { return o.kind == "method" }))
+		o := choose(w, where(w.ops, func(o *dop) bool { return o.kind != "func" }))
 		var targets []string
 		for _, c := range w.comps {
 			targets = append(targets, c.id)
@@ -156,12 +156,8 @@ var breakages = []breakage{
 		switch o.kind {
 		case "func":
 			w.removeEdges(func(e graph.Edge) bool { return e.Kind == graph.EdgeKindRealizes && e.From == o.code })
-		case "method":
+		default:
 			w.removeNode(o.code)
-		case "entry":
-			w.setAttr(o.code, "methods", slices.DeleteFunc(w.attr(o.code, "methods"), func(m string) bool {
-				return strings.HasPrefix(m, name(o.id)+" ")
-			}))
 		}
 		return o.id
 	}},
@@ -174,9 +170,9 @@ var breakages = []breakage{
 			w.declared(graph.EdgeKindRealizes, twin, t.id)
 			return t.id
 		}
-		o := choose(w, where(w.ops, func(o *dop) bool { return o.kind != "entry" }))
+		o := choose(w, w.ops)
 		twin := w.function(w.parentOf(o.code), o.code+"Twin", name(o.id), o.signature, o.kind)
-		if o.kind == "method" {
+		if o.kind != "func" {
 			w.edge(graph.EdgeKindRealizes, twin, o.id, graph.SourceDerived, nil)
 		} else {
 			w.declared(graph.EdgeKindRealizes, twin, o.id)
@@ -213,17 +209,7 @@ var breakages = []breakage{
 	}},
 	{"check.signature-mismatch", func(w *world) string {
 		o := choose(w, w.ops)
-		if o.kind == "entry" {
-			methods := w.attr(o.code, "methods")
-			for i, m := range methods {
-				if strings.HasPrefix(m, name(o.id)+" ") {
-					methods[i] = name(o.id) + " (z: bool)"
-				}
-			}
-			w.setAttr(o.code, "methods", methods)
-		} else {
-			w.setAttr(o.code, "signature", []string{"(z: bool)"})
-		}
+		w.setAttr(o.code, "signature", []string{"(z: bool)"})
 		return o.id
 	}},
 	{"check.missing-field", func(w *world) string {
