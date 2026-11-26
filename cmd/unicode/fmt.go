@@ -140,7 +140,7 @@ func fmtPaths(root string, args []string) ([]string, error) {
 		if err != nil || top != "design" && top != "corpus" {
 			return nil, usageError("path %s is not inside design/ or corpus/ of the repository %s", a, root)
 		}
-		if _, err := os.Stat(abs); err != nil {
+		if _, err := os.Lstat(abs); err != nil {
 			return nil, usageError("path %s does not exist", a)
 		}
 		tops = append(tops, abs)
@@ -169,9 +169,18 @@ func fmtPaths(root string, args []string) ([]string, error) {
 }
 
 // formatFile formats one file and returns its status and diagnostics; the
-// error is an unexpected failure to write it.
+// error is an unexpected failure to write it. A symbolic link is neither
+// followed nor rewritten.
 func formatFile(root, rel string, check bool) (string, []diag.Diagnostic, error) {
 	at := diag.Position{Path: rel, Line: 1, Column: 1}
+	full := filepath.Join(root, filepath.FromSlash(rel))
+	if info, err := os.Lstat(full); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return statusInvalid, []diag.Diagnostic{{
+			Code: "cli.symlink", Subject: rel, Position: at,
+			Message: "the file is a symbolic link, which fmt neither follows nor rewrites",
+			Fix:     "replace the link with the file it points to, or move the link out of design/ and corpus/",
+		}}, nil
+	}
 	kind, err := syntax.KindOf(rel)
 	if err != nil {
 		return statusInvalid, []diag.Diagnostic{{
@@ -180,7 +189,6 @@ func formatFile(root, rel string, check bool) (string, []diag.Diagnostic, error)
 			Fix:     "move the file out of design/ and corpus/, or rename it",
 		}}, nil
 	}
-	full := filepath.Join(root, filepath.FromSlash(rel))
 	src, err := os.ReadFile(full)
 	if err != nil {
 		return statusInvalid, []diag.Diagnostic{{
@@ -204,7 +212,7 @@ func formatFile(root, rel string, check bool) (string, []diag.Diagnostic, error)
 			Fix:     "run unicode fmt",
 		}}, nil
 	}
-	if err := renameio.WriteFile(full, out, 0o644, renameio.WithExistingPermissions()); err != nil {
+	if err := renameio.WriteFile(full, out, 0o644); err != nil {
 		return "", nil, fmt.Errorf("cannot write %s: %w", rel, err)
 	}
 	return statusRewritten, nil, nil

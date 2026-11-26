@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -90,13 +91,20 @@ func genFileContent(t *rapid.T, path string) string {
 	return rapid.SampledFrom([]string{"@\n" + text, text + "\n}\n", text + "type\n", strings.Replace(text, "{", "", 1)}).Draw(t, "invalid")
 }
 
-// RepoFile is a file of a repository: its content and permission bits.
+// RepoFile is a file of a repository: its content and permission bits. A
+// symbolic link has os.ModeSymlink among its bits and the path it points to
+// as its content, as in git.
 //
 //uc:realizes cli.RepoFile
 type RepoFile struct {
 	Content string
 	Mode    int
 }
+
+// symlinkMode is the mode of every symbolic link on Linux.
+const symlinkMode = int(os.ModeSymlink | 0o777)
+
+func isSymlink(f RepoFile) bool { return os.FileMode(f.Mode)&os.ModeSymlink != 0 }
 
 // genRepoFile draws the content of a file at path and its permission bits.
 func genRepoFile(t *rapid.T, path string) RepoFile {
@@ -106,7 +114,19 @@ func genRepoFile(t *rapid.T, path string) RepoFile {
 	}
 }
 
-// genFiles draws the design and corpus files of a repository, always with a design/system.uc.
+// genLink draws a symbolic link at link: to another file of files, to its own
+// directory or the one above it, or to a path that does not exist.
+func genLink(t *rapid.T, link string, files map[string]RepoFile) RepoFile {
+	targets := []string{".", "..", "missing_" + genKebab.Draw(t, "missing") + ".uc"}
+	for _, p := range slices.Sorted(maps.Keys(files)) {
+		rel, _ := filepath.Rel(path.Dir(link), p)
+		targets = append(targets, filepath.ToSlash(rel))
+	}
+	return RepoFile{Content: rapid.SampledFrom(targets).Draw(t, "target"), Mode: symlinkMode}
+}
+
+// genFiles draws the design and corpus files of a repository, always with a
+// design/system.uc, and now and then a symbolic link among them.
 //
 //uc:generates cli.format-files.files
 func genFiles() *rapid.Generator[map[string]RepoFile] {
@@ -114,17 +134,24 @@ func genFiles() *rapid.Generator[map[string]RepoFile] {
 		files := map[string]RepoFile{"design/system.uc": genRepoFile(t, "design/system.uc")}
 		for range rapid.IntRange(0, 6).Draw(t, "files") {
 			var path string
-			switch rapid.IntRange(0, 4).Draw(t, "where") {
+			where := rapid.IntRange(0, 5).Draw(t, "where")
+			switch where {
 			case 0:
 				path = "design/" + genKebab.Draw(t, "name") + ".uc"
 			case 1:
 				path = "design/" + genKebab.Draw(t, "dir") + "/" + genKebab.Draw(t, "name") + ".uc"
 			case 2, 3:
 				path = "corpus/" + genKebab.Draw(t, "dir") + "/" + genKebab.Draw(t, "name") + ".uc"
-			default:
+			case 4:
 				path = rapid.SampledFrom([]string{"design/", "corpus/"}).Draw(t, "dir") + genKebab.Draw(t, "name") + ".txt"
+			default:
+				path = rapid.SampledFrom([]string{"design/", "corpus/", "design/sub/", "corpus/sub/"}).Draw(t, "dir") + genKebab.Draw(t, "name") + ".uc"
 			}
-			if path != "design/system.uc" {
+			switch {
+			case path == "design/system.uc":
+			case where == 5:
+				files[path] = genLink(t, path, files)
+			default:
 				files[path] = genRepoFile(t, path)
 			}
 		}
@@ -132,19 +159,73 @@ func genFiles() *rapid.Generator[map[string]RepoFile] {
 	})
 }
 
-// expectedStatus is what fmt must report for one file, by syntax's own verdict.
-func expectedStatus(path, content string, check bool) (string, []byte) {
+// genTargets draws the path arguments of fmt, relative to the repository's
+// root: none, or files and directories of files in design/ and corpus/, now
+// and then with a path that does not exist or one outside those two directories.
+//
+//uc:generates cli.format-files.targets
+func genTargets(files map[string]RepoFile) *rapid.Generator[[]string] {
+	var existing []string
+	for p := range files {
+		for ; p != "."; p = path.Dir(p) {
+			existing = append(existing, p)
+		}
+	}
+	slices.Sort(existing)
+	existing = slices.Compact(existing)
+	return rapid.Custom(func(t *rapid.T) []string {
+		var targets []string
+		for range rapid.IntRange(0, 3).Draw(t, "targets") {
+			targets = append(targets, rapid.SampledFrom(existing).Draw(t, "target"))
+		}
+		if rapid.IntRange(0, 3).Draw(t, "stray?") == 0 {
+			missing := genKebab.Draw(t, "missing")
+			stray := rapid.SampledFrom([]string{".", "..", "README.md", "docs", "designs", "design/missing_" + missing + ".uc", "corpus/missing_" + missing}).Draw(t, "stray")
+			targets = slices.Insert(targets, rapid.IntRange(0, len(targets)).Draw(t, "at"), stray)
+		}
+		return targets
+	})
+}
+
+// strayTarget describes the first target that is outside design/ and corpus/
+// or names no file or directory of files, or returns "".
+func strayTarget(files map[string]RepoFile, targets []string) string {
+	for _, target := range targets {
+		clean := path.Clean(target)
+		top, _, _ := strings.Cut(clean, "/")
+		exists := slices.ContainsFunc(slices.Collect(maps.Keys(files)), func(p string) bool { return p == clean || strings.HasPrefix(p, clean+"/") })
+		switch {
+		case top != "design" && top != "corpus":
+			return target + ", which is outside design/ and corpus/"
+		case !exists:
+			return target + ", which does not exist"
+		}
+	}
+	return ""
+}
+
+// under tells whether p is one of the targets or lies under one; with no targets every path is.
+func under(p string, targets []string) bool {
+	return len(targets) == 0 || slices.ContainsFunc(targets, func(target string) bool {
+		clean := path.Clean(target)
+		return p == clean || strings.HasPrefix(p, clean+"/")
+	})
+}
+
+// expectedStatus is what fmt must report for one file, by syntax's own
+// verdict; a symbolic link is invalid.
+func expectedStatus(path string, f RepoFile, check bool) (string, []byte) {
 	kind, err := syntax.KindOf(path)
-	if err != nil {
+	if err != nil || isSymlink(f) {
 		return statusInvalid, nil
 	}
-	parsed := syntax.Parse(path, kind, []byte(content))
+	parsed := syntax.Parse(path, kind, []byte(f.Content))
 	if len(parsed.Diagnostics) > 0 {
 		return statusInvalid, nil
 	}
 	printed := parsed.File.Print()
 	switch {
-	case string(printed) == content:
+	case string(printed) == f.Content:
 		return statusUnchanged, printed
 	case check:
 		return statusNotCanonical, printed
@@ -191,33 +272,57 @@ func removeAll(t rapid.TB, dir string) {
 	}
 }
 
-// writeRepo writes the files into a new directory, each with its own mode.
+// writeRepo writes the files into a new repository, each with its own mode,
+// and returns its root. The root is alone in a temporary directory, so that
+// the directory above it holds nothing else.
 func writeRepo(t rapid.TB, files map[string]RepoFile) string {
-	root, err := os.MkdirTemp("", "unicode-repo-")
+	base, err := os.MkdirTemp("", "unicode-repo-")
 	if err != nil {
-		t.Fatalf("setup failed: cannot create a temporary repository: %v", err)
+		t.Fatalf("setup failed: cannot create a temporary directory: %v", err)
 	}
+	root := filepath.Join(base, "repo")
 	for path, f := range files {
 		full := filepath.Join(root, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatalf("setup failed: cannot create a directory: %v", err)
 		}
-		if err := os.WriteFile(full, []byte(f.Content), 0o644); err != nil || os.Chmod(full, os.FileMode(f.Mode)) != nil {
+		if isSymlink(f) {
+			if err := os.Symlink(f.Content, full); err != nil {
+				t.Fatalf("setup failed: cannot link %s: %v", path, err)
+			}
+			continue
+		}
+		if err := os.WriteFile(full, []byte(f.Content), 0o644); err != nil {
 			t.Fatalf("setup failed: cannot write %s: %v", path, err)
+		}
+		if err := os.Chmod(full, os.FileMode(f.Mode)); err != nil {
+			t.Fatalf("setup failed: cannot set the mode of %s: %v", path, err)
 		}
 	}
 	return root
 }
 
-func readRepo(t rapid.TB, root string) map[string]string {
-	files := map[string]string{}
+// readRepo reads the files of a repository without following symbolic links.
+func readRepo(t rapid.TB, root string) map[string]RepoFile {
+	files := map[string]RepoFile{}
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
+		info, err := os.Lstat(p)
+		if err != nil {
+			return err
+		}
+		f := RepoFile{Mode: int(info.Mode() & (os.ModeSymlink | os.ModePerm))}
+		var content []byte
+		if isSymlink(f) {
+			f.Content, err = os.Readlink(p)
+		} else {
+			content, err = os.ReadFile(p)
+			f.Content = string(content)
+		}
 		rel, _ := filepath.Rel(root, p)
-		content, err := os.ReadFile(p)
-		files[filepath.ToSlash(rel)] = string(content)
+		files[filepath.ToSlash(rel)] = f
 		return err
 	})
 	if err != nil {
@@ -244,31 +349,52 @@ func differsAt(a, b string) (int, int) {
 }
 
 //uc:checks cli.format-files
-func checkFlowFormatFiles(t rapid.TB, files map[string]RepoFile, check bool) {
-	paths := make([]string, 0, len(files))
-	for p := range files {
-		paths = append(paths, p)
-	}
-	slices.Sort(paths)
-	want := map[string]string{}
-	canonical := map[string][]byte{}
-	wantCode := exitOK
-	for _, p := range paths {
-		want[p], canonical[p] = expectedStatus(p, files[p].Content, check)
-		if want[p] == statusInvalid || want[p] == statusNotCanonical {
-			wantCode = exitDiagnostics
-		}
-	}
+func checkFlowFormatFiles(t rapid.TB, files map[string]RepoFile, check bool, targets []string) {
 	flags := []string{"fmt"}
 	if check {
 		flags = append(flags, "--check")
 	}
-
 	jsonRoot, textRoot := writeRepo(t, files), writeRepo(t, files)
-	defer removeAll(t, jsonRoot)
-	defer removeAll(t, textRoot)
+	defer removeAll(t, filepath.Dir(jsonRoot))
+	defer removeAll(t, filepath.Dir(textRoot))
+	args := func(root string, options ...string) []string {
+		args := append(append([]string{"--root", root}, options...), flags...)
+		for _, target := range targets {
+			args = append(args, filepath.Join(root, filepath.FromSlash(target)))
+		}
+		return args
+	}
 
-	code, stdout, stderr := runMain(t, append([]string{"--root", jsonRoot, "--format", "json"}, flags...))
+	if stray := strayTarget(files, targets); stray != "" {
+		code, stdout, stderr := runMain(t, args(jsonRoot, "--format", "json"))
+		switch {
+		case code != exitUsage:
+			t.Fatalf("with the path argument %s, unicode fmt exited with %d instead of %d\nstdout: %s\nstderr: %s", stray, code, exitUsage, stdout, stderr)
+		case stdout != "" || stderr == "":
+			t.Fatalf("with the path argument %s, stdout should be empty and stderr should give the usage error, yet\nstdout: %s\nstderr: %s", stray, stdout, stderr)
+		case !maps.Equal(readRepo(t, jsonRoot), files):
+			t.Fatalf("with the path argument %s, unicode fmt rejected its arguments, yet it changed the repository", stray)
+		}
+		return
+	}
+
+	var paths []string
+	for _, p := range slices.Sorted(maps.Keys(files)) {
+		if under(p, targets) {
+			paths = append(paths, p)
+		}
+	}
+	want := map[string]string{}
+	canonical := map[string][]byte{}
+	wantCode := exitOK
+	for _, p := range paths {
+		want[p], canonical[p] = expectedStatus(p, files[p], check)
+		if want[p] == statusInvalid || want[p] == statusNotCanonical {
+			wantCode = exitDiagnostics
+		}
+	}
+
+	code, stdout, stderr := runMain(t, args(jsonRoot, "--format", "json"))
 	if code != wantCode {
 		t.Fatalf("unicode fmt exited with %d instead of %d\nstdout: %s\nstderr: %s", code, wantCode, stdout, stderr)
 	}
@@ -280,12 +406,15 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]RepoFile, check bool) {
 		t.Fatalf("stdout is not fmt's JSON report: %v\n%s", err, stdout)
 	}
 	if len(report.Files) != len(paths) {
-		t.Fatalf("the report lists %d files, the repository has %d: %v", len(report.Files), len(paths), report.Files)
+		t.Fatalf("the report lists %d files, the path arguments %v hold %d: %v", len(report.Files), targets, len(paths), report.Files)
 	}
 	diagnosed := map[string][]string{}
 	for _, d := range report.Diagnostics {
 		if d.Code == "" || d.Message == "" || d.Fix == "" || d.Line < 1 || d.Column < 1 {
 			t.Fatalf("a diagnostic lacks its code, cause, fix or position: %+v", d)
+		}
+		if !slices.Contains(paths, d.Path) {
+			t.Fatalf("the diagnostic %s is about %s, which is not under the path arguments %v", d.Code, d.Path, targets)
 		}
 		diagnosed[d.Path] = append(diagnosed[d.Path], d.Code)
 		if d.Code != "cli.not-canonical" {
@@ -301,6 +430,8 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]RepoFile, check bool) {
 			t.Fatalf("file %d of the report is %s (%s) instead of %s (%s)", i+1, f.Path, f.Status, p, want[p])
 		}
 		switch {
+		case isSymlink(files[p]) && !slices.Equal(diagnosed[p], []string{"cli.symlink"}):
+			t.Fatalf("the symbolic link %s should have exactly one cli.symlink, yet it has %v", p, diagnosed[p])
 		case want[p] == statusInvalid && len(diagnosed[p]) == 0:
 			t.Fatalf("the invalid file %s has no diagnostic", p)
 		case want[p] == statusNotCanonical && !slices.Equal(diagnosed[p], []string{"cli.not-canonical"}):
@@ -313,25 +444,22 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]RepoFile, check bool) {
 	if len(after) != len(files) {
 		t.Fatalf("after unicode fmt the repository has %d files, before it had %d", len(after), len(files))
 	}
-	for _, p := range paths {
-		info, err := os.Stat(filepath.Join(jsonRoot, filepath.FromSlash(p)))
-		if err != nil {
-			t.Fatalf("after unicode fmt, %s cannot be read: %v", p, err)
-		}
-		if mode := os.FileMode(files[p].Mode); info.Mode().Perm() != mode {
-			t.Fatalf("after unicode fmt the mode of %s is %v, before it was %v", p, info.Mode().Perm(), mode)
-		}
-	}
-	for _, p := range paths {
+	for _, p := range slices.Sorted(maps.Keys(files)) {
+		before, now := files[p], after[p]
+		rewritten := want[p] == statusRewritten
 		switch {
-		case (check || want[p] == statusInvalid) && after[p] != files[p].Content:
-			t.Fatalf("%s should not be rewritten (--check %v, status %s), yet it was", p, check, want[p])
-		case !check && want[p] != statusInvalid && after[p] != string(canonical[p]):
-			t.Fatalf("the valid file %s is not canonical after unicode fmt\nafter:\n%s\ncanonical:\n%s", p, after[p], canonical[p])
+		case now.Mode != before.Mode:
+			t.Fatalf("after unicode fmt the mode of %s is %v, before it was %v", p, os.FileMode(now.Mode), os.FileMode(before.Mode))
+		case isSymlink(before) && now != before:
+			t.Fatalf("unicode fmt changed the symbolic link %s: it pointed to %s, and now to %s", p, before.Content, now.Content)
+		case !rewritten && now != before:
+			t.Fatalf("%s should not be rewritten (--check %v, status %q), yet it was", p, check, want[p])
+		case rewritten && now.Content != string(canonical[p]):
+			t.Fatalf("the valid file %s is not canonical after unicode fmt\nafter:\n%s\ncanonical:\n%s", p, now.Content, canonical[p])
 		}
 	}
 
-	code, stdout, stderr = runMain(t, append([]string{"--root", textRoot}, flags...))
+	code, stdout, stderr = runMain(t, args(textRoot))
 	if code != wantCode {
 		t.Fatalf("with --format text, unicode fmt exited with %d instead of %d", code, wantCode)
 	}
@@ -360,12 +488,14 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]RepoFile, check bool) {
 
 func TestFlowFormatFiles(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
-		checkFlowFormatFiles(t, genFiles().Draw(t, "files"), rapid.Bool().Draw(t, "check"))
+		files := genFiles().Draw(t, "files")
+		checkFlowFormatFiles(t, files, rapid.Bool().Draw(t, "check"), genTargets(files).Draw(t, "targets"))
 	})
 }
 
 func FuzzFlowFormatFiles(f *testing.F) {
 	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkFlowFormatFiles(t, genFiles().Draw(t, "files"), rapid.Bool().Draw(t, "check"))
+		files := genFiles().Draw(t, "files")
+		checkFlowFormatFiles(t, files, rapid.Bool().Draw(t, "check"), genTargets(files).Draw(t, "targets"))
 	}))
 }

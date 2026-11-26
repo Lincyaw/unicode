@@ -102,7 +102,6 @@ func rootCommand(stdout, stderr io.Writer) *cobra.Command {
 	}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
-	root.SetHelpCommand(&cobra.Command{Hidden: true})
 	codes := make([]string, len(exitCodes))
 	for i, e := range exitCodes {
 		codes[i] = fmt.Sprintf("%d %s", e.code, e.meaning)
