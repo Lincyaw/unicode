@@ -19,14 +19,14 @@ import (
 // A backend is how the toolchain extracts one language: the backend itself,
 // and the command its toolchain needs on PATH.
 type backend struct {
-	newBackend func() lang.Backend
-	tool       string
+	lang.Backend
+	tool string
 }
 
 // backends are the languages the toolchain can extract, by the name the
 // system file gives them; a language not here is reported, not extracted.
-var backends = map[string]backend{
-	"go": {newBackend: func() lang.Backend { return golang.NewBackend() }, tool: "go"},
+func backends() map[string]backend {
+	return map[string]backend{"go": {Backend: golang.NewBackend(), tool: "go"}}
 }
 
 // readDesign reads and parses every file under design/ and corpus/. Its
@@ -66,9 +66,10 @@ func buildGraph(root string) (graph.Graph, []diag.Diagnostic, error) {
 	loaded := design.Load(files)
 	g := loaded.Graph
 	diags = append(diags, loaded.Diagnostics...)
+	available := backends()
 	for _, r := range languageRoots(&g) {
 		at := languagePosition(files, r.language)
-		b, known := backends[r.language]
+		b, known := available[r.language]
 		if !known {
 			diags = append(diags, diag.Diagnostic{
 				Code: "cli.unsupported-language", Subject: at.Path, Position: at,
@@ -81,7 +82,7 @@ func buildGraph(root string) (graph.Graph, []diag.Diagnostic, error) {
 			return graph.Graph{}, nil, &exitError{code: exitEnvironment,
 				err: fmt.Errorf("extracting the %s code needs the command %s on PATH: %w", r.language, b.tool, err)}
 		}
-		extracted, err := b.newBackend().Extract(root, r.dirs)
+		extracted, err := b.Extract(root, r.dirs)
 		var failed lang.ExtractFailed
 		switch {
 		case errors.As(err, &failed):
