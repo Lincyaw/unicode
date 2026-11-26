@@ -35,7 +35,7 @@ var recordedName = regexp.MustCompile(`^r-[0-9a-f]{8}$`)
 //
 //uc:realizes design.load
 func Load(files []syntax.File) Loaded {
-	l := &loader{byID: map[string]*entity{}, notations: map[string]bool{}, seen: map[edgeKey]bool{}}
+	l := &loader{byID: map[string]*entity{}, notations: map[string]bool{}, codes: map[codeKey]codeHolder{}, seen: map[edgeKey]bool{}}
 	byKind := map[syntax.FileKind][]*syntax.File{}
 	sorted := slices.Clone(files)
 	slices.SortStableFunc(sorted, func(a, b syntax.File) int { return cmp.Compare(a.Path, b.Path) })
@@ -75,6 +75,8 @@ type loader struct {
 	byID       map[string]*entity
 	entities   []*entity
 	notations  map[string]bool
+	languages  []string
+	codes      map[codeKey]codeHolder
 	edges      []graph.Edge
 	seen       map[edgeKey]bool
 	uses       []func()
@@ -167,8 +169,8 @@ func (l *loader) build() graph.Graph {
 	return g
 }
 
-// system declares the system, its notations and its actors. Only design/system.uc
-// is of the system kind, so there is at most one system file.
+// system declares the system, its notations, languages and actors. Only
+// design/system.uc is of the system kind, so there is at most one system file.
 func (l *loader) system(files []*syntax.File) {
 	if len(files) == 0 {
 		l.root = &entity{virtual: true, children: map[string]*entity{}}
@@ -180,6 +182,7 @@ func (l *loader) system(files []*syntax.File) {
 		return
 	}
 	f := files[0]
+	var notations, roots []string
 	for _, d := range f.Decls {
 		switch d := d.(type) {
 		case *syntax.SystemDecl:
@@ -187,6 +190,16 @@ func (l *loader) system(files []*syntax.File) {
 			l.declare(nil, l.root, nil)
 		case *syntax.NotationDecl:
 			l.notations[d.Name] = true
+			notations = append(notations, d.Name)
+		case *syntax.LanguageDecl:
+			if !slices.Contains(l.languages, d.Name) {
+				l.languages = append(l.languages, d.Name)
+			}
+			for _, line := range d.Lines {
+				if r, ok := line.(*syntax.Root); ok {
+					roots = append(roots, d.Name+": "+string(r.Path))
+				}
+			}
 		case *syntax.PersonDecl:
 			l.declare(l.root, &entity{name: string(d.Name), kind: graph.NodeKindActor, form: "person", file: f, pos: d.Pos, summary: string(d.Summary)}, nil)
 		case *syntax.ExternalDecl:
@@ -204,6 +217,8 @@ func (l *loader) system(files []*syntax.File) {
 			}
 		}
 	}
+	l.root.setAttr("notations", notations)
+	l.root.setAttr("roots", roots)
 }
 
 // component is a component file and the component it declares.
@@ -303,6 +318,12 @@ func (l *loader) componentLines(c component, parent *entity) {
 	e.setAttr("paths", paths)
 	l.uses = append(l.uses, func() {
 		for _, r := range uses {
+			if person := l.resolve(e, r.Segments); person.is(graph.NodeKindActor, "person") {
+				l.report(c.file, r.Pos, "design.uses-person", e.id,
+					fmt.Sprintf("the component %s uses the person %s, but uses names only what code can depend on: components and external actors", e.id, person.id),
+					fmt.Sprintf("remove %s from uses; a person needs no uses to start calls in a flow", person.id))
+				continue
+			}
 			if target := l.refer(e, e, r.Segments, r.Pos, acceptUses); target != nil {
 				e.uses = append(e.uses, target)
 				l.edge(graph.EdgeKindUses, e, target, c.file, r.Pos, graph.SourceDeclared, nil)
@@ -334,6 +355,7 @@ func (l *loader) typeDecl(f *syntax.File, parent, scope *entity, d *syntax.TypeD
 	if !l.declare(parent, e, nil) {
 		return
 	}
+	l.codeNameOf(e, roleType)
 	var labels []string
 	taken := map[string]bool{} // the names of the fields and values, which the operations may not take
 	for _, line := range d.Lines {
@@ -346,6 +368,7 @@ func (l *loader) typeDecl(f *syntax.File, parent, scope *entity, d *syntax.TypeD
 			l.unique(e, taken, string(line.Name), line.Pos)
 		case *syntax.Field:
 			l.unique(e, taken, string(line.Name), line.Pos)
+			l.codeName(e, roleField, string(line.Name), "the field "+string(line.Name)+" of "+e.id, f, line.Pos, e.id)
 		case *syntax.OpDecl:
 			if taken[string(line.Name)] {
 				l.unique(e, taken, string(line.Name), line.Pos)
@@ -408,6 +431,7 @@ func (l *loader) opDecl(f *syntax.File, parent, scope *entity, d *syntax.OpDecl)
 	if !l.declare(parent, e, nil) {
 		return
 	}
+	l.codeNameOf(e, roleOp)
 	if parent.kind == graph.NodeKindType {
 		parent.ops = append(parent.ops, e)
 	}
@@ -458,6 +482,7 @@ func (l *loader) flowDecl(f *syntax.File, parent *entity, d *syntax.FlowDecl) {
 	if !l.declare(parent, e, nil) {
 		return
 	}
+	l.codeNameOf(e, roleFlowPredicate)
 	var symbols []*syntax.Symbol
 	var limits []any
 	var cases []*syntax.CaseDecl
@@ -487,6 +512,7 @@ func (l *loader) propertyDecl(f *syntax.File, parent *entity, d *syntax.Property
 	if !l.declare(parent, e, nil) {
 		return
 	}
+	l.codeNameOf(e, rolePredicate)
 	var symbols []*syntax.Symbol
 	var limits []any
 	var cases []*syntax.CaseDecl

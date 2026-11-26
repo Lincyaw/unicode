@@ -40,6 +40,11 @@ func (lim *limit) text() string {
 	return path + " " + lim.op + " " + lim.low + ".." + lim.high
 }
 
+// empty tells whether an interval's low bound exceeds its high bound (docs/format.md §3).
+func (lim *limit) empty() bool {
+	return lim.op != "subset" && rat(lim.low).Cmp(rat(lim.high)) > 0
+}
+
 func newLimit(line any) *limit {
 	switch x := line.(type) {
 	case *syntax.IntervalLimit:
@@ -67,6 +72,11 @@ func (l *loader) inputs(e, scope *entity, symbols []*syntax.Symbol, limits []any
 		lim := newLimit(line)
 		e.limits = append(e.limits, lim)
 		texts = append(texts, lim.text())
+		if lim.empty() {
+			l.report(e.file, lim.pos, "design.empty-interval", e.id,
+				fmt.Sprintf("the limit %s admits no value: its low bound %s exceeds its high bound %s", lim.text(), lim.low, lim.high),
+				fmt.Sprintf("write the low bound first, like %s..%s", lim.high, lim.low))
+		}
 	}
 	e.setAttr("limits", texts)
 	l.signatures = append(l.signatures, func() {
@@ -243,8 +253,13 @@ func (l *loader) place(e *entity, lim *limit) {
 	}
 }
 
-// settle records that a limit applies at t, once the values of an enum subset are among its values.
+// settle records that a limit applies at t, once the values of an enum subset
+// are among its values. An empty interval, already reported, stays unsettled,
+// so that no case gets a second diagnostic for it.
 func (l *loader) settle(e *entity, lim *limit, t *typ) {
+	if lim.empty() {
+		return
+	}
 	for _, m := range lim.members {
 		if !slices.Contains(t.named().values, m) {
 			l.report(e.file, lim.pos, "design.invalid-limit", e.id,

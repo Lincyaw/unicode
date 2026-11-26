@@ -173,7 +173,9 @@ func sites(t *gType, path []string, depth int) []site {
 }
 
 // inputs draws the symbols and limits of a flow or a property n; a
-// skeleton's come first: an int limited to 0..10 and a generated string.
+// skeleton's come first: an int limited to 0..10, for a property a record, a
+// generated string, and a string of size 0..3. The skeleton's two limits are
+// n.limits[0] and n.limits[1].
 func (d *designer) inputs(n, c *gNode, skeleton bool) []any {
 	var lines []any
 	add := func(name string, t *gType, generated bool) {
@@ -192,17 +194,23 @@ func (d *designer) inputs(n, c *gNode, skeleton bool) []any {
 			add(d.lower("symbol"), &gType{named: d.skel.record}, false)
 		}
 		add(d.lower("symbol"), &gType{builtin: "string"}, true)
+		add(d.lower("symbol"), &gType{builtin: "string"}, false)
+	}
+	var limited []gSymbol
+	if skeleton {
+		limited = []gSymbol{n.symbols[0], n.symbols[len(n.symbols)-1]}
 	}
 	for range count(d, "symbols", 0, 2) {
 		generated := rapid.IntRange(0, 3).Draw(d.t, "generated") == 0
 		add(d.lower("symbol"), d.symbolType(2), generated)
 	}
 	if skeleton {
-		d.addLimit(n, &lines, site{[]string{n.symbols[0].name}, "in", n.symbols[0].t}, 0, 10)
+		d.addLimit(n, &lines, site{[]string{limited[0].name}, "in", limited[0].t}, 0, 10)
+		d.addLimit(n, &lines, site{[]string{limited[1].name}, "size", limited[1].t}, 0, 3)
 	}
 	var all []site
 	for _, s := range n.symbols {
-		if !s.generated && (!skeleton || s.name != n.symbols[0].name) {
+		if !s.generated && !slices.ContainsFunc(limited, func(l gSymbol) bool { return l.name == s.name }) {
 			all = append(all, sites(s.t, []string{s.name}, 0)...)
 		}
 	}
@@ -433,7 +441,8 @@ func (d *designer) genFlows() {
 }
 
 func (d *designer) newFlow(c *gNode, skeleton bool) *gNode {
-	fl := d.declare(c, &gNode{name: d.kebab("flow"), kind: "flow", form: "flow", file: c.file})
+	name := d.freeName(c, "flow", func() string { return d.kebab("flow") })
+	fl := d.declare(c, &gNode{name: name, kind: "flow", form: "flow", file: c.file})
 	d.flows = append(d.flows, fl)
 	decl := &syntax.FlowDecl{Name: syntax.Kebab(fl.name), Summary: d.summary("summary")}
 	fl.flowDecl = decl
@@ -470,7 +479,8 @@ func (d *designer) genProperties() {
 		}
 		for i := range n {
 			skeleton := c == d.skel.top && i == 0
-			p := d.declare(c, &gNode{name: d.kebab("property"), kind: "property", form: pick(d, "form", forms), file: c.file})
+			name := d.freeName(c, "property", func() string { return d.kebab("property") })
+			p := d.declare(c, &gNode{name: name, kind: "property", form: pick(d, "form", forms), file: c.file})
 			d.props = append(d.props, p)
 			decl := &syntax.PropertyDecl{Name: syntax.Kebab(p.name), Form: p.form, Summary: d.summary("summary")}
 			p.propDecl = decl

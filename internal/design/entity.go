@@ -120,11 +120,13 @@ type accept struct {
 }
 
 var (
-	acceptType        = accept{"a type", func(e *entity) bool { return e.is(graph.NodeKindType) }}
-	acceptError       = accept{"an error type", func(e *entity) bool { return e.is(graph.NodeKindType, "error") }}
-	acceptOp          = accept{"an operation", func(e *entity) bool { return e.is(graph.NodeKindOp) }}
-	acceptCallTarget  = accept{"an operation or a type", func(e *entity) bool { return e.is(graph.NodeKindOp) || e.is(graph.NodeKindType) }}
-	acceptUses        = accept{"a component or an actor", func(e *entity) bool { return e.is(graph.NodeKindContainer, "component") || e.is(graph.NodeKindActor) }}
+	acceptType       = accept{"a type", func(e *entity) bool { return e.is(graph.NodeKindType) }}
+	acceptError      = accept{"an error type", func(e *entity) bool { return e.is(graph.NodeKindType, "error") }}
+	acceptOp         = accept{"an operation", func(e *entity) bool { return e.is(graph.NodeKindOp) }}
+	acceptCallTarget = accept{"an operation or a type", func(e *entity) bool { return e.is(graph.NodeKindOp) || e.is(graph.NodeKindType) }}
+	acceptUses       = accept{"a component or an external actor", func(e *entity) bool {
+		return e.is(graph.NodeKindContainer, "component") || e.is(graph.NodeKindActor, "external")
+	}}
 	acceptParticipant = accept{"an actor, a component or a type", func(e *entity) bool {
 		return e.is(graph.NodeKindActor) || e.is(graph.NodeKindContainer, "component") || e.is(graph.NodeKindType)
 	}}
