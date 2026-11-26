@@ -18,12 +18,13 @@ type Neighbor record "从焦点一步可达的一个显著节点，以及经过�
   field node: graph.Node
 }
 
-type Context record "回答一个问题所需的最小上下文（design.md §7.3）：焦点、祖先、一步可达的显著节点、按种类补充的节点，以及每个焦点未列出的细节节点的个数" {
+type Context record "回答一个问题所需的最小上下文（design.md §7.3）：焦点、祖先、一步可达的显著节点、按种类补充的节点、每个焦点未列出的细节节点的个数，以及这些节点之间的 contains 边" {
   field focus: list<graph.Node>
   field ancestors: list<graph.Node>
   field neighbors: list<Neighbor>
   field extras: list<graph.Node>
   field details: map<string, int>
+  field edges: list<graph.Edge>
 }
 
 type Affected record "一个受影响的节点，以及说明原因的一条最短路径" {
@@ -48,7 +49,7 @@ op slice(g: graph.Graph, ids: list<string>, expand: list<string>) -> Context rai
 
 op impact(g: graph.Graph, ids: list<string>) -> list<Affected> raises NotFound "一组变更的节点影响到的显著节点"
 
-property slice-is-minimal-context invariant "切片恰好含有焦点、焦点的祖先链、焦点一步可达的显著节点，以及按种类补充的显著节点：操作所属的类型和该类型的其余操作，性质沿 refers 经由类型能到达的类型，流程的整个步骤树和每一步 traces 到的函数；细节节点只计入个数，展开之后才列出；切片中的边都是图中的边" {
+property slice-is-minimal-context invariant "切片恰好含有焦点、焦点的祖先链、焦点一步可达的显著节点，以及按种类补充的显著节点：操作所属的类型和该类型的其余操作，性质沿 refers 经由类型能到达的类型，流程的整个步骤树和每一步 traces 到的函数；细节节点只计入个数，展开之后才列出；切片的 edges 恰是两端都在切片列出的节点之中的 contains 边，由此能还原祖先链和流程的步骤树；切片中的边都是图中的边" {
   about slice
   forall question: Question generated "一张随机的图，焦点和展开的标识取自图中的节点"
 }
