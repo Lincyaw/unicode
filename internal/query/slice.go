@@ -12,9 +12,9 @@ import (
 //
 //uc:realizes query.Neighbor
 type Neighbor struct {
-	Focus string
-	Edge  graph.Edge
-	Node  graph.Node
+	Focus string     `json:"focus"`
+	Edge  graph.Edge `json:"edge"`
+	Node  graph.Node `json:"node"`
 }
 
 // Context is the slice of a set of nodes, the least context that answers a
@@ -25,11 +25,11 @@ type Neighbor struct {
 //
 //uc:realizes query.Context
 type Context struct {
-	Focus     []graph.Node
-	Ancestors []graph.Node
-	Neighbors []Neighbor
-	Extras    []graph.Node
-	Details   map[string]int
+	Focus     []graph.Node   `json:"focus"`
+	Ancestors []graph.Node   `json:"ancestors"`
+	Neighbors []Neighbor     `json:"neighbors"`
+	Extras    []graph.Node   `json:"extras"`
+	Details   map[string]int `json:"details"`
 }
 
 // Slice returns the slice of the nodes ids: the nodes themselves, sorted by

@@ -12,8 +12,8 @@ import (
 //
 //uc:realizes query.Affected
 type Affected struct {
-	Node graph.Node
-	Path []graph.Edge
+	Node graph.Node   `json:"node"`
+	Path []graph.Edge `json:"path"`
 }
 
 // impactKinds are the edges along which a change spreads backwards (docs/design.md §7.4).
