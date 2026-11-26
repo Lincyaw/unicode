@@ -1,6 +1,7 @@
 package syntax
 
 import (
+	"cmp"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -23,10 +24,7 @@ func check(at locator, f *File) []diag.Diagnostic {
 	c.file(f)
 	c.walk(reflect.ValueOf(f.Decls), lexer.Position{})
 	slices.SortStableFunc(c.diags, func(a, b diag.Diagnostic) int {
-		if a.Position.Line != b.Position.Line {
-			return a.Position.Line - b.Position.Line
-		}
-		return a.Position.Column - b.Position.Column
+		return cmp.Or(cmp.Compare(a.Position.Line, b.Position.Line), cmp.Compare(a.Position.Column, b.Position.Column), strings.Compare(a.Code, b.Code))
 	})
 	return c.diags
 }

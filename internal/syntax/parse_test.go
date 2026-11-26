@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"pgregory.net/rapid"
+
+	"github.com/lincyaw/unicode/internal/diag"
 )
 
 var syntaxCode = regexp.MustCompile(`^syntax\.[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
@@ -31,7 +33,13 @@ func checkParseIsTotal(t rapid.TB, path string, kind FileKind, src []byte) {
 		return
 	}
 	lines := bytes.Split(src, []byte("\n"))
-	for _, d := range parsed.Diagnostics {
+	for i, d := range parsed.Diagnostics {
+		if i > 0 {
+			if p := parsed.Diagnostics[i-1]; !inOrder(p, d) {
+				t.Fatalf("the diagnostics are not ordered by line, column and code: %s at %d:%d comes before %s at %d:%d",
+					p.Code, p.Position.Line, p.Position.Column, d.Code, d.Position.Line, d.Position.Column)
+			}
+		}
 		at := d.Position
 		switch {
 		case !syntaxCode.MatchString(d.Code):
@@ -44,6 +52,19 @@ func checkParseIsTotal(t rapid.TB, path string, kind FileKind, src []byte) {
 			t.Fatalf("the diagnostic %s stands at %d:%d, outside the file of %d lines", d.Code, at.Line, at.Column, len(lines))
 		}
 	}
+}
+
+// inOrder tells whether a may come before b: an earlier line, an earlier
+// column on the same line, or a code not after b's at the same place.
+func inOrder(a, b diag.Diagnostic) bool {
+	x, y := a.Position, b.Position
+	switch {
+	case x.Line != y.Line:
+		return x.Line < y.Line
+	case x.Column != y.Column:
+		return x.Column < y.Column
+	}
+	return a.Code <= b.Code
 }
 
 // genPath draws a path of 1 to 64 bytes.

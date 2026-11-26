@@ -24,7 +24,7 @@ type Parsed struct {
 // Parse parses one file with the lexis and grammar of docs/format.md §2–§3.
 // Every forbidden character gets a diagnostic; a file that does not parse
 // gets one, the first problem found; a file that parses gets one for each
-// rule of check.go it breaks.
+// rule of check.go it breaks. The diagnostics come ordered by line, column and code.
 //
 //uc:realizes syntax.parse
 func Parse(path string, kind FileKind, src []byte) Parsed {
