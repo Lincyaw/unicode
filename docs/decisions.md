@@ -34,3 +34,4 @@
     - 代码层类型可以有设计之外的字段和方法；Go 的抽取读 `_test.go`。
 
     见 [format.md](format.md) §2、§3、§3.1，[design.md](design.md) §4、§8，[model.md](model.md) §10 第 18 条。
+20. **保留自定义格式加 participle，不换成 CUE 或 HCL。** 换了能省下打印，CUE 还能省下用例与类型、限定的校验；但流程会变得难读，而流程和签名一行写一个是设计文件好读、diff 好审的关键。见 [design.md](design.md) 附录 A-8。
