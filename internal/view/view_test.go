@@ -99,7 +99,10 @@ func checkViewIsFoldedSubgraph(t rapid.TB, request Request) {
 			}
 		}
 	}
-	exempt := w.exempt(input, request.Expand)
+	exempt := w.exempt(request.Kind, input, request.Expand)
+	if !slices.Contains(foldingKinds, request.Kind) && (len(got.Folded) > 0 || got.Hidden > 0) {
+		t.Fatalf("the %s view of %q folds %q and leaves out %d utility containers, yet it does not fold by focus", request.Kind, request.Id, got.Folded, got.Hidden)
+	}
 	folded := set(got.Folded)
 	for _, id := range got.Folded {
 		if !drawn[id] || exempt[id] || !w.designContainer(id) || w.focus(id) != "support" {
@@ -191,15 +194,8 @@ func checkSequenceFollowsSteps(t rapid.TB, request Request) {
 	if !slices.Equal(drawnSteps, steps) {
 		t.Fatalf("the %s view of %q lists the steps %q, not the flow's steps in the order of their index, %q", request.Kind, request.Id, drawnSteps, steps)
 	}
-	exempt := w.exempt(request.Id, request.Expand)
 	var lifelines []string
 	for _, p := range w.participants(request.Id) {
-		switch c, f := w.folder(p, exempt); f {
-		case "utility":
-			continue
-		case "support":
-			p = c
-		}
 		if !slices.Contains(lifelines, p) {
 			lifelines = append(lifelines, p)
 		}

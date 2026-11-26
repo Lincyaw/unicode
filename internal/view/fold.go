@@ -9,15 +9,16 @@ import (
 )
 
 // folding is the state of drawing one selection (docs/design.md §7.2).
-// Containers in exempt never fold: the input, what encloses it, and the
-// expanded identities.
+// Containers fold by focus only when byFocus is set, and those in exempt
+// never fold: the input, what encloses it, and the expanded identities.
 type folding struct {
-	ix     index
-	exempt map[string]bool
-	order  []string
-	drawn  map[string]bool
-	folded map[string]bool
-	hidden map[string]bool
+	ix      index
+	byFocus bool
+	exempt  map[string]bool
+	order   []string
+	drawn   map[string]bool
+	folded  map[string]bool
+	hidden  map[string]bool
 }
 
 type edgeKey struct {
@@ -25,12 +26,17 @@ type edgeKey struct {
 	from, to string
 }
 
+// unfolded are the views of a flow's participants, which the designer wrote
+// into the flow and which therefore never fold by focus.
+var unfolded = []ViewKind{ViewKindSequence, ViewKindActivity, ViewKindEvents}
+
 // fold draws the salient nodes of a selection, folding support containers
-// and leaving out utility ones; then it draws what the expanded salient
-// functions and reaches edges reveal; then every edge between drawn nodes
-// that the selection or an expansion picks.
+// and leaving out utility ones unless the view is one of unfolded; then it
+// draws what the expanded salient functions and reaches edges reveal; then
+// every edge between drawn nodes that the selection or an expansion picks.
 func (ix index) fold(kind ViewKind, input string, sel selection, expand []string) View {
-	f := folding{ix: ix, exempt: map[string]bool{input: true}, drawn: map[string]bool{}, folded: map[string]bool{}, hidden: map[string]bool{}}
+	f := folding{ix: ix, byFocus: !slices.Contains(unfolded, kind), exempt: map[string]bool{input: true},
+		drawn: map[string]bool{}, folded: map[string]bool{}, hidden: map[string]bool{}}
 	for _, id := range append(ix.enclosing(input), expand...) {
 		f.exempt[id] = true
 	}
@@ -87,8 +93,11 @@ func (f *folding) draw(id string) {
 
 // cover returns the outermost container, among those enclosing id and id
 // itself, that is not exempt and whose focus is support or utility, with that
-// focus; "", "" when there is none.
+// focus; "", "" when there is none or the view does not fold by focus.
 func (f *folding) cover(id string) (string, string) {
+	if !f.byFocus {
+		return "", ""
+	}
 	chain := f.ix.enclosing(id)
 	slices.Reverse(chain)
 	for _, c := range append(chain, id) {
