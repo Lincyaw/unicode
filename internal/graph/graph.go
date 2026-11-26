@@ -33,6 +33,18 @@ const (
 	SourceProduced  Source = "produced"
 )
 
+// Status is how a declared item compares with the code (docs/model.md §6).
+//
+//uc:realizes graph.Status
+type Status string
+
+const (
+	StatusVerified     Status = "verified"
+	StatusMissing      Status = "missing"
+	StatusStub         Status = "stub"
+	StatusContradicted Status = "contradicted"
+)
+
 // NodeKind is the kind of a node (docs/model.md §3).
 //
 //uc:realizes graph.NodeKind
@@ -93,7 +105,17 @@ type Node struct {
 	Source  Source
 	Origin  diag.Position
 	Summary string
+	Salient bool
 	Attrs   map[string][]string
+}
+
+// Fragment is a set of nodes and edges: the code layer one backend extracts,
+// or the input of a property.
+//
+//uc:realizes graph.Fragment
+type Fragment struct {
+	Nodes []Node
+	Edges []Edge
 }
 
 // Edge is one edge of the graph; its identity is its kind, start and end.

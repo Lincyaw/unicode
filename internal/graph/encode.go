@@ -61,6 +61,7 @@ type nodeJSON struct {
 	Source  Source              `json:"source"`
 	Origin  originJSON          `json:"origin"`
 	Summary string              `json:"summary"`
+	Salient bool                `json:"salient"`
 	Digest  string              `json:"digest"`
 	Attrs   map[string][]string `json:"attrs"`
 }
@@ -88,7 +89,7 @@ func (g *Graph) Encode() []byte {
 		s.Nodes = append(s.Nodes, nodeJSON{
 			Id: n.Id, Kind: n.Kind, Form: n.Form, Layer: n.Layer, Source: n.Source,
 			Origin:  originJSON{n.Origin.Path, n.Origin.Line, n.Origin.Column},
-			Summary: n.Summary, Digest: g.Digest(n.Id), Attrs: presentAttrs(n.Attrs),
+			Summary: n.Summary, Salient: n.Salient, Digest: g.Digest(n.Id), Attrs: presentAttrs(n.Attrs),
 		})
 	}
 	for _, e := range g.Edges() {

@@ -1,0 +1,475 @@
+package view
+
+import (
+	"maps"
+	"slices"
+	"strings"
+
+	"github.com/lincyaw/unicode/internal/graph"
+)
+
+// world answers, straight from the definitions of docs/design.md §7.1–§7.2,
+// what a view should draw; it reads the fragment's lists and keeps no index.
+type world struct {
+	nodes  map[string]graph.Node
+	edges  []graph.Edge
+	system string
+}
+
+func newWorld(f graph.Fragment) world {
+	w := world{nodes: map[string]graph.Node{}, edges: f.Edges}
+	for _, n := range f.Nodes {
+		w.nodes[n.Id] = n
+		if n.Kind == graph.NodeKindContainer && n.Layer == graph.LayerDesign && n.Form == "system" && (w.system == "" || n.Id < w.system) {
+			w.system = n.Id
+		}
+	}
+	return w
+}
+
+// to returns the ends of the edges of the kind from id, sorted.
+func (w world) to(id string, kind graph.EdgeKind) []string {
+	var ids []string
+	for _, e := range w.edges {
+		if e.Kind == kind && e.From == id {
+			ids = append(ids, e.To)
+		}
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+// from returns the starts of the edges of the kind to id, sorted.
+func (w world) from(id string, kind graph.EdgeKind) []string {
+	var ids []string
+	for _, e := range w.edges {
+		if e.Kind == kind && e.To == id {
+			ids = append(ids, e.From)
+		}
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+// adjacent returns the nodes one edge of the kinds away from id, either way.
+func (w world) adjacent(id string, kinds ...graph.EdgeKind) []string {
+	var ids []string
+	for _, k := range kinds {
+		ids = append(append(ids, w.to(id, k)...), w.from(id, k)...)
+	}
+	return ids
+}
+
+// below returns everything id contains along chains of contains edges.
+func (w world) below(id string) map[string]bool {
+	found := map[string]bool{}
+	for grown := true; grown; {
+		grown = false
+		for _, e := range w.edges {
+			if e.Kind == graph.EdgeKindContains && (e.From == id || found[e.From]) && e.To != id && !found[e.To] {
+				found[e.To], grown = true, true
+			}
+		}
+	}
+	return found
+}
+
+// up returns what encloses id, innermost first: a file's owner, else the
+// container along contains, and so on.
+func (w world) up(id string) []string {
+	var chain []string
+	for at := id; ; {
+		next := ""
+		if owners := w.from(at, graph.EdgeKindOwns); len(owners) > 0 {
+			next = owners[0]
+		} else if parents := w.from(at, graph.EdgeKindContains); len(parents) > 0 {
+			next = parents[0]
+		}
+		if next == "" || next == id || slices.Contains(chain, next) {
+			return chain
+		}
+		chain = append(chain, next)
+		at = next
+	}
+}
+
+func (w world) designContainer(id string) bool {
+	n, ok := w.nodes[id]
+	return ok && n.Kind == graph.NodeKindContainer && n.Layer == graph.LayerDesign
+}
+
+func (w world) external(id string) bool {
+	n := w.nodes[id]
+	return n.Kind == graph.NodeKindActor && n.Form == "external"
+}
+
+// focus is a design container's own focus, else its nearest enclosing design container's.
+func (w world) focus(id string) string {
+	if !w.designContainer(id) {
+		return ""
+	}
+	if f := w.nodes[id].Attrs["focus"]; len(f) > 0 {
+		return f[0]
+	}
+	for _, p := range w.from(id, graph.EdgeKindContains) {
+		if p != id && w.designContainer(p) {
+			return w.focus(p)
+		}
+	}
+	return ""
+}
+
+// applicable resolves the input of a view and tells whether the view applies to it.
+func (w world) applicable(kind ViewKind, id string) (string, bool) {
+	if id == "" && (kind == ViewKindArchitecture || kind == ViewKindEvents) {
+		id = w.system
+	}
+	n, ok := w.nodes[id]
+	if !ok || !n.Salient {
+		return id, false
+	}
+	switch kind {
+	case ViewKindArchitecture, ViewKindEvents:
+		return id, w.designContainer(id)
+	case ViewKindDdd, ViewKindC4:
+		return id, w.designContainer(id) && slices.Contains(w.nodes[w.system].Attrs["notations"], string(kind))
+	case ViewKindClass:
+		return id, n.Kind == graph.NodeKindContainer || n.Kind == graph.NodeKindType
+	case ViewKindSequence, ViewKindActivity:
+		return id, n.Kind == graph.NodeKindFlow
+	case ViewKindCalls:
+		return id, n.Kind == graph.NodeKindOp
+	case ViewKindProperty:
+		return id, n.Kind == graph.NodeKindProperty || w.designContainer(id)
+	case ViewKindCode:
+		return id, n.Layer == graph.LayerCode && (n.Kind == graph.NodeKindType || n.Kind == graph.NodeKindContainer && n.Form == "file")
+	}
+	return id, false
+}
+
+// drawnKinds are the kinds of the edges each view draws between its nodes.
+var drawnKinds = map[ViewKind][]graph.EdgeKind{
+	ViewKindArchitecture: {graph.EdgeKindUses, graph.EdgeKindDepends, graph.EdgeKindContains},
+	ViewKindClass:        {graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements, graph.EdgeKindContains},
+	ViewKindSequence: {graph.EdgeKindContains, graph.EdgeKindFrom, graph.EdgeKindCalls, graph.EdgeKindEmits,
+		graph.EdgeKindHandles, graph.EdgeKindTraces, graph.EdgeKindCovers},
+	ViewKindActivity: {graph.EdgeKindContains, graph.EdgeKindFrom, graph.EdgeKindCalls, graph.EdgeKindEmits,
+		graph.EdgeKindHandles, graph.EdgeKindTraces, graph.EdgeKindCovers},
+	ViewKindEvents:   {graph.EdgeKindEmits, graph.EdgeKindSubscribes},
+	ViewKindCalls:    {graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindRealizes},
+	ViewKindProperty: {graph.EdgeKindAbout, graph.EdgeKindContains, graph.EdgeKindChecks},
+	ViewKindCode:     {graph.EdgeKindContains, graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindCovers},
+	ViewKindDdd:      {graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements, graph.EdgeKindContains},
+	ViewKindC4:       {graph.EdgeKindUses, graph.EdgeKindDepends, graph.EdgeKindContains},
+}
+
+// stepsOf returns the steps of a flow in the order of their index.
+func (w world) stepsOf(flow string) []string {
+	var found []string
+	for id := range w.below(flow) {
+		if w.nodes[id].Kind == graph.NodeKindStep {
+			found = append(found, id)
+		}
+	}
+	slices.SortFunc(found, func(a, b string) int {
+		ia, ib := w.nodes[a].Attrs["index"][0], w.nodes[b].Attrs["index"][0]
+		if d := len(ia) - len(ib); d != 0 {
+			return d
+		}
+		return strings.Compare(ia, ib)
+	})
+	return found
+}
+
+// participants returns, step by step in order, each step's senders and then
+// its receivers: the owners of the operations it calls and the events it emits.
+func (w world) participants(flow string) []string {
+	var found []string
+	for _, s := range w.stepsOf(flow) {
+		found = append(found, w.to(s, graph.EdgeKindFrom)...)
+		for _, op := range w.to(s, graph.EdgeKindCalls) {
+			found = append(found, w.from(op, graph.EdgeKindContains)...)
+		}
+		found = append(found, w.to(s, graph.EdgeKindEmits)...)
+	}
+	return found
+}
+
+// candidates returns what the view selects for the input before folding (§7.1).
+func (w world) candidates(kind ViewKind, input string) map[string]bool {
+	c := map[string]bool{input: true}
+	below := w.below(input)
+	add := func(ids ...string) {
+		for _, id := range ids {
+			c[id] = true
+		}
+	}
+	switch kind {
+	case ViewKindArchitecture:
+		for id := range below {
+			if w.designContainer(id) || w.external(id) {
+				add(id)
+			}
+		}
+		for _, id := range keys(c) {
+			for _, o := range w.adjacent(id, graph.EdgeKindUses, graph.EdgeKindDepends) {
+				if w.designContainer(o) || w.external(o) {
+					add(o)
+				}
+			}
+		}
+	case ViewKindC4:
+		for id := range below {
+			if w.designContainer(id) && hasAny(w.nodes[id].Attrs["labels"], "software-system", "container", "component") {
+				add(id)
+			}
+		}
+		for _, id := range keys(c) {
+			for _, o := range w.adjacent(id, graph.EdgeKindUses, graph.EdgeKindDepends) {
+				if w.external(o) {
+					add(o)
+				}
+			}
+		}
+	case ViewKindClass:
+		if w.nodes[input].Kind == graph.NodeKindType {
+			for _, o := range w.adjacent(input, graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements) {
+				if w.nodes[o].Kind == graph.NodeKindType && w.nodes[o].Layer == w.nodes[input].Layer {
+					add(o)
+				}
+			}
+		} else {
+			for id := range below {
+				if k := w.nodes[id].Kind; k == graph.NodeKindContainer || k == graph.NodeKindType || w.external(id) {
+					add(id)
+				}
+			}
+		}
+		for _, id := range keys(c) {
+			for _, o := range w.to(id, graph.EdgeKindContains) {
+				if w.nodes[id].Kind == graph.NodeKindType && w.nodes[o].Kind == graph.NodeKindOp {
+					add(o)
+				}
+			}
+		}
+	case ViewKindSequence, ViewKindActivity:
+		add(w.participants(input)...)
+		for _, s := range w.stepsOf(input) {
+			add(s)
+			add(w.to(s, graph.EdgeKindCalls)...)
+			add(w.to(s, graph.EdgeKindHandles)...)
+			add(w.to(s, graph.EdgeKindTraces)...)
+			add(w.from(s, graph.EdgeKindCovers)...)
+		}
+	case ViewKindEvents:
+		delete(c, input)
+		for id := range below {
+			if n := w.nodes[id]; n.Kind == graph.NodeKindType && n.Form == "event" {
+				add(id)
+				add(w.from(id, graph.EdgeKindEmits)...)
+				add(w.from(id, graph.EdgeKindSubscribes)...)
+			}
+		}
+	case ViewKindCalls:
+		for _, f := range w.from(input, graph.EdgeKindRealizes) {
+			if w.nodes[f].Kind == graph.NodeKindOp {
+				add(f)
+			}
+		}
+		for grown := true; grown; {
+			grown = false
+			for _, e := range w.edges {
+				if n := w.nodes[e.To]; c[e.From] && !c[e.To] && (e.Kind == graph.EdgeKindCalls || e.Kind == graph.EdgeKindReaches) && n.Kind == graph.NodeKindOp && n.Salient {
+					add(e.To)
+					grown = true
+				}
+			}
+		}
+	case ViewKindProperty:
+		if w.nodes[input].Kind != graph.NodeKindProperty {
+			clear(c)
+			for id := range below {
+				if w.nodes[id].Kind == graph.NodeKindProperty {
+					add(id)
+				}
+			}
+		}
+		for _, p := range keys(c) {
+			add(w.to(p, graph.EdgeKindAbout)...)
+			add(w.from(p, graph.EdgeKindChecks)...)
+			for _, k := range w.to(p, graph.EdgeKindContains) {
+				if w.nodes[k].Kind == graph.NodeKindCase {
+					add(k)
+				}
+			}
+		}
+	case ViewKindCode:
+		for id := range below {
+			add(id)
+		}
+		for _, id := range keys(c) {
+			add(w.adjacent(id, graph.EdgeKindCalls, graph.EdgeKindReaches)...)
+			add(w.from(id, graph.EdgeKindCovers)...)
+		}
+	case ViewKindDdd:
+		clear(c)
+		below[input] = true
+		for b := range below {
+			if !w.designContainer(b) || !slices.Contains(w.nodes[b].Attrs["labels"], "bounded-context") {
+				continue
+			}
+			add(b)
+			for id := range w.below(b) {
+				if n := w.nodes[id]; n.Kind == graph.NodeKindType && (n.Form == "event" || hasAny(n.Attrs["labels"], "aggregate", "entity", "value", "domain-service", "repository", "factory")) {
+					add(id)
+				}
+			}
+		}
+	}
+	return c
+}
+
+func hasAny(values []string, wanted ...string) bool {
+	for _, v := range values {
+		if slices.Contains(wanted, v) {
+			return true
+		}
+	}
+	return false
+}
+
+func keys(s map[string]bool) []string {
+	return slices.Sorted(maps.Keys(s))
+}
+
+// exempt returns the containers that do not fold in a view of input: the
+// input, what encloses it, and the expanded identities.
+func (w world) exempt(input string, expand []string) map[string]bool {
+	e := map[string]bool{input: true}
+	for _, id := range append(w.up(input), expand...) {
+		e[id] = true
+	}
+	return e
+}
+
+// folder returns the container that decides how id is drawn, with its
+// focus: of the containers that enclose or are id, not exempt, with focus
+// support or utility, the one no other of them encloses.
+func (w world) folder(id string, exempt map[string]bool) (string, string) {
+	var folding []string
+	for _, c := range append(w.up(id), id) {
+		if f := w.focus(c); !exempt[c] && (f == "support" || f == "utility") {
+			folding = append(folding, c)
+		}
+	}
+	for _, c := range folding {
+		enclosed := false
+		for _, other := range folding {
+			enclosed = enclosed || other != c && slices.Contains(w.up(c), other)
+		}
+		if !enclosed {
+			return c, w.focus(c)
+		}
+	}
+	return "", ""
+}
+
+// expectation is what a view must draw.
+type expectation struct {
+	nodes, folded, hiders map[string]bool
+	edges                 map[edgeKey]bool
+}
+
+// placeInto draws id, or the support container it folds into, or records the
+// utility container that keeps it out.
+func (w world) placeInto(x *expectation, id string, exempt map[string]bool) {
+	switch c, f := w.folder(id, exempt); f {
+	case "support":
+		x.nodes[c], x.folded[c] = true, true
+	case "utility":
+		x.hiders[c] = true
+	default:
+		x.nodes[id] = true
+	}
+}
+
+func (w world) detailFunction(id string) bool {
+	n, ok := w.nodes[id]
+	return ok && n.Kind == graph.NodeKindOp && !n.Salient
+}
+
+// expected computes the whole view: the candidates' salient nodes placed,
+// then what each expansion reveals placed, then the edges between drawn nodes.
+func (w world) expected(kind ViewKind, input string, expand []string) expectation {
+	x := expectation{nodes: map[string]bool{}, folded: map[string]bool{}, hiders: map[string]bool{}, edges: map[edgeKey]bool{}}
+	exempt := w.exempt(input, expand)
+	for _, id := range keys(w.candidates(kind, input)) {
+		if w.nodes[id].Salient {
+			w.placeInto(&x, id, exempt)
+		}
+	}
+	firstPass := maps.Clone(x.nodes)
+	revealed := map[edgeKey]bool{}
+	for _, e := range expand {
+		if words := strings.Split(e, " "); len(words) == 3 && words[0] == "reaches" {
+			start, end := words[1], words[2]
+			if firstPass[start] && firstPass[end] && slices.Contains(drawnKinds[kind], graph.EdgeKindReaches) && slices.Contains(w.to(start, graph.EdgeKindReaches), end) {
+				for _, k := range w.detailPath(start, end) {
+					revealed[k] = true
+				}
+			}
+			continue
+		}
+		if n := w.nodes[e]; firstPass[e] && n.Kind == graph.NodeKindOp && n.Salient {
+			for _, c := range w.to(e, graph.EdgeKindCalls) {
+				if w.detailFunction(c) {
+					revealed[edgeKey{graph.EdgeKindCalls, e, c}] = true
+				}
+			}
+		}
+	}
+	for k := range revealed {
+		for _, id := range []string{k.from, k.to} {
+			if w.detailFunction(id) {
+				w.placeInto(&x, id, exempt)
+			}
+		}
+	}
+	for _, e := range w.edges {
+		k := edgeKey{e.Kind, e.From, e.To}
+		if x.nodes[e.From] && x.nodes[e.To] && (slices.Contains(drawnKinds[kind], e.Kind) || revealed[k]) {
+			x.edges[k] = true
+		}
+	}
+	return x
+}
+
+// detailPath returns the calls edges of the paths from start to end whose
+// inner functions, at least one, are all details.
+func (w world) detailPath(start, end string) []edgeKey {
+	reach := func(origin string, forward bool) map[string]bool {
+		found := map[string]bool{}
+		for grown := true; grown; {
+			grown = false
+			for _, e := range w.edges {
+				a, b := e.From, e.To
+				if !forward {
+					a, b = b, a
+				}
+				if e.Kind == graph.EdgeKindCalls && (a == origin || found[a]) && w.detailFunction(b) && !found[b] {
+					found[b], grown = true, true
+				}
+			}
+		}
+		return found
+	}
+	after, before := reach(start, true), reach(end, false)
+	inner := func(id string) bool { return after[id] && before[id] }
+	var path []edgeKey
+	for _, e := range w.edges {
+		if e.Kind == graph.EdgeKindCalls && (inner(e.From) && (inner(e.To) || e.To == end) || e.From == start && inner(e.To)) {
+			path = append(path, edgeKey{e.Kind, e.From, e.To})
+		}
+	}
+	return path
+}

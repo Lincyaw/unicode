@@ -14,14 +14,6 @@ import (
 	"github.com/lincyaw/unicode/internal/diag"
 )
 
-// Content is a set of nodes and edges for the properties.
-//
-//uc:realizes graph.Content
-type Content struct {
-	Nodes []Node
-	Edges []Edge
-}
-
 var (
 	nodeKinds = []NodeKind{NodeKindContainer, NodeKindType, NodeKindOp, NodeKindActor, NodeKindFlow, NodeKindStep,
 		NodeKindProperty, NodeKindCase, NodeKindRun, NodeKindResult, NodeKindReview}
@@ -84,12 +76,12 @@ func genNode() *rapid.Generator[Node] {
 	return rapid.Custom(func(t *rapid.T) Node { return genNodeWith(t, genWord().Draw(t, "id")) })
 }
 
-// genContent draws nodes with distinct identities and distinct edges between them.
+// genFragment draws nodes with distinct identities and distinct edges between them.
 //
 //uc:generates graph.encode-ignores-order.content
-func genContent() *rapid.Generator[Content] {
-	return rapid.Custom(func(t *rapid.T) Content {
-		var c Content
+func genFragment() *rapid.Generator[Fragment] {
+	return rapid.Custom(func(t *rapid.T) Fragment {
+		var c Fragment
 		ids := map[string]bool{}
 		for range rapid.IntRange(0, 8).Draw(t, "nodes") {
 			id := rapid.StringOfN(rapid.SampledFrom([]rune("ab.#-")), 1, 4, -1).Draw(t, "id")
@@ -171,7 +163,7 @@ func sameOrigin(p diag.Position, o struct{ Path, Line, Column any }) bool {
 }
 
 //uc:checks graph.encode-ignores-order
-func checkEncodeIgnoresOrder(t rapid.TB, content Content, rotation int) {
+func checkEncodeIgnoresOrder(t rapid.TB, content Fragment, rotation int) {
 	inOrder := build(t, content.Nodes, content.Edges)
 	rotated := build(t, rotate(content.Nodes, rotation), rotate(content.Edges, rotation))
 	snapshot := inOrder.Encode()
@@ -223,13 +215,13 @@ func checkEncodeIgnoresOrder(t rapid.TB, content Content, rotation int) {
 
 func TestEncodeIgnoresOrder(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
-		checkEncodeIgnoresOrder(t, genContent().Draw(t, "content"), rapid.IntRange(0, 1000).Draw(t, "rotation"))
+		checkEncodeIgnoresOrder(t, genFragment().Draw(t, "content"), rapid.IntRange(0, 1000).Draw(t, "rotation"))
 	})
 }
 
 func FuzzEncodeIgnoresOrder(f *testing.F) {
 	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkEncodeIgnoresOrder(t, genContent().Draw(t, "content"), rapid.IntRange(0, 1000).Draw(t, "rotation"))
+		checkEncodeIgnoresOrder(t, genFragment().Draw(t, "content"), rapid.IntRange(0, 1000).Draw(t, "rotation"))
 	}))
 }
 
