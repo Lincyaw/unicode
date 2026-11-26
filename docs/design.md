@@ -127,7 +127,7 @@ type Backend interface {
 - [model.md](model.md) §10：
   - 设计内部的第 1 至 6 条，流程的第 7 至 11 条；
   - 符号与用例的第 23、25、26、27 条，以及第 24 条中"生成的符号不带限定"的一半；
-  - 第 29 条，以及名称映射的第 30 条。
+  - 第 29 条，以及名称映射的第 30 条（撞名为 `design.name-collision`，映射不能往返为 `design.irreversible-name`）。
 
 其余约束要看代码，M2 由 `check` 检查。
 
@@ -332,7 +332,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 | --- | --- | --- |
 | M0 设计 | 本文、[model.md](model.md)、[format.md](format.md) | 设计评审通过 |
 | M1 设计文件 | `syntax`、`fmt`、`design`、`check --design-only`，包括流程、符号、限定、用例和录制文件的检查；用格式写出工具链自己的设计 | 工具链自己的 `design/` 通过 `fmt --check` 和 `check --design-only` |
-| M2 Go 后端 | 抽取、绑定、建图、全部静态约束 | 工具链的代码带上绑定，`unicode check` 在工具链自身上通过 |
+| M2 Go 后端 | 抽取、绑定、建图、全部静态约束 | 工具链的代码带上绑定，`unicode check` 在工具链自身上通过（2026-11-26 完成：0 条诊断，611 个声明项全部一致） |
 | M3 查询与视图 | `node`、`slice`、`impact`、`view`、`build` 和抽取缓存；查看器的雏形 | 此后给 agent 派任务都附上切片 |
 | M4 Go 生成与回放 | `gen`：骨架、生成器、`apply`、外部系统的替身和驱动；`unicode test` 的快路径 | 此后工具链的新组件和检查都由 `gen` 起头，工具链自己的性质由生成的驱动检查 |
 | M5 Python | 抽取脚本、`uc` 包、Python 的生成和回放；把 [format.md](format.md) §5 的商店例子做成样例仓库 | 样例仓库通过 `unicode check` 和 `unicode test` |
