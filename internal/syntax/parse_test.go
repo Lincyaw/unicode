@@ -19,14 +19,14 @@ func checkParseIsTotal(t rapid.TB, path string, kind FileKind, src []byte) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Fatalf("Parse 崩溃了：%v\n%s", r, debug.Stack())
+				t.Fatalf("Parse panicked: %v\n%s", r, debug.Stack())
 			}
 		}()
 		parsed = Parse(path, kind, src)
 	}()
 	if len(parsed.Diagnostics) == 0 {
 		if parsed.File == nil || parsed.File.Path != path || parsed.File.Kind != kind {
-			t.Fatalf("Parse 没有给出诊断，却也没有给出这个文件（路径 %q、种类 %s）的语法树", path, kind)
+			t.Fatalf("Parse gave no diagnostic, yet no tree of the file (path %q, kind %s)", path, kind)
 		}
 		return
 	}
@@ -35,13 +35,13 @@ func checkParseIsTotal(t rapid.TB, path string, kind FileKind, src []byte) {
 		at := d.Position
 		switch {
 		case !syntaxCode.MatchString(d.Code):
-			t.Fatalf("诊断码 %q 不是 syntax.<短横线名称> 的形式", d.Code)
+			t.Fatalf("the code %q is not of the form syntax.<kebab-name>", d.Code)
 		case d.Message == "" || d.Fix == "":
-			t.Fatalf("诊断 %s 没有写明原因或修正的办法：原因 %q，修正 %q", d.Code, d.Message, d.Fix)
+			t.Fatalf("the diagnostic %s lacks its cause or its fix: cause %q, fix %q", d.Code, d.Message, d.Fix)
 		case at.Path != path:
-			t.Fatalf("诊断 %s 的路径是 %q，不是被解析的文件 %q", d.Code, at.Path, path)
+			t.Fatalf("the diagnostic %s names the path %q, not the parsed file %q", d.Code, at.Path, path)
 		case at.Line < 1 || at.Line > len(lines) || at.Column < 1 || at.Column > len(lines[at.Line-1])+1:
-			t.Fatalf("诊断 %s 的位置 %d:%d 不在文件之内（文件有 %d 行）", d.Code, at.Line, at.Column, len(lines))
+			t.Fatalf("the diagnostic %s stands at %d:%d, outside the file of %d lines", d.Code, at.Line, at.Column, len(lines))
 		}
 	}
 }

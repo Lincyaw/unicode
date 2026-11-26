@@ -22,8 +22,9 @@ type Parsed struct {
 }
 
 // Parse parses one file with the lexis and grammar of docs/format.md §2–§3.
-// A file that does not parse gets one diagnostic, the first problem found; a
-// file that parses gets one for each rule of check.go it breaks.
+// Every forbidden character gets a diagnostic; a file that does not parse
+// gets one, the first problem found; a file that parses gets one for each
+// rule of check.go it breaks.
 //
 //uc:realizes syntax.parse
 func Parse(path string, kind FileKind, src []byte) Parsed {
@@ -79,34 +80,37 @@ func parseError(at locator, err error) diag.Diagnostic {
 	if errors.As(err, &lexErr) {
 		off := lexErr.Pos.Offset
 		if off < len(at.src) && at.src[off] == '"' {
-			return at.diagnostic(off, "syntax.unterminated-string", "字符串在行尾之前没有结束", "在字符串末尾补上 \"；字符串中的换行写作 \\n")
+			return at.diagnostic(off, "syntax.unterminated-string", "the string does not end on its line",
+				`close the string with "; inside a string, write a newline as \n`)
 		}
 		r, _ := utf8.DecodeRune(at.src[min(off, len(at.src)):])
-		return at.diagnostic(off, "syntax.unexpected-character", fmt.Sprintf("字符 %q 不能出现在字符串和注释之外", r),
-			"删去这个字符，或把它写进字符串或注释中")
+		return at.diagnostic(off, "syntax.unexpected-character", fmt.Sprintf("the character %q may not appear outside strings and comments", r),
+			"remove it, or put it inside a string or a comment")
 	}
 	var unexpected *participle.UnexpectedTokenError
 	if errors.As(err, &unexpected) {
-		return at.unexpected(unexpected.Unexpected)
+		return at.unexpected(unexpected)
 	}
 	// Participle's other errors (a capture that fails, too many repetitions)
 	// cannot arise from this grammar; one is still reported where it stands.
-	offset := 0
 	var perr participle.Error
 	if errors.As(err, &perr) {
-		offset = perr.Position().Offset
+		return at.diagnostic(perr.Position().Offset, "syntax.unexpected-token", perr.Message(), "rewrite this line by the grammar of docs/format.md §3")
 	}
-	return at.diagnostic(offset, "syntax.unexpected-token", "这里不合 docs/format.md §3 的语法", "按 docs/format.md §3 改写这一行")
+	return at.diagnostic(0, "syntax.unexpected-token", err.Error(), "rewrite the file by the grammar of docs/format.md §3")
 }
 
-// unexpected describes in Chinese a token the grammar did not expect. The
-// construct of its line, named by the line's first keyword, says what was
-// expected there and where the construct belongs.
-func (l locator) unexpected(t lexer.Token) diag.Diagnostic {
+// unexpected reports a token the grammar did not expect. Participle's message
+// names the token and its expectation; the fix gives the form of the line's
+// construct, named by the line's first keyword. Participle leaves the
+// expectation out of UnexpectedTokenError's Expect field and writes it only
+// into the message.
+func (l locator) unexpected(u *participle.UnexpectedTokenError) diag.Diagnostic {
+	t := u.Unexpected
 	off := t.Pos.Offset
 	if t.EOF() {
-		return l.diagnostic(off, "syntax.unexpected-end", "文件在这里意外结束：最后一行没有写完，或者有块缺少 }",
-			"补全最后一行，并为每个 { 补上独占一行的 }")
+		return l.diagnostic(off, "syntax.unexpected-end", "the file ends unexpectedly: its last line is unfinished, or a block lacks its }",
+			"finish the last line, and close every { with a } on a line of its own")
 	}
 	line := l.line(off)
 	key := line.construct()
@@ -114,29 +118,29 @@ func (l locator) unexpected(t lexer.Token) diag.Diagnostic {
 	value := key == "assignment" || key == "literal" || key == "where"
 	switch {
 	case t.Type == symbols["Comment"] && first:
-		return l.diagnostic(off, "syntax.comment-in-value", "值的内部不能写注释", "把注释移到这个赋值之上")
+		return l.diagnostic(off, "syntax.comment-in-value", "a value may not contain a comment", "move the comment above the assignment")
 	case t.Type == symbols["Comment"]:
-		return l.diagnostic(off, "syntax.trailing-comment", "注释必须独占一行", "把注释移到它所说明的那一行之上")
+		return l.diagnostic(off, "syntax.trailing-comment", "a comment must be on a line of its own", "move the comment onto its own line, above what it describes")
 	case key == "else":
-		return l.diagnostic(line[0].Pos.Offset, "syntax.misplaced-else", "else 必须与前一个分支的 } 写在同一行",
-			`把这一行接到上一行的 } 之后，写作 } else "标签" {`)
+		return l.diagnostic(line[0].Pos.Offset, "syntax.misplaced-else", "else must follow the previous branch's } on the same line",
+			`join this line to the } above it: } else "label" {`)
 	case t.Value == "}" && !first && !value:
-		return l.diagnostic(off, "syntax.brace-position", "} 必须写在行首", "把 } 移到下一行的行首")
+		return l.diagnostic(off, "syntax.brace-position", "} must start its line", "move the } to the start of the next line")
 	case l.after(off) == '{' && !value:
-		return l.diagnostic(off, "syntax.brace-position", "{ 必须写在行尾", "把 { 之后的内容移到下一行")
+		return l.diagnostic(off, "syntax.brace-position", "{ must end its line", "move what follows the { to the next line")
 	case key == "close" && first:
-		return l.diagnostic(off, "syntax.unexpected-token", "这个 } 没有可以结束的块：它之前有没有写完的值，或者它是多余的",
-			"补全它之前的值，让每个 [、( 和 { 都有配对的括号，或删去这个 }")
+		return l.diagnostic(off, "syntax.unexpected-token", "this } closes no block: a value before it is unfinished, or the } is extra",
+			"complete the value before it so that every [, ( and { is closed, or remove the }")
 	}
 	c := constructs[key]
 	switch {
 	case first && key == "unknown":
-		return l.diagnostic(off, "syntax.unexpected-token", fmt.Sprintf("这一行开头的 %s 不是关键字", describe(t)),
-			"以关键字开头改写这一行，例如 type、op、flow、property 或 case；流程中的步骤写作 发起方 -> 操作(实参)")
+		return l.diagnostic(off, "syntax.unexpected-token", u.Message(),
+			"start the line with a keyword such as type, op, flow, property or case; a step is written sender -> op(args)")
 	case first && key != "literal":
-		return l.diagnostic(off, "syntax.unexpected-token", c.name+"不能写在这里", c.name+"只能写在"+c.place)
+		return l.diagnostic(off, "syntax.unexpected-token", u.Message(), "a "+c.name+" belongs "+c.place)
 	}
-	return l.diagnostic(off, "syntax.unexpected-token", fmt.Sprintf("%s中不应当出现%s", c.name, describe(t)), c.name+"写作 "+c.form)
+	return l.diagnostic(off, "syntax.unexpected-token", u.Message(), "write the "+c.name+" as "+c.form)
 }
 
 // construct is one kind of line of docs/format.md §3: its name, how it is
@@ -144,38 +148,38 @@ func (l locator) unexpected(t lexer.Token) diag.Diagnostic {
 type construct struct{ name, form, place string }
 
 var constructs = map[string]construct{
-	"system":     {"系统声明", `system 名称 "摘要"`, "系统文件的开头"},
-	"notation":   {"记法声明", "notation ddd 或 notation c4", "系统文件的顶层"},
-	"language":   {"语言声明", "language go { 或 language python {，块中每行一个 root", "系统文件的顶层"},
-	"root":       {"源码根目录", `root "目录"`, "language 块中"},
-	"actor":      {"参与者声明", `actor 名称 person "摘要"，或 actor 名称 external "摘要"，后者可以带 { 类型和操作 }`, "系统文件的顶层"},
-	"component":  {"组件声明", `component 路径 "摘要" {`, "组件文件的开头"},
-	"label":      {"标签", "label 名称", "组件块或类型的块中"},
-	"focus":      {"关注度", "focus core、focus support 或 focus utility", "组件块中"},
-	"paths":      {"路径模式", `paths "模式", …`, "组件块中"},
-	"uses":       {"依赖", "uses 组件或外部系统, …", "组件块中"},
-	"type":       {"类型声明", `type 名称 形式 "摘要"，可以带 {，形式是 object、record、interface、enum、error 或 event`, "组件文件的顶层或外部系统的块中"},
-	"extends":    {"继承", "extends 类型", "类型的块中"},
-	"implements": {"实现", "implements 类型", "类型的块中"},
-	"field":      {"字段", "field 名称: 类型", "类型的块中"},
-	"value":      {"枚举值", "value 名称", "enum 类型的块中"},
-	"literal":    {"值", "数、字符串、true、false、none、枚举值、[元素, …]、{键: 值, …} 或 操作名(参数: 值, …)；值只能在开括号之后、逗号前后和闭括号之前换行", "用例的赋值中"},
-	"op":         {"操作声明", `op 名称(参数: 类型, …)，之后依次可以有 -> 类型、raises 类型, …、handles 类型 和 "摘要"`, "组件文件的顶层、类型的块中或外部系统的块中"},
-	"flow":       {"流程声明", `flow 名称 "摘要" {`, "组件文件的顶层"},
-	"property":   {"性质声明", `property 名称 形式 "摘要" {，形式是 invariant、postcondition、relation 或 transition`, "组件文件的顶层"},
-	"about":      {"约束的对象", "about 引用, …", "性质的块中"},
-	"forall":     {"符号", `forall 名称: 类型，生成的符号之后再写 generated "取值域的说明"`, "流程或性质的块中"},
-	"where":      {"限定", "where 符号路径 in 数..数、where 符号路径 in {枚举值, …} 或 where 符号路径 size 整数..整数", "流程或性质的块中"},
-	"case":       {"用例", `case 名称 "摘要" {，摘要可以省略；录制的用例写作 case 名称 coverage { 或 case 名称 counterexample {`, "流程或性质的块中，或录制文件的顶层"},
-	"corpus":     {"录制文件的声明", "corpus 性质或流程的标识", "录制文件的开头"},
-	"on":         {"错误处理", "on 错误类型 {，紧跟在调用之后", "流程的步骤中"},
-	"async":      {"异步片段", "async 操作 {", "流程的步骤中"},
-	"alt":        {"分支片段", `alt "标签" {，其余的分支写作 } else "标签" {`, "流程的步骤中"},
-	"opt":        {"可选片段", `opt "标签" {`, "流程的步骤中"},
-	"loop":       {"循环片段", `loop "标签" {`, "流程的步骤中"},
-	step:         {"步骤", "发起方 -> 操作(实参, …)，可以带 {；发起方 ->> 操作(实参, …)；或 发起方 emits 事件(实参, …)", "流程的步骤中"},
-	"assignment": {"赋值", "符号 = 值", "用例的块中"},
-	"unknown":    {"这一行", "关键字开头的声明或成员；流程中的步骤写作 发起方 -> 操作(实参)；用例中的赋值写作 符号 = 值", "块中"},
+	"system":     {"system declaration", `system name "summary"`, "at the start of the system file"},
+	"notation":   {"notation declaration", "notation ddd or notation c4", "at the top level of the system file"},
+	"language":   {"language declaration", "language go { or language python {, with one root per line", "at the top level of the system file"},
+	"root":       {"source root", `root "directory"`, "in a language block"},
+	"actor":      {"actor declaration", `actor name person "summary", or actor name external "summary" with an optional block of types and operations`, "at the top level of the system file"},
+	"component":  {"component declaration", `component path "summary" {`, "at the start of a component file"},
+	"label":      {"label", "label name", "in a component block or a type's block"},
+	"focus":      {"focus", "focus core, focus support or focus utility", "in a component block"},
+	"paths":      {"paths line", `paths "pattern", ...`, "in a component block"},
+	"uses":       {"uses line", "uses component-or-actor, ...", "in a component block"},
+	"type":       {"type declaration", `type Name form "summary", optionally followed by {, where the form is object, record, interface, enum, error or event`, "at the top level of a component file or in an external actor's block"},
+	"extends":    {"extends line", "extends Type", "in a type's block"},
+	"implements": {"implements line", "implements Type", "in a type's block"},
+	"field":      {"field", "field name: type", "in a type's block"},
+	"value":      {"enum value", "value name", "in an enum's block"},
+	"literal":    {"value", "a number, a string, true, false, none, an enum value, [item, ...], {key: value, ...} or op(param: value, ...), broken across lines only after an opening bracket, around commas and before a closing bracket", "in an assignment"},
+	"op":         {"operation declaration", `op name(param: type, ...), then optionally -> type, raises Type, ..., handles Type and "summary" in this order`, "at the top level of a component file, in a type's block or in an external actor's block"},
+	"flow":       {"flow declaration", `flow name "summary" {`, "at the top level of a component file"},
+	"property":   {"property declaration", `property name form "summary" {, where the form is invariant, postcondition, relation or transition`, "at the top level of a component file"},
+	"about":      {"about line", "about ref, ...", "in a property's block"},
+	"forall":     {"symbol", `forall name: type, followed by generated "domain" for a generated symbol`, "in a flow's or a property's block"},
+	"where":      {"limit", "where path in low..high, where path in {value, ...} or where path size low..high", "in a flow's or a property's block"},
+	"case":       {"case", `case name "summary" {, where the summary may be left out; a recorded case is case name coverage { or case name counterexample {`, "in a flow's or a property's block, or at the top level of a corpus file"},
+	"corpus":     {"corpus declaration", "corpus property-or-flow", "at the start of a corpus file"},
+	"on":         {"on block", "on Error {, right after a call", "among a flow's steps"},
+	"async":      {"async block", "async op {", "among a flow's steps"},
+	"alt":        {"alt fragment", `alt "label" {, with each further branch written } else "label" {`, "among a flow's steps"},
+	"opt":        {"opt fragment", `opt "label" {`, "among a flow's steps"},
+	"loop":       {"loop fragment", `loop "label" {`, "among a flow's steps"},
+	step:         {"step", "sender -> op(args) with an optional {, sender ->> op(args), or sender emits Event(args)", "among a flow's steps"},
+	"assignment": {"assignment", "symbol = value", "in a case's block"},
+	"unknown":    {"line", "a declaration or member that starts with a keyword, a step (sender -> op(args)) or an assignment (symbol = value)", "in a block"},
 }
 
 // lineTokens are the tokens of one line, without spaces.
@@ -242,23 +246,4 @@ func (l locator) after(offset int) byte {
 		return 0
 	}
 	return before[len(before)-1]
-}
-
-// tokenKinds are the Chinese names of the lexer's kinds of token.
-var tokenKinds = map[string]string{
-	"Comment": "注释", "String": "字符串", "Number": "数", "Ident": "名称", "SendArrow": "箭头", "Arrow": "箭头",
-	"DotDot": "区间符", "Punct": "标点",
-}
-
-// describe names a token in Chinese: its kind and its text.
-func describe(t lexer.Token) string {
-	if t.Type == symbols["NL"] {
-		return "换行"
-	}
-	for name, typ := range symbols {
-		if typ == t.Type {
-			return tokenKinds[name] + " " + t.Value
-		}
-	}
-	return t.Value
 }

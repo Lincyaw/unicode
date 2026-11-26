@@ -23,7 +23,7 @@ const (
 type NotADesignFile struct{}
 
 func (NotADesignFile) Error() string {
-	return "路径既不是 design/ 下的 .uc 文件，也不是 corpus/ 下的 .uc 文件"
+	return "the path is neither a .uc file under design/ nor one under corpus/"
 }
 
 const systemFilePath = "design/system.uc"

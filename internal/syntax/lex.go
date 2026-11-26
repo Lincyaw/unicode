@@ -42,13 +42,13 @@ func forbidden(at locator) []diag.Diagnostic {
 		code, message, fix := "", "", ""
 		switch {
 		case r == utf8.RuneError && size <= 1:
-			code, message, fix = "syntax.invalid-utf8", "文件在这里不是合法的 UTF-8 编码", "把文件保存为 UTF-8 文本"
+			code, message, fix = "syntax.invalid-utf8", "the file is not valid UTF-8 here", "save the file as UTF-8 text"
 		case r == '\t':
-			code, message, fix = "syntax.tab", "文件中不能有制表符", "把制表符换成空格；字符串中的制表符写作 \\t"
+			code, message, fix = "syntax.tab", "a file may not contain a tab", `replace the tab with spaces; inside a string, write it as \t`
 		case r == '\r':
-			code, message, fix = "syntax.carriage-return", "文件中不能有回车符，换行只用 LF", "把 CRLF 换行改成 LF"
+			code, message, fix = "syntax.carriage-return", "a file may not contain a carriage return; lines end with LF alone", "convert CRLF line endings to LF"
 		case r != '\n' && unicode.IsControl(r):
-			code, message, fix = "syntax.control-character", fmt.Sprintf("文件中不能有控制字符 %U", r), "删去这个控制字符"
+			code, message, fix = "syntax.control-character", fmt.Sprintf("a file may not contain the control character %U", r), "remove the control character"
 		}
 		if code != "" && code != last {
 			diags = append(diags, at.diagnostic(off, code, message, fix))
@@ -99,7 +99,7 @@ func checkEscapes(t lexer.Token) (lexer.Token, error) {
 		}
 		if _, ok := unescape[t.Value[i+1]]; !ok {
 			return t, &tokenError{t.Pos.Offset + i, "syntax.invalid-escape",
-				"字符串中只有四种转义：\\\"、\\\\、\\n 和 \\t", "把反斜杠写作 \\\\，或改用这四种转义之一"}
+				`a string has only four escapes: \", \\, \n and \t`, `write a backslash as \\, or use one of the four escapes`}
 		}
 		i++
 	}

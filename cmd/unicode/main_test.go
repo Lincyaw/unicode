@@ -141,13 +141,13 @@ func expectedStatus(path, content string, check bool) (string, []byte) {
 func runMain(t rapid.TB, args []string) (int, string, string) {
 	dir, err := os.MkdirTemp("", "unicode-out-")
 	if err != nil {
-		t.Fatalf("前提不成立：建不了临时目录：%v", err)
+		t.Fatalf("setup failed: cannot create a temporary directory: %v", err)
 	}
 	defer removeAll(t, dir)
 	stdout, err1 := os.Create(filepath.Join(dir, "stdout"))
 	stderr, err2 := os.Create(filepath.Join(dir, "stderr"))
 	if err1 != nil || err2 != nil {
-		t.Fatalf("前提不成立：建不了输出文件：%v %v", err1, err2)
+		t.Fatalf("setup failed: cannot create the output files: %v %v", err1, err2)
 	}
 	code := func() int {
 		savedOut, savedErr := os.Stdout, os.Stderr
@@ -158,7 +158,7 @@ func runMain(t rapid.TB, args []string) (int, string, string) {
 	out, err1 := readClosing(stdout)
 	errOut, err2 := readClosing(stderr)
 	if err1 != nil || err2 != nil {
-		t.Fatalf("前提不成立：读不出捕获的输出：%v %v", err1, err2)
+		t.Fatalf("setup failed: cannot read the captured output: %v %v", err1, err2)
 	}
 	return code, string(out), string(errOut)
 }
@@ -172,7 +172,7 @@ func readClosing(f *os.File) ([]byte, error) {
 
 func removeAll(t rapid.TB, dir string) {
 	if err := os.RemoveAll(dir); err != nil {
-		t.Fatalf("清理临时目录 %s 失败：%v", dir, err)
+		t.Fatalf("cannot remove the temporary directory %s: %v", dir, err)
 	}
 }
 
@@ -190,15 +190,15 @@ func modeOf(path string) os.FileMode {
 func writeRepo(t rapid.TB, files map[string]string) string {
 	root, err := os.MkdirTemp("", "unicode-repo-")
 	if err != nil {
-		t.Fatalf("前提不成立：建不了临时仓库：%v", err)
+		t.Fatalf("setup failed: cannot create a temporary repository: %v", err)
 	}
 	for path, content := range files {
 		full := filepath.Join(root, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatalf("前提不成立：建不了目录：%v", err)
+			t.Fatalf("setup failed: cannot create a directory: %v", err)
 		}
 		if err := os.WriteFile(full, []byte(content), 0o644); err != nil || os.Chmod(full, modeOf(path)) != nil {
-			t.Fatalf("前提不成立：写不了 %s：%v", path, err)
+			t.Fatalf("setup failed: cannot write %s: %v", path, err)
 		}
 	}
 	return root
@@ -216,7 +216,7 @@ func readRepo(t rapid.TB, root string) map[string]string {
 		return err
 	})
 	if err != nil {
-		t.Fatalf("读不出仓库中的文件：%v", err)
+		t.Fatalf("cannot read the repository's files: %v", err)
 	}
 	return files
 }
@@ -265,70 +265,70 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]string, check bool) {
 
 	code, stdout, stderr := runMain(t, append([]string{"--root", jsonRoot, "--format", "json"}, flags...))
 	if code != wantCode {
-		t.Fatalf("unicode fmt 的退出码是 %d，应当是 %d\n标准输出：%s\n标准错误：%s", code, wantCode, stdout, stderr)
+		t.Fatalf("unicode fmt exited with %d instead of %d\nstdout: %s\nstderr: %s", code, wantCode, stdout, stderr)
 	}
 	if stderr != "" {
-		t.Fatalf("--format json 时标准错误应当为空，却是：%s", stderr)
+		t.Fatalf("with --format json, stderr should be empty, yet it is: %s", stderr)
 	}
 	var report fmtReport
 	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
-		t.Fatalf("标准输出不是 fmt 的 JSON 报告：%v\n%s", err, stdout)
+		t.Fatalf("stdout is not fmt's JSON report: %v\n%s", err, stdout)
 	}
 	if len(report.Files) != len(paths) {
-		t.Fatalf("报告列出了 %d 个文件，仓库中有 %d 个：%v", len(report.Files), len(paths), report.Files)
+		t.Fatalf("the report lists %d files, the repository has %d: %v", len(report.Files), len(paths), report.Files)
 	}
 	diagnosed := map[string][]string{}
 	for _, d := range report.Diagnostics {
 		if d.Code == "" || d.Message == "" || d.Fix == "" || d.Line < 1 || d.Column < 1 {
-			t.Fatalf("诊断缺少诊断码、原因、修正或位置：%+v", d)
+			t.Fatalf("a diagnostic lacks its code, cause, fix or position: %+v", d)
 		}
 		diagnosed[d.Path] = append(diagnosed[d.Path], d.Code)
 		if d.Code != "cli.not-canonical" {
 			continue
 		}
 		if line, column := differsAt(files[d.Path], string(canonical[d.Path])); d.Line != line || d.Column != column {
-			t.Fatalf("%s 的 cli.not-canonical 位于 %d:%d，与规范格式第一处不同的字节却在 %d:%d", d.Path, d.Line, d.Column, line, column)
+			t.Fatalf("the cli.not-canonical of %s stands at %d:%d, yet the first byte that differs from the canonical form is at %d:%d", d.Path, d.Line, d.Column, line, column)
 		}
 	}
 	for i, f := range report.Files {
 		p := paths[i]
 		if f.Path != p || f.Status != want[p] {
-			t.Fatalf("报告中第 %d 个文件是 %s（%s），应当是 %s（%s）", i+1, f.Path, f.Status, p, want[p])
+			t.Fatalf("file %d of the report is %s (%s) instead of %s (%s)", i+1, f.Path, f.Status, p, want[p])
 		}
 		switch {
 		case want[p] == statusInvalid && len(diagnosed[p]) == 0:
-			t.Fatalf("不合法的文件 %s 没有诊断", p)
+			t.Fatalf("the invalid file %s has no diagnostic", p)
 		case want[p] == statusNotCanonical && !slices.Equal(diagnosed[p], []string{"cli.not-canonical"}):
-			t.Fatalf("不是规范格式的文件 %s 的诊断应当恰是一条 cli.not-canonical，却是 %v", p, diagnosed[p])
+			t.Fatalf("the non-canonical file %s should have exactly one cli.not-canonical, yet it has %v", p, diagnosed[p])
 		case (want[p] == statusUnchanged || want[p] == statusRewritten) && len(diagnosed[p]) > 0:
-			t.Fatalf("合法的文件 %s 不应当有诊断，却有 %v", p, diagnosed[p])
+			t.Fatalf("the valid file %s should have no diagnostic, yet it has %v", p, diagnosed[p])
 		}
 	}
 	after := readRepo(t, jsonRoot)
 	if len(after) != len(files) {
-		t.Fatalf("unicode fmt 之后仓库中有 %d 个文件，之前有 %d 个", len(after), len(files))
+		t.Fatalf("after unicode fmt the repository has %d files, before it had %d", len(after), len(files))
 	}
 	for _, p := range paths {
 		info, err := os.Stat(filepath.Join(jsonRoot, filepath.FromSlash(p)))
 		if err != nil {
-			t.Fatalf("unicode fmt 之后读不到 %s：%v", p, err)
+			t.Fatalf("after unicode fmt, %s cannot be read: %v", p, err)
 		}
 		if info.Mode().Perm() != modeOf(p) {
-			t.Fatalf("%s 的权限在 unicode fmt 之后是 %v，之前是 %v", p, info.Mode().Perm(), modeOf(p))
+			t.Fatalf("after unicode fmt the mode of %s is %v, before it was %v", p, info.Mode().Perm(), modeOf(p))
 		}
 	}
 	for _, p := range paths {
 		switch {
 		case (check || want[p] == statusInvalid) && after[p] != files[p]:
-			t.Fatalf("%s 不应当被改写（--check %v，状态 %s），却被改写了", p, check, want[p])
+			t.Fatalf("%s should not be rewritten (--check %v, status %s), yet it was", p, check, want[p])
 		case !check && want[p] != statusInvalid && after[p] != string(canonical[p]):
-			t.Fatalf("合法的文件 %s 在 unicode fmt 之后不是规范格式\n之后：\n%s\n规范格式：\n%s", p, after[p], canonical[p])
+			t.Fatalf("the valid file %s is not canonical after unicode fmt\nafter:\n%s\ncanonical:\n%s", p, after[p], canonical[p])
 		}
 	}
 
 	code, stdout, stderr = runMain(t, append([]string{"--root", textRoot}, flags...))
 	if code != wantCode {
-		t.Fatalf("--format text 时 unicode fmt 的退出码是 %d，应当是 %d", code, wantCode)
+		t.Fatalf("with --format text, unicode fmt exited with %d instead of %d", code, wantCode)
 	}
 	var listed []string
 	for _, p := range paths {
@@ -337,19 +337,19 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]string, check bool) {
 		}
 	}
 	if stdout != strings.Join(listed, "") {
-		t.Fatalf("--format text 时标准输出应当逐行列出改写或不是规范格式的文件：\n%s\n却是：\n%s", strings.Join(listed, ""), stdout)
+		t.Fatalf("with --format text, stdout should list the rewritten or non-canonical files one per line:\n%s\nyet it is:\n%s", strings.Join(listed, ""), stdout)
 	}
 	if lines := strings.Count(stderr, "\n"); lines != len(report.Diagnostics) {
-		t.Fatalf("--format text 时标准错误应当每条诊断一行，共 %d 行，却有 %d 行：\n%s", len(report.Diagnostics), lines, stderr)
+		t.Fatalf("with --format text, stderr should have one line per diagnostic, %d in all, yet it has %d:\n%s", len(report.Diagnostics), lines, stderr)
 	}
 	for _, d := range report.Diagnostics {
-		line := fmt.Sprintf("%s:%d:%d: %s: %s（修正：%s）\n", d.Path, d.Line, d.Column, d.Code, d.Message, d.Fix)
+		line := fmt.Sprintf("%s:%d:%d: %s: %s (fix: %s)\n", d.Path, d.Line, d.Column, d.Code, d.Message, d.Fix)
 		if !strings.Contains(stderr, line) {
-			t.Fatalf("--format text 时标准错误中没有诊断 %q", line)
+			t.Fatalf("with --format text, stderr lacks the diagnostic %q", line)
 		}
 	}
 	if !maps.Equal(readRepo(t, textRoot), after) {
-		t.Fatalf("--format text 与 --format json 对同一个仓库改写的结果不同")
+		t.Fatalf("--format text and --format json rewrite the same repository differently")
 	}
 }
 

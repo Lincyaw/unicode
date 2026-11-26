@@ -62,23 +62,23 @@ func newOrder(what, code string, ranks [][]string, single ...string) order {
 }
 
 // step names the steps that start with a sender rather than a keyword.
-const step = "步骤"
+const step = "step"
 
 var (
 	fileOrders = map[FileKind]order{
-		FileKindSystem: newOrder("系统文件", "syntax.declaration-order",
+		FileKindSystem: newOrder("system file", "syntax.declaration-order",
 			[][]string{{"system"}, {"notation"}, {"language"}, {"actor"}}, "system"),
-		FileKindComponent: newOrder("组件文件", "syntax.declaration-order",
+		FileKindComponent: newOrder("component file", "syntax.declaration-order",
 			[][]string{{"component"}, {"type"}, {"op"}, {"flow"}, {"property"}}, "component"),
-		FileKindCorpus: newOrder("录制文件", "syntax.declaration-order", [][]string{{"corpus"}, {"case"}}, "corpus"),
+		FileKindCorpus: newOrder("corpus file", "syntax.declaration-order", [][]string{{"corpus"}, {"case"}}, "corpus"),
 	}
-	languageOrder  = newOrder("language 块", "syntax.member-order", [][]string{{"root"}})
-	componentOrder = newOrder("组件块", "syntax.member-order", [][]string{{"label"}, {"focus"}, {"paths"}, {"uses"}}, "focus", "paths", "uses")
-	externalOrder  = newOrder("外部系统", "syntax.member-order", [][]string{{"type"}, {"op"}})
-	typeOrder      = newOrder("类型", "syntax.member-order", [][]string{{"label"}, {"extends"}, {"implements"}, {"field", "value"}, {"op"}})
-	flowOrder      = newOrder("流程", "syntax.member-order",
+	languageOrder  = newOrder("language block", "syntax.member-order", [][]string{{"root"}})
+	componentOrder = newOrder("component block", "syntax.member-order", [][]string{{"label"}, {"focus"}, {"paths"}, {"uses"}}, "focus", "paths", "uses")
+	externalOrder  = newOrder("external actor", "syntax.member-order", [][]string{{"type"}, {"op"}})
+	typeOrder      = newOrder("type", "syntax.member-order", [][]string{{"label"}, {"extends"}, {"implements"}, {"field", "value"}, {"op"}})
+	flowOrder      = newOrder("flow", "syntax.member-order",
 		[][]string{{"forall"}, {"where"}, {step, "on", "async", "alt", "opt", "loop"}, {"case"}})
-	propertyOrder = newOrder("性质", "syntax.member-order", [][]string{{"about"}, {"forall"}, {"where"}, {"case"}}, "about")
+	propertyOrder = newOrder("property", "syntax.member-order", [][]string{{"about"}, {"forall"}, {"where"}, {"case"}}, "about")
 )
 
 var (
@@ -122,11 +122,11 @@ func lines[L any](c *checker, o order, ls []L) map[string]int {
 		rank, ok := o.ranks[kw]
 		switch {
 		case !ok:
-			c.report(pos, "syntax.unknown-declaration", fmt.Sprintf("%s中不能有 %s 声明", o.what, kw), "删去它，或把它移到能容纳它的文件中")
+			c.report(pos, "syntax.unknown-declaration", fmt.Sprintf("a %s may not contain a %s declaration", o.what, kw), "remove it, or move it to a file that may hold it")
 		case slices.Contains(o.single, kw) && seen[kw] > 0:
-			c.report(pos, "syntax.duplicate-member", fmt.Sprintf("%s中只能有一个 %s", o.what, kw), "删去重复的 "+kw)
+			c.report(pos, "syntax.duplicate-member", fmt.Sprintf("a %s may have only one %s", o.what, kw), "remove the repeated "+kw)
 		case last != "" && rank < o.ranks[last]:
-			c.report(pos, o.code, fmt.Sprintf("%s中的 %s 必须写在 %s 之前", o.what, kw, last), fmt.Sprintf("把这个 %s 移到所有 %s 之前", kw, last))
+			c.report(pos, o.code, fmt.Sprintf("in a %s, %s must come before %s", o.what, kw, last), fmt.Sprintf("move this %s before every %s", kw, last))
 		}
 		seen[kw]++
 		if ok && (last == "" || rank > o.ranks[last]) {
@@ -148,16 +148,16 @@ func (c *checker) file(f *File) {
 	first := slices.IndexFunc(f.Decls, func(d Decl) bool { return keyword(d) != "" })
 	switch {
 	case first < 0:
-		c.report(lexer.Position{}, "syntax.missing-header", fmt.Sprintf("%s必须以 %s 声明开头", o.what, header), "在文件开头写上 "+header+" 声明")
+		c.report(lexer.Position{}, "syntax.missing-header", fmt.Sprintf("a %s must start with a %s declaration", o.what, header), "start the file with a "+header+" declaration")
 	case keyword(f.Decls[first]) != header:
-		c.report(position(f.Decls[first]), "syntax.missing-header", fmt.Sprintf("%s必须以 %s 声明开头", o.what, header), "在文件开头写上 "+header+" 声明")
+		c.report(position(f.Decls[first]), "syntax.missing-header", fmt.Sprintf("a %s must start with a %s declaration", o.what, header), "start the file with a "+header+" declaration")
 	}
 	lines(c, o, f.Decls)
 	for _, d := range f.Decls {
 		switch d := d.(type) {
 		case *LanguageDecl:
 			seen := lines(c, languageOrder, d.Lines)
-			c.require(seen, "root", d.Pos, "language 块中至少要有一个 root", "在块中写上 root \"源码根目录\"")
+			c.require(seen, "root", d.Pos, "a language block needs at least one root", `add root "directory" to the block`)
 		case *ExternalDecl:
 			lines(c, externalOrder, d.Lines)
 			for _, l := range d.Lines {
@@ -167,7 +167,7 @@ func (c *checker) file(f *File) {
 			}
 		case *ComponentDecl:
 			seen := lines(c, componentOrder, d.Lines)
-			c.require(seen, "paths", d.Pos, "组件块中必须有 paths", "在组件块中写上 paths \"路径模式\"")
+			c.require(seen, "paths", d.Pos, "a component block needs paths", `add paths "pattern" to the component block`)
 		case *TypeDecl:
 			c.typeDecl(d)
 		case *FlowDecl:
@@ -175,7 +175,7 @@ func (c *checker) file(f *File) {
 			steps(c, d.Lines)
 		case *PropertyDecl:
 			seen := lines(c, propertyOrder, d.Lines)
-			c.require(seen, "about", d.Pos, "性质必须写 about", "在性质的块中第一行写上 about 和它约束的对象")
+			c.require(seen, "about", d.Pos, "a property needs about", "add about and what the property constrains as the first line of its block")
 		}
 	}
 }
@@ -186,11 +186,11 @@ func (c *checker) typeDecl(d *TypeDecl) {
 		switch l := l.(type) {
 		case *Field:
 			if d.Form == "enum" || d.Form == "interface" {
-				c.report(l.Pos, "syntax.field-not-allowed", fmt.Sprintf("%s 类型不能有 field", d.Form), "删去这个 field，或改变类型的形式")
+				c.report(l.Pos, "syntax.field-not-allowed", fmt.Sprintf("an %s type may not have fields", d.Form), "remove the field, or change the type's form")
 			}
 		case *EnumValue:
 			if d.Form != "enum" {
-				c.report(l.Pos, "syntax.value-outside-enum", "只有 enum 类型才能有 value", "删去这个 value，或把类型的形式改成 enum")
+				c.report(l.Pos, "syntax.value-outside-enum", "only an enum may have values", "remove the value, or make the type an enum")
 			}
 		}
 	}
@@ -205,7 +205,7 @@ func steps[L any](c *checker, ls []L) {
 			continue
 		}
 		if kw == "on" && prev != "call" && prev != "on" {
-			c.report(position(l), "syntax.on-without-call", "on 只能紧跟在一个调用（->）或另一个 on 之后", "把这个 on 块移到它处理的那个调用之后")
+			c.report(position(l), "syntax.on-without-call", "on must follow a call (->) or another on", "move the on block right after the call whose error it handles")
 		}
 		prev = kw
 		switch l := any(l).(type) {
@@ -264,7 +264,7 @@ func (c *checker) walk(v reflect.Value, pos lexer.Position) {
 func (c *checker) integers(l IntervalLimit) {
 	for _, n := range []Number{l.Low, l.High} {
 		if strings.Contains(string(n), ".") {
-			c.report(l.Pos, "syntax.not-an-integer", fmt.Sprintf("大小的界限必须是整数，不能是 %s", n), "把界限改成整数")
+			c.report(l.Pos, "syntax.not-an-integer", fmt.Sprintf("a size bound must be an integer, not %s", n), "make the bound an integer")
 		}
 	}
 }
@@ -281,9 +281,9 @@ type nameClass struct {
 }
 
 var (
-	kebabClass = nameClass{"短横线写法（如 order-line）", matcher(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)}
-	upperClass = nameClass{"大驼峰写法（如 OrderLine）", matcher(`^[A-Z][A-Za-z0-9]*$`)}
-	lowerClass = nameClass{"小驼峰写法（如 orderLine）", matcher(`^[a-z][A-Za-z0-9]*$`)}
+	kebabClass = nameClass{"in kebab-case, like order-line", matcher(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)}
+	upperClass = nameClass{"in UpperCamelCase, like OrderLine", matcher(`^[A-Z][A-Za-z0-9]*$`)}
+	lowerClass = nameClass{"in lowerCamelCase, like orderLine", matcher(`^[a-z][A-Za-z0-9]*$`)}
 	classes    = map[reflect.Type]nameClass{
 		reflect.TypeFor[Kebab](): kebabClass,
 		reflect.TypeFor[Upper](): upperClass,
@@ -294,10 +294,10 @@ var (
 func (c *checker) text(v reflect.Value, pos lexer.Position) {
 	s := v.String()
 	if class, ok := classes[v.Type()]; ok && !class.pattern(s) {
-		c.report(pos, "syntax.invalid-name", fmt.Sprintf("名称 %s 必须用%s", s, class.name), "把它改成"+class.name)
+		c.report(pos, "syntax.invalid-name", fmt.Sprintf("the name %s must be written %s", s, class.name), "rename it "+class.name)
 	}
 	if v.Type() == reflect.TypeFor[Lower]() && slices.Contains(reserved, s) {
-		c.report(pos, "syntax.reserved-name", fmt.Sprintf("%s 是保留字，不能用作名称", s), "换一个名称；true、false 和 none 是值的字面量")
+		c.report(pos, "syntax.reserved-name", fmt.Sprintf("%s is reserved and may not be a name", s), "choose another name; true, false and none are literal values")
 	}
 	if v.Type() != reflect.TypeFor[Summary]() {
 		return
@@ -306,11 +306,11 @@ func (c *checker) text(v reflect.Value, pos lexer.Position) {
 	last, _ := utf8.DecodeLastRuneInString(s)
 	switch {
 	case s == "":
-		c.report(pos, "syntax.empty-summary", "摘要不能为空", "写一句话说明它")
+		c.report(pos, "syntax.empty-summary", "a summary may not be empty", "write one sentence that says what it is")
 	case strings.ContainsAny(s, "\n\t"):
-		c.report(pos, "syntax.summary-tab-or-newline", "摘要不能含换行或制表符", "把摘要写成一行，去掉其中的 \\n 和 \\t")
+		c.report(pos, "syntax.summary-tab-or-newline", "a summary may not contain a newline or a tab", `write the summary on one line, without \n and \t`)
 	case unicode.IsSpace(first) || unicode.IsSpace(last):
-		c.report(pos, "syntax.summary-surrounding-space", "摘要的首尾不能有空白", "删去摘要首尾的空白")
+		c.report(pos, "syntax.summary-surrounding-space", "a summary may not begin or end with white space", "remove the white space at the summary's ends")
 	}
 }
 
@@ -324,17 +324,17 @@ type refForm struct {
 }
 
 var refForms = map[reflect.Type]refForm{
-	reflect.TypeFor[TypeRef]():       {"类型引用", "[组件.]类型，例如 Order、inventory.Stock", []nameClass{upperClass}, false},
-	reflect.TypeFor[OpRef]():         {"操作引用", "[组件.][类型.]操作，例如 parse、Order.total、inventory.Stock.reserve", []nameClass{lowerClass}, true},
-	reflect.TypeFor[Participant]():   {"发起方", "参与者、组件或 [组件.]类型，例如 customer、payment、payment.Payments", []nameClass{kebabClass, upperClass}, false},
-	reflect.TypeFor[ComponentPath](): {"组件路径", "以 . 连接的短横线名称，例如 order、lang.golang", []nameClass{kebabClass}, false},
+	reflect.TypeFor[TypeRef]():       {"type reference", "[component.]Type, like Order or inventory.Stock", []nameClass{upperClass}, false},
+	reflect.TypeFor[OpRef]():         {"operation reference", "[component.][Type.]op, like parse, Order.total or inventory.Stock.reserve", []nameClass{lowerClass}, true},
+	reflect.TypeFor[Participant]():   {"sender", "an actor, a component or [component.]Type, like customer, payment or payment.Payments", []nameClass{kebabClass, upperClass}, false},
+	reflect.TypeFor[ComponentPath](): {"component path", "kebab-case names joined by ., like order or lang.golang", []nameClass{kebabClass}, false},
 }
 
 func (c *checker) reference(v reflect.Value, pos lexer.Position) {
 	if v.Type() == reflect.TypeFor[Ref]() {
 		for _, s := range v.Interface().(Ref).Segments {
 			if !kebabClass.pattern(s) && !upperClass.pattern(s) && !lowerClass.pattern(s) {
-				c.report(pos, "syntax.invalid-name", fmt.Sprintf("引用中的 %s 不是合法的名称", s), "名称用短横线、大驼峰或小驼峰写法")
+				c.report(pos, "syntax.invalid-name", fmt.Sprintf("%s in a reference is not a valid name", s), "write each segment in kebab-case, UpperCamelCase or lowerCamelCase")
 				return
 			}
 		}
@@ -354,7 +354,7 @@ func (c *checker) reference(v reflect.Value, pos lexer.Position) {
 		valid = valid && kebabClass.pattern(s)
 	}
 	if !valid {
-		c.report(pos, "syntax.invalid-reference", fmt.Sprintf("%s %s 不合写法：应当写作 %s", form.what, strings.Join(segs, "."), form.example),
-			"按 "+form.example+" 改写这个引用")
+		c.report(pos, "syntax.invalid-reference", fmt.Sprintf("the %s %s is not written %s", form.what, strings.Join(segs, "."), form.example),
+			"rewrite the reference as "+form.example)
 	}
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -23,9 +22,11 @@ import (
 func fmtCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
 	check := false
 	c := &cobra.Command{
-		Use:                   "fmt [--check] [路径…]",
-		Short:                 "把设计文件和录制文件改写成规范格式；带 --check 时只报告，不改写。不给路径时处理 design/ 和 corpus/ 下的全部文件",
-		DisableFlagsInUseLine: true,
+		Use:   "fmt [path...]",
+		Short: "Rewrite design and corpus files in the canonical format; with --check, only report the files that are not",
+		Long: "fmt rewrites design and corpus files in the canonical format of docs/format.md. With --check it rewrites\n" +
+			"nothing and reports each file that is not canonical. Without paths it takes every file under design/ and corpus/;\n" +
+			"a path names a file or a directory inside them.",
 		RunE: func(_ *cobra.Command, paths []string) error {
 			root, err := findRoot(g.root)
 			if err != nil {
@@ -34,7 +35,7 @@ func fmtCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
 			return runFmt(root, g.format, check, paths, stdout, stderr)
 		},
 	}
-	c.Flags().BoolVar(&check, "check", false, "只报告不是规范格式的文件，不改写")
+	c.Flags().BoolVar(&check, "check", false, "report the files that are not canonical, and rewrite nothing")
 	return c
 }
 
@@ -92,7 +93,7 @@ func runFmt(root, format string, check bool, args []string, stdout, stderr io.Wr
 	var out, errOut []byte
 	if format == "json" {
 		if out, err = json.MarshalIndent(report, "", "  "); err != nil {
-			return &exitError{code: exitUnexpected, err: errors.New("写不出 JSON 报告")}
+			return &exitError{code: exitUnexpected, err: fmt.Errorf("cannot encode the JSON report: %w", err)}
 		}
 		out = append(out, '\n')
 	} else {
@@ -102,7 +103,7 @@ func runFmt(root, format string, check bool, args []string, stdout, stderr io.Wr
 			}
 		}
 		for _, d := range diags {
-			errOut = fmt.Appendf(errOut, "%s:%d:%d: %s: %s（修正：%s）\n", d.Position.Path, d.Position.Line, d.Position.Column, d.Code, d.Message, d.Fix)
+			errOut = fmt.Appendf(errOut, "%s:%d:%d: %s: %s (fix: %s)\n", d.Position.Path, d.Position.Line, d.Position.Column, d.Code, d.Message, d.Fix)
 		}
 	}
 	if _, err := stdout.Write(out); err != nil {
@@ -132,15 +133,15 @@ func fmtPaths(root string, args []string) ([]string, error) {
 	for _, a := range args {
 		abs, err := filepath.Abs(a)
 		if err != nil {
-			return nil, usageError("路径 %s 不是一个可用的路径", a)
+			return nil, usageError("path %s: %v", a, err)
 		}
 		rel, err := filepath.Rel(root, abs)
 		top, _, _ := strings.Cut(filepath.ToSlash(rel), "/")
 		if err != nil || top != "design" && top != "corpus" {
-			return nil, usageError("路径 %s 不在仓库 %s 的 design/ 或 corpus/ 之内", a, root)
+			return nil, usageError("path %s is not inside design/ or corpus/ of the repository %s", a, root)
 		}
 		if _, err := os.Stat(abs); err != nil {
-			return nil, usageError("路径 %s 不存在", a)
+			return nil, usageError("path %s does not exist", a)
 		}
 		tops = append(tops, abs)
 	}
@@ -160,8 +161,7 @@ func fmtPaths(root string, args []string) ([]string, error) {
 			return nil
 		})
 		if err != nil {
-			cause, _ := fileProblem(err)
-			return nil, &exitError{code: exitUnexpected, err: fmt.Errorf("读不出 %s 下的文件：%s", top, cause)}
+			return nil, &exitError{code: exitUnexpected, err: fmt.Errorf("cannot list the files under %s: %w", top, err)}
 		}
 	}
 	slices.Sort(paths)
@@ -176,17 +176,16 @@ func formatFile(root, rel string, check bool) (string, []diag.Diagnostic, error)
 	if err != nil {
 		return statusInvalid, []diag.Diagnostic{{
 			Code: "cli.not-a-design-file", Subject: rel, Position: at,
-			Message: "design/ 和 corpus/ 中只能有 .uc 文件，这个文件不是",
-			Fix:     "把这个文件移出 design/ 和 corpus/，或给它改名",
+			Message: "design/ and corpus/ may hold only .uc files, and this file is not one",
+			Fix:     "move the file out of design/ and corpus/, or rename it",
 		}}, nil
 	}
 	full := filepath.Join(root, filepath.FromSlash(rel))
 	src, err := os.ReadFile(full)
 	if err != nil {
-		cause, fix := fileProblem(err)
 		return statusInvalid, []diag.Diagnostic{{
 			Code: "cli.unreadable-file", Subject: rel, Position: at,
-			Message: "读不出这个文件：" + cause, Fix: fix,
+			Message: "cannot read the file: " + err.Error(), Fix: "make the file readable, or remove it",
 		}}, nil
 	}
 	parsed := syntax.Parse(rel, kind, src)
@@ -201,13 +200,12 @@ func formatFile(root, rel string, check bool) (string, []diag.Diagnostic, error)
 		line, column := firstDifference(src, out)
 		return statusNotCanonical, []diag.Diagnostic{{
 			Code: "cli.not-canonical", Subject: rel, Position: diag.Position{Path: rel, Line: line, Column: column},
-			Message: "文件不是规范格式：从这里起与 unicode fmt 的输出不同",
-			Fix:     "运行 unicode fmt",
+			Message: "the file is not in the canonical format: it differs from the output of unicode fmt from here on",
+			Fix:     "run unicode fmt",
 		}}, nil
 	}
 	if err := renameio.WriteFile(full, out, 0o644, renameio.WithExistingPermissions()); err != nil {
-		cause, _ := fileProblem(err)
-		return "", nil, fmt.Errorf("写不进 %s：%s", rel, cause)
+		return "", nil, fmt.Errorf("cannot write %s: %w", rel, err)
 	}
 	return statusRewritten, nil, nil
 }
@@ -220,15 +218,4 @@ func firstDifference(a, b []byte) (int, int) {
 	}
 	lineStart := bytes.LastIndexByte(a[:n], '\n') + 1
 	return bytes.Count(a[:n], []byte{'\n'}) + 1, n - lineStart + 1
-}
-
-// fileProblem names in Chinese why a file could not be read or written, and the fix.
-func fileProblem(err error) (string, string) {
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return "文件不存在，可能在处理之前被删除或移走了", "重新运行 unicode fmt"
-	case errors.Is(err, fs.ErrPermission):
-		return "没有读写这个文件的权限", "给这个文件和它所在的目录加上读写权限"
-	}
-	return "文件系统报告了错误", "检查这个文件是否是普通文件、能否读写，或删去它"
 }

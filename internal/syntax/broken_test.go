@@ -144,10 +144,10 @@ func genBroken() *rapid.Generator[Broken] {
 func checkRejectsBrokenText(t rapid.TB, broken Broken) {
 	parsed := Parse(samplePaths[broken.Kind], broken.Kind, []byte(broken.Text))
 	if parsed.File != nil {
-		t.Fatalf("违反规则的文本应当得到诊断 %s，却解析出了语法树\n文本：\n%s", broken.Code, broken.Text)
+		t.Fatalf("text that breaks a rule should get %s, yet it parsed into a tree\ntext:\n%s", broken.Code, broken.Text)
 	}
 	if !slices.ContainsFunc(parsed.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == broken.Code }) {
-		t.Fatalf("违反规则的文本应当得到诊断 %s，得到的却是：%s\n文本：\n%s", broken.Code, describeDiagnostics(parsed), broken.Text)
+		t.Fatalf("text that breaks a rule should get %s, yet it got:%s\ntext:\n%s", broken.Code, describeDiagnostics(parsed), broken.Text)
 	}
 }
 

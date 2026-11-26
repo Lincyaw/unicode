@@ -44,21 +44,21 @@ func checkFormatIsStable(t rapid.TB, sample Sample) {
 	path := samplePaths[sample.Kind]
 	first := Parse(path, sample.Kind, []byte(sample.Text))
 	if len(first.Diagnostics) > 0 {
-		t.Fatalf("合法的文本 s 解析出了诊断：%s\ns:\n%s", describeDiagnostics(first), sample.Text)
+		t.Fatalf("the valid text s got diagnostics:%s\ns:\n%s", describeDiagnostics(first), sample.Text)
 	}
 	printed := first.File.Print()
 	if problem := cmp.Or(canonicalProblem(printed), spacingProblem(printed)); problem != "" {
-		t.Fatalf("s 解析后打印得到的 t 不是规范格式：%s\nt:\n%s", problem, printed)
+		t.Fatalf("t, printed from s, is not canonical: %s\nt:\n%s", problem, printed)
 	}
 	second := Parse(path, sample.Kind, printed)
 	if len(second.Diagnostics) > 0 {
-		t.Fatalf("s 解析后打印得到的 t 解析出了诊断：%s\nt:\n%s", describeDiagnostics(second), printed)
+		t.Fatalf("t, printed from s, got diagnostics:%s\nt:\n%s", describeDiagnostics(second), printed)
 	}
 	if where := treeDifference(reflect.ValueOf(first.File), reflect.ValueOf(second.File), "File"); where != "" {
-		t.Fatalf("t 解析出的语法树与 s 的不同，最先不同的是 %s\ns:\n%s\nt:\n%s", where, sample.Text, printed)
+		t.Fatalf("t parses into another tree than s, first at %s\ns:\n%s\nt:\n%s", where, sample.Text, printed)
 	}
 	if again := second.File.Print(); !bytes.Equal(again, printed) {
-		t.Fatalf("t 再解析再打印得到的不是 t\nt:\n%s\n再打印:\n%s", printed, again)
+		t.Fatalf("t parsed and printed again is not t\nt:\n%s\nprinted again:\n%s", printed, again)
 	}
 }
 
@@ -88,7 +88,7 @@ var posType = reflect.TypeFor[lexer.Position]()
 // ignoring positions and the difference between a nil and an empty slice.
 func treeDifference(a, b reflect.Value, path string) string {
 	if a.Type() != b.Type() {
-		return path + " 的类型"
+		return path + " (its type)"
 	}
 	if a.Type() == posType {
 		return ""
@@ -111,7 +111,7 @@ func treeDifference(a, b reflect.Value, path string) string {
 		return ""
 	case reflect.Slice:
 		if a.Len() != b.Len() {
-			return path + " 的长度"
+			return path + " (its length)"
 		}
 		for i := range a.Len() {
 			if d := treeDifference(a.Index(i), b.Index(i), fmt.Sprintf("%s[%d]", path, i)); d != "" {
@@ -135,11 +135,11 @@ func canonicalProblem(text []byte) string {
 	s := string(text)
 	switch {
 	case !strings.HasSuffix(s, "\n"):
-		return "文件末尾没有换行"
+		return "the file does not end with a newline"
 	case strings.HasSuffix(s, "\n\n"):
-		return "文件末尾有空行"
+		return "the file ends with a blank line"
 	case strings.ContainsAny(s, "\t\r"):
-		return "含有制表符或回车符"
+		return "it contains a tab or a carriage return"
 	}
 	lines := strings.Split(strings.TrimSuffix(s, "\n"), "\n")
 	var depth int
@@ -148,38 +148,38 @@ func canonicalProblem(text []byte) string {
 		if l == "" {
 			switch {
 			case i == 0 || lines[i-1] == "":
-				return fmt.Sprintf("第 %d 行：多余的空行", n)
+				return fmt.Sprintf("line %d: an extra blank line", n)
 			case depth > 0:
-				return fmt.Sprintf("第 %d 行：块或值的内部有空行", n)
+				return fmt.Sprintf("line %d: a blank line inside a block or a value", n)
 			case strings.HasPrefix(lines[i-1], "//"):
-				return fmt.Sprintf("第 %d 行：注释与它之后的内容之间有空行", n)
+				return fmt.Sprintf("line %d: a blank line between a comment and what follows it", n)
 			}
 			continue
 		}
 		if strings.HasSuffix(l, " ") {
-			return fmt.Sprintf("第 %d 行：行尾有空格", n)
+			return fmt.Sprintf("line %d: a trailing space", n)
 		}
 		body := strings.TrimLeft(l, " ")
 		comment := strings.HasPrefix(body, "//")
 		if !comment && strings.ContainsRune("}])", rune(body[0])) {
 			if depth == 0 {
-				return fmt.Sprintf("第 %d 行：多余的闭括号", n)
+				return fmt.Sprintf("line %d: an extra closing bracket", n)
 			}
 			depth--
 		}
 		if indent := len(l) - len(body); indent != 2*depth {
-			return fmt.Sprintf("第 %d 行：缩进是 %d 个空格，应当是 %d 个", n, indent, 2*depth)
+			return fmt.Sprintf("line %d: an indentation of %d spaces instead of %d", n, indent, 2*depth)
 		}
 		startsItem := depth == 0 && !strings.ContainsRune("}])", rune(body[0])) && i > 0 && !strings.HasPrefix(lines[i-1], "//")
 		if startsItem && lines[i-1] != "" {
-			return fmt.Sprintf("第 %d 行：顶层的声明之前应当恰有一个空行", n)
+			return fmt.Sprintf("line %d: a top-level declaration without exactly one blank line before it", n)
 		}
 		if !comment && strings.ContainsRune("{[(", rune(body[len(body)-1])) {
 			depth++
 		}
 	}
 	if depth > 0 {
-		return "块或值没有闭合"
+		return "a block or a value is not closed"
 	}
 	return ""
 }
@@ -189,7 +189,7 @@ func canonicalProblem(text []byte) string {
 func spacingProblem(text []byte) string {
 	lex, err := ucLexer.LexString("", string(text))
 	if err != nil {
-		return "打印的结果不能分成记号：" + err.Error()
+		return "the printed text does not lex: " + err.Error()
 	}
 	var prev lexer.Token
 	line := 1
@@ -208,7 +208,7 @@ func spacingProblem(text []byte) string {
 		}
 		if prev.Value != "" {
 			if gap, want := tok.Pos.Offset-prev.Pos.Offset-len(prev.Value), wantGap(prev, tok); gap != want {
-				return fmt.Sprintf("第 %d 行：%s 与 %s 之间有 %d 个空格，应当是 %d 个", line, prev.Value, tok.Value, gap, want)
+				return fmt.Sprintf("line %d: %d spaces between %s and %s instead of %d", line, gap, prev.Value, tok.Value, want)
 			}
 		}
 		prev = tok
