@@ -18,14 +18,14 @@ type Neighbor record "从焦点一步可达的一个显著节点，以及经过�
   field node: graph.Node
 }
 
-type Slice record "回答一个问题所需的最小上下文（design.md §7.3）" {
+type Context record "回答一个问题所需的最小上下文（design.md §7.3）" {
   field focus: list<graph.Node>
   field ancestors: list<graph.Node>
   field neighbors: list<Neighbor>
   field details: map<string, int>
 }
 
-type Impact record "一个受影响的节点，以及说明原因的一条最短路径" {
+type Affected record "一个受影响的节点，以及说明原因的一条最短路径" {
   field node: graph.Node
   field path: list<graph.Edge>
 }
@@ -43,9 +43,9 @@ op refs(g: graph.Graph, id: string) -> list<graph.Edge> raises NotFound "指向�
 
 op search(g: graph.Graph, text: string, kind: optional<graph.NodeKind>) -> list<graph.Node> "标识或摘要包含这段文字的节点，按标识排序"
 
-op slice(g: graph.Graph, ids: list<string>, expand: list<string>) -> Slice raises NotFound "一组节点的切片"
+op slice(g: graph.Graph, ids: list<string>, expand: list<string>) -> Context raises NotFound "一组节点的切片"
 
-op impact(g: graph.Graph, ids: list<string>) -> list<Impact> raises NotFound "一组变更的节点影响到的显著节点"
+op impact(g: graph.Graph, ids: list<string>) -> list<Affected> raises NotFound "一组变更的节点影响到的显著节点"
 
 property slice-is-minimal-context invariant "切片恰好含有焦点、焦点的祖先链和焦点一步可达的显著节点；细节节点只计入个数，展开之后才列出；切片中的边都是图中的边" {
   about slice
