@@ -250,6 +250,9 @@ func keyText(k Key) string {
 	return string(*k.Number)
 }
 
+// ValueText writes a value on one line in the canonical format.
+func ValueText(v Value) string { return flatValue(v) }
+
 func flatValue(v Value) string {
 	switch v := v.(type) {
 	case *NumberValue:

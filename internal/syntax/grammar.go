@@ -554,7 +554,7 @@ func (*BraceValue) value()  {}
 // Steps come last in the unions: a line that starts with a keyword is that
 // construct unless it only parses as a step whose sender has the keyword's name.
 var ucParser = participle.MustBuild[File](
-	participle.Lexer(ucLexer),
+	participle.Lexer(byteColumns{ucLexer}),
 	participle.Elide("Whitespace"),
 	participle.Map(checkEscapes, "String"),
 	participle.UseLookahead(participle.MaxLookahead),
