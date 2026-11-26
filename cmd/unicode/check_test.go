@@ -181,13 +181,24 @@ func checkFlowCheckDesign(t rapid.TB, files map[string]RepoFile, designOnly bool
 	if !maps.Equal(readRepo(t, root), files) {
 		t.Fatalf("unicode check changed the repository")
 	}
+	want := sortJSON(expectedDiagnostics(files))
 	if !designOnly {
-		if code != exitUsage || stdout != "" || !strings.Contains(stderr, "--design-only") {
-			t.Fatalf("unicode check without --design-only should be a usage error that names --design-only, yet it exited with %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+		var report codeReport
+		if err := json.Unmarshal([]byte(stdout), &report); err != nil || report.Diagnostics == nil || report.Statuses == nil || stderr != "" {
+			t.Fatalf("stdout of unicode check --format json is not its report {\"diagnostics\": [...], \"statuses\": {...}}, or it wrote to stderr: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+		}
+		if wantCode := map[bool]int{false: exitOK, true: exitDiagnostics}[len(report.Diagnostics) > 0]; code != wantCode {
+			t.Fatalf("unicode check exited with %d, yet it reported %d diagnostics", code, len(report.Diagnostics))
+		}
+		for _, w := range want {
+			if !slices.ContainsFunc(report.Diagnostics, func(g diagnosticJSON) bool {
+				return g.Code == w.Code && g.Path == w.Path && g.Line == w.Line && g.Column == w.Column && (strings.HasPrefix(g.Code, "cli.") || g == w)
+			}) {
+				t.Fatalf("unicode check without --design-only leaves out the diagnostic %+v, which the files' design alone gives", w)
+			}
 		}
 		return
 	}
-	want := sortJSON(expectedDiagnostics(files))
 	wantCode := exitOK
 	if len(want) > 0 {
 		wantCode = exitDiagnostics
