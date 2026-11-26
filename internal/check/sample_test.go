@@ -177,12 +177,14 @@ func (w *world) typePair(object string, depth int) (string, string) {
 }
 
 // signaturePair draws an operation's signature as the design writes it and
-// as the Go backend writes it: errors become ` raises error`.
+// as the Go backend writes it: errors become ` raises error`, and a
+// parameter may have another name, as when Go's would shadow a package.
 func (w *world) signaturePair(object string) (string, string) {
 	var design, code []string
 	for i := range rapid.IntRange(0, 2).Draw(w.t, "params") {
 		d, c := w.typePair(object, 1)
-		design, code = append(design, fmt.Sprintf("p%d: %s", i, d)), append(code, fmt.Sprintf("p%d: %s", i, c))
+		codeName := rapid.SampledFrom([]string{"p", "q", "path"}).Draw(w.t, "paramName")
+		design, code = append(design, fmt.Sprintf("p%d: %s", i, d)), append(code, fmt.Sprintf("%s%d: %s", codeName, i, c))
 	}
 	ds, cs := "("+strings.Join(design, ", ")+")", "("+strings.Join(code, ", ")+")"
 	if rapid.Bool().Draw(w.t, "result") {
