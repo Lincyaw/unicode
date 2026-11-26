@@ -32,3 +32,15 @@ flow check-design "用户运行 unicode check --design-only：解析 design/ 和
     cli -> design.load(files)
   }
 }
+
+flow check-code "用户运行 unicode check：载入设计，抽取每种已配置语言的代码，合并、推导之后检查全部约束，输出诊断" {
+  forall files: map<string, RepoFile> generated "一个小仓库：设计文件和 Go 源码，有的处处合乎设计，有的在一处违反了某条约束"
+  user -> main(args) {
+    cli -> design.load(files)
+    cli -> lang.golang.newBackend()
+    cli -> lang.Backend.extract(root, srcRoots)
+    cli -> graph.Graph.addFragment(fragment)
+    cli -> graph.Graph.derive()
+    cli -> check.conform(graph)
+  }
+}
