@@ -16,7 +16,7 @@ This project's engineering conventions are the general rules of the `engineering
 
 - Go 1.26, module `github.com/lincyaw/unicode`. Code is formatted with gofmt and passes `go vet` and `golangci-lint`.
 - Each package under `internal/` is one component of the design. Its imports follow the design's `uses`, checked by golangci-lint's depguard until M2 and by `unicode check` from M2.
-- Verification is by properties, with `pgregory.net/rapid` and native fuzzing. Concrete examples go in as cases or seeds; no test pins one example.
+- Verification is by properties. Every property and flow has one predicate; tests are only the drivers that `unicode gen` writes (from M4), and no hand-written test exists outside generated files. Until M4 the drivers are written by hand with `pgregory.net/rapid` and native fuzzing and are deleted when generation replaces them. Concrete examples go in as declared cases; no test pins one example.
 - General Go rules belong in the conventions skill as `reference/go.md`. Until that reference exists, this section holds them.
 
 ## Python
