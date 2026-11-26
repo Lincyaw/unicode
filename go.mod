@@ -4,6 +4,7 @@ go 1.26.2
 
 require (
 	github.com/alecthomas/participle/v2 v2.1.4
+	github.com/bmatcuk/doublestar/v4 v4.10.7
 	github.com/google/renameio/v2 v2.0.2
 	github.com/mattn/go-runewidth v0.0.31
 	github.com/spf13/cobra v1.10.2

@@ -171,6 +171,9 @@ func (e DanglingEdge) Error() string {
 type Graph struct {
 	nodes map[string]Node
 	edges map[edgeKey]Edge
+	// pending holds the edges of fragments that wait for Derive: bindings
+	// whose target is not a node yet, and the realizes candidates of methods.
+	pending []Edge
 }
 
 type edgeKey struct {
