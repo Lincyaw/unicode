@@ -25,3 +25,4 @@
     - 操作只有一个返回值，几个结果写成记录；Go 的多返回值只用于 `raises` 的 `error`。见 [design.md](design.md) §4。
     - 规范格式的空白与空行此前没有写明，打印器无从实现。见 [format.md](format.md) §3。
 17. **原则写进 `CLAUDE.md`，`AGENTS.md` 是指向它的链接。** 两种 agent 读同一份规则。
+18. **优先用维护中的外部库，只有没有合适的库时才自己写：解析用 participle，命令行用 cobra，路径模式用 doublestar。** 维护和评审的成本都更低，精力放在整体行为上。见 [design.md](design.md) §3、附录 A-19，`CLAUDE.md` 原则 8。

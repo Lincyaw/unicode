@@ -16,6 +16,7 @@ This project's engineering conventions are the general rules of the `engineering
 5. **Every check is a predicate.** Each property and flow has exactly one predicate whose parameters are its symbols. Tests are only the drivers that call predicates. Until `unicode gen` writes drivers (M4), they are written by hand in `*_test.go` with `pgregory.net/rapid` and native fuzzing, and are deleted when generation replaces them. No test pins one example; concrete examples are declared cases.
 6. **Bindings from the first line.** Code that realizes a design node carries its `//uc:realizes` directive, predicates carry `//uc:checks`, generators of generated symbols carry `//uc:generates`, even before the checks that read them exist.
 7. **User-facing text is Chinese, code is English.** Diagnostics, help text and documents are written in Chinese; identifiers, code comments and commit messages in English.
+8. **Prefer maintained libraries; care about behavior, not details.** Use a maintained external library wherever one meets the need, and build our own only when none is maintained or none fits. Library code is cheaper to maintain and easier to review than our own. Each library choice is a design decision, listed in `docs/design.md` §3 and logged in `docs/decisions.md`. Effort goes into the overall behavior that the properties state, not into hand-tuning details.
 
 ## Roles and workflow
 
@@ -28,7 +29,7 @@ This project's engineering conventions are the general rules of the `engineering
 
 - Go 1.26, module `github.com/lincyaw/unicode`. `make check` runs golangci-lint (with gofmt), `go test ./...` and `unicode fmt --check` on this repository.
 - Each package under `internal/` is one component. Its imports follow the design's `uses`, checked by golangci-lint's depguard until M2 and by `unicode check` from M2; a change to the depguard rules follows a change to the design.
-- Dependencies are the standard library, `pgregory.net/rapid` and (from M2) `golang.org/x/tools`. Anything else is a design decision.
+- The libraries in use are listed in `docs/design.md` §3. Adding or replacing one is a design decision (principle 8).
 - General Go rules belong in the conventions skill as `reference/go.md`. Until that reference exists, this section holds them.
 
 ## Python
