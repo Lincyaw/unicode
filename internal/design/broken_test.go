@@ -3,6 +3,7 @@ package design
 import (
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/alecthomas/participle/v2/lexer"
@@ -113,6 +114,12 @@ var breakages = map[string]breakage{
 		decl.Target.Segments = strings.Split(k.record.id, ".")
 		return k.corpusPath, decl
 	},
+	"design.uses-person": func(d *designer) (string, any) {
+		uses := usesLine(d.skel.top)
+		at := rapid.IntRange(0, len(uses.Refs)).Draw(d.t, "at")
+		uses.Refs = slices.Insert(uses.Refs, at, syntax.Ref{Segments: []string{pick(d, "person", d.persons).name}})
+		return d.skel.top.file, uses
+	},
 	"design.missing-parent": func(d *designer) (string, any) {
 		parent, name := d.kebab("missing"), d.kebab("orphan")
 		decl := &syntax.ComponentDecl{Path: syntax.Path{Segments: []string{parent, name}}, Summary: "orphan",
@@ -141,6 +148,48 @@ var breakages = map[string]breakage{
 		field := &syntax.Field{Name: syntax.Lower(k.record.fields[0].name), Type: &syntax.Builtin{Name: "int"}}
 		insertLine(&k.record.typeDecl.Lines, syntax.Member(field), func(m syntax.Member) bool { _, op := m.(*syntax.OpDecl); return !op })
 		return k.top.file, field
+	},
+	"design.name-collision": func(d *designer) (string, any) {
+		k := &d.skel
+		f := d.componentFile(k.top)
+		// fresh draws a kebab name for which free holds.
+		fresh := func(free func(name string) bool) string {
+			for {
+				if name := d.kebab("clash"); free(name) {
+					return name
+				}
+			}
+		}
+		property := func(name string) *syntax.PropertyDecl {
+			d.used[name] = true
+			about := &syntax.About{Refs: []syntax.Ref{{Segments: strings.Split(k.service.id, ".")}}}
+			return &syntax.PropertyDecl{Name: syntax.Kebab(name), Form: "invariant", Summary: "clash", Lines: []syntax.PropertyLine{about}}
+		}
+		switch count(d, "site", 0, 2) {
+		case 0:
+			// The type T and the operation t both take the Go name T.
+			name := d.freeName(k.top, "op", func() string { return d.lower("clash") })
+			op := &syntax.OpDecl{Name: syntax.Lower(name)}
+			insertDecl(f, &syntax.TypeDecl{Name: syntax.Upper(strings.ToUpper(name[:1]) + name[1:]), Form: "record", Summary: "clash"})
+			insertDecl(f, op)
+			return k.top.file, op
+		case 1:
+			// The predicates of the flow f and the property flow-f are both checkFlowF.
+			name := fresh(func(name string) bool { return !d.used["flow-"+name] && !d.clashes(k.top, "flow", name) })
+			second := property("flow-" + name)
+			insertDecl(f, &syntax.FlowDecl{Name: syntax.Kebab(name), Summary: "clash"})
+			insertDecl(f, second)
+			return k.top.file, second
+		}
+		// The predicates of the properties p-7 and p7 are both checkP7.
+		digit := strconv.Itoa(rapid.IntRange(0, 9).Draw(d.t, "digit"))
+		base := fresh(func(name string) bool {
+			return !d.used[name+"-"+digit] && !d.used[name+digit] && !d.clashes(k.top, "property", name+digit)
+		})
+		second := property(base + digit)
+		insertDecl(f, property(base+"-"+digit))
+		insertDecl(f, second)
+		return k.top.file, second
 	},
 	"design.missing-focus": func(d *designer) (string, any) {
 		c := d.skel.top.component
@@ -282,6 +331,17 @@ var breakages = map[string]breakage{
 		insertLine(&k.prop.propDecl.Lines, lim, isInput[syntax.PropertyLine])
 		return k.prop.file, lim
 	},
+	"design.empty-interval": func(d *designer) (string, any) {
+		n := pick(d, "owner", []*gNode{d.skel.flow, d.skel.prop})
+		lim := n.limits[count(d, "limit", 0, 1)].decl.(*syntax.IntervalLimit)
+		high := rapid.IntRange(0, 20).Draw(d.t, "high")
+		if lim.Op == "in" {
+			high -= 10
+		}
+		lim.Low = syntax.Number(strconv.Itoa(high + rapid.IntRange(1, 10).Draw(d.t, "excess")))
+		lim.High = syntax.Number(strconv.Itoa(high))
+		return n.file, lim
+	},
 	"design.missing-value": func(d *designer) (string, any) {
 		k := &d.skel
 		if rapid.Bool().Draw(d.t, "recorded?") {
@@ -398,6 +458,25 @@ func insertLine[L any](lines *[]L, line L, before func(L) bool) {
 		}
 	}
 	*lines = slices.Insert(*lines, at, line)
+}
+
+// insertDecl puts a declaration of a component file last in its group
+// (docs/format.md §3: types, operations, flows, then properties).
+func insertDecl(f *syntax.File, decl syntax.Decl) {
+	group := func(d syntax.Decl) int {
+		switch d.(type) {
+		case *syntax.TypeDecl:
+			return 1
+		case *syntax.OpDecl:
+			return 2
+		case *syntax.FlowDecl:
+			return 3
+		case *syntax.PropertyDecl:
+			return 4
+		}
+		return 0
+	}
+	insertLine(&f.Decls, decl, func(d syntax.Decl) bool { return group(d) <= group(decl) })
 }
 
 // insertStep puts a step first or last among a flow's steps.

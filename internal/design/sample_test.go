@@ -20,13 +20,14 @@ import (
 // symbols' types and limits.
 
 // Sample is a valid set of design and corpus files, with the nodes and edges
-// they declare.
+// they declare, and the attributes of the nodes it lists, by identity.
 //
 //uc:realizes design.Sample
 type Sample struct {
 	Files map[string]string
 	Nodes []string
 	Edges []string
+	Attrs map[string]map[string][]string
 }
 
 // gNode is one declared node of the model.
@@ -98,6 +99,7 @@ type designer struct {
 
 	system     *gNode
 	notations  []string
+	roots      []string // each `language: dir`
 	persons    []*gNode
 	externals  []*gNode
 	containers []*gNode
@@ -224,6 +226,45 @@ func (d *designer) refTo(n, scope *gNode) []string {
 	return segs
 }
 
+// gCodeName is the Go name of a type, an operation, or the predicate of a
+// property or a flow (docs/design.md §4): each segment of the name with an
+// upper-case first letter, after check for a property and checkFlow for a flow.
+func gCodeName(kind, name string) string {
+	var camel strings.Builder
+	for _, seg := range strings.Split(name, "-") {
+		camel.WriteString(strings.ToUpper(seg[:1]) + seg[1:])
+	}
+	switch kind {
+	case "property":
+		return "check" + camel.String()
+	case "flow":
+		return "checkFlow" + camel.String()
+	}
+	return camel.String()
+}
+
+// clashes tells whether a member of parent of the given kind and name would
+// take the Go name of a type, an operation, a flow or a property already in
+// parent (docs/model.md §10 rule 30).
+func (d *designer) clashes(parent *gNode, kind, name string) bool {
+	code := gCodeName(kind, name)
+	for _, members := range [][]*gNode{d.types, d.ops, d.flows, d.props} {
+		if slices.ContainsFunc(members, func(n *gNode) bool { return n.parent == parent && gCodeName(n.kind, n.name) == code }) {
+			return true
+		}
+	}
+	return false
+}
+
+// freeName draws names for a member of parent until one clashes with none there.
+func (d *designer) freeName(parent *gNode, kind string, draw func() string) string {
+	for {
+		if name := draw(); !d.clashes(parent, kind, name) {
+			return name
+		}
+	}
+}
+
 func pick[T any](d *designer, label string, from []T) T {
 	return rapid.SampledFrom(from).Draw(d.t, label)
 }
@@ -259,13 +300,21 @@ func newDesign(t *rapid.T, rich bool) *designer {
 	return d
 }
 
-// sample prints every file in the canonical format.
+// sample prints every file in the canonical format. Of the attributes, it
+// lists the system's: its notations and its roots (docs/design.md §5.2).
 func (d *designer) sample() Sample {
 	files := map[string]string{}
 	for path, f := range d.files {
 		files[path] = string(f.Print())
 	}
-	return Sample{Files: files, Nodes: slices.Clone(d.nodes), Edges: slices.Clone(d.edges)}
+	system := map[string][]string{}
+	for key, values := range map[string][]string{"notations": d.notations, "roots": d.roots} {
+		if len(values) > 0 {
+			system[key] = slices.Clone(values)
+		}
+	}
+	attrs := map[string]map[string][]string{d.system.id: system}
+	return Sample{Files: files, Nodes: slices.Clone(d.nodes), Edges: slices.Clone(d.edges), Attrs: attrs}
 }
 
 func (d *designer) file(path string, kind syntax.FileKind) *syntax.File {
@@ -307,7 +356,17 @@ func (d *designer) genSystem() {
 			f.Decls = append(f.Decls, &syntax.NotationDecl{Name: n})
 		}
 	}
-	f.Decls = append(f.Decls, &syntax.LanguageDecl{Name: "go", Lines: []syntax.LanguageLine{&syntax.Root{Path: "."}}})
+	// A rich design configures Go, whose name mapping the collisions follow.
+	for _, language := range []string{"go", "python"} {
+		if language == "go" && d.rich || rapid.Bool().Draw(d.t, "language "+language) {
+			decl := &syntax.LanguageDecl{Name: language}
+			for _, dir := range rapid.SliceOfNDistinct(rapid.SampledFrom(rootDirs), 1, 2, rapid.ID).Draw(d.t, "roots") {
+				decl.Lines = append(decl.Lines, &syntax.Root{Path: syntax.Text(dir)})
+				d.roots = append(d.roots, language+": "+dir)
+			}
+			f.Decls = append(f.Decls, decl)
+		}
+	}
 	persons := count(d, "persons", 0, 2)
 	if d.rich {
 		persons = max(persons, 1)
@@ -357,7 +416,10 @@ func (d *designer) genSystem() {
 	}
 }
 
-var builtins = []string{"bool", "int", "float", "string", "bytes", "time", "duration"}
+var (
+	builtins = []string{"bool", "int", "float", "string", "bytes", "time", "duration"}
+	rootDirs = []string{".", "cmd", "internal", "py/src", "源码", `a "b"`}
+)
 
 // genContainers draws the tree of components and what each uses.
 func (d *designer) genContainers() {
@@ -379,7 +441,6 @@ func (d *designer) genContainers() {
 		}
 	}
 	targets := append(slices.Clone(d.containers), d.externals...)
-	targets = append(targets, d.persons...)
 	for _, c := range d.containers {
 		var uses []*gNode
 		for range count(d, "uses", 0, 3) {
@@ -430,15 +491,9 @@ func (d *designer) newComponent(parent *gNode) *gNode {
 }
 
 // newType declares a type of the given form in parent, a component or an
-// external actor; its name is unique in parent.
+// external actor; its Go name is unique in parent.
 func (d *designer) newType(parent *gNode, form string) *gNode {
-	var name string
-	for {
-		name = upperNames.Draw(d.t, "type")
-		if !slices.ContainsFunc(d.types, func(t *gNode) bool { return t.parent == parent && t.name == name }) {
-			break
-		}
-	}
+	name := d.freeName(parent, "type", func() string { return upperNames.Draw(d.t, "type") })
 	t := d.declare(parent, &gNode{name: name, kind: "type", form: form, file: parent.file})
 	d.types = append(d.types, t)
 	t.typeDecl = &syntax.TypeDecl{Name: syntax.Upper(name), Form: form, Summary: d.summary("summary")}
@@ -659,7 +714,8 @@ func (d *designer) simpleType(t *gType) bool {
 }
 
 func (d *designer) newOp(parent, scope *gNode) *gNode {
-	op := d.declare(parent, &gNode{name: d.lower("op"), kind: "op", form: "op", file: parent.file})
+	name := d.freeName(parent, "op", func() string { return d.lower("op") })
+	op := d.declare(parent, &gNode{name: name, kind: "op", form: "op", file: parent.file})
 	d.ops = append(d.ops, op)
 	op.opDecl = &syntax.OpDecl{Name: syntax.Lower(op.name), Summary: d.optSummary("opSummary")}
 	if parent.kind == "type" {
