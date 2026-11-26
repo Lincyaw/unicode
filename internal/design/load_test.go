@@ -86,6 +86,15 @@ func checkAcceptsValidDesign(t rapid.TB, sample Sample) {
 	if len(nodes) != len(sample.Nodes) || len(edges) != len(sample.Edges) {
 		t.Fatalf("the design declares %d nodes and %d edges, the graph holds %d and %d", len(sample.Nodes), len(sample.Edges), len(nodes), len(edges))
 	}
+	if len(sample.Attrs) == 0 {
+		t.Fatalf("setup failed: the sample lists the attributes of no node, not even the system's")
+	}
+	for _, id := range slices.Sorted(maps.Keys(sample.Attrs)) {
+		want, got := sample.Attrs[id], loaded.Graph.Node(id).Attrs
+		if !maps.EqualFunc(got, want, slices.Equal) {
+			t.Fatalf("the node %s has other attributes than the design gives it\ngot: %v\nwant: %v\n%s", id, got, want, dump(sample.Files))
+		}
+	}
 }
 
 func TestAcceptsValidDesign(t *testing.T) {

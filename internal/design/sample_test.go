@@ -20,13 +20,14 @@ import (
 // symbols' types and limits.
 
 // Sample is a valid set of design and corpus files, with the nodes and edges
-// they declare.
+// they declare, and the attributes of the nodes it lists, by identity.
 //
 //uc:realizes design.Sample
 type Sample struct {
 	Files map[string]string
 	Nodes []string
 	Edges []string
+	Attrs map[string]map[string][]string
 }
 
 // gNode is one declared node of the model.
@@ -299,13 +300,21 @@ func newDesign(t *rapid.T, rich bool) *designer {
 	return d
 }
 
-// sample prints every file in the canonical format.
+// sample prints every file in the canonical format. Of the attributes, it
+// lists the system's: its notations and its roots (docs/design.md §5.2).
 func (d *designer) sample() Sample {
 	files := map[string]string{}
 	for path, f := range d.files {
 		files[path] = string(f.Print())
 	}
-	return Sample{Files: files, Nodes: slices.Clone(d.nodes), Edges: slices.Clone(d.edges)}
+	system := map[string][]string{}
+	for key, values := range map[string][]string{"notations": d.notations, "roots": d.roots} {
+		if len(values) > 0 {
+			system[key] = slices.Clone(values)
+		}
+	}
+	attrs := map[string]map[string][]string{d.system.id: system}
+	return Sample{Files: files, Nodes: slices.Clone(d.nodes), Edges: slices.Clone(d.edges), Attrs: attrs}
 }
 
 func (d *designer) file(path string, kind syntax.FileKind) *syntax.File {
