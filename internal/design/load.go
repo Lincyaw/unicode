@@ -478,7 +478,7 @@ func (l *loader) flowDecl(f *syntax.File, parent *entity, d *syntax.FlowDecl) {
 	l.inputs(e, parent, symbols, limits, cases)
 	l.checks = append(l.checks, func() {
 		s := &stepper{l: l, flow: e, scope: parent, emitted: map[*entity]bool{}, sent: map[*entity]bool{}}
-		s.list(e, steps, within{}, "")
+		s.list(e, steps, enclosing{}, "")
 	})
 }
 

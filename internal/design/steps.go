@@ -23,10 +23,10 @@ type stepper struct {
 	sent    map[*entity]bool
 }
 
-// within is what a list of steps is part of: inside is set within a call or
+// enclosing is what a list of steps is part of: inside is set within a call or
 // an async, whose receiver acts in its steps; receiver is nil when the
 // operation does not resolve.
-type within struct {
+type enclosing struct {
 	inside   bool
 	receiver *entity
 }
@@ -55,7 +55,7 @@ func names(ls []syntax.Lower) []string {
 }
 
 // list declares and checks one list of steps under parent.
-func (s *stepper) list(parent *entity, lines []syntax.Step, w within, branch string) {
+func (s *stepper) list(parent *entity, lines []syntax.Step, w enclosing, branch string) {
 	l := s.l
 	var call *entity // the operation of the call that the next on blocks follow
 	for _, line := range lines {
@@ -70,7 +70,7 @@ func (s *stepper) list(parent *entity, lines []syntax.Step, w within, branch str
 			e.setAttr("args", names(x.Args))
 			op := s.invoke(e, x.From, x.Op, len(x.Args), w)
 			call = op
-			s.list(e, x.Lines, within{inside: true, receiver: receiver(op)}, "")
+			s.list(e, x.Lines, enclosing{inside: true, receiver: receiver(op)}, "")
 		case *syntax.Send:
 			e := s.step(parent, "send", x.Pos, branch)
 			e.setAttr("args", names(x.Args))
@@ -90,7 +90,7 @@ func (s *stepper) list(parent *entity, lines []syntax.Step, w within, branch str
 			op := l.refer(e, s.scope, x.Op.Segments, x.Op.Pos, acceptOp)
 			l.edge(graph.EdgeKindCalls, e, op, e.file, x.Op.Pos, graph.SourceDeclared, nil)
 			s.async(e, op, x.Pos)
-			s.list(e, x.Lines, within{inside: true, receiver: receiver(op)}, "")
+			s.list(e, x.Lines, enclosing{inside: true, receiver: receiver(op)}, "")
 		case *syntax.Alt:
 			e := s.step(parent, "alt", x.Pos, branch)
 			var labels []string
@@ -125,7 +125,7 @@ func receiver(op *entity) *entity {
 // invoke resolves the sender and the operation of a call or a send step e,
 // records its edges and checks it (docs/model.md §10 rules 7 and 8); it
 // returns the operation, or nil.
-func (s *stepper) invoke(e *entity, from syntax.Participant, opRef syntax.OpRef, args int, w within) *entity {
+func (s *stepper) invoke(e *entity, from syntax.Participant, opRef syntax.OpRef, args int, w enclosing) *entity {
 	l := s.l
 	sender := s.sender(e, from, w, acceptParticipant)
 	op := l.refer(e, s.scope, opRef.Segments, opRef.Pos, acceptOp)
@@ -163,7 +163,7 @@ func (s *stepper) argumentCount(e *entity, target, what string, got, want int) {
 // it against what the step is part of: within a call or an async, the
 // receiver acts, and a person acts only in the outermost steps (docs/model.md
 // §10 rules 7, 8 and 11).
-func (s *stepper) sender(e *entity, from syntax.Participant, w within, want accept) *entity {
+func (s *stepper) sender(e *entity, from syntax.Participant, w enclosing, want accept) *entity {
 	l := s.l
 	sender := l.refer(e, s.scope, from.Segments, from.Pos, want)
 	l.edge(graph.EdgeKindFrom, e, sender, e.file, from.Pos, graph.SourceDeclared, nil)
@@ -186,7 +186,7 @@ var acceptEmitter = accept{"a component or a type, since only code emits events"
 }}
 
 // emit checks an emit step (docs/model.md §10 rule 9).
-func (s *stepper) emit(e *entity, x *syntax.Emit, w within) {
+func (s *stepper) emit(e *entity, x *syntax.Emit, w enclosing) {
 	l := s.l
 	s.sender(e, x.From, w, acceptEmitter)
 	event := l.refer(e, s.scope, x.Event.Segments, x.Event.Pos, acceptType)

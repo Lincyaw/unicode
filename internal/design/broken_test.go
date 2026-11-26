@@ -53,6 +53,23 @@ var breakages = map[string]breakage{
 	},
 	"design.unresolved-reference": func(d *designer) (string, any) {
 		k := &d.skel
+		if rapid.Bool().Draw(d.t, "anywhere?") {
+			var all []refSite
+			paths := d.sortedFiles()
+			for _, p := range paths {
+				refSites(reflect.ValueOf(d.files[p]), p, nil, &all)
+			}
+			site := rapid.SampledFrom(all).Draw(d.t, "reference")
+			switch site.kind {
+			case reflect.TypeFor[syntax.TypeRef]():
+				site.segs[len(site.segs)-1] = "Undeclared"
+			case reflect.TypeFor[syntax.OpRef]():
+				site.segs[len(site.segs)-1] = d.lower("missing")
+			default:
+				site.segs[len(site.segs)-1] = d.kebab("missing")
+			}
+			return site.path, site.holder
+		}
 		switch count(d, "site", 0, 4) {
 		case 0:
 			segs := k.call.Op.Segments
@@ -312,6 +329,47 @@ var breakages = map[string]breakage{
 		d.skel.propCase.Name = "r-0123abcd"
 		return d.skel.prop.file, d.skel.propCase
 	},
+}
+
+// refSite is a reference in a file's tree: its segments, which kind of
+// reference it is, and the innermost node that holds it, on the same line.
+type refSite struct {
+	path   string
+	segs   []string
+	kind   reflect.Type
+	holder any
+}
+
+var refKinds = []reflect.Type{reflect.TypeFor[syntax.Ref](), reflect.TypeFor[syntax.TypeRef](), reflect.TypeFor[syntax.OpRef](), reflect.TypeFor[syntax.Participant]()}
+
+// refSites lists the references under v, the tree of the file at path.
+func refSites(v reflect.Value, path string, holder any, out *[]refSite) {
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() {
+			return
+		}
+		if v.Elem().Kind() == reflect.Struct && v.Elem().FieldByName("Pos").IsValid() {
+			holder = v.Interface()
+		}
+		refSites(v.Elem(), path, holder, out)
+	case reflect.Interface:
+		if !v.IsNil() {
+			refSites(v.Elem(), path, holder, out)
+		}
+	case reflect.Struct:
+		if slices.Contains(refKinds, v.Type()) {
+			*out = append(*out, refSite{path, v.FieldByName("Segments").Interface().([]string), v.Type(), holder})
+			return
+		}
+		for i := range v.NumField() {
+			refSites(v.Field(i), path, holder, out)
+		}
+	case reflect.Slice:
+		for i := range v.Len() {
+			refSites(v.Index(i), path, holder, out)
+		}
+	}
 }
 
 func usesLine(c *gNode) *syntax.Uses {

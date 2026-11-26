@@ -205,7 +205,7 @@ func (l *loader) place(e *entity, lim *limit) {
 		if len(segs) == 0 {
 			for x := t; x != nil; x = x.elem() {
 				if fits(lim.op, x) {
-					l.subset(e, lim, x)
+					l.settle(e, lim, x)
 					return
 				}
 			}
@@ -243,8 +243,8 @@ func (l *loader) place(e *entity, lim *limit) {
 	}
 }
 
-// subset checks the values of an enum subset; with them, the limit applies at t.
-func (l *loader) subset(e *entity, lim *limit, t *typ) {
+// settle records that a limit applies at t, once the values of an enum subset are among its values.
+func (l *loader) settle(e *entity, lim *limit, t *typ) {
 	for _, m := range lim.members {
 		if !slices.Contains(t.named().values, m) {
 			l.report(e.file, lim.pos, "design.invalid-limit", e.id,
