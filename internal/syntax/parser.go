@@ -237,18 +237,20 @@ func (p *parser) topLevel(decl func(comments []Comment)) {
 }
 
 // sequence checks that the declarations or members of one level come in the
-// order of their ranks, and that a single one is not repeated.
+// order of their ranks, and that a single one is not repeated. orderCode is
+// the code of an order violation.
 type sequence struct {
-	what   string
-	order  []string
-	ranks  map[string]int
-	single map[string]bool
-	last   string
-	seen   map[string]bool
+	what      string
+	orderCode string
+	order     []string
+	ranks     map[string]int
+	single    map[string]bool
+	last      string
+	seen      map[string]bool
 }
 
 func newSequence(what string, order []string, single ...string) *sequence {
-	s := &sequence{what: what, order: order, ranks: map[string]int{}, single: map[string]bool{}, seen: map[string]bool{}}
+	s := &sequence{what: what, orderCode: "syntax.member-order", order: order, ranks: map[string]int{}, single: map[string]bool{}, seen: map[string]bool{}}
 	for i, kw := range order {
 		for _, k := range strings.Split(kw, "|") {
 			s.ranks[k] = i
@@ -276,7 +278,7 @@ func (p *parser) next(s *sequence, kw string, pos Pos) {
 	case s.single[kw] && s.seen[kw]:
 		p.report("syntax.duplicate-member", pos, fmt.Sprintf("%s中只能有一个 %s", s.what, kw), "删去重复的 "+kw)
 	case s.last != "" && s.ranks[kw] < s.ranks[s.last]:
-		p.report("syntax.member-order", pos, fmt.Sprintf("%s中的 %s 必须写在 %s 之前", s.what, kw, s.last),
+		p.report(s.orderCode, pos, fmt.Sprintf("%s中的 %s 必须写在 %s 之前", s.what, kw, s.last),
 			fmt.Sprintf("把这个 %s 移到所有 %s 之前", kw, s.last))
 	}
 	s.seen[kw] = true

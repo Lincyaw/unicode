@@ -16,6 +16,12 @@ type header struct {
 	groups  *sequence
 }
 
+func newHeader(keyword, what string, groups ...string) *header {
+	s := newSequence(what, groups)
+	s.orderCode = "syntax.declaration-order"
+	return &header{keyword: keyword, groups: s}
+}
+
 // check reports a declaration that comes before the file's opening one, a
 // second opening one, or one out of group order.
 func (p *parser) check(h *header, kw token) {
@@ -41,7 +47,7 @@ func (p *parser) unknownDecl(h *header) {
 
 func (p *parser) systemFile() *SystemFile {
 	sf := &SystemFile{}
-	h := &header{keyword: "system", groups: newSequence("系统文件", []string{"system", "notation", "language", "actor"})}
+	h := newHeader("system", "系统文件", "system", "notation", "language", "actor")
 	p.topLevel(func(comments []Comment) {
 		kw := p.tok()
 		if kw.kind != tokWord || !h.groups.has(kw.text) {
@@ -131,7 +137,7 @@ func (p *parser) actorDecl(comments []Comment) ActorDecl {
 
 func (p *parser) componentFile() *ComponentFile {
 	cf := &ComponentFile{}
-	h := &header{keyword: "component", groups: newSequence("组件文件", []string{"component", "type", "op", "flow", "property"})}
+	h := newHeader("component", "组件文件", "component", "type", "op", "flow", "property")
 	p.topLevel(func(comments []Comment) {
 		kw := p.tok()
 		if kw.kind != tokWord || !h.groups.has(kw.text) {

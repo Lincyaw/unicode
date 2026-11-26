@@ -150,7 +150,7 @@ func (p *parser) assignment(comments []Comment) Assignment {
 
 func (p *parser) corpusFile() *CorpusFile {
 	cf := &CorpusFile{}
-	h := &header{keyword: "corpus", groups: newSequence("录制文件", []string{"corpus", "case"})}
+	h := newHeader("corpus", "录制文件", "corpus", "case")
 	p.topLevel(func(comments []Comment) {
 		kw := p.tok()
 		if kw.kind != tokWord || !h.groups.has(kw.text) {
