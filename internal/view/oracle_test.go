@@ -342,10 +342,20 @@ func keys(s map[string]bool) []string {
 	return slices.Sorted(maps.Keys(s))
 }
 
-// exempt returns the containers that do not fold in a view of input: the
-// input, what encloses it, and the expanded identities.
-func (w world) exempt(input string, expand []string) map[string]bool {
+// foldingKinds are the views that fold by focus (§7.2); the views of a flow
+// and of events draw every participant.
+var foldingKinds = []ViewKind{ViewKindArchitecture, ViewKindClass, ViewKindCalls, ViewKindCode, ViewKindDdd, ViewKindC4}
+
+// exempt returns the containers that do not fold in a view of kind on input:
+// the input, what encloses it, and the expanded identities; every container
+// when the view does not fold by focus.
+func (w world) exempt(kind ViewKind, input string, expand []string) map[string]bool {
 	e := map[string]bool{input: true}
+	if !slices.Contains(foldingKinds, kind) {
+		for id := range w.nodes {
+			e[id] = true
+		}
+	}
 	for _, id := range append(w.up(input), expand...) {
 		e[id] = true
 	}
@@ -402,7 +412,7 @@ func (w world) detailFunction(id string) bool {
 // then what each expansion reveals placed, then the edges between drawn nodes.
 func (w world) expected(kind ViewKind, input string, expand []string) expectation {
 	x := expectation{nodes: map[string]bool{}, folded: map[string]bool{}, hiders: map[string]bool{}, edges: map[edgeKey]bool{}}
-	exempt := w.exempt(input, expand)
+	exempt := w.exempt(kind, input, expand)
 	for _, id := range keys(w.candidates(kind, input)) {
 		if w.nodes[id].Salient {
 			w.placeInto(&x, id, exempt)
