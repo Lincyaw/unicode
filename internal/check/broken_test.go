@@ -275,9 +275,20 @@ var breakages = []breakage{
 		w.retarget(graph.EdgeKindCalls, s.id, s.op, orphan)
 		return s.id
 	}},
+	{"check.unreachable-step", unreachable},
 	{"check.unreachable-step", func(w *world) string {
-		s := choose(w, where(w.steps, func(s *step) bool { return len(s.context) > 0 }))
-		w.removeEdges(func(e graph.Edge) bool { return e.Kind == graph.EdgeKindCalls && e.To == s.traced })
+		// Through an interface: no implementation reaches the step, or no
+		// code type implements the interface at all.
+		dispatched := where(w.steps, func(s *step) bool { return s.dispatch != "" })
+		if len(dispatched) == 0 {
+			return unreachable(w)
+		}
+		s := choose(w, dispatched)
+		if uniform(w.t, 2) == 0 {
+			w.removeEdges(func(e graph.Edge) bool { return e.Kind == graph.EdgeKindCalls && e.To == s.traced })
+		} else {
+			w.removeEdges(func(e graph.Edge) bool { return e.Kind == graph.EdgeKindImplements && e.To == s.dispatch })
+		}
 		return s.id
 	}},
 	{"check.unreferenced-event", func(w *world) string {
@@ -302,6 +313,13 @@ var breakages = []breakage{
 		w.edge(graph.EdgeKindGenerates, twin, k.id, graph.SourceDeclared, map[string][]string{"symbols": {"s"}})
 		return k.id
 	}},
+}
+
+// unreachable cuts every call to the function that a step with a context traces to.
+func unreachable(w *world) string {
+	s := choose(w, where(w.steps, func(s *step) bool { return len(s.context) > 0 }))
+	w.removeEdges(func(e graph.Edge) bool { return e.Kind == graph.EdgeKindCalls && e.To == s.traced })
+	return s.id
 }
 
 // relation declares an implements or extends between two types that the
