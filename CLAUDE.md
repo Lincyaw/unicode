@@ -17,12 +17,14 @@ This project's engineering conventions are the general rules of the `engineering
 6. **Bindings from the first line.** Code that realizes a design node carries its `//uc:realizes` directive, predicates carry `//uc:checks`, generators of generated symbols carry `//uc:generates`, even before the checks that read them exist.
 7. **The toolchain speaks English; the documents are Chinese.** Diagnostics, help text, CLI messages, identifiers, code comments, test messages and commit messages are English, so library messages (participle, cobra, pflag, the OS) fit in without translation. `docs/` is written in Chinese.
 8. **Prefer maintained libraries; care about behavior, not details.** Use a maintained external library wherever one meets the need, and build our own only when none is maintained or none fits. Library code is cheaper to maintain and easier to review than our own. Each library choice is a design decision, listed in `docs/design.md` §3 and logged in `docs/decisions.md`. Effort goes into the overall behavior that the properties state, not into hand-tuning details.
+9. **Heavy verification is a separate, asynchronous stage.** A lane runs `make check` once, with the default rapid settings, and commits. Mutation testing (gremlins), long fuzzing and high rapid counts are `make deep`, run in their own stage after the merge (a separate agent in its own worktree, or the scheduled CI job), never inside a lane or a review. Development does not wait for it. Each surviving mutant or failure it finds becomes a fix task for a later lane.
 
 ## Roles and workflow
 
 - The main session designs and reviews. It writes the design files, then dispatches implementation to subagents, one lane per coherent piece of work. Each task names the design nodes it implements and the documents to read (from M3 it carries `unicode slice`).
 - A lane works in its own worktree at `../unicode-wt/<lane>` on branch `<lane>`, commits there, and never touches the main checkout.
-- The main session reviews every lane with a code-reviewer subagent and by reading the code, runs `make check` on the result, merges with `git merge --no-ff`, and removes the worktree. Findings about the specification go into the documents in the same merge.
+- The main session reviews every lane with a code-reviewer subagent and by reading the code, runs `make check` on the result, merges with `git merge --no-ff`, and removes the worktree. Findings about the specification go into the documents in the same merge. A review reads the code and may run a few targeted probes; it does not run batches of mutants, which belong to the deep stage.
+- Lane briefs ask for `make check` and a commit, never for mutant confirmation or long runs.
 - The toolchain itself never schedules agents.
 
 ## Go

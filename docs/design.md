@@ -55,6 +55,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | 路径模式中的 `**` | `github.com/bmatcuk/doublestar/v4` |
 | 值的显示宽度（规范格式的 100 列） | `github.com/mattn/go-runewidth` |
 | 原子地改写文件，保留权限 | `github.com/google/renameio/v2` |
+| 深度验证中的变异测试 | `github.com/go-gremlins/gremlins` |
 | 生成器、性质测试与 fuzz 的驱动 | `pgregory.net/rapid` 与 Go 原生的 fuzz |
 | Go 代码的抽取（M2） | `golang.org/x/tools/go/packages` 与 `go/types` |
 
@@ -294,6 +295,7 @@ type Backend interface {
   9. `diff(a, a)` 为空；`diff(a, b)` 与 `diff(b, a)` 互为相反。
   10. 推导出的 `depends`、`traces`、`reaches` 与按 [model.md](model.md) §9 的定义直接计算的结果相同；输入是随机生成的小图。
 - M4 之前，这些性质的驱动手写，用 `pgregory.net/rapid` 和 Go 原生的 fuzz；M4 起改为生成，手写的驱动随之删除。
+- **两个阶段**：开发时只跑 `make check`，随机检查用缺省的次数，几分钟之内结束，通过就提交。深度验证 `make deep` 是合并之后的异步阶段，由单独的 agent 在自己的工作区中跑，或者由定时的 CI 跑：随机检查用大的次数，每个 fuzz 目标跑一段时间，再用 gremlins 做变异测试。它不阻塞开发；存活的变异和找到的失败，都成为之后的修复任务。M6 起，`unicode test --explore` 接替其中的随机检查和 fuzz。
 
 ## 附录 A 设计理由
 

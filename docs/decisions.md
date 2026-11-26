@@ -41,3 +41,4 @@
 24. **流程 `format-files` 的输入带上文件的权限位（`cli.RepoFile`）。** 谓词只能从符号取输入，权限要改写后保持不变，就必须是输入的一部分，而不是从路径的哈希推出来。
 25. **第二次评审后补强两条性质的输入。** `rejects-broken-text` 的输入带上改动所在的行，诊断必须落在这一行；`format-files` 增加路径参数 `targets`，验证路径参数的规则。原来的输入让多数改错的实现仍能通过。见 `design/syntax.uc`、`design/cli.uc`。
 26. **`design/` 和 `corpus/` 中的符号链接给出诊断 `cli.symlink`，不跟随，也不改写。** 见 [design.md](design.md) §8。
+27. **大批量的验证是合并之后的异步阶段，不阻塞开发。** 开发分支只跑一次 `make check` 就提交；变异测试、长时间的 fuzz 和大量的随机检查归 `make deep`，由单独的 agent 或定时的 CI 跑，结果成为修复任务。见 [design.md](design.md) §10，`CLAUDE.md` 原则 9。
