@@ -11,10 +11,12 @@ type RepoFile record "仓库中的一个文件：内容和权限位" {
 
 op main(args: list<string>) -> int "执行一条命令，返回退出码"
 
-flow format-files "用户运行 unicode fmt：把给出的路径之下、缺省为 design/ 和 corpus/ 下的每个文件改写成规范格式；带 --check 时只报告，不改写；路径不在这两个目录之内或不存在时是参数错误" {
-  forall files: map<string, RepoFile> generated "一个仓库中 design/ 和 corpus/ 下的文件，路径到内容和权限位；有的合法，有的不合法，有的不是规范格式"
+flow format-files "用户运行 unicode fmt：把给出的路径之下、缺省为 design/ 和 corpus/ 下的每个文件改写成规范格式；带 --check 时只报告，不改写；路径不在这两个目录之内或不存在时是参数错误；不给出 --root 时，从工作目录向上找含 design/system.uc 的目录，找不到时是参数错误；读不出的文件给出 cli.unreadable-file" {
+  forall files: map<string, RepoFile> generated "一个仓库中 design/ 和 corpus/ 下的文件，路径到内容和权限位；有的合法，有的不合法，有的不是规范格式，有的读不出"
   forall check: bool
   forall targets: list<string> generated "fmt 的路径参数：没有，或 design/ 和 corpus/ 中的文件和目录，有时混入不存在的路径或这两个目录之外的路径"
+  forall at: string generated "运行命令的工作目录：仓库的根目录、它的某个子目录，或者仓库之外的目录"
+  forall explicitRoot: bool
   user -> main(args) {
     cli -> syntax.kindOf(path)
     cli -> syntax.parse(path, kind, src)

@@ -47,3 +47,4 @@
 30. **M3 的设计：`query`（节点、引用、搜索、切片、影响）和 `view`（选取与折叠）。** 二者只读图，性质在随机的图上验证，可以与 M2 并行开发；命令行的接线（`build`、`node`、`slice`、`impact`、`view`、`check`）放在最后一条开发线中统一完成。见 `design/query.uc`、`design/view.uc`。
 31. **名称映射之后不能撞名（[model.md](model.md) §10 第 30 条）。** M3 的实现中发现类型 `Slice` 与操作 `slice` 在 Go 中都映射成 `Slice`；查询的两个记录改名为 `Context` 和 `Affected`，同类的撞名今后在载入设计时就报出。
 32. **代码层契约的细节（Go 后端与 `check` 之间）：** 指针写作 `optional`，由 `check` 按设计中的形式放宽；末尾的 `error` 写作 `raises error`；接口中声明的方法也是 `op` 节点（形式 `abstract`），经由接口的调用因此能被追溯；`AddFragment` 不因绑定的目标不存在而失败，这类边留给 `check` 报告。见 [design.md](design.md) §5.2、[model.md](model.md) §3、§9。
+33. **第一次深度验证之后：** `make deep` 的 gremlins 改为在根目录下不带路径、不用缓存、放宽超时运行；`kindOf` 增加性质 `kind-of-follows-path`；语法诊断按位置排序，并且落在改动的列上；`format-files` 的输入增加工作目录、是否给出 `--root`，以及读不出的文件。27 个改变行为的变异原先没有被任何性质抓到。

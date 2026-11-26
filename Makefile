@@ -20,4 +20,6 @@ FUZZ_TIME ?= 30s
 deep:
 	go test ./... -count=1 -rapid.checks=$(RAPID_CHECKS)
 	./scripts/fuzz-all.sh $(FUZZ_TIME)
-	go tool gremlins unleash ./...
+	# gremlins takes a directory, not a package pattern; run it from the root,
+	# uncached, with a timeout that covers recompiling a mutant.
+	GOFLAGS=-count=1 go tool gremlins unleash --timeout-coefficient 30

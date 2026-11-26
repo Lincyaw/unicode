@@ -28,10 +28,11 @@ type Sample record "一个合法文件的种类和文本，供性质使用" {
   field text: string
 }
 
-type Broken record "一个合法文件做了一处违反某条规则的改动：种类、文本、改动所在的行，以及这处改动应当得到的诊断码" {
+type Broken record "一个合法文件做了一处违反某条规则的改动：种类、文本、改动所在的行和列，以及这处改动应当得到的诊断码" {
   field kind: FileKind
   field text: string
   field line: int
+  field column: int
   field code: string
 }
 
@@ -39,7 +40,12 @@ op kindOf(path: string) -> FileKind raises NotADesignFile "由仓库中的相对
 
 op parse(path: string, kind: FileKind, src: bytes) -> Parsed "按 format.md 的词法和语法解析一个文件"
 
-property parse-is-total invariant "解析任何字节都会返回，不会崩溃；每条诊断的位置都在文件之内，并写明修正的办法" {
+property kind-of-follows-path invariant "design/system.uc 是系统文件；design/ 下其余以 .uc 结尾的路径是组件文件；corpus/ 下以 .uc 结尾的路径是录制文件；其余路径都被拒绝" {
+  about kindOf
+  forall path: string generated "形如 design/…、corpus/… 和其他目录下的相对路径，扩展名有的是 .uc，有的不是"
+}
+
+property parse-is-total invariant "解析任何字节都会返回，不会崩溃；每条诊断的位置都在文件之内，写明修正的办法；诊断按行、列、诊断码排序" {
   about parse
   forall path: string
   forall kind: FileKind
@@ -53,7 +59,7 @@ property format-is-stable relation "合法的文本 s 解析后打印得到 t：
   forall sample: Sample generated "一个合法的文件：随机的语法树，以随意而合法的空白和空行写成文本"
 }
 
-property rejects-broken-text invariant "合法的文件做一处违反某条规则的改动之后，解析在改动所在的行给出这条规则的诊断，并且不给出语法树" {
+property rejects-broken-text invariant "合法的文件做一处违反某条规则的改动之后，解析在改动所在的行和列给出这条规则的诊断，并且不给出语法树" {
   about parse
   forall broken: Broken generated "一个随机的合法文件，在随机的一处做了违反 format.md 某条规则的改动，附上改动所在的行和应当得到的诊断码"
 }
