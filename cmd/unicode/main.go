@@ -110,7 +110,7 @@ func rootCommand(stdout, stderr io.Writer) *cobra.Command {
 	flags := root.PersistentFlags()
 	flags.StringVar(&g.root, "root", "", "repository root (default: the nearest ancestor of the working directory that contains design/system.uc)")
 	flags.StringVar(&g.format, "format", "text", "output format: text or json")
-	root.AddCommand(fmtCommand(g, stdout, stderr))
+	root.AddCommand(fmtCommand(g, stdout, stderr), checkCommand(g, stdout, stderr))
 	return root
 }
 

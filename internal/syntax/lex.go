@@ -1,7 +1,9 @@
 package syntax
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -31,6 +33,35 @@ var ucLexer = lexer.MustSimple([]lexer.SimpleRule{
 })
 
 var symbols = ucLexer.Symbols()
+
+// byteColumns lexes with ucLexer and gives every token the column in bytes
+// that diag.Position counts, where participle counts runes, so that the
+// positions in a syntax tree are those of diagnostics.
+type byteColumns struct{ lexer.Definition }
+
+func (d byteColumns) Lex(filename string, r io.Reader) (lexer.Lexer, error) {
+	src, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	l, err := d.Definition.Lex(filename, bytes.NewReader(src))
+	if err != nil {
+		return nil, err
+	}
+	return &byteColumnLexer{Lexer: l, src: src}, nil
+}
+
+type byteColumnLexer struct {
+	lexer.Lexer
+	src []byte
+}
+
+func (l *byteColumnLexer) Next() (lexer.Token, error) {
+	t, err := l.Lexer.Next()
+	off := min(t.Pos.Offset, len(l.src))
+	t.Pos.Column = off - bytes.LastIndexByte(l.src[:off], '\n')
+	return t, err
+}
 
 // forbidden reports the characters that no file may contain; a run of the
 // same problem counts once.

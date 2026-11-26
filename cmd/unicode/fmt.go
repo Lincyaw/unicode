@@ -62,6 +62,26 @@ type diagnosticJSON struct {
 	Fix     string `json:"fix"`
 }
 
+func diagnosticsJSON(diags []diag.Diagnostic) []diagnosticJSON {
+	out := []diagnosticJSON{}
+	for _, d := range diags {
+		out = append(out, diagnosticJSON{
+			Code: d.Code, Subject: d.Subject, Path: d.Position.Path, Line: d.Position.Line, Column: d.Position.Column,
+			Message: d.Message, Fix: d.Fix,
+		})
+	}
+	return out
+}
+
+// diagnosticsText writes one line per diagnostic, for standard error.
+func diagnosticsText(diags []diag.Diagnostic) []byte {
+	var out []byte
+	for _, d := range diags {
+		out = fmt.Appendf(out, "%s:%d:%d: %s: %s (fix: %s)\n", d.Position.Path, d.Position.Line, d.Position.Column, d.Code, d.Message, d.Fix)
+	}
+	return out
+}
+
 type fmtReport struct {
 	Files       []fileReport     `json:"files"`
 	Diagnostics []diagnosticJSON `json:"diagnostics"`
@@ -74,7 +94,7 @@ func runFmt(root, format string, check bool, args []string, stdout, stderr io.Wr
 	if err != nil {
 		return err
 	}
-	report := fmtReport{Files: []fileReport{}, Diagnostics: []diagnosticJSON{}}
+	report := fmtReport{Files: []fileReport{}}
 	var diags []diag.Diagnostic
 	for _, rel := range paths {
 		status, ds, err := formatFile(root, rel, check)
@@ -84,12 +104,7 @@ func runFmt(root, format string, check bool, args []string, stdout, stderr io.Wr
 		report.Files = append(report.Files, fileReport{Path: rel, Status: status})
 		diags = append(diags, ds...)
 	}
-	for _, d := range diags {
-		report.Diagnostics = append(report.Diagnostics, diagnosticJSON{
-			Code: d.Code, Subject: d.Subject, Path: d.Position.Path, Line: d.Position.Line, Column: d.Position.Column,
-			Message: d.Message, Fix: d.Fix,
-		})
-	}
+	report.Diagnostics = diagnosticsJSON(diags)
 	var out, errOut []byte
 	if format == "json" {
 		if out, err = json.MarshalIndent(report, "", "  "); err != nil {
@@ -102,9 +117,7 @@ func runFmt(root, format string, check bool, args []string, stdout, stderr io.Wr
 				out = fmt.Appendln(out, f.Path)
 			}
 		}
-		for _, d := range diags {
-			errOut = fmt.Appendf(errOut, "%s:%d:%d: %s: %s (fix: %s)\n", d.Position.Path, d.Position.Line, d.Position.Column, d.Code, d.Message, d.Fix)
-		}
+		errOut = diagnosticsText(diags)
 	}
 	if _, err := stdout.Write(out); err != nil {
 		return &exitError{code: exitUnexpected}
@@ -169,53 +182,65 @@ func fmtPaths(root string, args []string) ([]string, error) {
 }
 
 // formatFile formats one file and returns its status and diagnostics; the
-// error is an unexpected failure to write it. A symbolic link is neither
-// followed nor rewritten.
+// error is an unexpected failure to write it.
 func formatFile(root, rel string, check bool) (string, []diag.Diagnostic, error) {
-	at := diag.Position{Path: rel, Line: 1, Column: 1}
-	full := filepath.Join(root, filepath.FromSlash(rel))
-	if info, err := os.Lstat(full); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		return statusInvalid, []diag.Diagnostic{{
-			Code: "cli.symlink", Subject: rel, Position: at,
-			Message: "the file is a symbolic link, which fmt neither follows nor rewrites",
-			Fix:     "replace the link with the file it points to, or move the link out of design/ and corpus/",
-		}}, nil
+	src, f, diags := readFile(root, rel)
+	if f == nil {
+		return statusInvalid, diags, nil
 	}
-	kind, err := syntax.KindOf(rel)
-	if err != nil {
-		return statusInvalid, []diag.Diagnostic{{
-			Code: "cli.not-a-design-file", Subject: rel, Position: at,
-			Message: "design/ and corpus/ may hold only .uc files, and this file is not one",
-			Fix:     "move the file out of design/ and corpus/, or rename it",
-		}}, nil
-	}
-	src, err := os.ReadFile(full)
-	if err != nil {
-		return statusInvalid, []diag.Diagnostic{{
-			Code: "cli.unreadable-file", Subject: rel, Position: at,
-			Message: "cannot read the file: " + err.Error(), Fix: "make the file readable, or remove it",
-		}}, nil
-	}
-	parsed := syntax.Parse(rel, kind, src)
-	if len(parsed.Diagnostics) > 0 {
-		return statusInvalid, parsed.Diagnostics, nil
-	}
-	out := parsed.File.Print()
+	out := f.Print()
 	switch {
 	case bytes.Equal(out, src):
 		return statusUnchanged, nil, nil
 	case check:
-		line, column := firstDifference(src, out)
-		return statusNotCanonical, []diag.Diagnostic{{
-			Code: "cli.not-canonical", Subject: rel, Position: diag.Position{Path: rel, Line: line, Column: column},
-			Message: "the file is not in the canonical format: it differs from the output of unicode fmt from here on",
-			Fix:     "run unicode fmt",
-		}}, nil
+		return statusNotCanonical, []diag.Diagnostic{notCanonical(rel, src, out)}, nil
 	}
-	if err := renameio.WriteFile(full, out, 0o644); err != nil {
+	if err := renameio.WriteFile(filepath.Join(root, filepath.FromSlash(rel)), out, 0o644); err != nil {
 		return "", nil, fmt.Errorf("cannot write %s: %w", rel, err)
 	}
 	return statusRewritten, nil, nil
+}
+
+// readFile reads and parses one file of design/ or corpus/. A symbolic link,
+// which is neither followed nor rewritten, a path that KindOf rejects, a file
+// that cannot be read and one with syntax errors give diagnostics and no tree.
+func readFile(root, rel string) ([]byte, *syntax.File, []diag.Diagnostic) {
+	at := diag.Position{Path: rel, Line: 1, Column: 1}
+	full := filepath.Join(root, filepath.FromSlash(rel))
+	if info, err := os.Lstat(full); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return nil, nil, []diag.Diagnostic{{
+			Code: "cli.symlink", Subject: rel, Position: at,
+			Message: "the file is a symbolic link, which unicode neither follows nor rewrites",
+			Fix:     "replace the link with the file it points to, or move the link out of design/ and corpus/",
+		}}
+	}
+	kind, err := syntax.KindOf(rel)
+	if err != nil {
+		return nil, nil, []diag.Diagnostic{{
+			Code: "cli.not-a-design-file", Subject: rel, Position: at,
+			Message: "design/ and corpus/ may hold only .uc files, and this file is not one",
+			Fix:     "move the file out of design/ and corpus/, or rename it",
+		}}
+	}
+	src, err := os.ReadFile(full)
+	if err != nil {
+		return nil, nil, []diag.Diagnostic{{
+			Code: "cli.unreadable-file", Subject: rel, Position: at,
+			Message: "cannot read the file: " + err.Error(), Fix: "make the file readable, or remove it",
+		}}
+	}
+	parsed := syntax.Parse(rel, kind, src)
+	return src, parsed.File, parsed.Diagnostics
+}
+
+// notCanonical is the diagnostic of a file src whose canonical form is out.
+func notCanonical(rel string, src, out []byte) diag.Diagnostic {
+	line, column := firstDifference(src, out)
+	return diag.Diagnostic{
+		Code: "cli.not-canonical", Subject: rel, Position: diag.Position{Path: rel, Line: line, Column: column},
+		Message: "the file is not in the canonical format: it differs from the output of unicode fmt from here on",
+		Fix:     "run unicode fmt",
+	}
 }
 
 // firstDifference returns the line and byte column in a of the first byte where a and b differ.
