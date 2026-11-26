@@ -120,25 +120,28 @@ func (x *extraction) addBinding(kind graph.EdgeKind, owner bound, target string,
 		return
 	}
 	x.edges[key] = &graph.Edge{Kind: kind, From: owner.id, To: target, Source: graph.SourceDeclared, Origin: at, Attrs: attrs}
-	if kind == graph.EdgeKindRealizes && owner.isType {
+	switch {
+	case kind == graph.EdgeKindRealizes && owner.isType:
 		x.realizes[owner.id] = append(x.realizes[owner.id], target)
+	case kind == graph.EdgeKindChecks:
+		x.predicates[owner.id] = true
 	}
 }
 
 // addCandidates adds, for every exported method of a type that realizes a
-// design type, a derived realizes edge to the operation its name maps back
-// to (docs/model.md §9). Deriving drops the ones whose operation does not exist.
+// design type, an interface's methods included, a derived realizes edge to
+// the operation its name maps back to (docs/model.md §9). Deriving drops the
+// ones whose operation does not exist.
 func (x *extraction) addCandidates() {
 	for _, d := range x.declared {
-		if d.decl == nil || d.decl.Recv == nil || !token.IsExported(d.fn.Name()) {
+		if d.fn == nil || receiver(d.fn) == nil || !token.IsExported(d.fn.Name()) {
 			continue
 		}
 		for _, target := range x.realizes[typeID(receiver(d.fn).Obj())] {
 			key := edgeKey{graph.EdgeKindRealizes, d.id, target + "." + designName(d.fn.Name())}
 			if _, ok := x.edges[key]; !ok {
 				x.edges[key] = &graph.Edge{
-					Kind: key.kind, From: key.from, To: key.to, Source: graph.SourceDerived,
-					Origin: x.position(d.pkg, d.decl.Name.Pos()),
+					Kind: key.kind, From: key.from, To: key.to, Source: graph.SourceDerived, Origin: x.position(d.pkg, d.pos),
 				}
 			}
 		}

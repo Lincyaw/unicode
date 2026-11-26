@@ -99,12 +99,18 @@ func (w *world) drawType() {
 			}
 		}
 		for range rapid.IntRange(0, 2).Draw(w.t, "sigs") {
-			ty.sigs = append(ty.sigs, w.drawSig(file, w.fresh("method", w.exported("methodExported"))))
+			sig := w.drawSig(file, w.fresh("method", w.exported("methodExported")))
+			sig.doc = w.drawDoc(sig.name, "method")
+			ty.sigs = append(ty.sigs, sig)
 		}
 	default:
-		ty.under = &gexpr{kind: "basic", basic: rapid.SampledFrom(basics).Draw(w.t, "under")}
-		if rapid.Bool().Draw(w.t, "underSlice") {
-			ty.under = &gexpr{kind: "slice", elem: ty.under}
+		// Half of them are strings, the shape of an enum.
+		ty.under = &gexpr{kind: "basic", basic: "string"}
+		if rapid.Bool().Draw(w.t, "notEnum") {
+			ty.under = &gexpr{kind: "basic", basic: rapid.SampledFrom(basics).Draw(w.t, "under")}
+			if rapid.Bool().Draw(w.t, "underSlice") {
+				ty.under = &gexpr{kind: "slice", elem: ty.under}
+			}
 		}
 	}
 	ty.doc = w.drawDoc(ty.name, "type")
@@ -181,6 +187,29 @@ func (w *world) implementable(ty, iface *gtype) bool {
 	return true
 }
 
+// drawConsts gives a type whose underlying type is string constants, in files
+// of its package that can name it: most named after the type and a value,
+// some not.
+func (w *world) drawConsts(ty *gtype) {
+	if ty.form != "defined" || ty.under.kind != "basic" || ty.under.basic != "string" {
+		return
+	}
+	var files []*gfile
+	for _, f := range ty.file.pkg.files {
+		if typeVisible(f, ty) {
+			files = append(files, f)
+		}
+	}
+	for range rapid.IntRange(0, 3).Draw(w.t, "consts") {
+		name := ty.name + w.fresh("value", true)
+		if rapid.IntRange(0, 3).Draw(w.t, "unprefixed") == 0 {
+			name = w.fresh("const", w.exported("constExported"))
+		}
+		file := rapid.SampledFrom(files).Draw(w.t, "constFile")
+		file.decls = append(file.decls, &gconst{typ: ty, name: name})
+	}
+}
+
 func (w *world) addMethod(ty *gtype, file *gfile, sig *gsig) {
 	fn := &gfunc{file: file, recv: ty, ptrRecv: rapid.Bool().Draw(w.t, "ptrRecv"), sig: sig}
 	fn.doc = w.drawDoc(sig.name, "method")
@@ -199,7 +228,19 @@ func (w *world) drawFunc(file *gfile, testName string) {
 		param := &gexpr{kind: "pointer", elem: &gexpr{kind: "ext", ext: [3]string{"testing", "testing", "F"}}}
 		sig = &gsig{pkg: file.pkg, params: []gparam{{name: "f", typ: param}}}
 	default:
-		sig = w.drawSig(file, w.fresh("func", w.exported("funcExported")))
+		// Some are named as predicates, by one camel hump or two, of a property or a flow.
+		name := w.fresh("func", w.exported("funcExported"))
+		switch rapid.IntRange(0, 5).Draw(w.t, "predicateName") {
+		case 0:
+			name = "check" + w.fresh("hump", true)
+		case 1:
+			name = "checkFlow" + w.fresh("hump", true)
+		case 2:
+			name = "check" + w.fresh("hump", true) + w.fresh("hump", true)
+		case 3:
+			name = "check" + w.fresh("hump", false)
+		}
+		sig = w.drawSig(file, name)
 	}
 	switch testName {
 	case "Test", "Fuzz":
@@ -234,7 +275,7 @@ func (w *world) drawBody(fn *gfunc) {
 }
 
 func (w *world) drawStmt(fn *gfunc, depth int) (gstmt, bool) {
-	kinds := []string{"call", "call", "call", "iface", "builtin", "ref", "comment"}
+	kinds := []string{"call", "call", "call", "assign", "iface", "builtin", "ref", "comment"}
 	if depth == 0 {
 		kinds = append(kinds, "closure")
 	}
@@ -248,6 +289,19 @@ func (w *world) drawStmt(fn *gfunc, depth int) (gstmt, bool) {
 			return gstmt{}, false
 		}
 		return rapid.SampledFrom(calls).Draw(w.t, "callee"), true
+	case "assign":
+		var calls []gstmt
+		for _, c := range w.callables(fn.file) {
+			if len(c.target.sig.results) == 1 {
+				calls = append(calls, gstmt{kind: kind, target: c.target, via: c.via})
+			}
+		}
+		if len(calls) == 0 {
+			return gstmt{}, false
+		}
+		call := rapid.SampledFrom(calls).Draw(w.t, "assigned")
+		call.name = w.fresh("variable", false)
+		return call, true
 	case "iface":
 		calls := w.interfaceCalls(fn.file)
 		if len(calls) == 0 {
@@ -269,7 +323,7 @@ func (w *world) drawStmt(fn *gfunc, depth int) (gstmt, bool) {
 		inner, ok := w.drawStmt(fn, depth+1)
 		return gstmt{kind: kind, inner: &inner}, ok
 	case "comment":
-		return gstmt{kind: kind, text: w.drawBinding("bodyBinding", "func").text}, true
+		return gstmt{kind: kind, comment: w.drawBinding("bodyBinding", "func")}, true
 	default:
 		return gstmt{kind: kind}, true
 	}
@@ -361,28 +415,51 @@ func sortedMethods(set map[string]*gsig) []*gsig {
 
 // Bindings and docs.
 
-var malformed = []func(w *world, verb, id string) string{
-	func(w *world, _, id string) string {
-		return "//uc:" + rapid.SampledFrom([]string{"realize", "Realizes", "check", "generate", "uses", ""}).Draw(w.t, "verb") + " " + id
+// The diagnostics of bindings that are not well-formed or not in place.
+const (
+	codeUnknownVerb = "lang.golang.unknown-binding-verb"
+	codeMissingID   = "lang.golang.missing-binding-id"
+	codeInvalidID   = "lang.golang.invalid-binding-id"
+	codeMisplaced   = "lang.golang.misplaced-binding"
+	codeDuplicate   = "lang.golang.duplicate-binding"
+)
+
+// malformed writes a binding that is not well-formed, whatever its place.
+var malformed = []func(w *world, verb, id string) binding{
+	func(w *world, _, id string) binding {
+		verb := rapid.SampledFrom([]string{"realize", "Realizes", "check", "generate", "uses", ""}).Draw(w.t, "verb")
+		return binding{text: "//uc:" + verb + " " + id, code: codeUnknownVerb}
 	},
-	func(_ *world, verb, id string) string { return "//uc:" + verb + "\t" + id },
-	func(_ *world, verb, _ string) string { return "//uc:" + verb },
-	func(_ *world, verb, _ string) string { return "//uc:" + verb + " " },
-	func(_ *world, verb, id string) string { return "//uc:" + verb + "  " + id },
-	func(_ *world, verb, id string) string { return "//uc:" + verb + " " + id + " " },
-	func(_ *world, verb, id string) string { return "//uc:" + verb + " " + id + " more" },
-	func(w *world, verb, _ string) string {
-		return "//uc:" + verb + " " + rapid.SampledFrom([]string{"a..B", ".a", "a.", "a_b", "9a", "A-b", "a.-b"}).Draw(w.t, "badID")
+	func(_ *world, verb, id string) binding {
+		return binding{text: "//uc:" + verb + "\t" + id, code: codeUnknownVerb}
 	},
-	func(w *world, _, _ string) string {
-		return "//uc:generates " + rapid.SampledFrom([]string{"order", "order.Order", "order.total-is-sum"}).Draw(w.t, "badSymbol")
+	func(_ *world, verb, _ string) binding { return binding{text: "//uc:" + verb, code: codeMissingID} },
+	func(_ *world, verb, _ string) binding {
+		return binding{text: "//uc:" + verb + " ", code: codeMissingID}
+	},
+	func(_ *world, verb, id string) binding {
+		return binding{text: "//uc:" + verb + "  " + id, code: codeInvalidID}
+	},
+	func(_ *world, verb, id string) binding {
+		return binding{text: "//uc:" + verb + " " + id + " ", code: codeInvalidID}
+	},
+	func(_ *world, verb, id string) binding {
+		return binding{text: "//uc:" + verb + " " + id + " more", code: codeInvalidID}
+	},
+	func(w *world, verb, _ string) binding {
+		id := rapid.SampledFrom([]string{"a..B", ".a", "a.", "a_b", "9a", "A-b", "a.-b"}).Draw(w.t, "badID")
+		return binding{text: "//uc:" + verb + " " + id, code: codeInvalidID}
+	},
+	func(w *world, _, _ string) binding {
+		id := rapid.SampledFrom([]string{"order", "order.Order", "order.total-is-sum"}).Draw(w.t, "badSymbol")
+		return binding{text: "//uc:generates " + id, code: codeInvalidID}
 	},
 }
 
-// binding is one line of a doc comment; verb and target are set when it is
-// a well-formed binding.
+// binding is one line of a comment. A well-formed binding has its verb and
+// target; one that is not has the code of its diagnostic.
 type binding struct {
-	text, verb, target string
+	text, verb, target, code string
 }
 
 // drawBinding draws a binding fit for a type or a function, sometimes one
@@ -405,7 +482,7 @@ func (w *world) drawBinding(label, on string) binding {
 		id = component + "." + rapid.StringMatching(`[a-z]{1,3}(-[a-z]{1,3}){0,1}\.[a-z][a-zA-Z]{0,3}`).Draw(w.t, label+"Symbol")
 	}
 	if rapid.IntRange(0, 4).Draw(w.t, label+"Malformed") == 0 {
-		return binding{text: rapid.SampledFrom(malformed).Draw(w.t, label+"How")(w, verb, id)}
+		return rapid.SampledFrom(malformed).Draw(w.t, label+"How")(w, verb, id)
 	}
 	return binding{text: "//uc:" + verb + " " + id, verb: verb, target: id}
 }
@@ -439,10 +516,10 @@ func (w *world) words(label string) string {
 }
 
 // misplaced draws bindings for a place that binds nothing.
-func (w *world) misplaced(label string) []string {
-	var lines []string
+func (w *world) misplaced(label string) []binding {
+	var lines []binding
 	for range rapid.IntRange(0, 1).Draw(w.t, label) {
-		lines = append(lines, w.drawBinding(label, "func").text)
+		lines = append(lines, w.drawBinding(label, "func"))
 	}
 	return lines
 }
@@ -453,7 +530,7 @@ func (w *world) drawLoose() {
 		file := w.anyFile("looseFile")
 		kind := rapid.SampledFrom([]string{"const", "var", "trailing", "init", "floating"}).Draw(w.t, "looseKind")
 		file.decls = append(file.decls, &gloose{
-			kind: kind, name: w.fresh("loose", false), doc: []string{w.drawBinding("looseBinding", "func").text},
+			kind: kind, name: w.fresh("loose", false), doc: []binding{w.drawBinding("looseBinding", "func")},
 		})
 	}
 }
@@ -470,10 +547,7 @@ func bindingsOf(doc []binding, isType bool) []binding {
 	return out
 }
 
-func docLines(doc []binding) []string {
-	var lines []string
-	for _, b := range doc {
-		lines = append(lines, b.text)
-	}
-	return lines
+// checks tells whether a doc comment carries a well-formed checks binding.
+func checks(doc []binding) bool {
+	return slices.ContainsFunc(bindingsOf(doc, false), func(b binding) bool { return b.verb == "checks" })
 }

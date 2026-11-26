@@ -32,11 +32,55 @@ func (b *Backend) MapName(role lang.NameRole, designName string) string {
 // design: an exported name loses its leading capital. Any other name is the
 // mapping of no design name, and stays as it is.
 func designName(goName string) string {
-	r, size := utf8.DecodeRuneInString(goName)
-	if !unicode.IsUpper(r) {
+	if !startsUpper(goName) {
 		return goName
 	}
-	return string(unicode.ToLower(r)) + goName[size:]
+	_, size := utf8.DecodeRuneInString(goName)
+	return strings.ToLower(goName[:size]) + goName[size:]
+}
+
+// predicateName maps a predicate's Go name back to its property's or flow's
+// name: checkTotalIsSum to total-is-sum, checkFlowSubmitOrder to
+// submit-order. A name that is not a predicate's mapping maps back as an
+// operation's.
+func predicateName(goName string) string {
+	for _, prefix := range []string{"checkFlow", "check"} {
+		if rest, ok := strings.CutPrefix(goName, prefix); ok && startsUpper(rest) {
+			return kebab(rest)
+		}
+	}
+	return designName(goName)
+}
+
+// enumValueName maps a constant of a string type back to its enum value:
+// OrderStatusDraft of OrderStatus to draft. A constant whose name is not
+// the type's name and a capitalized value is no value's mapping, and stays
+// as it is.
+func enumValueName(constName, typeName string) string {
+	if rest, ok := strings.CutPrefix(constName, typeName); ok && startsUpper(rest) {
+		return designName(rest)
+	}
+	return constName
+}
+
+func startsUpper(s string) bool {
+	r, _ := utf8.DecodeRuneInString(s)
+	return unicode.IsUpper(r)
+}
+
+// kebab writes an upper camel name, "TotalIsSum", as "total-is-sum".
+func kebab(camel string) string {
+	var b strings.Builder
+	for i, r := range camel {
+		if unicode.IsUpper(r) {
+			if i > 0 {
+				b.WriteByte('-')
+			}
+			r = unicode.ToLower(r)
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func upperFirst(s string) string {

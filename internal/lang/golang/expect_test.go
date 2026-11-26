@@ -13,24 +13,35 @@ import (
 	"github.com/lincyaw/unicode/internal/graph"
 )
 
-// This file computes from the model of a module the nodes and edges that
-// extraction should give.
+// This file computes from the model of a module the nodes, edges and
+// diagnostics that extraction should give.
 
-// expectation collects the nodes and edges the model should extract to.
+// expectation collects what the model should extract to. at holds, from
+// every file written, where each declaration's name, each call's callee and
+// each comment line are.
 type expectation struct {
-	w        *world
-	nodes    map[string]graph.Node
-	edges    map[edgeKey]graph.Edge
-	sites    map[edgeKey][]diag.Position
-	realized map[*gtype][]string
+	w           *world
+	at          map[any]diag.Position
+	imports     map[*gfile]map[string]bool
+	nodes       map[string]graph.Node
+	edges       map[edgeKey]graph.Edge
+	sites       map[edgeKey][]diag.Position
+	diagnostics []string
+	realized    map[*gtype][]string
 }
 
 func (w *world) module() Module {
 	files := maps.Clone(rapidFiles)
 	files["go.mod"] = goMod
 	x := &expectation{
-		w: w, nodes: map[string]graph.Node{}, edges: map[edgeKey]graph.Edge{}, sites: map[edgeKey][]diag.Position{},
-		realized: map[*gtype][]string{},
+		w: w, at: map[any]diag.Position{}, imports: map[*gfile]map[string]bool{}, nodes: map[string]graph.Node{},
+		edges: map[edgeKey]graph.Edge{}, sites: map[edgeKey][]diag.Position{}, realized: map[*gtype][]string{},
+	}
+	for _, f := range w.files() {
+		written := write(f)
+		files[f.path] = written.b.String()
+		maps.Copy(x.at, written.at)
+		x.imports[f] = written.imports
 	}
 	for _, ty := range w.types {
 		for _, b := range bindingsOf(ty.doc, true) {
@@ -38,15 +49,10 @@ func (w *world) module() Module {
 		}
 	}
 	for _, p := range w.packages {
-		written := map[*gfile]*writer{}
-		for _, f := range p.files {
-			written[f] = write(f)
-			files[f.path] = written[f].b.String()
-		}
-		x.addPackage(p, written)
+		x.addPackage(p)
 	}
 	x.addImplements()
-	m := Module{Files: files}
+	m := Module{Files: files, Diagnostics: x.diagnostics}
 	for _, n := range x.nodes {
 		m.Nodes = append(m.Nodes, describeNode(n))
 	}
@@ -64,10 +70,11 @@ func (w *world) module() Module {
 	}
 	slices.Sort(m.Nodes)
 	slices.Sort(m.Edges)
+	slices.Sort(m.Diagnostics)
 	return m
 }
 
-func (x *expectation) addPackage(p *gpkg, positions map[*gfile]*writer) {
+func (x *expectation) addPackage(p *gpkg) {
 	files := slices.SortedFunc(slices.Values(p.files), func(a, b *gfile) int { return cmp.Compare(a.path, b.path) })
 	written := files[0]
 	for _, f := range files {
@@ -77,28 +84,31 @@ func (x *expectation) addPackage(p *gpkg, positions map[*gfile]*writer) {
 		}
 	}
 	pkgID := "go:" + p.path
-	x.node(pkgID, graph.NodeKindContainer, "package", positions[written].at[written], summaryOf(written.doc),
+	x.node(pkgID, graph.NodeKindContainer, "package", x.at[written], summaryOf(written.doc),
 		map[string][]string{"language": {"go"}, "path": {p.path}})
 	for _, f := range files {
-		at := positions[f].at
+		x.misplaced(f.doc)
 		fileID := "file:" + f.path
-		x.node(fileID, graph.NodeKindContainer, "file", at[f], "", map[string][]string{"language": {"go"}, "path": {f.path}})
+		x.node(fileID, graph.NodeKindContainer, "file", x.at[f], "", map[string][]string{"language": {"go"}, "path": {f.path}})
 		x.edge(graph.EdgeKindContains, pkgID, fileID, graph.SourceExtracted)
 		for _, imported := range x.w.packages {
-			if positions[f].imports[imported.path] {
+			if x.imports[f][imported.path] {
 				x.edge(graph.EdgeKindImports, fileID, "go:"+imported.path, graph.SourceExtracted)
 			}
 		}
 		for _, decl := range f.decls {
 			switch decl := decl.(type) {
 			case *gtype:
-				x.addType(decl, fileID, at)
+				x.addType(decl, fileID)
 			case *ggroup:
+				x.misplaced(decl.doc)
 				for _, ty := range decl.types {
-					x.addType(ty, fileID, at)
+					x.addType(ty, fileID)
 				}
 			case *gfunc:
-				x.addFunc(decl, fileID, at)
+				x.addFunc(decl, fileID)
+			case *gloose:
+				x.misplaced(decl.doc)
 			}
 		}
 	}
@@ -114,20 +124,21 @@ func funcIdentity(fn *gfunc) string {
 }
 
 // summaryOf is the sentence a doc comment starts with, when it has one.
-func summaryOf(doc []string) string {
+func summaryOf(doc []binding) string {
 	if len(doc) == 0 {
 		return ""
 	}
-	return strings.TrimPrefix(doc[0], "// ")
+	return strings.TrimPrefix(doc[0].text, "// ")
 }
 
-func (x *expectation) addType(ty *gtype, fileID string, at map[any]diag.Position) {
+func (x *expectation) addType(ty *gtype, fileID string) {
 	id := typeIdentity(ty)
 	attrs := map[string][]string{"name": {ty.name}}
 	switch ty.form {
 	case "struct":
 		attrs["fields"] = []string{}
 		for _, field := range ty.fields {
+			x.misplaced(field.doc)
 			if token.IsExported(field.name) {
 				attrs["fields"] = append(attrs["fields"], lowerFirst(field.name)+": "+x.design(field.typ))
 			}
@@ -137,27 +148,53 @@ func (x *expectation) addType(ty *gtype, fileID string, at map[any]diag.Position
 			x.edge(graph.EdgeKindExtends, id, typeIdentity(ty.embed), graph.SourceExtracted)
 		}
 	case "interface":
-		attrs["methods"] = []string{}
-		for _, sig := range slices.SortedFunc(maps.Values(ifaceMethods(ty)), func(a, b *gsig) int { return cmp.Compare(a.name, b.name) }) {
-			if token.IsExported(sig.name) {
-				attrs["methods"] = append(attrs["methods"], lowerFirst(sig.name)+" "+x.signature(sig))
-			}
-		}
 		for _, sig := range ty.sigs {
-			x.refersSig(id, sig)
+			x.addAbstract(ty, sig)
 		}
 		for _, e := range ty.embeds {
 			x.edge(graph.EdgeKindExtends, id, typeIdentity(e), graph.SourceExtracted)
 		}
 	default:
 		x.refers(id, ty.under)
+		if values := x.values(ty); len(values) > 0 {
+			attrs["values"] = values
+		}
 	}
-	x.node(id, graph.NodeKindType, ty.form, at[ty], summaryOf(docLines(ty.doc)), attrs)
+	x.node(id, graph.NodeKindType, ty.form, x.at[ty], summaryOf(ty.doc), attrs)
 	x.edge(graph.EdgeKindContains, fileID, id, graph.SourceExtracted)
 	x.bindings(id, ty.doc, true)
 }
 
-func (x *expectation) addFunc(fn *gfunc, fileID string, at map[any]diag.Position) {
+// values are the enum values of a type's constants, in the order of its
+// package's files and of the source.
+func (x *expectation) values(ty *gtype) []string {
+	var values []string
+	files := slices.SortedFunc(slices.Values(ty.file.pkg.files), func(a, b *gfile) int { return cmp.Compare(a.path, b.path) })
+	for _, f := range files {
+		for _, decl := range f.decls {
+			if c, ok := decl.(*gconst); ok && c.typ == ty {
+				value := c.name
+				if rest := strings.TrimPrefix(c.name, ty.name); rest != c.name && token.IsExported(rest) {
+					value = lowerFirst(rest)
+				}
+				values = append(values, value)
+			}
+		}
+	}
+	return values
+}
+
+// addAbstract expects the node of a method an interface declares.
+func (x *expectation) addAbstract(iface *gtype, sig *gsig) {
+	id := typeIdentity(iface) + "." + sig.name
+	x.op(id, "abstract", x.at[sig], sig, sig.doc, "none", false)
+	x.edge(graph.EdgeKindContains, typeIdentity(iface), id, graph.SourceExtracted)
+	x.refersSig(id, sig)
+	x.bindings(id, sig.doc, false)
+	x.candidates(id, iface, sig.name)
+}
+
+func (x *expectation) addFunc(fn *gfunc, fileID string) {
 	id := funcIdentity(fn)
 	form, parent := "func", fileID
 	if fn.recv != nil {
@@ -174,22 +211,52 @@ func (x *expectation) addFunc(fn *gfunc, fileID string, at map[any]diag.Position
 			testKind = "example"
 		}
 	}
-	x.node(id, graph.NodeKindOp, form, at[fn], summaryOf(docLines(fn.doc)), map[string][]string{
-		"name":      {lowerFirst(fn.sig.name)},
-		"signature": {x.signature(fn.sig)},
-		"testKind":  {testKind},
-		"stub":      {strconv.FormatBool(fn.terminal == marker && !slices.ContainsFunc(fn.body, isStatement))},
-	})
+	stub := fn.terminal == marker && !slices.ContainsFunc(fn.body, isStatement)
+	x.op(id, form, x.at[fn], fn.sig, fn.doc, testKind, stub)
 	x.edge(graph.EdgeKindContains, parent, id, graph.SourceExtracted)
 	x.refersSig(id, fn.sig)
 	x.bindings(id, fn.doc, false)
-	for _, site := range calls(fn, at) {
-		key := x.edge(graph.EdgeKindCalls, id, funcIdentity(site.target), graph.SourceExtracted)
-		x.sites[key] = append(x.sites[key], site.at)
+	for i := range fn.body {
+		x.addStmt(id, &fn.body[i])
 	}
-	if fn.recv != nil && token.IsExported(fn.sig.name) {
-		for _, target := range x.realized[fn.recv] {
-			x.edge(graph.EdgeKindRealizes, id, target+"."+lowerFirst(fn.sig.name), graph.SourceDerived)
+	if fn.recv != nil {
+		x.candidates(id, fn.recv, fn.sig.name)
+	}
+}
+
+func (x *expectation) op(id, form string, at diag.Position, sig *gsig, doc []binding, testKind string, stub bool) {
+	name := lowerFirst(sig.name)
+	if checks(doc) {
+		name = predicateOf(sig.name)
+	}
+	x.node(id, graph.NodeKindOp, form, at, summaryOf(doc), map[string][]string{
+		"name": {name}, "signature": {x.signature(sig)}, "testKind": {testKind}, "stub": {strconv.FormatBool(stub)},
+	})
+}
+
+// predicateOf is the property's or flow's name a predicate's name maps from.
+func predicateOf(goName string) string {
+	for _, prefix := range []string{"checkFlow", "check"} {
+		if rest := strings.TrimPrefix(goName, prefix); rest != goName && token.IsExported(rest) {
+			var words []string
+			start := 0
+			for i := 1; i < len(rest); i++ {
+				if rest[i] >= 'A' && rest[i] <= 'Z' {
+					words, start = append(words, strings.ToLower(rest[start:i])), i
+				}
+			}
+			return strings.Join(append(words, strings.ToLower(rest[start:])), "-")
+		}
+	}
+	return lowerFirst(goName)
+}
+
+// candidates expects a derived realizes edge from an exported method of a
+// type that realizes design types to the operation of each its name maps to.
+func (x *expectation) candidates(id string, ty *gtype, name string) {
+	if token.IsExported(name) {
+		for _, target := range x.realized[ty] {
+			x.edge(graph.EdgeKindRealizes, id, target+"."+lowerFirst(name), graph.SourceDerived)
 		}
 	}
 }
@@ -202,28 +269,67 @@ func callsRapid(body []gstmt) bool {
 	return slices.ContainsFunc(body, func(s gstmt) bool { return s.kind == "rapid" || s.inner != nil && s.inner.kind == "rapid" })
 }
 
-type site struct {
-	target *gfunc
-	at     diag.Position
+// addStmt expects a statement's calls edge, and refers edges to the types
+// its text names and its variable has.
+func (x *expectation) addStmt(id string, s *gstmt) {
+	switch s.kind {
+	case "closure":
+		x.addStmt(id, s.inner)
+	case "call", "assign":
+		key := x.edge(graph.EdgeKindCalls, id, funcIdentity(s.target), graph.SourceExtracted)
+		x.sites[key] = append(x.sites[key], x.at[s])
+		if s.via != nil {
+			x.edge(graph.EdgeKindRefers, id, typeIdentity(s.via), graph.SourceExtracted)
+		}
+		for _, p := range s.target.sig.params {
+			x.refers(id, p.typ)
+		}
+		if s.kind == "assign" {
+			x.refers(id, s.target.sig.results[0])
+		}
+	case "iface":
+		key := x.edge(graph.EdgeKindCalls, id, typeIdentity(x.declaring(s.method))+"."+s.method.name, graph.SourceExtracted)
+		x.sites[key] = append(x.sites[key], x.at[s])
+		x.edge(graph.EdgeKindRefers, id, typeIdentity(s.via), graph.SourceExtracted)
+		for _, p := range s.method.params {
+			x.refers(id, p.typ)
+		}
+	case "comment":
+		x.unbound(&s.comment)
+	}
 }
 
-// calls lists the static calls of a body to functions and methods of the module.
-func calls(fn *gfunc, at map[any]diag.Position) []site {
-	var out []site
-	for i := range fn.body {
-		s := &fn.body[i]
-		if s.inner != nil {
-			s = s.inner
-		}
-		if s.kind == "call" {
-			out = append(out, site{target: s.target, at: at[s]})
+// declaring is the interface that declares a method.
+func (x *expectation) declaring(sig *gsig) *gtype {
+	for _, ty := range x.w.types {
+		if slices.Contains(ty.sigs, sig) {
+			return ty
 		}
 	}
-	return out
+	panic("genModule drew a call of an interface method that no interface declares")
 }
 
+// bindings expects the edges of a declaration's well-formed bindings, and a
+// diagnostic for each other //uc: line of its doc comment: on a type only
+// realizes binds, and a binding repeated is a duplicate.
 func (x *expectation) bindings(id string, doc []binding, isType bool) {
-	for _, b := range bindingsOf(doc, isType) {
+	var seen []binding
+	for i := range doc {
+		b := doc[i]
+		switch {
+		case !strings.HasPrefix(b.text, "//uc:"):
+			continue
+		case b.code != "":
+			x.diagnose(b.code, &doc[i])
+			continue
+		case isType && b.verb != "realizes":
+			x.diagnose(codeMisplaced, &doc[i])
+			continue
+		case slices.Contains(seen, b):
+			x.diagnose(codeDuplicate, &doc[i])
+			continue
+		}
+		seen = append(seen, b)
 		switch b.verb {
 		case "generates":
 			dot := strings.LastIndex(b.target, ".")
@@ -240,6 +346,24 @@ func (x *expectation) bindings(id string, doc []binding, isType bool) {
 				id, b.target, graph.SourceDeclared)
 		}
 	}
+}
+
+// misplaced expects a diagnostic for each //uc: line of a comment that binds nothing.
+func (x *expectation) misplaced(lines []binding) {
+	for i := range lines {
+		x.unbound(&lines[i])
+	}
+}
+
+func (x *expectation) unbound(line *binding) {
+	if strings.HasPrefix(line.text, "//uc:") {
+		x.diagnose(cmp.Or(line.code, codeMisplaced), line)
+	}
+}
+
+func (x *expectation) diagnose(code string, line *binding) {
+	at := x.at[line]
+	x.diagnostics = append(x.diagnostics, fmt.Sprintf("%s %s:%d", code, at.Path, at.Line))
 }
 
 func (x *expectation) refers(from string, e *gexpr) {

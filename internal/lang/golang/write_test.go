@@ -56,9 +56,12 @@ func (r *writer) pos() diag.Position {
 	return diag.Position{Path: r.file.path, Line: r.line, Column: r.col}
 }
 
-func (r *writer) comments(indent string, lines []string) {
-	for _, line := range lines {
-		r.put(indent + line + "\n")
+// comments writes comment lines, recording where each starts.
+func (r *writer) comments(indent string, lines []binding) {
+	for i := range lines {
+		r.put(indent)
+		r.at[&lines[i]] = r.pos()
+		r.put(lines[i].text + "\n")
 	}
 }
 
@@ -67,20 +70,22 @@ func (r *writer) decls() {
 		r.put("\n")
 		switch decl := decl.(type) {
 		case *gtype:
-			r.comments("", docLines(decl.doc))
+			r.comments("", decl.doc)
 			r.put("type ")
 			r.typeSpec(decl, "")
 		case *ggroup:
 			r.comments("", decl.doc)
 			r.put("type (\n")
 			for _, ty := range decl.types {
-				r.comments("\t", docLines(ty.doc))
+				r.comments("\t", ty.doc)
 				r.put("\t")
 				r.typeSpec(ty, "\t")
 			}
 			r.put(")\n")
 		case *gfunc:
 			r.function(decl)
+		case *gconst:
+			r.put("const " + decl.name + " " + decl.typ.name + " = " + strconv.Quote(decl.name) + "\n")
 		case *gloose:
 			r.loose(decl)
 		}
@@ -115,7 +120,10 @@ func (r *writer) typeSpec(ty *gtype, indent string) {
 			r.put(indent + "\t" + r.qualified(e.file.pkg, e.name) + "\n")
 		}
 		for _, sig := range ty.sigs {
-			r.put(indent + "\t" + sig.name + r.goSig(sig) + "\n")
+			r.comments(indent+"\t", sig.doc)
+			r.put(indent + "\t")
+			r.at[sig] = r.pos()
+			r.put(sig.name + r.goSig(sig) + "\n")
 		}
 		r.put(indent + "}\n")
 	default:
@@ -124,7 +132,7 @@ func (r *writer) typeSpec(ty *gtype, indent string) {
 }
 
 func (r *writer) function(fn *gfunc) {
-	r.comments("", docLines(fn.doc))
+	r.comments("", fn.doc)
 	r.put("func ")
 	if fn.recv != nil {
 		star := ""
@@ -146,8 +154,11 @@ func (r *writer) function(fn *gfunc) {
 
 func (r *writer) stmt(s *gstmt, indent string) {
 	switch s.kind {
-	case "call":
+	case "call", "assign":
 		r.put(indent)
+		if s.kind == "assign" {
+			r.put(s.name + " := ")
+		}
 		if s.via != nil {
 			r.put("new(" + r.qualified(s.via.file.pkg, s.via.name) + ").")
 		} else {
@@ -155,8 +166,13 @@ func (r *writer) stmt(s *gstmt, indent string) {
 		}
 		r.at[s] = r.pos()
 		r.put(s.target.sig.name + "(" + r.args(s.target.sig) + ")\n")
+		if s.kind == "assign" {
+			r.put(indent + "_ = " + s.name + "\n")
+		}
 	case "iface":
-		r.put(indent + "(*new(" + r.qualified(s.via.file.pkg, s.via.name) + "))." + s.method.name + "(" + r.args(s.method) + ")\n")
+		r.put(indent + "(*new(" + r.qualified(s.via.file.pkg, s.via.name) + ")).")
+		r.at[s] = r.pos()
+		r.put(s.method.name + "(" + r.args(s.method) + ")\n")
 	case "closure":
 		r.put(indent + "func() {\n")
 		r.stmt(s.inner, indent+"\t")
@@ -169,7 +185,9 @@ func (r *writer) stmt(s *gstmt, indent string) {
 		r.imports["pgregory.net/rapid"] = true
 		r.put(indent + "rapid.Check(t, func(*rapid.T) {})\n")
 	case "comment":
-		r.put(indent + s.text + "\n")
+		r.put(indent)
+		r.at[&s.comment] = r.pos()
+		r.put(s.comment.text + "\n")
 	}
 }
 
@@ -182,7 +200,9 @@ func (r *writer) loose(l *gloose) {
 		r.comments("", l.doc)
 		r.put("var " + l.name + " = 1\n")
 	case "trailing":
-		r.put("var " + l.name + " = 1 " + l.doc[0] + "\n")
+		r.put("var " + l.name + " = 1 ")
+		r.at[&l.doc[0]] = r.pos()
+		r.put(l.doc[0].text + "\n")
 	case "init":
 		r.comments("", l.doc)
 		r.put("func init() {}\n")

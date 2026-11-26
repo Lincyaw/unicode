@@ -39,6 +39,8 @@ type extraction struct {
 	declared    []declared
 	bindings    map[bindingKey]bool
 	realizes    map[string][]string // a type's identity to the design types it realizes
+	predicates  map[string]bool     // the operations that carry a checks binding
+	values      map[string][]string // a type's identity to its constants' enum values
 	diagnostics []diag.Diagnostic
 }
 
@@ -47,25 +49,29 @@ type edgeKey struct {
 	from, to string
 }
 
-// declared is a declaration that is a node: a type, a function or a method.
+// declared is a declaration that is a node: a type, a function, a method,
+// or a method an interface declares.
 type declared struct {
 	id   string
 	pkg  *packages.Package
 	file sourceFile
+	pos  token.Pos       // of its name
 	spec *ast.TypeSpec   // a type's
 	name *types.TypeName // a type's
-	decl *ast.FuncDecl   // a function's or a method's
+	decl *ast.FuncDecl   // a function's or a method's; an interface's method has none
 	fn   *types.Func     // a function's or a method's
 }
 
 func extract(l loaded) lang.Extracted {
 	x := &extraction{
-		root:     l.root,
-		nodes:    map[string]graph.Node{},
-		edges:    map[edgeKey]*graph.Edge{},
-		sites:    map[edgeKey][]diag.Position{},
-		bindings: map[bindingKey]bool{},
-		realizes: map[string][]string{},
+		root:       l.root,
+		nodes:      map[string]graph.Node{},
+		edges:      map[edgeKey]*graph.Edge{},
+		sites:      map[edgeKey][]diag.Position{},
+		bindings:   map[bindingKey]bool{},
+		realizes:   map[string][]string{},
+		predicates: map[string]bool{},
+		values:     map[string][]string{},
 	}
 	for _, p := range l.packages {
 		x.addPackage(p)
@@ -118,28 +124,17 @@ func (x *extraction) addPackage(p *packages.Package) {
 	}
 }
 
-// addDecl adds the nodes of a declaration and records whose doc comment is whose.
+// addDecl adds the nodes of a declaration and records whose doc comment is
+// whose; a constant adds an enum value to its type.
 func (x *extraction) addDecl(p *packages.Package, f sourceFile, fileID string, decl ast.Decl, docs map[*ast.CommentGroup]bound) {
 	switch decl := decl.(type) {
 	case *ast.GenDecl:
-		if decl.Tok != token.TYPE {
-			return
-		}
 		for _, s := range decl.Specs {
-			spec := s.(*ast.TypeSpec)
-			name, ok := p.TypesInfo.Defs[spec.Name].(*types.TypeName)
-			if !ok || spec.Assign.IsValid() {
-				continue
-			}
-			d := declared{id: typeID(name), pkg: p, file: f, spec: spec, name: name}
-			x.addNode(graph.Node{
-				Id: d.id, Kind: graph.NodeKindType, Form: typeForm(name), Origin: x.position(p, spec.Name.Pos()),
-				Summary: synopsis(typeDoc(decl, spec)), Attrs: map[string][]string{"name": {name.Name()}},
-			})
-			x.addEdge(graph.EdgeKindContains, fileID, d.id, x.position(p, spec.Name.Pos()))
-			x.declared = append(x.declared, d)
-			if doc := typeDoc(decl, spec); doc != nil {
-				docs[doc] = bound{id: d.id, isType: true}
+			switch spec := s.(type) {
+			case *ast.TypeSpec:
+				x.addType(p, f, fileID, typeDoc(decl, spec), spec, docs)
+			case *ast.ValueSpec:
+				x.addValues(p, spec)
 			}
 		}
 	case *ast.FuncDecl:
@@ -148,23 +143,72 @@ func (x *extraction) addDecl(p *packages.Package, f sourceFile, fileID string, d
 			// Neither has an identity: a package may declare several of each.
 			return
 		}
-		d := declared{id: funcID(fn), pkg: p, file: f, decl: decl, fn: fn}
 		form, parent := "func", fileID
 		if decl.Recv != nil {
 			form, parent = "method", typeID(receiver(fn).Obj())
 		}
-		x.addNode(graph.Node{
-			Id: d.id, Kind: graph.NodeKindOp, Form: form, Origin: x.position(p, decl.Name.Pos()),
-			Summary: synopsis(decl.Doc), Attrs: map[string][]string{
-				"name":     {designName(fn.Name())},
-				"testKind": {testKind(p.TypesInfo, f, decl, fn)},
-				"stub":     {strconv.FormatBool(isStub(p.TypesInfo, decl.Body))},
-			},
-		})
-		x.addEdge(graph.EdgeKindContains, parent, d.id, x.position(p, decl.Name.Pos()))
-		x.declared = append(x.declared, d)
-		if decl.Doc != nil {
-			docs[decl.Doc] = bound{id: d.id}
+		x.addOp(declared{id: funcID(fn), pkg: p, file: f, pos: decl.Name.Pos(), decl: decl, fn: fn}, form, parent, decl.Doc,
+			testKind(p.TypesInfo, f, decl, fn), isStub(p.TypesInfo, decl.Body), docs)
+	}
+}
+
+func (x *extraction) addType(p *packages.Package, f sourceFile, fileID string, doc *ast.CommentGroup, spec *ast.TypeSpec, docs map[*ast.CommentGroup]bound) {
+	name, ok := p.TypesInfo.Defs[spec.Name].(*types.TypeName)
+	if !ok || spec.Assign.IsValid() {
+		return
+	}
+	d := declared{id: typeID(name), pkg: p, file: f, pos: spec.Name.Pos(), spec: spec, name: name}
+	x.addNode(graph.Node{
+		Id: d.id, Kind: graph.NodeKindType, Form: typeForm(name), Origin: x.position(p, d.pos),
+		Summary: synopsis(doc), Attrs: map[string][]string{"name": {name.Name()}},
+	})
+	x.addEdge(graph.EdgeKindContains, fileID, d.id, x.position(p, d.pos))
+	x.declared = append(x.declared, d)
+	if doc != nil {
+		docs[doc] = bound{id: d.id, isType: true}
+	}
+	iface, ok := spec.Type.(*ast.InterfaceType)
+	if !ok {
+		return
+	}
+	for _, field := range iface.Methods.List {
+		if len(field.Names) == 0 {
+			continue // an embedded interface
+		}
+		if fn, ok := p.TypesInfo.Defs[field.Names[0]].(*types.Func); ok {
+			method := declared{id: d.id + "." + fn.Name(), pkg: p, file: f, pos: field.Names[0].Pos(), fn: fn}
+			x.addOp(method, "abstract", d.id, field.Doc, "none", false, docs)
+		}
+	}
+}
+
+func (x *extraction) addOp(d declared, form, parent string, doc *ast.CommentGroup, testKind string, stub bool, docs map[*ast.CommentGroup]bound) {
+	x.addNode(graph.Node{
+		Id: d.id, Kind: graph.NodeKindOp, Form: form, Origin: x.position(d.pkg, d.pos), Summary: synopsis(doc),
+		Attrs: map[string][]string{"testKind": {testKind}, "stub": {strconv.FormatBool(stub)}},
+	})
+	x.addEdge(graph.EdgeKindContains, parent, d.id, x.position(d.pkg, d.pos))
+	x.declared = append(x.declared, d)
+	if doc != nil {
+		docs[doc] = bound{id: d.id}
+	}
+}
+
+// addValues adds each constant of a package-level type whose underlying type
+// is string to that type's enum values, in the order of the source.
+func (x *extraction) addValues(p *packages.Package, spec *ast.ValueSpec) {
+	for _, ident := range spec.Names {
+		c, ok := p.TypesInfo.Defs[ident].(*types.Const)
+		if !ok {
+			continue
+		}
+		named, ok := types.Unalias(c.Type()).(*types.Named)
+		if !ok || named.Obj().Pkg() == nil || named.Obj().Pkg().Path() != p.PkgPath || !packageLevelType(named) {
+			continue
+		}
+		if basic, ok := named.Underlying().(*types.Basic); ok && basic.Kind() == types.String {
+			id := typeID(named.Obj())
+			x.values[id] = append(x.values[id], enumValueName(c.Name(), named.Obj().Name()))
 		}
 	}
 }
@@ -172,7 +216,7 @@ func (x *extraction) addDecl(p *packages.Package, f sourceFile, fileID string, d
 // addTypeEdges adds the refers edges of a type to the types its declaration
 // mentions, and its extends edges to the types it embeds.
 func (x *extraction) addTypeEdges(d declared) {
-	origin := x.position(d.pkg, d.spec.Name.Pos())
+	origin := x.position(d.pkg, d.pos)
 	refer := func(t *types.Named) { x.addEdge(graph.EdgeKindRefers, d.id, typeID(t.Obj()), origin) }
 	embed := func(t types.Type) {
 		if named := namedOf(t); named != nil {
@@ -189,9 +233,7 @@ func (x *extraction) addTypeEdges(d declared) {
 			}
 		}
 	case *types.Interface:
-		for m := range rhs.ExplicitMethods() {
-			mentioned(m.Type(), refer)
-		}
+		// The types of the methods it declares are those methods' references.
 		for t := range rhs.EmbeddedTypes() {
 			embed(t)
 		}
@@ -201,31 +243,43 @@ func (x *extraction) addTypeEdges(d declared) {
 }
 
 // addFuncEdges adds the refers edges of a function to the types of its
-// parameters and results, and its calls edges.
+// parameters and results and to the types its body names or gives its
+// variables, and its calls edges.
 func (x *extraction) addFuncEdges(d declared) {
-	origin := x.position(d.pkg, d.decl.Name.Pos())
+	origin := x.position(d.pkg, d.pos)
+	refer := func(t *types.Named) {
+		if packageLevelType(t) {
+			x.addEdge(graph.EdgeKindRefers, d.id, typeID(t.Obj()), origin)
+		}
+	}
 	sig := d.fn.Signature()
 	for _, tuple := range []*types.Tuple{sig.Params(), sig.Results()} {
 		for v := range tuple.Variables() {
-			mentioned(v.Type(), func(t *types.Named) { x.addEdge(graph.EdgeKindRefers, d.id, typeID(t.Obj()), origin) })
+			mentioned(v.Type(), refer)
 		}
 	}
-	if d.decl.Body == nil {
+	if d.decl == nil || d.decl.Body == nil {
 		return
 	}
+	info := d.pkg.TypesInfo
 	ast.Inspect(d.decl.Body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
+		switch n := n.(type) {
+		case *ast.Ident:
+			if name, ok := info.Uses[n].(*types.TypeName); ok {
+				mentioned(name.Type(), refer)
+			} else if v, ok := info.Defs[n].(*types.Var); ok {
+				mentioned(v.Type(), refer)
+			}
+		case *ast.CallExpr:
+			callee, ok := typeutil.Callee(info, n).(*types.Func)
+			name := calleeName(n.Fun)
+			if !ok || name == nil || !packageLevel(callee) {
+				return true
+			}
+			site := x.position(d.pkg, name.Pos())
+			key := x.addEdge(graph.EdgeKindCalls, d.id, funcID(callee.Origin()), site)
+			x.sites[key] = append(x.sites[key], site)
 		}
-		callee, ok := typeutil.Callee(d.pkg.TypesInfo, call).(*types.Func)
-		name := calleeName(call.Fun)
-		if !ok || name == nil || !packageLevel(callee) {
-			return true
-		}
-		site := x.position(d.pkg, name.Pos())
-		key := x.addEdge(graph.EdgeKindCalls, d.id, funcID(callee.Origin()), site)
-		x.sites[key] = append(x.sites[key], site)
 		return true
 	})
 }
@@ -251,7 +305,7 @@ func (x *extraction) addImplements() {
 		for _, i := range interfaces {
 			want := methodKeys(types.NewMethodSet(i.name.Type()))
 			if implementsAll(have, want) {
-				x.addEdge(graph.EdgeKindImplements, c.id, i.id, x.position(c.pkg, c.spec.Name.Pos()))
+				x.addEdge(graph.EdgeKindImplements, c.id, i.id, x.position(c.pkg, c.pos))
 			}
 		}
 	}
@@ -384,7 +438,13 @@ func packageLevel(fn *types.Func) bool {
 		return true
 	}
 	recv := receiver(fn)
-	return recv != nil && recv.Obj().Parent() == recv.Obj().Pkg().Scope()
+	return recv != nil && packageLevelType(recv)
+}
+
+// packageLevelType tells whether a named type is declared at the package level.
+func packageLevelType(t *types.Named) bool {
+	obj := t.Obj()
+	return obj.Pkg() != nil && obj.Parent() == obj.Pkg().Scope()
 }
 
 // mentioned calls visit with every named type that t mentions, without
