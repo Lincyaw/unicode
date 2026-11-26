@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -224,6 +225,11 @@ func readFile(root, rel string) ([]byte, *syntax.File, []diag.Diagnostic) {
 	}
 	src, err := os.ReadFile(full)
 	if err != nil {
+		// The cause alone, without the absolute path that the error repeats.
+		var pathErr *fs.PathError
+		if errors.As(err, &pathErr) {
+			err = pathErr.Err
+		}
 		return nil, nil, []diag.Diagnostic{{
 			Code: "cli.unreadable-file", Subject: rel, Position: at,
 			Message: "cannot read the file: " + err.Error(), Fix: "make the file readable, or remove it",

@@ -24,7 +24,7 @@ type Parsed struct {
 // Parse parses one file with the lexis and grammar of docs/format.md §2–§3.
 // Every forbidden character gets a diagnostic; a file that does not parse
 // gets one, the first problem found; a file that parses gets one for each
-// rule of check.go it breaks.
+// rule of check.go it breaks. The diagnostics come ordered by line, column and code.
 //
 //uc:realizes syntax.parse
 func Parse(path string, kind FileKind, src []byte) Parsed {
@@ -113,7 +113,8 @@ func (l locator) unexpected(u *participle.UnexpectedTokenError) diag.Diagnostic 
 			"finish the last line, and close every { with a } on a line of its own")
 	}
 	line := l.line(off)
-	key := line.construct(l.inValue(off))
+	inValue := l.inValue(off)
+	key := line.construct(inValue)
 	first := len(line) > 0 && line[0].Pos.Offset == off
 	value := key == "assignment" || key == "literal" || key == "where"
 	switch {
@@ -132,13 +133,21 @@ func (l locator) unexpected(u *participle.UnexpectedTokenError) diag.Diagnostic 
 		return l.diagnostic(off, "syntax.unexpected-token", "this } closes no block: a value before it is unfinished, or the } is extra",
 			"complete the value before it so that every [, ( and { is closed, or remove the }")
 	}
-	c := constructs[key]
+	// A line that no construct starts, that starts with else, or whose
+	// construct the block around it may not hold is wrong from its first token
+	// on; any other line is wrong where the parser stopped. Among steps, the
+	// parser reads a misplaced keyword as a sender and stops after it.
+	c, named := constructs[key]
+	misplaced := first
+	if !inValue && named && len(line) > 0 {
+		misplaced = !l.holds(line[0].Pos.Offset, key)
+	}
 	switch {
-	case first && key == "unknown":
-		return l.diagnostic(off, "syntax.unexpected-token", u.Message(),
+	case key == "unknown" && len(line) > 0:
+		return l.diagnostic(line[0].Pos.Offset, "syntax.unexpected-token", u.Message(),
 			"start the line with a keyword such as type, op, flow, property or case; a step is written sender -> op(args)")
-	case first && key != "literal":
-		return l.diagnostic(off, "syntax.unexpected-token", u.Message(), "a "+c.name+" belongs "+c.place)
+	case key == "else" || misplaced && key != "literal":
+		return l.diagnostic(line[0].Pos.Offset, "syntax.unexpected-token", u.Message(), "a "+c.name+" belongs "+c.place)
 	}
 	return l.diagnostic(off, "syntax.unexpected-token", u.Message(), "write the "+c.name+" as "+c.form)
 }
@@ -186,12 +195,68 @@ var constructs = map[string]construct{
 // unnamed are the constructs that no keyword starts.
 var unnamed = []string{step, "assignment", "literal", "unknown"}
 
+// blockLines are the constructs that the grammar lets each kind of block
+// hold, by the keyword of the line that opens it: "" for the top level, and
+// step for a block of steps.
+var blockLines = map[string][]string{
+	"":          {"system", "notation", "language", "actor", "component", "type", "op", "flow", "property", "corpus", "case"},
+	"language":  {"root"},
+	"actor":     {"type", "op"},
+	"component": {"label", "focus", "paths", "uses"},
+	"type":      {"label", "extends", "implements", "field", "value", "op"},
+	"flow":      {"forall", "where", "case", "on", "async", "alt", "opt", "loop", step},
+	"property":  {"about", "forall", "where", "case"},
+	"case":      {"assignment"},
+	step:        {"on", "async", "alt", "opt", "loop", step},
+}
+
+// holds tells whether the block around the line that holds offset may hold
+// a line of the construct key. A block that blockLines does not name holds steps.
+func (l locator) holds(offset int, key string) bool {
+	block := ""
+	if ts := l.opener(offset); len(ts) > 0 {
+		block = ts.construct(false)
+		if blockLines[block] == nil {
+			block = step
+		}
+	}
+	return slices.Contains(blockLines[block], key)
+}
+
+// opener lexes the line whose { opens the innermost block around the line
+// that holds offset; it returns nil at the top level.
+func (l locator) opener(offset int) lineTokens {
+	depth := 0
+	for end := bytes.LastIndexByte(l.src[:offset], '\n'); end >= 0; {
+		start := bytes.LastIndexByte(l.src[:end], '\n') + 1
+		ts := l.line(start)
+		end = start - 1
+		for i := len(ts) - 1; i >= 0; i-- {
+			switch ts[i].Value {
+			case "}":
+				depth++
+			case "{":
+				depth--
+			}
+			if depth < 0 {
+				return ts
+			}
+		}
+	}
+	return nil
+}
+
 // lineTokens are the tokens of one line, without spaces.
 type lineTokens []lexer.Token
 
 // line lexes the line that holds offset; its tokens keep their offsets in the file.
 func (l locator) line(offset int) lineTokens {
-	start := bytes.LastIndexByte(l.src[:min(offset, len(l.src))], '\n') + 1
+	return l.tokens(bytes.LastIndexByte(l.src[:min(offset, len(l.src))], '\n') + 1)
+}
+
+// tokens lexes from start, a token's boundary, to the end of its line.
+func (l locator) tokens(start int) lineTokens {
+	start = min(start, len(l.src))
 	end := bytes.IndexByte(l.src[start:], '\n')
 	if end < 0 {
 		end = len(l.src) - start
@@ -215,8 +280,9 @@ func (l locator) line(offset int) lineTokens {
 
 // construct names the kind of the line: its first keyword, a misplaced else,
 // a step, an assignment, a closing brace, part of a broken value, or unknown.
-// A first word followed by ->, ->>, . or emits starts a step, as in
-// docs/format.md §3. Any other line inside a value (inValue) is part of it.
+// A first word followed by ->, ->>, . or emits starts a step, and one
+// followed by = an assignment, as in docs/format.md §3, even when the word is
+// a keyword. Any other line inside a value (inValue) is part of it.
 func (ts lineTokens) construct(inValue bool) string {
 	if len(ts) == 0 {
 		return "unknown"
@@ -228,12 +294,14 @@ func (ts lineTokens) construct(inValue bool) string {
 	keyword = keyword && !slices.Contains(unnamed, first.Value)
 	word := first.Type == symbols["Ident"]
 	switch {
-	case word && first.Value == "else" && !startsStep:
-		return "else"
-	case word && keyword && !startsStep:
-		return first.Value
 	case startsStep:
 		return step
+	case len(ts) > 1 && ts[1].Value == "=":
+		return "assignment"
+	case word && first.Value == "else":
+		return "else"
+	case word && keyword:
+		return first.Value
 	case slices.ContainsFunc(ts, func(t lexer.Token) bool { return t.Value == "=" }):
 		return "assignment"
 	case first.Value == "}":
@@ -278,33 +346,19 @@ func (l locator) inValue(offset int) bool {
 // closesBranch tells whether the line above the one at offset, past blank
 // lines and comments, is a } that closes a branch of an alt fragment.
 func (l locator) closesBranch(offset int) bool {
-	depth := 0
 	for end := bytes.LastIndexByte(l.src[:offset], '\n'); end >= 0; {
 		start := bytes.LastIndexByte(l.src[:end], '\n') + 1
 		ts := l.line(start)
 		end = start - 1
-		if depth == 0 {
-			if len(ts) == 0 || ts[0].Type == symbols["Comment"] {
-				continue
-			}
-			if len(ts) != 1 || ts[0].Value != "}" {
-				return false
-			}
-			depth = 1
+		switch {
+		case len(ts) == 0 || ts[0].Type == symbols["Comment"]:
 			continue
+		case len(ts) != 1 || ts[0].Value != "}":
+			return false
 		}
-		for i := len(ts) - 1; i >= 0; i-- {
-			switch ts[i].Value {
-			case "}":
-				depth++
-			case "{":
-				depth--
-			}
-			if depth == 0 {
-				opensBranch := len(ts) > 1 && ts[0].Value == "alt" && ts[1].Type == symbols["String"]
-				return opensBranch || len(ts) > 1 && ts[0].Value == "}" && ts[1].Value == "else"
-			}
-		}
+		ts = l.opener(start)
+		opensBranch := len(ts) > 1 && ts[0].Value == "alt" && ts[1].Type == symbols["String"]
+		return opensBranch || len(ts) > 1 && ts[0].Value == "}" && ts[1].Value == "else"
 	}
 	return false
 }

@@ -321,15 +321,20 @@ func genStep(t *rapid.T, depth int) Step {
 	case 3:
 		return &Async{Op: genOpRef(t), Lines: genSteps[Step](t, depth)}
 	case 4:
-		a := &Alt{}
-		for range rapid.IntRange(1, 3).Draw(t, "branches") {
-			a.Branches = append(a.Branches, Branch{Label: genSummary(t, "label"), Lines: genSteps[Step](t, depth)})
-		}
-		return a
+		return genAlt(t, depth, 1)
 	case 5:
 		return &Opt{Label: genSummary(t, "label"), Lines: genSteps[Step](t, depth)}
 	}
 	return &Loop{Label: genSummary(t, "label"), Lines: genSteps[Step](t, depth)}
+}
+
+// genAlt draws an alt fragment of fewest to three branches.
+func genAlt(t *rapid.T, depth, fewest int) *Alt {
+	a := &Alt{}
+	for range rapid.IntRange(fewest, 3).Draw(t, "branches") {
+		a.Branches = append(a.Branches, Branch{Label: genSummary(t, "label"), Lines: genSteps[Step](t, depth)})
+	}
+	return a
 }
 
 func genFlow(t *rapid.T) *FlowDecl {
@@ -431,30 +436,49 @@ func genFileOf(t *rapid.T, kind FileKind) *File {
 // around an empty optional block, values broken between their items with an
 // optional trailing comma, and any number of final newlines.
 //
-// It records the line on which the node mark starts in markLine, and ends
-// that line with markComment when it is set. A node is a line of any level,
-// a value or a branch of an alt.
+// It records where mark stands in markLine and markColumn, and ends that
+// line with markComment when it is set, which then is what stands there. The
+// mark is a node (a line of any level, a value or a branch of an alt), which
+// stands at its first token, or the address of a name, a reference's
+// segment, a summary or a number in the tree, which stands at its token.
+// When elseApart is set and the mark is a branch, its else starts a line of
+// its own below the } of the branch before it.
 type writer struct {
 	t    *rapid.T
 	b    strings.Builder
 	line []string
 
 	mark        any
-	markLine    int
 	markComment string
+	elseApart   bool
+	markLine    int
+	markColumn  int
+	markToken   int    // the index in line of the marked token, while marking
+	markOffset  int    // where the mark stands inside that token, in bytes
+	marking     bool   // the current line holds the mark
 	comment     string // markComment, until the marked node's first line ends
 }
 
 func (w *writer) tok(toks ...string) { w.line = append(w.line, toks...) }
 
-// at notes that the node n starts on the current line.
-func (w *writer) at(n any) {
-	if n != w.mark {
+// at notes that p, the node or the address of the value written next, starts
+// with the next token of the current line.
+func (w *writer) at(p any) {
+	if p != w.mark {
 		return
 	}
 	w.markLine = strings.Count(w.b.String(), "\n") + 1
+	w.markToken, w.marking = len(w.line), true
 	w.comment = w.markComment
 }
+
+// word writes tok, the text of the value at p.
+func (w *writer) word(p any, tok string) {
+	w.at(p)
+	w.tok(tok)
+}
+
+func (w *writer) summary(s *Summary) { w.word(s, quote(string(*s))) }
 
 func (w *writer) spaces(label string, max int) string {
 	return strings.Repeat(" ", rapid.IntRange(0, max).Draw(w.t, label))
@@ -463,9 +487,11 @@ func (w *writer) spaces(label string, max int) string {
 // flush ends the current line, then writes blank lines.
 func (w *writer) flush() {
 	if w.comment != "" {
+		w.markToken = len(w.line)
 		w.tok(w.comment)
 		w.comment = ""
 	}
+	start := w.b.Len()
 	w.b.WriteString(w.spaces("indent", 6))
 	for i, tok := range w.line {
 		if i > 0 {
@@ -474,6 +500,9 @@ func (w *writer) flush() {
 				sep = " "
 			}
 			w.b.WriteString(sep)
+		}
+		if w.marking && i == w.markToken {
+			w.markColumn, w.marking = w.b.Len()-start+w.markOffset+1, false
 		}
 		w.b.WriteString(tok)
 	}
@@ -496,7 +525,7 @@ func (w *writer) ref(segs []string) {
 		if i > 0 {
 			w.tok(".")
 		}
-		w.tok(s)
+		w.word(&segs[i], s)
 	}
 }
 
@@ -514,7 +543,7 @@ func (w *writer) names(ns []Lower, sep string) {
 		if i > 0 {
 			w.tok(sep)
 		}
-		w.tok(string(n))
+		w.word(&ns[i], string(n))
 	}
 }
 
@@ -564,7 +593,9 @@ func (w *writer) node(n any) {
 	case *Comment:
 		w.tok("//" + string(n.Text))
 	case *SystemDecl:
-		w.tok("system", string(n.Name), quote(string(n.Summary)))
+		w.tok("system")
+		w.word(&n.Name, string(n.Name))
+		w.summary(&n.Summary)
 	case *NotationDecl:
 		w.tok("notation", n.Name)
 	case *LanguageDecl:
@@ -573,17 +604,24 @@ func (w *writer) node(n any) {
 	case *Root:
 		w.tok("root", quote(string(n.Path)))
 	case *PersonDecl:
-		w.tok("actor", string(n.Name), "person", quote(string(n.Summary)))
+		w.tok("actor")
+		w.word(&n.Name, string(n.Name))
+		w.tok("person")
+		w.summary(&n.Summary)
 	case *ExternalDecl:
-		w.tok("actor", string(n.Name), "external", quote(string(n.Summary)))
+		w.tok("actor")
+		w.word(&n.Name, string(n.Name))
+		w.tok("external")
+		w.summary(&n.Summary)
 		writeOptBlock(w, n.Lines)
 	case *ComponentDecl:
 		w.tok("component")
 		w.ref(n.Path.Segments)
-		w.tok(quote(string(n.Summary)))
+		w.summary(&n.Summary)
 		writeBlock(w, n.Lines)
 	case *Label:
-		w.tok("label", string(n.Name))
+		w.tok("label")
+		w.word(&n.Name, string(n.Name))
 	case *Focus:
 		w.tok("focus", n.Level)
 	case *Paths:
@@ -598,7 +636,10 @@ func (w *writer) node(n any) {
 		w.tok("uses")
 		w.refs(n.Refs)
 	case *TypeDecl:
-		w.tok("type", string(n.Name), n.Form, quote(string(n.Summary)))
+		w.tok("type")
+		w.word(&n.Name, string(n.Name))
+		w.tok(n.Form)
+		w.summary(&n.Summary)
 		writeOptBlock(w, n.Lines)
 	case *Extends:
 		w.tok("extends")
@@ -607,26 +648,37 @@ func (w *writer) node(n any) {
 		w.tok("implements")
 		w.ref(n.Type.Segments)
 	case *Field:
-		w.tok("field", string(n.Name), ":")
+		w.tok("field")
+		w.word(&n.Name, string(n.Name))
+		w.tok(":")
 		w.typeExpr(n.Type)
 	case *EnumValue:
-		w.tok("value", string(n.Name))
+		w.tok("value")
+		w.word(&n.Name, string(n.Name))
 	case *OpDecl:
 		w.opDecl(n)
 	case *FlowDecl:
-		w.tok("flow", string(n.Name), quote(string(n.Summary)))
+		w.tok("flow")
+		w.word(&n.Name, string(n.Name))
+		w.summary(&n.Summary)
 		writeBlock(w, n.Lines)
 	case *PropertyDecl:
-		w.tok("property", string(n.Name), n.Form, quote(string(n.Summary)))
+		w.tok("property")
+		w.word(&n.Name, string(n.Name))
+		w.tok(n.Form)
+		w.summary(&n.Summary)
 		writeBlock(w, n.Lines)
 	case *About:
 		w.tok("about")
 		w.refs(n.Refs)
 	case *Symbol:
-		w.tok("forall", string(n.Name), ":")
+		w.tok("forall")
+		w.word(&n.Name, string(n.Name))
+		w.tok(":")
 		w.typeExpr(n.Type)
 		if n.Domain != nil {
-			w.tok("generated", quote(string(*n.Domain)))
+			w.tok("generated")
+			w.summary(n.Domain)
 		}
 	case *SubsetLimit:
 		w.tok("where")
@@ -637,21 +689,28 @@ func (w *writer) node(n any) {
 	case *IntervalLimit:
 		w.tok("where")
 		w.names(n.Path, ".")
-		w.tok(n.Op, w.number(n.Low), "..", w.number(n.High))
+		w.tok(n.Op)
+		w.word(&n.Low, w.number(n.Low))
+		w.tok("..")
+		w.word(&n.High, w.number(n.High))
 	case *CaseDecl:
-		w.tok("case", string(n.Name))
+		w.tok("case")
+		w.word(&n.Name, string(n.Name))
 		if n.Summary != nil {
-			w.tok(quote(string(*n.Summary)))
+			w.summary(n.Summary)
 		}
 		writeBlock(w, n.Lines)
 	case *Assignment:
-		w.tok(string(n.Symbol), "=")
+		w.word(&n.Symbol, string(n.Symbol))
+		w.tok("=")
 		w.value(n.Value)
 	case *CorpusDecl:
 		w.tok("corpus")
 		w.ref(n.Target.Segments)
 	case *RecordedCase:
-		w.tok("case", string(n.Name), n.Reason)
+		w.tok("case")
+		w.word(&n.Name, string(n.Name))
+		w.tok(n.Reason)
 		writeBlock(w, n.Lines)
 	default:
 		w.step(n)
@@ -660,12 +719,16 @@ func (w *writer) node(n any) {
 }
 
 func (w *writer) opDecl(o *OpDecl) {
-	w.tok("op", string(o.Name), "(")
-	for i, p := range o.Params {
+	w.tok("op")
+	w.word(&o.Name, string(o.Name))
+	w.tok("(")
+	for i := range o.Params {
+		p := &o.Params[i]
 		if i > 0 {
 			w.tok(",")
 		}
-		w.tok(string(p.Name), ":")
+		w.word(&p.Name, string(p.Name))
+		w.tok(":")
 		w.typeExpr(p.Type)
 	}
 	w.tok(")")
@@ -686,7 +749,7 @@ func (w *writer) opDecl(o *OpDecl) {
 		w.ref(o.Handles.Segments)
 	}
 	if o.Summary != nil {
-		w.tok(quote(string(*o.Summary)))
+		w.summary(o.Summary)
 	}
 }
 
@@ -718,17 +781,24 @@ func (w *writer) step(n any) {
 		writeBlock(w, n.Lines)
 	case *Alt:
 		kw := "alt"
-		for i, br := range n.Branches {
-			w.at(&n.Branches[i])
-			w.tok(kw, quote(string(br.Label)))
+		for i := range n.Branches {
+			br := &n.Branches[i]
+			if w.elseApart && any(br) == w.mark {
+				w.apart()
+			}
+			w.at(br)
+			w.tok(kw)
+			w.summary(&br.Label)
 			writeBlock(w, br.Lines)
 			kw = "else"
 		}
 	case *Opt:
-		w.tok("opt", quote(string(n.Label)))
+		w.tok("opt")
+		w.summary(&n.Label)
 		writeBlock(w, n.Lines)
 	case *Loop:
-		w.tok("loop", quote(string(n.Label)))
+		w.tok("loop")
+		w.summary(&n.Label)
 		writeBlock(w, n.Lines)
 	}
 }
@@ -777,9 +847,14 @@ func (w *writer) number(n Number) string {
 func (w *writer) value(v Value) {
 	w.at(v)
 	open, items, closer := parts(v)
-	if n, ok := v.(*NumberValue); ok {
-		w.tok(w.number(n.Text))
+	switch v := v.(type) {
+	case *NumberValue:
+		w.tok(w.number(v.Text))
 		return
+	case *NameValue:
+		w.at(&v.Name)
+	case *CallValue:
+		w.at(&v.Op)
 	}
 	if open == "" {
 		w.tok(flatValue(v))
@@ -794,7 +869,8 @@ func (w *writer) value(v Value) {
 	for i, it := range items {
 		breakable()
 		if it.prefix != "" {
-			w.tok(strings.TrimSuffix(it.prefix, ": "), ":")
+			w.word(itemName(v, i), strings.TrimSuffix(it.prefix, ": "))
+			w.tok(":")
 		}
 		w.value(it.value)
 		breakable()
@@ -804,4 +880,26 @@ func (w *writer) value(v Value) {
 		}
 	}
 	w.tok(closer)
+}
+
+// itemName is the address of the name of item i of a bracketed value: an
+// argument's name, or an entry's key when it is a name.
+func itemName(v Value, i int) any {
+	switch v := v.(type) {
+	case *CallValue:
+		return &v.Args[i].Name
+	case *BraceValue:
+		return v.Entries[i].Key.Name
+	}
+	return nil
+}
+
+// apart ends the line of the } that closes a branch, and writes comments
+// below it before its else.
+func (w *writer) apart() {
+	w.flush()
+	for range rapid.IntRange(0, 2).Draw(w.t, "between") {
+		w.tok("//" + strings.TrimRight(rapid.StringOfN(genRune(), 0, 12, -1).Draw(w.t, "comment"), " "))
+		w.flush()
+	}
 }
