@@ -52,3 +52,4 @@
 35. **合并 m1-design 时定下的理解：** 系统节点的标识是系统的名称；顶层组件不能叫 `system`；`system` 节点带上 `notations` 和 `roots`；`alt` 的分支写在 `contains` 边的 `branch` 上；`uses` 不能指向人；区间的下界不能大于上界；一条约束可以有几个诊断码。`make check` 从此包含工具链对自身设计的 `check --design-only`。见 [model.md](model.md) §7、[format.md](format.md) §1、§3，[design.md](design.md) §5.2、§8。
 36. **时序、活动和事件视图不按关注度折叠。** 流程的参与者是设计者写进这个流程的，折叠会让发往支撑组件的消息和事件消失（m3-query 在商店例子上发现）。另外：`Context` 增加按种类补充的 `extras`；`get` 和 `refs` 补上性质；`reaches` 的展开标识写作 `reaches <起点> <终点>`。见 [design.md](design.md) §7.2，`design/query.uc`、`design/view.uc`。
 37. **合并 m2-check 时定下的理解：** 绑定目标不存在由推导报告（`graph.unresolved-binding`），不另设 `dangling()`；`conform` 的参数叫 `g`，避免与包名 `graph` 同名；代码层的 `refers` 也包括函数体中构造或使用的类型，这样在函数体中发布的事件也能通过 `emit` 步骤的检查。接口方法作为 `abstract` 节点（决定 32）尚未在两条线中实现，由后续的开发线完成。
+38. **切片的按种类补充写定在 design.md §7.3。** 待办：`Context` 目前只有节点，流程步骤的嵌套无法从切片中还原，要给补充的节点加上它们之间的 `contains` 边，留给接线的开发线。
