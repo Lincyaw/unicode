@@ -1,7 +1,7 @@
-.PHONY: check lint test fmt-check deep
+.PHONY: check lint test fmt-check self-check deep
 
 # check is what a lane runs before it commits: fast, default rapid settings.
-check: lint test fmt-check
+check: lint test fmt-check self-check
 
 lint:
 	golangci-lint run
@@ -11,6 +11,10 @@ test:
 
 fmt-check:
 	go run ./cmd/unicode fmt --check
+
+# The toolchain checks its own design (M2 extends this to the code).
+self-check:
+	go run ./cmd/unicode check --design-only
 
 # deep is the asynchronous stage after a merge (CLAUDE.md principle 9):
 # many rapid checks, a fuzz burst per Fuzz target, and mutation testing.

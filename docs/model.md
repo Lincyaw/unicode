@@ -164,6 +164,7 @@ DDD、UML 类图、时序图、活动图、事件风暴和 C4 都是**记法**�
   - 流程和性质：`order.submit-order`、`order.total-is-sum`；
   - 符号：`order.total-is-sum.order`，只在 `generates` 绑定中使用；
   - 用例：`order.total-is-sum.empty`，录制的用例名为 `r-` 后接其取值摘要的前 8 位十六进制，例如 `order.total-is-sum.r-3f9a2c1d`；
+  - 系统：系统的名称，例如 `shop`；参与者和顶层容器因此不能与系统同名；
   - 参与者：`customer`；
   - 步骤：流程的标识后接 `#` 和它在流程中按文本先后的序号，从 1 起，子步骤和片段中的步骤也计入，例如 `order.submit-order#3`。
 - **代码节点**的标识带语言前缀：包为 `go:github.com/x/shop/order`；类型为 `go:github.com/x/shop/order.Order`；方法为 `go:github.com/x/shop/order.Order.Total`；Python 的方法为 `py:shop.order.Order.total`；文件为 `file:src/shop/order.py`。

@@ -6,7 +6,7 @@
 
 - 设计文件都在仓库根目录下的 `design/` 中，扩展名为 `.uc`。`design/` 中不能有其他文件。
   - `design/system.uc` 是**系统文件**，声明系统、使用的记法、各语言的源码根目录和参与者。
-  - 其余每个设计文件声明一个组件，文件路径由组件的标识决定：组件 `order` 在 `design/order.uc`，组件 `order.pricing` 在 `design/order/pricing.uc`。
+  - 其余每个设计文件声明一个组件，文件路径由组件的标识决定：组件 `order` 在 `design/order.uc`，组件 `order.pricing` 在 `design/order/pricing.uc`。顶层组件因此不能叫 `system`。
 - 录制文件都在仓库根目录下的 `corpus/` 中，扩展名为 `.uc`。每个文件存放一条性质或一个流程的录制用例，路径由它的标识决定：`order.total-is-sum` 的录制用例在 `corpus/order/total-is-sum.uc`。录制文件只由 `unicode test --record` 写入，`corpus/` 中不能有其他文件。
 - 文件的内容必须与 `unicode fmt` 的输出逐字节相同，否则 `unicode check` 报错。
 
@@ -122,6 +122,8 @@ NL            = 换行 { 换行 } .
 - 系统、参与者、组件、类型、流程和性质都必须有摘要；操作和用例的摘要可以省略。`generated` 之后的取值域说明，以及 `alt`、`opt`、`loop`、`else` 的标签，都遵守摘要的规则；`paths` 和 `root` 的字符串是普通字符串。
 - 顶层组件必须写 `focus`；子组件省略 `focus` 时，取父组件的关注度。
 - 标签必须属于 `notation` 声明过的记法（[model.md](model.md) §5）。
+- `uses` 只能指向容器和外部系统，不能指向人。
+- 区间的下界不能大于上界。
 
 ### 3.1 值
 

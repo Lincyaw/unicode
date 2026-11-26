@@ -137,7 +137,7 @@ type Backend interface {
 
 | 种类 | 属性的键 |
 | --- | --- |
-| container | `focus`、`labels`、`paths`（设计层）；`language`、`path`（代码层） |
+| container | `focus`（取实际生效的关注度，子组件继承父组件的）、`labels`、`paths`（设计层）；`notations`、`roots`（只有 `system` 才有，`roots` 每项写作 `语言: 目录`）；`language`、`path`（代码层） |
 | type | `labels`、`fields`（每项 `名称: 类型`）、`values` |
 | op | `signature`（`(参数: 类型, …) -> 类型 raises 错误, …`） |
 | flow、property | `symbols`（每项 `名称: 类型`，生成的符号另加 ` generated`）、`limits`（每项是一条限定的规范写法） |
@@ -153,6 +153,8 @@ type Backend interface {
 | op（`func`、`method`、`abstract`） | `name`（带 `checks` 绑定的谓词，写作性质或流程的名称）、`signature`、`testKind`（`none`、`example`、`property` 或 `fuzz`）、`stub`（`true` 或 `false`） |
 
 `calls` 边的属性 `sites` 列出每个调用位置，写作 `路径:行:列`；`generates` 边的属性 `symbols` 列出符号的名称。Go 签名的写法：指针 `*T` 写作 `optional<T>`，`check` 比较时把设计中 `object` 类型的 `optional<X>` 与 `X` 视为相同；末尾的 `error` 写作 ` raises error`，与设计中非空的 `raises` 相符；谓词的第一个参数（`rapid.TB`）保留在签名中，比较符号时跳过。绑定边的终点是设计层的标识，`Graph.AddFragment` 不加入终点不在图中的边，而是留给 `check` 报出绑定的目标不存在。
+
+`alt` 中的步骤属于哪个分支，写在从 `alt` 到该步骤的 `contains` 边的属性 `branch` 上。空的列表不写出。
 
 `extends`、`implements`、`uses`、订阅、调用、发起方和 `about` 都是边，不是属性。快照是 `{"nodes": [...], "edges": [...]}`：节点按标识排序，边按种类、起点、终点排序，属性的键按字典序排列。
 
@@ -313,7 +315,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 - **`check --design-only`**：解析 `design/` 和 `corpus/` 下的全部文件，报出语法、规范格式和 §5.1 的诊断；JSON 为 `{"diagnostics": [...]}`。M2 之前，不带 `--design-only` 的 `check` 是参数错误。
 - **路径参数**：按工作目录解析，必须是根目录下 `design/` 或 `corpus/` 之内的文件或目录。路径不存在、不在这两个目录之内，或者找不到缺省的根目录，都是参数错误。目录会被遍历。`design/` 或 `corpus/` 中 `KindOf` 拒绝的文件给出诊断 `cli.not-a-design-file`，读不出的文件给出 `cli.unreadable-file`，符号链接给出诊断 `cli.symlink`，既不跟随读取，也不改写。全局参数也可以写在命令之后。
 - **改写与输出**：改写是原子的，并保留文件的权限，失败时不留下临时文件；写入或输出失败时退出码为 1。`cli.not-canonical` 的位置是与规范格式第一处不同的字节。`--help` 写到标准输出，退出码为 0。JSON 缩进两个空格。带 `--format json` 时，诊断是数据，写在标准输出的 JSON 中，标准错误只放日志；文本模式下，诊断写到标准错误，标准输出只列出改写了的或不是规范格式的文件。
-- **诊断的 JSON**：`{code, subject, path, line, column, message, fix}`。`code` 是稳定的诊断码，写作 `<组件>.<短横线名称>`，例如 `syntax.unexpected-token`；每条约束一个，与约束一起定义。`syntax` 和 `cli` 的诊断，对象是文件的路径。
+- **诊断的 JSON**：`{code, subject, path, line, column, message, fix}`。`code` 是稳定的诊断码，写作 `<组件>.<短横线名称>`，例如 `syntax.unexpected-token`；每条约束有一个或几个，修正办法不同的子规则各用一个。`syntax` 和 `cli` 的诊断，对象是文件的路径。
 
 ## 9 计划
 

@@ -49,3 +49,4 @@
 32. **代码层契约的细节（Go 后端与 `check` 之间）：** 指针写作 `optional`，由 `check` 按设计中的形式放宽；末尾的 `error` 写作 `raises error`；接口中声明的方法也是 `op` 节点（形式 `abstract`），经由接口的调用因此能被追溯；`AddFragment` 不因绑定的目标不存在而失败，这类边留给 `check` 报告。见 [design.md](design.md) §5.2、[model.md](model.md) §3、§9。
 33. **第一次深度验证之后：** `make deep` 的 gremlins 改为在根目录下不带路径、不用缓存、放宽超时运行；`kindOf` 增加性质 `kind-of-follows-path`；语法诊断按位置排序，并且落在改动的列上；`format-files` 的输入增加工作目录、是否给出 `--root`，以及读不出的文件。27 个改变行为的变异原先没有被任何性质抓到。
 34. **昂贵的验证只在用户同意之后运行。** `make deep`（变异测试、长时间的 fuzz、大量的随机检查）不由任何开发线、评审、主会话或定时任务自行启动；一部分开发完成后，主会话汇报并提议，用户同意了再跑。CI 中的 `deep` 只保留手动触发。见 `CLAUDE.md` 原则 9，[design.md](design.md) §10。
+35. **合并 m1-design 时定下的理解：** 系统节点的标识是系统的名称；顶层组件不能叫 `system`；`system` 节点带上 `notations` 和 `roots`；`alt` 的分支写在 `contains` 边的 `branch` 上；`uses` 不能指向人；区间的下界不能大于上界；一条约束可以有几个诊断码。`make check` 从此包含工具链对自身设计的 `check --design-only`。见 [model.md](model.md) §7、[format.md](format.md) §1、§3，[design.md](design.md) §5.2、§8。
