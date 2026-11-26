@@ -53,6 +53,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | 设计文件和录制文件的词法与语法：[format.md](format.md) §3 的语法写成它的语法结构体 | `github.com/alecthomas/participle/v2` |
 | 命令行的命令、参数和帮助 | `github.com/spf13/cobra` |
 | 路径模式中的 `**` | `github.com/bmatcuk/doublestar/v4` |
+| 值的显示宽度（规范格式的 100 列） | `github.com/mattn/go-runewidth` |
 | 生成器、性质测试与 fuzz 的驱动 | `pgregory.net/rapid` 与 Go 原生的 fuzz |
 | Go 代码的抽取（M2） | `golang.org/x/tools/go/packages` 与 `go/types` |
 
@@ -73,7 +74,7 @@ type Backend interface {
 ```
 
 - **抽取**：后端读出 `container`、`type`、`op` 节点，以及 `contains`、`imports`、`calls`、`refers`、`extends`、`implements` 边。它同时读出代码中的绑定，写成 `realizes` 和 `checks` 边；绑定的写法不合格式时，给出诊断。后端产出的是代码层的图片段，格式与快照相同。
-- **Go 后端**：在进程内用 `golang.org/x/tools/go/packages` 和 `go/types` 解析源码和类型。调用按静态类型解析，接口方法的调用解析到接口的方法。
+- **Go 后端**：在进程内用 `golang.org/x/tools/go/packages` 和 `go/types` 解析源码和类型。调用按静态类型解析，接口方法的调用解析到接口的方法。抽取包括 `_test.go` 文件：谓词、生成器和只供它们使用的类型都在其中，它们的绑定照常读取。
 - **Python 后端**：工具链内嵌一个只用标准库的抽取脚本，以 `python3 -I` 运行。脚本用 `ast` 解析源码，把图片段以 JSON 写到标准输出。调用按名称和导入关系解析，解析不到的调用不成边，只计数。生成在 Go 中按模板完成。
 - **运行**：后端用该语言的测试工具运行驱动，在进程内逐个输入记录覆盖：Go 用 `-cover` 构建，并用 `runtime/coverage` 在每个输入前后清零和读出计数；Python 用标准库的 `sys.monitoring`。覆盖只统计谓词沿 `exercises` 可达的函数，不含生成文件和谓词本身。
 - **测试类别**：Go 中，`func FuzzX(f *testing.F)` 为 `fuzz`，调用了 `rapid.Check` 的 `TestX` 为 `property`，其余 `TestX` 为 `example`。Python 中，带 `hypothesis.given` 的测试为 `property`，用 `atheris` 的为 `fuzz`。后端据此找出生成文件之外的测试函数（[model.md](model.md) §10 第 21 条）。
@@ -258,7 +259,9 @@ type Backend interface {
 
 - **全局参数**：`--root DIR` 指定仓库根目录，缺省为向上找到的第一个含 `design/system.uc` 的目录；`--rev REV` 让查询读一个提交的快照，缺省读工作区。
 - **退出码**：0 成功；1 未知错误；2 参数错误；3 标识不存在；5 冲突（`gen` 要写的位置已有不同的内容）；7 环境错误（找不到 `python3` 或 Go 工具链）；10 存在诊断；11 有谓词未通过。
-- **诊断的 JSON**：`{code, subject, path, line, column, message, fix}`。`code` 是稳定的诊断码，写作 `<组件>.<短横线名称>`，例如 `syntax.unexpected-token`；每条约束一个，与约束一起定义。
+- **路径参数**：按工作目录解析，必须在根目录之内。路径不存在、在根目录之外，或者找不到缺省的根目录，都是参数错误。目录会被遍历。`design/` 或 `corpus/` 中 `KindOf` 拒绝的文件给出诊断 `cli.not-a-design-file`，读不出的文件给出 `cli.unreadable-file`。全局参数也可以写在命令之后。
+- **改写与输出**：改写是原子的，先写同目录下的临时文件再改名，并保留文件的权限；写入或输出失败时退出码为 1。`cli.not-canonical` 的位置是与规范格式第一处不同的字节。`--help` 写到标准输出，退出码为 0。JSON 缩进两个空格；文本模式下，标准输出只列出改写了的或不是规范格式的文件。
+- **诊断的 JSON**：`{code, subject, path, line, column, message, fix}`。`code` 是稳定的诊断码，写作 `<组件>.<短横线名称>`，例如 `syntax.unexpected-token`；每条约束一个，与约束一起定义。`syntax` 和 `cli` 的诊断，对象是文件的路径。
 
 ## 9 计划
 
