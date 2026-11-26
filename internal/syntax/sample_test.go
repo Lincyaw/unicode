@@ -43,6 +43,11 @@ func genLower(t *rapid.T, label string) Lower {
 // that need escaping, spaces, CJK, and characters of the format's own syntax.
 var interestingRunes = []rune(`"\ ab Z0{}[]()<>,:.=-/` + "中文　é  ")
 
+// wideRunes make long strings whose display width is well below their
+// length in bytes, so that values come near the width limit of §3.1 by one
+// measure and past it by the other.
+var wideRunes = []rune("中文字符値a ")
+
 func genRune() *rapid.Generator[rune] {
 	return rapid.OneOf(rapid.SampledFrom(interestingRunes), rapid.SampledFrom(interestingRunes),
 		rapid.Rune().Filter(func(r rune) bool { return !unicode.IsControl(r) }))
@@ -177,6 +182,9 @@ func genValue(t *rapid.T, depth int) Value {
 	case 0:
 		return &NumberValue{Text: genNumber(t, false)}
 	case 1:
+		if rapid.Bool().Draw(t, "wide?") {
+			return &StringValue{Text: Text(rapid.StringOfN(rapid.SampledFrom(wideRunes), 8, 48, -1).Draw(t, "wide"))}
+		}
 		return &StringValue{Text: genString(t, "string")}
 	case 2:
 		if rapid.Bool().Draw(t, "none?") {

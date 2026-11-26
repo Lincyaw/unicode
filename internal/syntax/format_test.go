@@ -5,11 +5,13 @@ import (
 	"cmp"
 	"fmt"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/alecthomas/participle/v2/lexer"
+	"github.com/mattn/go-runewidth"
 	"pgregory.net/rapid"
 )
 
@@ -47,7 +49,7 @@ func checkFormatIsStable(t rapid.TB, sample Sample) {
 		t.Fatalf("the valid text s got diagnostics:%s\ns:\n%s", describeDiagnostics(first), sample.Text)
 	}
 	printed := first.File.Print()
-	if problem := cmp.Or(canonicalProblem(printed), spacingProblem(printed)); problem != "" {
+	if problem := cmp.Or(canonicalProblem(printed), spacingProblem(printed), numberProblem(printed), valueLayoutProblem(printed)); problem != "" {
 		t.Fatalf("t, printed from s, is not canonical: %s\nt:\n%s", problem, printed)
 	}
 	second := Parse(path, sample.Kind, printed)
@@ -230,4 +232,138 @@ func wantGap(a, b lexer.Token) int {
 		return 0
 	}
 	return 1
+}
+
+// canonicalNumber is the canonical form of a number (docs/format.md §2): no
+// leading zeros in the integer part, no -0, and a fraction without trailing
+// zeros beyond its first digit.
+var canonicalNumberForm = regexp.MustCompile(`^(0(\.(0|[0-9]*[1-9]))?|-0\.[0-9]*[1-9]|-?[1-9][0-9]*(\.(0|[0-9]*[1-9]))?)$`)
+
+// numberProblem describes the first number of text that is not in its canonical form, or returns "".
+func numberProblem(text []byte) string {
+	lex, err := ucLexer.LexString("", string(text))
+	if err != nil {
+		return "the printed text does not lex: " + err.Error()
+	}
+	for {
+		tok, err := lex.Next()
+		if err != nil || tok.EOF() {
+			return ""
+		}
+		if tok.Type == symbols["Number"] && !canonicalNumberForm.MatchString(tok.Value) {
+			return fmt.Sprintf("line %d: the number %s is not in its canonical form", tok.Pos.Line, tok.Value)
+		}
+	}
+}
+
+// valueColumns measures display width with its own instance of the printer's
+// fixed condition: East Asian wide characters take two columns.
+var valueColumns = &runewidth.Condition{EastAsianWidth: false, StrictEmojiNeutral: true}
+
+const valueWidth = 100
+
+// valueLayoutProblem describes the first line of a value in canonical text
+// that breaks docs/format.md §3.1, or returns "": a line wider than 100
+// columns that still holds a bracketed value with items, or a value broken
+// across lines that would fit on one line at its indentation.
+func valueLayoutProblem(text []byte) string {
+	lines := strings.Split(strings.TrimSuffix(string(text), "\n"), "\n")
+	for i, inValue := range valueLines(lines) {
+		if !inValue {
+			continue
+		}
+		toks := tokensOf(lines[i])
+		if len(toks) == 0 {
+			continue
+		}
+		if width := valueColumns.StringWidth(lines[i]); width > valueWidth && holdsItems(toks) {
+			return fmt.Sprintf("line %d is %d columns wide, yet it holds a bracketed value with items, which should be broken", i+1, width)
+		}
+		if slices.Contains([]string{"[", "{", "("}, toks[len(toks)-1].Value) {
+			if flat, width := flattened(lines, i); width <= valueWidth {
+				return fmt.Sprintf("line %d starts a value broken across lines that fits in %d columns on one line: %s", i+1, width, flat)
+			}
+		}
+	}
+	return ""
+}
+
+// valueLines marks the lines that hold values: the lines of case blocks, comments aside.
+func valueLines(lines []string) []bool {
+	marks := make([]bool, len(lines))
+	caseIndent := -1
+	for i, l := range lines {
+		body := strings.TrimLeft(l, " ")
+		indent := len(l) - len(body)
+		switch toks := tokensOf(body); {
+		case caseIndent >= 0 && indent == caseIndent && body == "}":
+			caseIndent = -1
+		case caseIndent >= 0:
+			marks[i] = !strings.HasPrefix(body, "//")
+		case len(toks) >= 3 && toks[0].Value == "case" && toks[1].Type == symbols["Ident"] && toks[len(toks)-1].Value == "{":
+			caseIndent = indent
+		}
+	}
+	return marks
+}
+
+// tokensOf lexes one line, without spaces.
+func tokensOf(line string) []lexer.Token {
+	lex, err := ucLexer.LexString("", line)
+	if err != nil {
+		return nil
+	}
+	var toks []lexer.Token
+	for {
+		tok, err := lex.Next()
+		if err != nil || tok.EOF() {
+			return toks
+		}
+		if tok.Type != symbols["Whitespace"] {
+			toks = append(toks, tok)
+		}
+	}
+}
+
+// holdsItems tells whether a bracket opens and closes on the line with something between.
+func holdsItems(toks []lexer.Token) bool {
+	var open []int
+	for i, tok := range toks {
+		switch tok.Value {
+		case "[", "{", "(":
+			open = append(open, i)
+		case "]", "}", ")":
+			if len(open) > 0 && open[len(open)-1] < i-1 {
+				return true
+			}
+			if len(open) > 0 {
+				open = open[:len(open)-1]
+			}
+		}
+	}
+	return false
+}
+
+// flattened writes the value that line i starts and the lines indented
+// below it end on one line, as the printer would, and returns it with its
+// width at the indentation of line i.
+func flattened(lines []string, i int) (string, int) {
+	indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
+	flat := strings.TrimLeft(lines[i], " ")
+	for _, l := range lines[i+1:] {
+		body := strings.TrimLeft(l, " ")
+		switch {
+		case body == "":
+		case strings.ContainsRune("[{(", rune(flat[len(flat)-1])):
+			flat += body
+		case strings.ContainsRune("]})", rune(body[0])):
+			flat = strings.TrimSuffix(flat, ",") + body
+		default:
+			flat += " " + body
+		}
+		if len(l)-len(body) == indent {
+			break
+		}
+	}
+	return flat, indent + valueColumns.StringWidth(flat)
 }
