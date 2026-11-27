@@ -755,7 +755,7 @@ func (w *world) misplaced(label string) []binding {
 func (w *world) drawLoose() {
 	for range rapid.IntRange(0, 2).Draw(w.t, "loose") {
 		file := w.anyFile("looseFile")
-		kind := rapid.SampledFrom([]string{"const", "var", "trailing", "init", "floating"}).Draw(w.t, "looseKind")
+		kind := rapid.SampledFrom([]string{"const", "var", "trailing", "alias", "init", "blank", "floating"}).Draw(w.t, "looseKind")
 		file.decls = append(file.decls, &gloose{
 			kind: kind, name: w.fresh("loose", false), doc: []binding{w.drawBinding("looseBinding", "func")},
 		})
@@ -763,9 +763,8 @@ func (w *world) drawLoose() {
 	w.copyLoose()
 }
 
-// copyLoose gives a file that declares no package-level variable, constant
-// or init function the loose ones of a file in another package that
-// declares nothing else of the kind, with comments of their own and a
+// copyLoose gives a file that has no globals the loose declarations of a
+// file in another package whose globals are only loose ones, with comments of their own and a
 // trailing comment or none, so that the two files' globals differ only in
 // what the normal form drops.
 func (w *world) copyLoose() {
@@ -802,8 +801,8 @@ func (w *world) copyLoose() {
 	}
 }
 
-// isGlobal tells whether a declaration is of a package-level variable, a
-// constant or an init function.
+// isGlobal tells whether a declaration counts in its file's globals: it is
+// top-level and no node.
 func isGlobal(decl any) bool {
 	switch decl := decl.(type) {
 	case *gvar, *gconst:

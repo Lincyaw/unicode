@@ -126,9 +126,8 @@ func (r *writer) decls() {
 	}
 }
 
-// plainGlobals writes a file's declarations of package-level variables,
-// constants and init functions as their normal form reads them, in the
-// order of the source, so that two files share a digest exactly when they
+// plainGlobals writes a file's top-level declarations that are no nodes as
+// their normal form reads them, in the order of the source, so that two files share a digest exactly when they
 // write the same; "" when the file has none.
 func plainGlobals(f *gfile) string {
 	r := newWriter(f, true)
@@ -362,9 +361,15 @@ func (r *writer) loose(l *gloose) {
 			r.put(l.doc[0].text)
 		}
 		r.put("\n")
+	case "alias":
+		r.comments("", l.doc)
+		r.put("type " + l.name + " = int\n")
 	case "init":
 		r.comments("", l.doc)
 		r.put("func init() {}\n")
+	case "blank":
+		r.comments("", l.doc)
+		r.put("func _() {}\n")
 	default:
 		r.comments("", l.doc)
 	}
