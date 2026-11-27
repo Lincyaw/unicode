@@ -61,7 +61,9 @@ func sourceContent(t rapid.TB, name, src string) map[diag.Position]map[string]st
 				contents["body"] = node.Body
 			}
 		case *ast.TypeSpec:
-			at, contents["declaration"] = node.Name.Pos(), node
+			declaration := *node
+			declaration.Name = ast.NewIdent("_")
+			at, contents["declaration"] = node.Name.Pos(), &declaration
 		default:
 			return true
 		}
@@ -80,13 +82,20 @@ func sourceContent(t rapid.TB, name, src string) map[diag.Position]map[string]st
 	return out
 }
 
+// expectContent adds only native operation headers to the model oracle. Body
+// and type declaration classes keep the independent plainBody/plainType model.
 func (x *expectation) expectContent(files map[string]string) {
 	for _, file := range x.w.files() {
 		contents := sourceContent(x.w.t, file.path, files[file.path])
 		for id, node := range x.nodes {
-			for key, value := range contents[node.Origin] {
-				node.Attrs[key] = []string{value}
+			if node.Origin.Path != file.path || node.Kind != graph.NodeKindOp || node.Form == "abstract" {
+				continue
 			}
+			header := contents[node.Origin]["declaration"]
+			if header == "" {
+				x.w.t.Fatalf("the independent source oracle has no native header for %s", id)
+			}
+			node.Attrs["declaration"] = []string{header}
 			x.nodes[id] = node
 		}
 	}
@@ -134,6 +143,7 @@ func checkImplementationContentIsNormalized(t rapid.TB, sample BodySample) {
 		"changed/source.go":  bodyFixture(changed, sample.Value, "~int", sample.Spaced),
 		"method/source.go":   bodyFixture(sample.Value, sample.Value+1, "~int", sample.Spaced),
 		"typed/source.go":    bodyFixture(sample.Value, sample.Value, "~int64", sample.Spaced),
+		"renamed/source.go":  strings.ReplaceAll(bodyFixture(sample.Value, sample.Value, "~int", sample.Spaced), "Box", "Parcel"),
 		"receiver/source.go": strings.Replace(bodyFixture(sample.Value, sample.Value, "~int", sample.Spaced), "Box[T]) Count", "*Box[T]) Count", 1),
 	}
 	expected := map[string]map[diag.Position]map[string]string{}
@@ -157,14 +167,35 @@ func checkImplementationContentIsNormalized(t rapid.TB, sample BodySample) {
 		t.Fatalf("the content fixture has binding diagnostics: %+v", extracted.Diagnostics)
 	}
 	g := graph.NewGraph()
+	classes := map[string]map[string]string{}
+	canonical := map[string]map[string]string{}
+	for _, key := range digestKeys {
+		classes[key], canonical[key] = map[string]string{}, map[string]string{}
+	}
 	for _, node := range extracted.Fragment.Nodes {
 		if err := g.AddNode(node); err != nil {
 			t.Fatal(err)
 		}
-		for key, want := range expected[node.Origin.Path][node.Origin] {
-			if !slices.Equal(node.Attrs[key], []string{want}) {
-				t.Fatalf("%s %s is %q, want the independently formatted AST %q", node.Id, key, node.Attrs[key], want)
+		for _, key := range digestKeys {
+			want, defined := expected[node.Origin.Path][node.Origin][key]
+			values, present := node.Attrs[key]
+			if defined != present {
+				t.Fatalf("%s %s presence is %t, want %t", node.Id, key, present, defined)
 			}
+			if !defined {
+				continue
+			}
+			if len(values) != 1 || !sha256Hex.MatchString(values[0]) {
+				t.Fatalf("%s %s is not one lower-case SHA-256: %q", node.Id, key, values)
+			}
+			got := values[0]
+			if previous, seen := classes[key][want]; seen && previous != got {
+				t.Fatalf("equivalent independently formatted %s content has different digests for %s", key, node.Id)
+			}
+			if previous, seen := canonical[key][got]; seen && previous != want {
+				t.Fatalf("different fixture %s content has the same digest for %s", key, node.Id)
+			}
+			classes[key][want], canonical[key][got] = got, want
 		}
 		if node.Form == "abstract" {
 			for _, key := range []string{"body", "declaration"} {
@@ -233,6 +264,9 @@ func checkImplementationContentIsNormalized(t rapid.TB, sample BodySample) {
 	}
 	if !slices.Equal(get("base", "Box").Attrs["declaration"], get("layout", "Box").Attrs["declaration"]) {
 		t.Fatal("type comments, layout or source positions changed the normalized declaration")
+	}
+	if !slices.Equal(get("base", "Box").Attrs["declaration"], get("renamed", "Parcel").Attrs["declaration"]) {
+		t.Fatal("a type's own name changed its declaration digest")
 	}
 	if slices.Equal(get("base", "Box").Attrs["declaration"], get("typed", "Box").Attrs["declaration"]) {
 		t.Fatal("a generic constraint change was lost from the type declaration")
