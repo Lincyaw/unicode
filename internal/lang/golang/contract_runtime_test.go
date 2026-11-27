@@ -1,0 +1,162 @@
+package golang
+
+import (
+	"errors"
+	"maps"
+	"reflect"
+	"testing"
+
+	"pgregory.net/rapid"
+
+	"github.com/lincyaw/unicode/internal/syntax"
+)
+
+//uc:realizes lang.golang.ContractSample
+type ContractSample struct {
+	Balances             map[string]int
+	FromId, ToId         string
+	Amount, ForeignDelta int
+	RaiseError           bool
+}
+
+//uc:generates lang.golang.executes-contracts.sample
+func genContractSample() *rapid.Generator[ContractSample] {
+	return rapid.Custom(func(t *rapid.T) ContractSample {
+		balances := map[string]int{}
+		for _, id := range []string{"a", "b", "c"} {
+			if rapid.Bool().Draw(t, "present."+id) {
+				balances[id] = rapid.IntRange(0, 200).Draw(t, "balance."+id)
+			}
+		}
+		return ContractSample{balances, rapid.SampledFrom([]string{"a", "b", "missing"}).Draw(t, "from"), rapid.SampledFrom([]string{"a", "b", "missing"}).Draw(t, "to"), rapid.IntRange(1, 100).Draw(t, "amount"), rapid.IntRange(-2, 2).Draw(t, "foreign"), rapid.Bool().Draw(t, "error")}
+	})
+}
+
+type contractBank struct {
+	Balances map[string]int
+	Other    int
+	Port     any
+}
+type contractReceipt struct{ Amount int }
+type contractFundsError struct{ AccountId string }
+
+func (e contractFundsError) Error() string { return "insufficient funds: " + e.AccountId }
+func runtimeExpr(t rapid.TB, text string) *ucExpr {
+	parsed := syntax.ParseExpr("design/runtime.uc", text)
+	if len(parsed.Diagnostics) > 0 {
+		t.Fatalf("cannot parse property expression %s: %v", text, parsed.Diagnostics)
+	}
+	var convert func(*syntax.Expr) *ucExpr
+	convert = func(e *syntax.Expr) *ucExpr {
+		out := &ucExpr{Kind: e.Kind, Text: e.Text, Line: 7, Column: 3}
+		for _, child := range e.Children {
+			out.Children = append(out.Children, convert(child))
+		}
+		return out
+	}
+	return convert(parsed.Expr)
+}
+func transferSpec(t rapid.TB, sample ContractSample, called *int, bank *contractBank) *ucContract {
+	spec := &ucContract{ID: "bank.moves", Path: "design/runtime.uc", Line: 1, Column: 1, Symbols: []ucSymbol{{"bank", "Bank"}, {"fromId", "string"}, {"toId", "string"}, {"amount", "int"}}, Types: map[string]ucType{"Bank": {Form: "object", Fields: []ucField{{"balances", "Balances", "map<string, int>"}, {"other", "Other", "int"}}}, "Receipt": {Form: "record", Fields: []ucField{{"amount", "Amount", "int"}}}, "Funds": {Form: "error", Fields: []ucField{{"accountId", "AccountId", "string"}}}}, Operations: map[string]ucOperation{}, ErrorTypes: map[string]reflect.Type{"Funds": reflect.TypeFor[contractFundsError]()}, Observe: []string{"bank"}}
+	spec.Requires = []*ucExpr{runtimeExpr(t, "fromId != toId"), runtimeExpr(t, "fromId in bank.balances and toId in bank.balances"), runtimeExpr(t, "amount <= bank.balances[fromId]")}
+	spec.Changes = []*ucExpr{runtimeExpr(t, "bank.balances[fromId]"), runtimeExpr(t, "bank.balances[toId]")}
+	spec.Call = runtimeExpr(t, "transfer(bank, fromId, toId, amount)")
+	spec.Operations["transfer"] = ucOperation{Name: "transfer", Result: "Receipt", Raises: []string{"Funds"}, Function: reflect.ValueOf(func(b *contractBank, from, to string, amount int) (contractReceipt, error) {
+		*called++
+		b.Other += sample.ForeignDelta
+		if sample.RaiseError {
+			return contractReceipt{}, contractFundsError{from}
+		}
+		b.Balances[from] -= amount
+		b.Balances[to] += amount
+		return contractReceipt{amount}, nil
+	})}
+	spec.Ensures = []*ucExpr{runtimeExpr(t, "raised(Funds) implies failure(Funds).accountId == fromId"), runtimeExpr(t, "raised(Funds) implies bank.balances == old(bank.balances)"), runtimeExpr(t, "not raised(Funds) implies result.amount == amount"), runtimeExpr(t, "not raised(Funds) implies bank.balances[fromId] == old(bank.balances[fromId]) - amount"), runtimeExpr(t, "not raised(Funds) implies bank.balances[toId] == old(bank.balances[toId]) + amount")}
+	return spec
+}
+func transferInputs(sample ContractSample, bank *contractBank) map[string]reflect.Value {
+	return map[string]reflect.Value{"bank": reflect.ValueOf(bank), "fromId": reflect.ValueOf(sample.FromId), "toId": reflect.ValueOf(sample.ToId), "amount": reflect.ValueOf(sample.Amount)}
+}
+
+//uc:checks lang.golang.executes-contracts
+func checkExecutesContracts(t rapid.TB, sample ContractSample) {
+	from, hasFrom := sample.Balances[sample.FromId]
+	_, hasTo := sample.Balances[sample.ToId]
+	accepted := sample.FromId != sample.ToId && hasFrom && hasTo && sample.Amount <= from
+	bank := &contractBank{Balances: maps.Clone(sample.Balances)}
+	called := 0
+	spec := transferSpec(t, sample, &called, bank)
+	spec.Ensures = append(spec.Ensures, runtimeExpr(t, "not raised(Funds) implies bank.balances != old(bank).balances"))
+	out := ucExecute(spec, transferInputs(sample, bank), true)
+	if out.Rejected == accepted || called != boolInt(accepted) {
+		t.Fatalf("precondition/dispatch mismatch: sample=%+v outcome=%+v called=%d", sample, out, called)
+	}
+	if !accepted {
+		if len(out.Diagnostics) > 0 || len(out.Differences) > 0 {
+			t.Fatalf("a rejected candidate evaluated old or produced a business result: %+v", out)
+		}
+		explicit := ucExecute(spec, transferInputs(sample, bank), false)
+		if !explicit.Infrastructure || len(explicit.Diagnostics) == 0 || called != 0 {
+			t.Fatalf("a replay outside its domain was not a tooling error: %+v", explicit)
+		}
+		return
+	}
+	if out.Infrastructure {
+		t.Fatalf("a valid model input produced an adapter error: %+v", out)
+	}
+	if (len(out.Differences) == 0) != (sample.ForeignDelta == 0) {
+		t.Fatalf("frame result disagrees with the independently known outside change %d: %+v", sample.ForeignDelta, out)
+	}
+	// An observed alias has its own frame permission, even when bank permits the write.
+	aliasBank := &contractBank{Balances: maps.Clone(sample.Balances)}
+	aliasCalls := 0
+	aliasSpec := transferSpec(t, sample, &aliasCalls, aliasBank)
+	aliasSpec.Symbols = append(aliasSpec.Symbols, ucSymbol{"alias", "Bank"})
+	aliasSpec.Observe = append(aliasSpec.Observe, "alias")
+	inputs := transferInputs(sample, aliasBank)
+	inputs["alias"] = reflect.ValueOf(aliasBank)
+	alias := ucExecute(aliasSpec, inputs, true)
+	if !sample.RaiseError && len(alias.Differences) == 0 {
+		t.Fatalf("a write through one alias bypassed the unchanged observed alias: %+v", alias)
+	}
+	// A named observer must work around an interface-bearing service receiver.
+	opaque := &contractBank{Balances: maps.Clone(sample.Balances), Port: make(chan int)}
+	opaqueCalls := 0
+	observed := transferSpec(t, sample, &opaqueCalls, opaque)
+	ty := observed.Types["Bank"]
+	ty.Fields = append(ty.Fields, ucField{"port", "Port", "Port"})
+	observed.Types["Bank"] = ty
+	observed.Types["Port"] = ucType{Form: "interface"}
+	observed.Types["Snapshot"] = ucType{Form: "record", Fields: []ucField{{"other", "Other", "int"}}}
+	observed.Observe = nil
+	observed.Changes = nil
+	observed.Observers = []ucObserver{{Name: "state", Type: "Snapshot", Inputs: []string{"bank"}, Read: reflect.ValueOf(func(b *contractBank) (struct{ Other int }, error) { return struct{ Other int }{b.Other}, nil })}}
+	value := ucExecute(observed, transferInputs(sample, opaque), true)
+	if value.Infrastructure || opaqueCalls != 1 {
+		t.Fatalf("named observer could not inspect an opaque receiver: %+v", value)
+	}
+	observed.Observers[0].Read = reflect.ValueOf(func(*contractBank) (struct{ Other int }, error) {
+		return struct{ Other int }{}, errors.New("observer unavailable")
+	})
+	failed := ucExecute(observed, transferInputs(sample, opaque), true)
+	if !failed.Infrastructure || len(failed.Diagnostics) == 0 || opaqueCalls != 1 {
+		t.Fatalf("an unavailable observer was replaced with a default snapshot: %+v", failed)
+	}
+	// Arbitrary precision evaluates a relation beyond native integer range.
+	env := ucEnvironment{spec: spec, values: map[string]ucValue{"amount": ucNormalize(reflect.ValueOf(sample.Amount), "int", spec.Types)}}
+	if !ucTruth(env.eval(runtimeExpr(t, "amount * 999999999999999999999999999999 / 999999999999999999999999999999 == amount")), nil) {
+		t.Fatal("integer expressions overflowed native range")
+	}
+}
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+func TestExecutesContracts(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) { checkExecutesContracts(t, genContractSample().Draw(t, "sample")) })
+}
+func FuzzExecutesContracts(f *testing.F) {
+	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) { checkExecutesContracts(t, genContractSample().Draw(t, "sample")) }))
+}
