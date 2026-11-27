@@ -457,7 +457,7 @@ type Adequacy struct {
 	// Branch 分支覆盖率: the steps and branches of the flows reached
 	Branch *float64 `json:"branch,omitempty"`
 
-	// Code 代码覆盖率: the lines executed among the functions the predicate exercises
+	// Code 代码覆盖率: the Go basic blocks executed among the functions the predicate exercises
 	Code *float64 `json:"code,omitempty"`
 
 	// Error 错误覆盖率: the declared errors actually raised
@@ -787,7 +787,7 @@ type Evidence struct {
 	// Branches A step or a function: the covering cases by branch
 	Branches *[]BranchCount `json:"branches,omitempty"`
 
-	// CoverageGain A case: 覆盖增量, the lines it adds to what its predicate's other cases cover
+	// CoverageGain A case: 覆盖增量, the measured coverage points it adds beyond its predicate's other cases
 	CoverageGain *int32 `json:"coverageGain,omitempty"`
 
 	// Drivers A property or a flow: its generated drivers

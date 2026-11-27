@@ -848,7 +848,7 @@ components:
         code:
           type: number
           format: double
-          description: '代码覆盖率: the lines executed among the functions the predicate exercises'
+          description: '代码覆盖率: the Go basic blocks executed among the functions the predicate exercises'
         branch:
           type: number
           format: double
@@ -1445,7 +1445,7 @@ components:
         coverageGain:
           type: integer
           format: int32
-          description: "A case: 覆盖增量, the lines it adds to what its predicate's other cases cover"
+          description: "A case: 覆盖增量, the measured coverage points it adds beyond its predicate's other cases"
         adequacy:
           allOf:
             - $ref: '#/components/schemas/Adequacy'

@@ -57,7 +57,6 @@ property rejects-broken-graph invariant "合乎约束的图做一处违反某条
   manual "需要先构造并推导带特定约束改动的图，再核对完整诊断和状态"
 }
 
-
 property stubs-stay-incomplete invariant "绑定的谓词或生成器还是未实现骨架时，性质与流程为 stub；补齐其余完全一致的实现后恢复 verified，不把未执行的生成器当成已验证" {
   about conform
   forall sample: Sample generated "沿用完整一致图的随机生成器，逐个选择实际绑定的谓词与生成器并只改变骨架标记"
