@@ -1,12 +1,12 @@
-import { ChevronDown, ChevronRight } from '../marks/icons';
 import { useState, type CSSProperties } from 'react';
 import type { TreeNode } from '../../api/types';
 import { ABOUT, CONTROLS } from '../../terms';
-import { InfoHint } from '../../ui/hint';
-import { KindIcon } from '../marks/icons';
+import { HintedHeading } from '../../ui/content';
+import { MarkButton } from '../../ui/controls';
+import { Icon } from '../../ui/icons';
+import { ChevronDown, ChevronRight, KindIcon } from '../marks/icons';
 import { StatusDot } from '../marks/StatusDot';
 import styles from './shell.module.css';
-import { Icon } from '../../ui/icons';
 
 /**
  * The design tree: the design nodes by containment. The branches toward the current node start open, and the reader
@@ -33,16 +33,16 @@ export function DesignTree({ root, current, reveal, onSelect, onOpen }: {
         <div className={styles.treeRow} style={{ '--depth': depth } as CSSProperties} aria-current={node.id === current ? 'true' : undefined} data-dim={node.attrs.focus?.[0] === 'utility'}>
           {item.children.length > 0
             ? (
-              <button type="button" className={styles.treeToggle} aria-expanded={open} aria-label={open ? CONTROLS.collapseRow : CONTROLS.expandRow} onClick={() => toggle(node.id)}>
+              <MarkButton className={styles.treeToggle} aria-expanded={open} aria-label={open ? CONTROLS.collapseRow : CONTROLS.expandRow} onClick={() => toggle(node.id)}>
                 <Icon glyph={Chevron} size="tiny" />
-              </button>
+              </MarkButton>
             )
             : <span className={styles.treeToggle} />}
-          <button type="button" className={styles.treeItem} onClick={() => onSelect(node.id)} onDoubleClick={() => onOpen(node.id)}>
+          <MarkButton className={styles.treeItem} onClick={() => onSelect(node.id)} onDoubleClick={() => onOpen(node.id)}>
             <KindIcon node={node} size="small" />
             <span className={styles.treeLabel}>{node.title}</span>
             <StatusDot status={node.status} />
-          </button>
+          </MarkButton>
         </div>
         {open && item.children.length > 0 && <ul>{item.children.map(child => row(child, depth + 1))}</ul>}
       </li>
@@ -51,10 +51,7 @@ export function DesignTree({ root, current, reveal, onSelect, onOpen }: {
 
   return (
     <>
-      <div className={styles.paneHead}>
-        <h2 className="t-label">{CONTROLS.tree}</h2>
-        <InfoHint subject={CONTROLS.tree}>{ABOUT.tree}</InfoHint>
-      </div>
+      <div className={styles.paneHead}><HintedHeading rank="h2" className="t-label" title={CONTROLS.tree} about={ABOUT.tree} /></div>
       <ul className={styles.treeList}>{row(root, 0)}</ul>
     </>
   );

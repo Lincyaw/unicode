@@ -13,7 +13,7 @@ import { Icon, type IconSize } from '../../ui/icons';
 
 export {
   ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronRight, ChevronUp, Code, CornerDownRight, Dices, Ellipsis, EyeOff, FileCode, FlaskConical,
-  GitCommitHorizontal, GitCompareArrows, ListTree, PanelRight, Play, Plus, Repeat, Split, TriangleAlert, X, type LucideIcon,
+  GitCommitHorizontal, GitCompareArrows, ListTree, Merge, PanelRight, Play, Plus, Repeat, Split, TriangleAlert, View, X, type LucideIcon,
 } from 'lucide-react';
 
 const TYPE_ICONS: Record<string, LucideIcon> = {

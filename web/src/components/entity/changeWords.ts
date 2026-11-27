@@ -1,5 +1,5 @@
 import type { Entity, NodeChange } from '../../api/types';
-import { CHANGE_WORDS } from '../../terms';
+import { attributeName, CHANGE_WORDS } from '../../terms';
 import { fieldParts } from '../marks/format';
 
 /** How the node and the code that realizes it changed since the base, said in words. */
@@ -33,7 +33,7 @@ function attrWords(change: NodeChange['attrs'][number]): string[] {
     case 'signature':
       return [CHANGE_WORDS.signatureChanged];
     default:
-      return [CHANGE_WORDS.attrChanged(change.key)];
+      return [CHANGE_WORDS.attrChanged(attributeName(change.key))];
   }
 }
 

@@ -346,7 +346,7 @@ export const CHANGE_WORDS = {
   signatureChanged: '签名修改',
   signatureKept: '签名不变',
   bodyChanged: (lines: number) => `函数体修改 ${lines} 行`,
-  attrChanged: (key: string) => `${key} 修改`,
+  attrChanged: (attribute: string) => `${attribute}修改`,
   added: '新增',
   removed: '删除',
   unchanged: '不变',
