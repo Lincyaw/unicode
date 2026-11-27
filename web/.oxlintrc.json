@@ -44,7 +44,7 @@
         "viewer/paths-from-routes": "error",
         "viewer/icons-from-the-table": "error",
         "viewer/controls-from-kit": "error",
-        "viewer/no-native-tooltip": "error"
+        "viewer/no-native-tooltip": ["error", { "headings": ["HintedHeading", "SectionHeading", "Section", "RealizedSection", "PageHeader"] }]
       }
     },
     {

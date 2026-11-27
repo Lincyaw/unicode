@@ -7,13 +7,11 @@ const HAN = /\p{Script=Han}/u;
 const PAGE_PATH = /^\/[a-z]/;
 
 /** The elements a page never writes itself: every button and field is one of the design kit's controls. */
-const KIT_ELEMENTS = new Set(['button', 'input']);
+const KIT_ELEMENTS = new Set(['button', 'input', 'textarea', 'select']);
 
 /** Arrows, crosses and the like, which a page draws as icons rather than typing them. */
 const TYPED_SYMBOLS = /[→←‹›×−⋯↗]/u;
 
-/** A JSX element written in lower case is a DOM element rather than a component. */
-const DOM_ELEMENT = /^[a-z]/;
 
 export default {
   meta: { name: 'viewer' },
@@ -95,7 +93,7 @@ export default {
       create(context) {
         return {
           ImportDeclaration(node) {
-            if (node.source.value === 'lucide-react') {
+            if (node.source.value === 'lucide-react' || node.source.value.startsWith('lucide-react/')) {
               context.report({ node, message: 'Import Lucide glyphs from components/marks/icons, which names each glyph the viewer draws after docs/design.md §7.5\'s icon table; add a glyph there, and to the table, when a new meaning needs one.' });
             }
           },
@@ -103,13 +101,20 @@ export default {
       },
     },
     'no-native-tooltip': {
-      meta: { type: 'problem', docs: { description: 'Details wait in the kit\'s Hint, never in the browser\'s title tooltip.' } },
+      meta: {
+        type: 'problem',
+        docs: { description: 'Details wait in the kit\'s Hint, never in the browser\'s title tooltip.' },
+        schema: [{ type: 'object', properties: { headings: { type: 'array', items: { type: 'string' } } }, required: ['headings'], additionalProperties: false }],
+      },
       create(context) {
+        // The components whose `title` is the text of a heading they draw, named in .oxlintrc.json; any other element's title is a tooltip.
+        const headings = new Set(context.options[0].headings);
         return {
           JSXAttribute(node) {
             const element = node.parent;
-            if (node.name.type === 'JSXIdentifier' && node.name.name === 'title' && element.name.type === 'JSXIdentifier' && DOM_ELEMENT.test(element.name.name)) {
-              context.report({ node, message: 'Put the detail in a Hint from src/ui/hint instead of a title attribute: the browser\'s tooltip has neither the kit\'s look nor a reliable delay, and touch and keyboard readers never see it.' });
+            const name = element.name.type === 'JSXIdentifier' ? element.name.name : undefined;
+            if (node.name.type === 'JSXIdentifier' && node.name.name === 'title' && !headings.has(name)) {
+              context.report({ node, message: 'Put the detail in a Hint from src/ui/hint instead of a title: the browser\'s tooltip has neither the kit\'s look nor a reliable delay, and touch and keyboard readers never see it. A component whose title is a heading\'s text is named in the rule\'s headings in .oxlintrc.json.' });
             }
           },
         };

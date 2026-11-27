@@ -12,6 +12,23 @@ const messages = ruleMessages(ruleName, {
 /** A declaration that reads the brand colour or its soft fill. */
 const BRAND = /var\(\s*--(?:accent-brand|bg-brand-soft)\b/;
 
+/** A selector without its :not() parts, so that a negated :focus-visible does not count as one. */
+function withoutNegations(selector) {
+  let kept = '';
+  let depth = 0;
+  for (let at = 0; at < selector.length; at += 1) {
+    if (depth === 0 && selector.startsWith(':not(', at)) {
+      depth = 1;
+      at += ':not('.length - 1;
+    } else if (depth > 0) {
+      depth += selector[at] === '(' ? 1 : selector[at] === ')' ? -1 : 0;
+    } else {
+      kept += selector[at];
+    }
+  }
+  return kept;
+}
+
 /** Reports every declaration that reads the brand colour in a rule some of whose selectors are not :focus-visible ones. */
 function rule(primary) {
   return (root, result) => {
@@ -20,7 +37,7 @@ function rule(primary) {
     }
     root.walkDecls(decl => {
       const parent = decl.parent;
-      const focused = parent?.type === 'rule' && parent.selectors.every(selector => selector.includes(':focus-visible'));
+      const focused = parent?.type === 'rule' && parent.selectors.every(selector => withoutNegations(selector).includes(':focus-visible'));
       if (BRAND.test(decl.value) && !focused) {
         report({ ruleName, result, node: decl, message: messages.rejected });
       }
