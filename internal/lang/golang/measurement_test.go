@@ -85,7 +85,7 @@ func checkMeasuredExecutionKeepsRealEvidence(t rapid.TB, sample MeasurementSampl
 			t.Fatalf("a shared mutable input was silently copied: %+v", report)
 		}
 		for _, result := range report.Results {
-			if result.Passed || result.Accepted != 0 {
+			if result.Passed || result.Accepted != 0 || result.Rejected != 0 {
 				t.Fatalf("a shared mutable input executed after codec rejection: %+v", result)
 			}
 			for _, candidate := range result.Cases {

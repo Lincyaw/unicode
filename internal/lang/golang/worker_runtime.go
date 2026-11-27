@@ -145,12 +145,28 @@ func ucCandidateWorker(t *testing.T, units []ucWorkerUnit) (handled bool) {
 		}
 	case "draw":
 		complete := false
+		var drawIssue *ucIssue
 		defer func() {
-			if !complete {
+			if !complete && drawIssue == nil {
 				response.Rejected = true
 			}
 		}()
-		rapid.MakeFuzz(func(rt *rapid.T) { response.Input = ucFreezeInputs(spec, selected.Draw(rt, spec)); complete = true })(t, ucWorkerBits(request.Seed))
+		rapid.MakeFuzz(func(rt *rapid.T) {
+			defer func() {
+				if problem := recover(); problem != nil {
+					if issue, ok := problem.(ucIssue); ok {
+						drawIssue = &issue
+						return
+					}
+					panic(problem)
+				}
+			}()
+			response.Input = ucFreezeInputs(spec, selected.Draw(rt, spec))
+			complete = true
+		})(t, ucWorkerBits(request.Seed))
+		if drawIssue != nil {
+			panic(*drawIssue)
+		}
 	case "prepare", "execute":
 		values := ucThawInputs(request.Input, selected.Types, spec)
 		response.Input = request.Input
