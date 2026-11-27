@@ -31,6 +31,7 @@ import (
 var contractRuntime string
 
 var _ lang.Generator = (*Backend)(nil)
+var _ = ucManual
 var _ = ucCheck
 var _ = ucDraw
 var _ = ucParseTime
@@ -733,44 +734,12 @@ func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packa
 		if named == nil {
 			return "", fmt.Errorf("cannot resolve record literal type %s", t)
 		}
-		structure, ok := named.Underlying().(*types.Struct)
-		if !ok {
+
+		if _, ok := named.Underlying().(*types.Struct); !ok {
 			return "", fmt.Errorf("%s is not a record type", t)
 		}
-		var items []string
-		for _, entry := range v.Entries {
-			field := upperFirst(string(*entry.Key.Name))
-			var ft types.Type
-			for i := 0; i < structure.NumFields(); i++ {
-				if structure.Field(i).Name() == field {
-					ft = structure.Field(i).Type()
-				}
-			}
-			if ft == nil {
-				return "", fmt.Errorf("record field %s is unavailable", field)
-			}
-			typeText := types.TypeString(ft, func(p *types.Package) string {
-				if p.Path() == pkg.PkgPath {
-					return ""
-				}
-				if alias, ok := c.literalImports[p.Path()]; ok {
-					return alias
-				}
-				alias := "ucpkg" + strconv.Itoa(len(c.literalImports))
-				c.literalImports[p.Path()] = alias
-				return alias
-			})
-			x, err := c.valueLiteral(entry.Value, typeText, pkg)
-			if err != nil {
-				return "", err
-			}
-			items = append(items, field+":"+x)
-		}
-		prefix := ""
-		if strings.HasPrefix(t, "*") {
-			prefix = "&"
-		}
-		return prefix + name + "{" + strings.Join(items, ",") + "}", nil
+		return c.recordLiteral(v, t, named, pkg)
+
 	}
 	return "", fmt.Errorf("the case value has an unsupported form")
 }

@@ -1631,7 +1631,7 @@ func ucDraw(t *rapid.T, typ reflect.Type, model string, types map[string]ucType,
 			out.SetString(rapid.SampledFrom(values).Draw(t, path))
 		} else {
 			for _, f := range ucFields(types, model) {
-				field := out.FieldByName(f.GoName)
+				field := ucConstructField(out, f.GoName)
 				if !field.IsValid() || !field.CanSet() {
 					ucFail("lang.golang.observation-failed", "cannot construct the model field "+f.Name, nil)
 				}
@@ -1929,4 +1929,36 @@ func ucManual(t rapid.TB, s *ucContract, inputs map[string]reflect.Value, predic
 	cleanup := ucInstallDoubles(s, inputs)
 	defer cleanup()
 	predicate()
+}
+
+// ucConstructField follows a native promoted-field index and allocates embedded
+// pointers before assigning a generated inherited model field.
+func ucConstructField(value reflect.Value, name string) reflect.Value {
+	value = ucDeref(value)
+	if !value.IsValid() || value.Kind() != reflect.Struct {
+		return reflect.Value{}
+	}
+	field, ok := value.Type().FieldByName(name)
+	if !ok {
+		return reflect.Value{}
+	}
+	for position, index := range field.Index {
+		for value.Kind() == reflect.Pointer {
+			if value.IsNil() {
+				if !value.CanSet() {
+					return reflect.Value{}
+				}
+				value.Set(reflect.New(value.Type().Elem()))
+			}
+			value = value.Elem()
+		}
+		if value.Kind() != reflect.Struct {
+			return reflect.Value{}
+		}
+		value = value.Field(index)
+		if position == len(field.Index)-1 {
+			return value
+		}
+	}
+	return reflect.Value{}
 }

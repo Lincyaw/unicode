@@ -1,9 +1,13 @@
 package golang
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
+
+	"golang.org/x/tools/go/packages"
 	"reflect"
 	"strconv"
 	"strings"
@@ -33,6 +37,12 @@ type executionCounter struct{ Value, Calls, FailAt int }
 type executionFailure struct{ Attempt int }
 
 // executionReturnedItem keeps implementation data outside its modeled fields.
+type ExecutionParent struct{ Value int }
+type executionDerived struct {
+	*ExecutionParent
+	Delta int
+}
+
 type executionReturnedItem struct {
 	Value int
 	fee   int
@@ -103,6 +113,21 @@ func checkExecutesSequencesAndFlows(t rapid.TB, sample ExecutionSample) {
 		}
 	}
 	checkExecutionPurity(t, sample, initial)
+	checkExecutionPromotedLiteral(t, sample)
+	if rt, ok := t.(*rapid.T); ok {
+		hierarchy := map[string]ucType{"Parent": {Form: "record", Fields: []ucField{{"value", "Value", "int"}}}, "Child": {Form: "record", Parent: "Parent", Fields: []ucField{{"delta", "Delta", "int"}}}}
+		generated := ucDraw(rt, reflect.TypeFor[executionDerived](), "Child", hierarchy, []string{"item.value in 1..3", "item.delta in -5..5"}, "item", 0).Interface().(executionDerived)
+		if generated.ExecutionParent == nil || generated.Value < 1 || generated.Value > 3 || generated.Delta < -5 || generated.Delta > 5 {
+			t.Fatalf("inherited generated fields escaped their independent domain: %+v", generated)
+		}
+		before := generated.Value
+		snapshot := ucDetach(ucNormalize(reflect.ValueOf(generated), "Child", hierarchy))
+		generated.Value++
+		if ucKey(ucFieldValue(snapshot, "value")) != "i:"+strconv.Itoa(before) {
+			t.Fatal("a generated inherited field was not readable or frozen in the model snapshot")
+		}
+	}
+
 	// Automatic flows share the tested-call runtime and retain their flow name.
 	compiler, file, _ := driverFixture(DriverSample{Name: "execution.entry", Symbols: 0})
 	file.units[0].node.Kind = graph.NodeKindFlow
@@ -205,5 +230,30 @@ func checkExecutionPurity(t rapid.TB, sample ExecutionSample, initial int) {
 	rejected := ucExecute(errorSpec, nil, false)
 	if rejected.Infrastructure || len(rejected.Diagnostics) != 1 || rejected.Diagnostics[0].Code != "lang.golang.purity-violation" {
 		t.Fatalf("first declared failure was not frozen: %+v", rejected)
+	}
+}
+
+func checkExecutionPromotedLiteral(t rapid.TB, sample ExecutionSample) {
+	native := types.NewPackage("executionliteral", "executionliteral")
+	parentObject := types.NewTypeName(token.NoPos, native, "Parent", nil)
+	parent := types.NewNamed(parentObject, types.NewStruct([]*types.Var{types.NewField(token.NoPos, native, "Value", types.Typ[types.Int], false)}, nil), nil)
+	childObject := types.NewTypeName(token.NoPos, native, "Child", nil)
+	types.NewNamed(childObject, types.NewStruct([]*types.Var{types.NewField(token.NoPos, native, "Parent", types.NewPointer(parent), true), types.NewField(token.NoPos, native, "Delta", types.Typ[types.Int], false)}, nil), nil)
+	pkg := &packages.Package{PkgPath: native.Path(), Name: native.Name(), Types: native}
+	compiler := contractCompiler{declarations: map[string]nativeDeclaration{"Parent": {obj: parentObject, pkg: pkg}, "Child": {obj: childObject, pkg: pkg}}, literalImports: map[string]string{}}
+	literal, err := compiler.literal(fmt.Sprintf("{value: %d, delta: %d}", sample.Initial, len(sample.Deltas)), "Child", pkg)
+	if err != nil {
+		t.Fatalf("a native promoted record field could not be replayed: %v", err)
+	}
+	// Type-check the actual complete literal against an independent native shape.
+	source := "package executionliteral\ntype Parent struct{Value int}\ntype Child struct{*Parent;Delta int}\nvar supplied=" + literal
+	set := token.NewFileSet()
+	file, err := parser.ParseFile(set, "literal.go", source, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := types.Config{}
+	if _, err := configuration.Check("executionliteral", set, []*ast.File{file}, nil); err != nil {
+		t.Fatalf("a promoted-field replay literal does not compile: %v", err)
 	}
 }

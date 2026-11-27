@@ -230,3 +230,50 @@ func (c *contractCompiler) retainedCarrier(name string, pkg *packages.Package) b
 	}
 	return false
 }
+
+// recordLiteral writes promoted native fields through an initialized value;
+// promoted fields cannot be keyed directly in a Go composite literal.
+func (c *contractCompiler) recordLiteral(value *syntax.BraceValue, t string, named *types.Named, pkg *packages.Package) (string, error) {
+	var body strings.Builder
+	if strings.HasPrefix(t, "*") {
+		body.WriteString("value:=new(" + strings.TrimPrefix(t, "*") + ");")
+	} else {
+		body.WriteString("var value " + t + ";")
+	}
+	for _, entry := range value.Entries {
+		if entry.Key.Name == nil {
+			return "", fmt.Errorf("a record field needs a model name")
+		}
+		name := upperFirst(string(*entry.Key.Name))
+		object, index, _ := types.LookupFieldOrMethod(named, true, pkg.Types, name)
+		field, ok := object.(*types.Var)
+		if !ok || len(index) == 0 {
+			return "", fmt.Errorf("record field %s is unavailable or ambiguous", name)
+		}
+		current := types.Type(named)
+		path := "value"
+		for position, part := range index {
+			if pointer, ok := types.Unalias(current).(*types.Pointer); ok {
+				current = pointer.Elem()
+			}
+			structure, ok := types.Unalias(current).Underlying().(*types.Struct)
+			if !ok {
+				return "", fmt.Errorf("the promoted field %s has no native struct path", name)
+			}
+			member := structure.Field(part)
+			path += "." + member.Name()
+			current = member.Type()
+			if position < len(index)-1 {
+				if pointer, ok := types.Unalias(current).(*types.Pointer); ok {
+					fmt.Fprintf(&body, "if %s==nil {%s=new(%s)};", path, path, c.nativeType(pointer.Elem(), pkg, c.literalImports))
+				}
+			}
+		}
+		literal, err := c.valueLiteral(entry.Value, c.nativeType(field.Type(), pkg, c.literalImports), pkg)
+		if err != nil {
+			return "", err
+		}
+		body.WriteString(path + "=" + literal + ";")
+	}
+	return "func() " + t + " {" + body.String() + "return value}()", nil
+}
