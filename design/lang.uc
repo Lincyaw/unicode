@@ -104,8 +104,14 @@ type CaseResult record "一次输入的最终结果；缩减尝试不累计成�
   field diagnostics: list<diag.Diagnostic>
 }
 
+type CandidateEvaluation record "一次候选请求；预算耗尽没有结果，环境诊断与业务反例分开" {
+  field result: optional<CaseResult>
+  field exhausted: bool
+  field diagnostics: list<diag.Diagnostic>
+}
+
 type CandidateRunner interface "已经编译的语言执行边界，每次重建输入，在独立边界执行一个候选" {
-  op evaluate(input: Input) -> CaseResult "真实执行并返回覆盖与轨迹，不能以累计覆盖替代当前候选"
+  op evaluate(input: Input) -> CandidateEvaluation "真实执行并返回覆盖与轨迹，不能以累计覆盖替代当前候选"
 }
 
 type RunResult record "一条性质的运行结论：有效执行、拒绝候选、观察边界、范围外差异与业务断言的定位诊断" {

@@ -152,7 +152,7 @@
 | `traces` | step → 代码层 op | 推导 | 落实该步骤所调用操作的函数 |
 | `exercises` | 代码层 op → 代码层 op | 推导 | 谓词沿静态调用可达的函数 |
 | `reaches` | 代码层 op → 代码层 op | 推导 | 两个显著函数之间只经过细节函数的调用；属性列出经过的函数 |
-| `covers` | case → 代码层 op；case → step | 运行 | 用例执行到的函数（属性列出行）和走到的步骤 |
+| `covers` | case → 代码层 op；case → step、error type | 运行 | 用例执行到的函数（属性列出行）和走到的步骤 |
 
 ## 5 记法与标签
 

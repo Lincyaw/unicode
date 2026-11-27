@@ -9,6 +9,11 @@ type Reduction record "保持覆盖并集、声明用例和全部反例的确定
   field diagnostics: list<diag.Diagnostic>
 }
 
+type Shrunk record "最终仍能复现的反例及缩减边界的检查错误；预算耗尽保留已知反例" {
+  field result: lang.CaseResult
+  field diagnostics: list<diag.Diagnostic>
+}
+
 type Loaded record "本地不可变运行记录；旧版无输入摘要的结果不作为当前证据" {
   field reports: list<lang.RunReport>
   field diagnostics: list<diag.Diagnostic>
@@ -32,7 +37,7 @@ type Sample record "独立给出用例和覆盖集合，包含声明、反例、
 
 op reduce(cases: list<lang.CaseResult>, limit: int) -> Reduction pure "保留全部声明与反例，按新增覆盖最多、输入摘要破同分贪心挑选，再删除冗余；超过上限而不能保持保证时给出诊断"
 
-op shrink(input: lang.Input, runner: lang.CandidateRunner, budget: duration) -> lang.CaseResult "只接受仍失败且不是环境错误的更小模型值；保留前提与类型，预算内缩到候选缩减的固定点；返回最终反例，不混入缩减尝试"
+op shrink(initial: lang.CaseResult, runner: lang.CandidateRunner, budget: duration) -> Shrunk "只接受仍失败且不是环境错误的更小模型值；保留前提与类型，预算内缩到候选缩减的固定点；返回最终反例，不混入缩减尝试"
 
 op read(root: string) -> Loaded "读取 .unicode/runs 下的不可变运行记录和兼容的 results.json；损坏与符号链接是错误，失效结果保留为历史"
 
