@@ -9,6 +9,12 @@ type Loaded record "载入的结果：设计层的图和诊断；有诊断时，
   field diagnostics: list<diag.Diagnostic>
 }
 
+type Explored record "显式探索的设计载入：有效图、丢弃的过期录制用例和已无目标的录制文件" {
+  field loaded: Loaded
+  field discarded: list<string>
+  field orphaned: list<string>
+}
+
 type Sample record "一组合法的设计文件和录制文件，以及它们声明的节点和边，供性质使用" {
   field files: map<string, string>
   field nodes: list<string>
@@ -33,6 +39,8 @@ type InheritanceSample record "继承成员解析的样本：父字段值与子�
   field value: int
   field overridden: bool
 }
+
+op loadForExploration(files: list<syntax.File>) -> Explored "仅在显式探索中剔除不再满足符号、类型和限定的录制用例，忽略已无目标的录制文件；声明用例、错误路径、语法或其余设计错误仍有诊断"
 
 op load(files: list<syntax.File>) -> Loaded "解析引用，建出设计层的节点和边，检查只需设计就能判断的约束"
 
@@ -84,4 +92,19 @@ property inheritance-members-are-resolved invariant "继承字段及操作在表
   about load
   forall sample: InheritanceSample generated "有符号整数字段及有无子字段遮蔽的父子对象，含继承操作的序列、路径限定和声明用例"
   manual "需要建立实际设计程序并核对成员引用、限定、用例及诊断，而非比较对象的单次取值"
+}
+
+property codecs-are-typed invariant "codec 投影两个绝对操作和引用，encoded 按表示类型检查；错误签名、重复、接口、无声明、表示依赖循环或隐式继承均被拒绝，静态载入不调用解码器" {
+  about load
+  forall value: int
+  forall variant: int
+  where value in -1000..1000
+  where variant in 0..14
+  manual "构造 codec 源程序并核对独立的操作引用、类型、诊断及位置，载入边界不执行原生解码"
+}
+
+property exploration-prunes-recorded-inputs invariant "只有显式探索能剔除过期录制输入及无目标的录制文件；合法记录保留，声明错误和非域错误仍阻断，普通载入保持严格" {
+  about load, loadForExploration
+  forall sample: Sample generated "合法设计和录制样本，分别加入合法、过期符号或类型、域外、无目标与错误路径的录制变体"
+  manual "在真实设计语法树和独立记录身份上比较两种载入模式，保留全部非录制域错误"
 }

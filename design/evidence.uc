@@ -26,6 +26,7 @@ type Attached record "证据层节点、与检查和用例的关系，以及当�
 
 type Recording record "录制文件的完整生成计划；不会改写声明用例" {
   field edits: list<lang.Edit>
+  field removals: list<string>
   field diagnostics: list<diag.Diagnostic>
 }
 
@@ -45,7 +46,7 @@ op save(root: string, report: lang.RunReport) -> list<diag.Diagnostic> "保存�
 
 op attach(g: graph.Graph, reports: list<lang.RunReport>) -> Attached pure "按执行输入摘要判定当前证据；生成 run/result、about、contains 和 covers，不把旧结果的行号套到新源码"
 
-op recordings(g: graph.Graph, cases: list<lang.CaseResult>) -> Recording "以规范格式规划 corpus 文件；录制名是输入摘要前八位，碰撞、不可回放输入或上限冲突均禁止写入"
+op recordings(root: string, g: graph.Graph, cases: list<lang.CaseResult>) -> Recording "以规范格式规划 corpus 文件；录制名是输入摘要前八位，碰撞、不可回放输入或上限冲突均禁止写入"
 
 property reduction-preserves-evidence postcondition "缩减保留声明与反例及全部覆盖，不因重复用例或顺序丢失证据" {
   about reduce

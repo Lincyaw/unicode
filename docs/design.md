@@ -297,7 +297,7 @@ Go 先以只读源码覆盖插入 `runtime/trace.Log`，编译一次带 `atomic`
 
 生成驱动增加内部候选协议，但普通测试和原生 fuzz 的既有入口、输入分布与默认次数保持不变。后端向候选进程提供 typed JSON 模型输入，或只请求依旧有生成器抽取输入；抽取进程与执行进程分开。候选接口以 `CandidateEvaluation` 区分真实结果、正常预算耗尽与检查错误；未完成的进程既不是拒绝输入也不是业务反例。缩减接受一个已经确认的反例，预算耗尽时保留它，缩减边界的错误另列诊断。
 
-模型值 wire 的 kind 为 none、bool、int、float、string、bytes、time、duration、enum、list、set、map、record、call、encoded。标量放 text；bytes 为 Base64，time 为 UTC RFC3339Nano，duration 为 Go 时长字符串，数值保留精确文本。list/set 用 items，encoded 的 items 恰一项；map/record/call 用 entries，记录字段和调用参数的键为字符串，call.text 是操作名。规范输入按符号名、记录和映射键、集合元素的规范编码排序，列表保序；inputHash 是规范 JSON 的 SHA-256。
+输入规范编码清空与 kind 无关的字段；标量的 items/entries 为 null，列表与集合的 items、记录/映射/调用的 entries 为空时为 []。float 用非指数的有限十进制文本，便于原样写入 corpus。模型值 wire 的 kind 为 none、bool、int、float、string、bytes、time、duration、enum、list、set、map、record、call、encoded。标量放 text；bytes 为 Base64，time 为 UTC RFC3339Nano，duration 为 Go 时长字符串，数值保留精确文本。list/set 用 items，encoded 的 items 恰一项；map/record/call 用 entries，记录字段和调用参数的键为字符串，call.text 是操作名。规范输入按符号名、记录和映射键、集合元素的规范编码排序，列表保序；inputHash 是规范 JSON 的 SHA-256。
 
 候选执行使用真正的 `*rapid.T`，其附加随机上下文从规范输入摘要确定地派生；回放使用同一规则。输入在调用前冻结，替身取原始脚本，不能取调用后的状态。私有状态只能经类型的显式 codec 表示；不能无损往返的输入报错。生成消费者只依赖标准库与 rapid，覆盖、轨迹解析和缩减策略留在工具后端。
 
@@ -307,7 +307,7 @@ Go 先以只读源码覆盖插入 `runtime/trace.Log`，编译一次带 `atomic`
 
 后端报告的 `RunResult.cases` 保存逐输入的冻结值、输入摘要、覆盖点、轨迹及最终结果；拒绝不成为反例，环境错误在顶层诊断。报告带版本 1、执行输入图摘要、时间、提交、工作区状态和模式。`codeTotal/branchTotal/errorTotal` 是实际测量范围的分母，没有测量时相应指标缺省，不用零分母假装完全覆盖。证据层用 `contains` 连接 run/result，用 `about` 连接检查和用例，用 `covers` 连接当前有效的 case 与代码、步骤；当前业务反例和纯性违规参与一致性状态。
 
-`--record` 仅与正的 `--explore` 一起使用。探索加载先单独验证录制用例：丢弃不再满足当前类型或限定的录制值，声明用例错误仍阻断。规划全部规范 corpus 文件并预检后写入，随后用加入新用例的图重新规划并更新本工具拥有的驱动，使下一次快路径可直接回放。生成与录制的每个文件分别按现有安全写入规则发布，不承诺跨文件事务；中途失败给出诊断并要求重试生成，不把陈旧输出报告为成功。没有 `--record` 时不改 corpus 或生成文件，但仍保存实际运行结果。名称前八位哈希冲突、无法复现的失败、覆盖上限冲突、编码失败、符号链接或无权改写都禁止伪成功。
+`--record` 仅与正的 `--explore` 一起使用。探索使用 `design.loadForExploration` 和后端生成抽取路径：先剔除不再满足符号、类型或限定的录制用例，并报告已无目标的录制文件；声明用例、语法、错误路径和其余设计错误仍阻断。慢路径在只读覆盖中生成当前驱动，不被旧生成测试阻断；缺少的人工骨架不能被临时实现冒充。规划全部规范 corpus 文件和已无目标文件的移除项，严格预检 corpus 路径、当前规范头和文件类型后写入；没有目标的文件只在 --record 时移除。随后用加入新用例的图重新规划并更新本工具拥有的驱动，使下一次快路径可直接回放。生成与录制的每个文件分别按现有安全写入规则发布，不承诺跨文件事务；中途失败给出诊断并要求重试生成，不把陈旧输出报告为成功。没有 `--record` 时不改 corpus 或生成文件，但仍保存实际运行结果。名称前八位哈希冲突、无法复现的失败、覆盖上限冲突、编码失败、符号链接或无权改写都禁止伪成功。
 
 ## 7 视图、切片与查询
 
