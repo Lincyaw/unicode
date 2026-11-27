@@ -490,7 +490,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 | `unicode test --explore DURATION [--record] [id...]` | 慢路径：在预算内探索，按覆盖挑选；带 `--record` 时写回录制文件 | `.unicode/results.json`、录制文件 |
 | `unicode diff <rev> [--to REV]` | 比较两个快照：`<rev>` 的与工作区的，带 `--to` 时与 `REV` 的 | 无 |
 | `unicode node get <id>` | 给出一个节点及其边 | 无 |
-| `unicode node search <text> [--kind K]` | 按名称和摘要搜索 | 无 |
+| `unicode node search [--kind K] [--] <text>` | 按名称和摘要搜索；以 `-` 开头的文字写在 `--` 之后，参数写在它之前 | 无 |
 | `unicode node refs <id>` | 给出指向它的边 | 无 |
 | `unicode slice <id>... [--expand ID]... [--with-code]` | 切片 | 无 |
 | `unicode impact <id>...` | 影响 | 无 |
