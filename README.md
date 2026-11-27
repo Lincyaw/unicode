@@ -1,8 +1,20 @@
 # unicode
 
-unicode 把一个仓库的设计意图、代码和证据组织成一张图。设计写在 `design/` 下的 `.uc` 文件中；代码的结构由语言后端静态抽取；二者由代码中的绑定对应起来。DDD、UML 类图、时序图和 C4 都是这张图的视图。性质和流程都必须能执行：它们声明符号和用例，生成器和测试驱动由工具链生成；按覆盖挑选出的输入录制在 `corpus/` 中，快路径只回放它们，慢路径按时间预算探索新的输入。
+unicode 把一个仓库的设计意图、代码和证据组织成一张图。设计写在 `design/` 下的 `.uc` 文件中；代码的结构由语言后端静态抽取；二者由代码中的绑定对应起来。DDD、UML 类图、时序图和 C4 都是这张图的视图。性质可以声明输入、前提、被测调用、观察范围、允许变化的位置和结果关系；Go 后端把这些黑盒契约生成可执行的谓词和驱动。
 
-当前处于 M0（设计）。
+当前实现到 M4 第一阶段：设计与代码的一致性检查、图查询和影响分析、单次调用契约、声明用例回放，以及按预算生成输入的探索。复杂性质保留有理由的 `manual` 谓词；调用序列、完整流程驱动、接口替身和覆盖引导录制按后续阶段交付。
+
+本仓库用自己的设计做检查：
+
+```sh
+go run ./cmd/unicode gen --dry-run
+go run ./cmd/unicode gen
+go run ./cmd/unicode check
+go run ./cmd/unicode test syntax.kind-of-follows-path syntax.parse-result-is-described syntax.expression-text-is-stable
+make check
+```
+
+`gen --dry-run` 输出生成计划；`gen` 只写入本工具拥有的生成文件。`test` 回放所选性质的用例，有输入生成器时可用 `--explore 1s` 做限时探索。没有有效执行会报错。详细语义和诊断见下列文档。
 
 | 文档 | 内容 |
 | --- | --- |

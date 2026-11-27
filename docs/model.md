@@ -351,7 +351,7 @@
 | D3 | 由性质验证 | `graph.derive-matches-definition` |
 | D4 | 由性质验证 | `graph.derive-matches-definition` |
 | D5 | 由性质验证 | `graph.derive-matches-definition` |
-| D6 | 由性质验证 | `graph.derive-matches-definition` |
+| D6 | 由性质验证 | `graph.derive-matches-definition`、`lang.golang.extracts-generated-module` |
 | D7 | 由性质验证 | `graph.derive-matches-definition` |
 | 1 | `design.unresolved-reference`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
 | 2 | `design.duplicate-name` | `design.rejects-broken-design` |
@@ -372,20 +372,20 @@
 | 17 | `check.realization-outside-container` | `check.rejects-broken-graph` |
 | 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value` | `check.rejects-broken-graph` |
 | 19 | `check.missing-implements`、`check.missing-extends` | `check.rejects-broken-graph` |
-| 20 | `check.missing-predicate`、`check.multiple-predicates`、`check.predicate-signature`；带陈述的性质和流程的谓词在生成文件中：未实现：M4，此前手写 | `check.rejects-broken-graph` |
-| 21 | 未实现：M4，要等 `gen` 区分生成文件 | — |
+| 20 | `check.missing-predicate`、`check.multiple-predicates`、`check.predicate-signature`；带陈述的单次性质由 Go 生成谓词，流程的生成谓词未实现：M4 后续阶段 | `check.rejects-broken-graph`、`lang.golang.executes-contracts` |
+| 21 | 未实现：M4 后续阶段；对应生成驱动保留原有分布之前，继续保留过渡手写驱动 | — |
 | 22 | `check.untraced-step`、`check.unreachable-step`、`check.unreferenced-event` | `check.rejects-broken-graph` |
 | 23 | `design.ungenerable-symbol` | `design.rejects-broken-design` |
 | 24 | `design.limited-generated-symbol`、`lang.golang.duplicate-binding`、`check.missing-generator`、`check.multiple-generators`、`check.not-generated-symbol` | `design.rejects-broken-design`、`lang.golang.extracts-generated-module`、`check.rejects-broken-graph` |
 | 25 | `design.invalid-limit-path`、`design.invalid-limit` | `design.rejects-broken-design` |
 | 26 | `design.unknown-symbol`、`design.duplicate-value`、`design.missing-value`、`design.value-type-mismatch`、`design.value-out-of-limit` | `design.rejects-broken-design` |
 | 27 | `design.recorded-case-name` | `design.rejects-broken-design` |
-| 28 | 未实现：M4，要等 `gen` | — |
+| 28 | `lang.golang.stale-contracts`；全仓生成文件一致性检查未实现：M4 后续阶段，当前由运行前核对 | `lang.golang.executes-contracts` |
 | 29 | `design.unresolved-reference`、`design.wrong-reference-kind`、`cli.not-canonical` | `design.rejects-broken-design`、`cli.check-design` |
 | 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5；生成器的 map 名称未实现：[design.md](design.md) §4 没有给出生成器的名称映射 | `design.rejects-broken-design` |
 | 31 | `design.expression-type` | `design.rejects-broken-design` |
-| 32 | 未实现：M4，驱动核对纯操作 | — |
+| 32 | `lang.golang.purity-violation` | `lang.golang.executes-contracts` |
 | 33 | 未实现：M7，评审 | — |
 | 34 | `check.missing-observer`、`check.multiple-observers`、`check.observer-signature`、`check.observer-outside-container` | `check.rejects-broken-graph` |
-| 35 | `design.invalid-observation`、`design.invalid-change-path`；运行时快照和范围核对未实现：M4 | `design.rejects-broken-design` |
+| 35 | `design.invalid-observation`、`design.invalid-change-path`、`lang.golang.expression-failed`、`lang.golang.frame-violation`、`lang.golang.observation-failed` | `design.rejects-broken-design`、`lang.golang.executes-contracts` |
 | 36 | 未实现：M7，观察适配器的评审 | — |

@@ -186,7 +186,7 @@ type Runner interface {
 
 ### 5.3 需要代码才能判断的约束（M2）
 
-`check` 在推导过的图上检查以下各项，诊断码写作 `check.<短横线名称>`，并给出每个声明项的状态：[model.md](model.md) §10 的第 12、14 至 20、22 条，以及第 24 条中"每个生成的符号恰有一个 `generates` 绑定"的一半。第 21 条（没有手写的测试）和第 28 条（生成文件与 `gen` 一致）要等 `gen`，从 M4 起检查。推导由 `graph` 完成，路径模式用 doublestar 匹配。
+`check` 在推导过的图上检查以下各项，诊断码写作 `check.<短横线名称>`，并给出每个声明项的状态：[model.md](model.md) §10 的第 12、14 至 20、22、34 条，以及第 24 条中"每个生成的符号恰有一个 `generates` 绑定"的一半。第 21 条（没有手写的测试）和第 28 条（生成文件与 `gen` 一致）在 M4 后续阶段全面启用；第一阶段保留尚未等价替换的手写驱动，运行前核对将执行的生成文件。推导由 `graph` 完成，路径模式用 doublestar 匹配。
 
 M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通过。
 
@@ -240,7 +240,7 @@ M4 分阶段交付：先实现单次黑盒契约与手写谓词的回放、一�
   | fuzz | `FuzzX` 中的 `rapid.MakeFuzz` | Hypothesis 的 `fuzz_one_input` 接到 atheris 上 |
   | 回放 | 普通的 `TestX`，逐个调用谓词 | 逐个调用谓词 |
 
-  生成文件放在哪里由后端决定，M4 时定下。
+  Go 后端在落实代码所在包生成 `unicode_contracts_gen_test.go`，一个包一个文件，入口是 `TestUnicodeContracts`，各性质按标识作为子测试。自动谓词带 `checks` 绑定，人工谓词直接复用。第一阶段由该入口提供声明与录制用例的回放和默认 rapid 次数内的限时探索；生成原生 fuzz 驱动及覆盖引导录制在后续阶段交付，原有手写 fuzz 驱动继续保留。
 
 ### 6.3 回放与探索
 
@@ -528,6 +528,14 @@ M4 分阶段交付：先实现单次黑盒契约与手写谓词的回放、一�
   | `run.results-write-failed` | 结果文件不可安全写入 |
   | `run.invalid-report` | 后端报告缺失、重复、包含未选目标，或无有效执行却报告通过 |
   | `run.no-checks` | 所选范围没有可执行性质或流程 |
+  | `lang.golang.invalid-plan` | Go 生成计划没有图 |
+  | `lang.golang.generate-failed` | 生成所需的 Go 包不能载入，或生成源码不能解析 |
+  | `lang.golang.missing-contract-package` | 性质没有可定位的 Go 落实包 |
+  | `lang.golang.missing-generator` | 生成符号缺少唯一的 Go 生成器绑定 |
+  | `lang.golang.generator-dependency` | 输入生成器依赖未声明或尚未生成的符号 |
+  | `lang.golang.unsupported-case` | 声明用例不能构造成受支持的 Go 值 |
+  | `lang.golang.run-failed` | Go 测试进程不能执行、编译或返回有效报告 |
+  | `lang.golang.driver-failed` | Go 测试驱动在契约报告之外失败 |
 
 ## 9 计划
 
