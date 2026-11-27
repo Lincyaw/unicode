@@ -62,7 +62,7 @@ function PropertyBlock({ property, view }: { property: ViewNode; view: View }) {
           <StatusDot status={property.status} />
           <KindIcon node={property} />
           <MarkButton className={styles.identity} {...useNodeActions(property.id)}>{property.id}</MarkButton>
-          <span className="t-small c-muted">{formWord(property.kind, property.form)}</span>
+          <span className="t-small c-muted">{formWord(property)}</span>
         </div>
         <p className={styles.statement}>{property.summary}</p>
         {about.map(node => (

@@ -402,6 +402,7 @@ Go 先以只读源码覆盖插入 `runtime/trace.Log`，编译一次带 `atomic`
 | 种类 | 图标 |
 | --- | --- |
 | 系统、组件、外部系统、参与者 | `network`、`box`、`cloud`、`user` |
+| 代码中的包 | `package` |
 | 类型（object、record）、枚举、接口、错误、事件 | `braces`、`list`、`puzzle`、`octagon-x`、`zap` |
 | 操作、细节函数 | `square-function`、`code` |
 | 流程、步骤、性质、用例、观察 | `workflow`、`corner-down-right`、`shield-check`、`flask-conical`、`eye` |
@@ -432,6 +433,9 @@ Go 先以只读源码覆盖插入 `runtime/trace.Log`，编译一次带 `atomic`
 | 实体页的来路 | 导航路径 |
 | 步骤的形式 `call`、`send`、`emit`、`async`、`alt`、`opt`、`loop`、`on` | 调用、发送、发布、异步、分支、可选、循环、错误处理 |
 | 性质的形式 `invariant`、`postcondition`、`relation`、`transition` | 不变式、后置条件、关系、状态转移 |
+| 设计中类型的形式 `object`、`record`、`interface`、`enum`（`error`、`event` 即种类的用词：错误、事件） | 对象、记录、接口、枚举 |
+| 代码中函数的形式 `method`、`abstract`（`func` 即种类的用词：函数） | 方法、抽象方法 |
+| 用例的形式 `declared`、`recorded`；观察的形式 `snapshot` | 声明、录制；快照 |
 | 边的种类 `contains`、`uses`、`extends`、`implements`、`refers`、`subscribes`、`imports`、`calls`、`from`、`emits`、`handles`、`about` | 包含、声明的依赖、继承、实现接口、引用、订阅、导入、调用、发起、发布、处理、约束 |
 | 边的种类 `realizes`、`checks`、`generates`、`observes`、`substitutes`、`owns`、`depends`、`traces`、`exercises`、`reaches`、`covers` | 实现、检查、生成、观察、替身、归属、依赖、代码追溯、可达、经由细节函数的调用、覆盖 |
 | 变更中的属性（§5.2 的键）`focus`、`labels`、`paths`、`notations`、`roots`、`language`、`path`、`fields`、`values`、`signature`、`pure` | 关注级别、标签、路径、记法、根目录、语言、路径、字段、取值、签名、纯操作 |

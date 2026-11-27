@@ -2,7 +2,7 @@ import { clsx } from 'clsx';
 import type { ReactNode } from 'react';
 import type { View, ViewNode } from '../../api/types';
 import { ABOUT, EVENTS_COLUMNS, VIEW_NAMES } from '../../terms';
-
+import { ICON_TINY } from '../../ui/icons';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { CHIP_HEIGHT, chipWidth } from '../canvas/sizes';
 import { Lines, type Line, type LineTone } from '../canvas/Edges';
@@ -18,7 +18,6 @@ import { NodeRef } from '../marks/NodeRef';
 import { NodeChip } from '../marks/NodeChip';
 import { StatusDot } from '../marks/StatusDot';
 import styles from './views.module.css';
-import { ICON_TINY } from '../../ui/icons';
 
 const COLUMN_GAP = 40;
 const ROW_GAP = 28;

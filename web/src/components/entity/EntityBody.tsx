@@ -11,7 +11,7 @@ import { CaseSections, CheckedSections, CodeSections, ContainerSections, EventSe
 import { DiagnosticTag, NodeRow, Section, SignaturePanel, SourcePanel, ViaTag } from '../details/sections';
 import { NodeLink } from '../marks/NodeLink';
 import { displayName, fileOf, opLine, placeOf, relative, scopeOf, statusOf, stepLine, stepName } from '../marks/format';
-import { ArrowRight, ArrowUpRight, Code, FileCode, KindIcon } from '../marks/icons';
+import { ArrowRight, ArrowUpRight, Code, FileCode, KindIcon, Workflow } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
 import { StatusDot } from '../marks/StatusDot';
@@ -163,7 +163,7 @@ function FlowSteps({ entity, children }: { entity: Entity; children?: (step: Nod
     <Section title={SECTIONS.flows}>
       {entity.flows.map(step => (
         <div key={step.id} className={styles.flowRow}>
-          <KindIcon node={{ kind: 'flow', form: 'flow', layer: 'design', salient: true }} size="small" />
+          <Icon glyph={Workflow} size="small" />
           <NodeLink node={step} label={stepName(step)} />
           <span className={styles.spacer} />
           <span className={styles.stepLine}>{stepLine(step)}</span>

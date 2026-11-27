@@ -32,7 +32,7 @@ export function StepLabel({ step, diagnostics, children, className }: { step: Vi
         <Tooltip.Content className={clsx(hintStyles.popover, styles.diagnosticCard)} side="bottom" align="start" sideOffset={8} collisionPadding={12}>
           <span className={styles.diagnosticHead}>
             <span className="t-mono-strong">{step.id}</span>
-            <Tag>{formWord(step.kind, step.form)}</Tag>
+            <Tag>{formWord(step)}</Tag>
           </span>
           {diagnostics.map(diagnostic => (
             <span key={diagnostic.code} className={styles.diagnosticBody}>

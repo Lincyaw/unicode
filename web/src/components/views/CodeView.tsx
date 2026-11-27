@@ -4,6 +4,7 @@ import { ABOUT, MARKS, SECTIONS, VIEW_NAMES } from '../../terms';
 import { HintedHeading, Tag } from '../../ui/content';
 import { ButtonLink, MarkButton } from '../../ui/controls';
 import { InfoHint } from '../../ui/hint';
+import { ICON_SMALL, Icon } from '../../ui/icons';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { CHIP_HEIGHT, chipWidth } from '../canvas/sizes';
 import { Lines, Marker, type Line } from '../canvas/Edges';
@@ -17,7 +18,6 @@ import { NodeRef } from '../marks/NodeRef';
 import { NodeChip } from '../marks/NodeChip';
 import { edgeKey } from './graphParts';
 import styles from './views.module.css';
-import { ICON_SMALL, Icon } from '../../ui/icons';
 
 const CALLER_GAP = 44;
 const CALLEE_GAP = 72;

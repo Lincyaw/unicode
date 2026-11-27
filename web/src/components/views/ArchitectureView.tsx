@@ -1,20 +1,20 @@
-import { EyeOff, TriangleAlert } from '../marks/icons';
 import type { View, ViewEdge, ViewNode } from '../../api/types';
 import { edgeKey } from '../../api/types';
 import { ABOUT, DIAGNOSTIC_WORDS, MARKS, VIEW_NAMES } from '../../terms';
 import { Tag } from '../../ui/content';
 import { InfoHint } from '../../ui/hint';
+import { Icon } from '../../ui/icons';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { ContainerBox, ExternalCard, FoldedCard, TypeCard } from '../canvas/cards';
 import { useUnfolded } from '../canvas/unfolded';
 import { CARD_WIDTH, cardHeight, CHIP_HEIGHT, chipWidth, CONTAINER_HEAD, CONTAINER_PADDING, externalHeight, foldedHeight, typeRows, unfoldedTypeRows, type CardRow } from '../canvas/sizes';
 import { Lines, Marker, type Line } from '../canvas/Edges';
 import { arrange, routeAll, type Box, type Link, type Rect } from '../canvas/layout';
+import { EyeOff, TriangleAlert } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { componentGraph, evidenceCount, externalsBeside } from './graphParts';
 import { NodeChip } from '../marks/NodeChip';
 import styles from './views.module.css';
-import { Icon } from '../../ui/icons';
 
 /** The type cards of an expanded container sit in this many columns, this far apart. */
 const COLUMNS = 3;

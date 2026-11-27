@@ -89,8 +89,13 @@ const CODE_FORMS: Record<string, string> = {
   file: '文件',
 };
 
-/** The forms of a step (docs/model.md §3), which a step's label and its hint name. */
-const STEP_FORMS: Record<string, string> = {
+/*
+ * The forms a reader tells apart within a kind, by the word the term table gives each (docs/model.md §3). A form whose
+ * word kindWord already says, such as an error type's, maps to null.
+ */
+
+/** The forms of a step: what it does in its flow. */
+const STEP_FORMS: Record<string, string | null> = {
   call: '调用',
   send: '发送',
   emit: '发布',
@@ -102,27 +107,75 @@ const STEP_FORMS: Record<string, string> = {
 };
 
 /** The forms of a property (docs/model.md §3.3): where its claim holds. */
-const PROPERTY_FORMS: Record<string, string> = {
+const PROPERTY_FORMS: Record<string, string | null> = {
   invariant: '不变式',
   postcondition: '后置条件',
   relation: '关系',
   transition: '状态转移',
 };
 
+/** The forms of a design type; an error's and an event's are their kind words. */
+const DESIGN_TYPE_FORMS: Record<string, string | null> = {
+  object: '对象',
+  record: '记录',
+  interface: '接口',
+  enum: '枚举',
+  error: null,
+  event: null,
+};
+
+/** The forms of a code function; a plain function's is its kind word. */
+const CODE_OP_FORMS: Record<string, string | null> = {
+  func: null,
+  method: '方法',
+  abstract: '抽象方法',
+};
+
+/** The forms of an observation. */
+const OBSERVATION_FORMS: Record<string, string | null> = {
+  snapshot: '快照',
+};
+
 /**
- * The word for a node's form where a reader tells a kind's forms apart, a step's and a property's; undefined for the
- * other kinds, whose form kindWord already says. A form the term table lacks is an error.
+ * The forms of a node's kind that a reader tells apart and the kind's word does not say; undefined for a kind whose
+ * word says its form (a container, an actor, a flow, a design operation) and for a code type, whose forms are each
+ * language's own.
  */
-export function formWord(kind: NodeKind, form: string): string | undefined {
-  const forms = kind === 'step' ? STEP_FORMS : kind === 'property' ? PROPERTY_FORMS : undefined;
+function formsOf(node: { kind: NodeKind; layer: string }): Record<string, string | null> | undefined {
+  switch (node.kind) {
+    case 'step':
+      return STEP_FORMS;
+    case 'property':
+      return PROPERTY_FORMS;
+    case 'case':
+      return { declared: CASE_SOURCES.declared, recorded: CASE_SOURCES.recorded };
+    case 'observation':
+      return OBSERVATION_FORMS;
+    case 'type':
+      return node.layer === 'design' ? DESIGN_TYPE_FORMS : undefined;
+    case 'op':
+      return node.layer === 'code' ? CODE_OP_FORMS : undefined;
+    case 'container':
+    case 'actor':
+    case 'flow':
+    case 'run':
+    case 'result':
+    case 'review':
+      return undefined;
+  }
+}
+
+/** The word for a node's form where kindWord does not say it; a form of a closed set that the term table lacks is an error. */
+export function formWord(node: { kind: NodeKind; form: string; layer: string }): string | undefined {
+  const forms = formsOf(node);
   if (forms === undefined) {
     return undefined;
   }
-  const word = forms[form];
+  const word = forms[node.form];
   if (word === undefined) {
-    throw new Error(`The term table has no word for the ${kind} form ${form} (docs/design.md §7.5)`);
+    throw new Error(`The term table has no word for the ${node.layer} ${node.kind} form ${node.form} (docs/design.md §7.5)`);
   }
-  return word;
+  return word ?? undefined;
 }
 
 /** What an edge is called, by its kind (docs/model.md §4). */
@@ -409,7 +462,7 @@ export const ABOUT = {
   undeclared: '实际存在、但设计中没有声明的依赖；计数是其中的导入与调用。',
   merged: '指向折叠组件的边合并为一条，计数是它代表的边数。',
   reachesCount: '经过的细节函数的个数。',
-  card: (node: { kind: NodeKind; form: string; layer: string }, place: string) => [kindWord(node.kind, node.form, node.layer), formWord(node.kind, node.form), place].filter(part => part !== undefined).join(' · '),
+  card: (node: { kind: NodeKind; form: string; layer: string }, place: string) => [kindWord(node.kind, node.form, node.layer), formWord(node), place].filter(part => part !== undefined).join(' · '),
   trail: '从视图进入实体页时经过的节点，依次排列。',
   stepCases: '覆盖本步骤的用例个数，以及按分支或错误计的个数。',
   coveredBy: '覆盖到它的用例：录制的用例和最近一次运行中执行到它的用例。',

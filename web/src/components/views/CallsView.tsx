@@ -3,6 +3,7 @@ import { ABOUT, MARKS, SECTIONS, VIEW_NAMES } from '../../terms';
 import { Tag } from '../../ui/content';
 import { ButtonLink } from '../../ui/controls';
 import { InfoHint } from '../../ui/hint';
+import { Icon } from '../../ui/icons';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { CHIP_HEIGHT, chipWidth } from '../canvas/sizes';
 import { Lines, Marker, type Line } from '../canvas/Edges';
@@ -14,7 +15,6 @@ import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
 import { edgeKey } from './graphParts';
 import styles from './views.module.css';
-import { Icon } from '../../ui/icons';
 
 const SPACING = { node: 28, rank: 160 };
 const DETAIL_GAP = 72;

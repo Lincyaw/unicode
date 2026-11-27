@@ -1,8 +1,7 @@
 import type { Node, ViewNode } from '../../api/types';
-
+import { ICON_SMALL } from '../../ui/icons';
 import { fieldParts, opLine, relative, scopeOf, typeParts, type TypePart } from '../marks/format';
 import { CODE_SIZE, monoWidth, MONO_SIZE } from './measure';
-import { ICON_SMALL } from '../../ui/icons';
 
 /*
  * The sizes of the boxes the node-and-edge views draw, worked out from their content so the layout can place them

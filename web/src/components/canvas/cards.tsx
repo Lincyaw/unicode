@@ -1,13 +1,13 @@
 import { clsx } from 'clsx';
-import { ChevronDown, ChevronRight } from '../marks/icons';
 import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Node, ViewNode } from '../../api/types';
 import { ABOUT, CONTROLS } from '../../terms';
 import { MarkButton } from '../../ui/controls';
 import { Hint, InfoHint } from '../../ui/hint';
+import { Icon } from '../../ui/icons';
 import { opLine } from '../marks/format';
-import { KindIcon } from '../marks/icons';
+import { ChevronDown, ChevronRight, KindIcon } from '../marks/icons';
 import { useLinks, useSelectedBox } from '../marks/links';
 import { Above } from '../marks/Above';
 import { CoverButton } from '../marks/CoverButton';
@@ -17,7 +17,6 @@ import { StatusDot } from '../marks/StatusDot';
 import { useReveal } from './panZoom';
 import type { CardRow } from './sizes';
 import styles from './cards.module.css';
-import { Icon } from '../../ui/icons';
 
 /*
  * The boxes the node-and-edge views draw (the prototype's type cards, node chips and container cards): each is sized in

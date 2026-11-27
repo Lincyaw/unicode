@@ -2,7 +2,7 @@ import { clsx } from 'clsx';
 import type { View, ViewNode } from '../../api/types';
 import { ABOUT, formWord, VIEW_NAMES } from '../../terms';
 import { MarkButton } from '../../ui/controls';
-
+import { ICON_SMALL } from '../../ui/icons';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { Lines, type Line } from '../canvas/Edges';
 import { monoWidth } from '../canvas/measure';
@@ -15,7 +15,6 @@ import { StatusDot } from '../marks/StatusDot';
 import { StepLabel } from './StepLabel';
 import { descendants, diagnosticsAbout, stepTree, type StepTree } from './stepTree';
 import styles from './views.module.css';
-import { ICON_SMALL } from '../../ui/icons';
 
 /*
  * The geometry of a sequence: lane heads in a row, then one band per step down the lanes. A message's arrow runs
@@ -216,7 +215,7 @@ export function SequenceView({ view }: { view: View }) {
         <Placed key={`tag ${mark.step.id}`} rect={{ x: mark.left + 8, y: mark.top + 8, width: 0, height: LABEL }} className={styles.messageSlot}>
           <StepLabel step={mark.step} diagnostics={diagnosticsAbout(view, mark.step.id)} className={styles.fragmentTag}>
             <KindIcon node={mark.step} size="tiny" />
-            {formWord(mark.step.kind, mark.step.form)} {relative(mark.step.step?.target?.id ?? '', scope)}
+            {formWord(mark.step)} {relative(mark.step.step?.target?.id ?? '', scope)}
           </StepLabel>
         </Placed>
       ))}
