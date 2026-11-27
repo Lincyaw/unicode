@@ -41,7 +41,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | `internal/query` | 节点、引用、搜索、切片和影响 | graph |
 | `internal/view` | 视图的选取与折叠；类型卡片的成员沿用 `check` 对字段和枚举值的逐项比较 | graph、check |
 | `internal/repo` | 仓库：经 git 读出提交、工作区和提交中的文件，以及 `build` 写在快照旁边的记录 | — |
-| `internal/serve` | 查看器的后端：读取快照，载入时按 `check` 的约束检查，回答 §7.5.1 的接口；比较的基准由命令行建图 | graph、diag、check、query、view、lang.golang、repo |
+| `internal/serve` | 查看器的后端：读取快照，载入时按 `check` 的约束检查，回答 §7.5.1 的接口；比较的基准由命令行建图；前端页面嵌入其中 | graph、diag、check、query、view、lang.golang、repo |
 | `internal/gen` | 生成计划：缺少的骨架，以及应有的生成文件 | graph、lang、diag |
 | `internal/run` | 回放与探索：经后端运行驱动，按覆盖挑选输入，缩减并写出录制文件 | graph、lang、syntax、diag |
 | `cmd/unicode` | 解析参数，调用其余组件，输出结果和退出码 | 全部 |
@@ -66,12 +66,15 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | `serve` 的接口类型和路由：由 OpenAPI 文档生成 Go 代码 | `github.com/oapi-codegen/oapi-codegen/v2` v2.8.2，生成的代码依赖 `github.com/oapi-codegen/runtime` v1.9.0 |
 | `serve` 的性质按 OpenAPI 文档校验每个应答 | `github.com/getkin/kin-openapi` v0.142.0（`openapi3filter` 与 `routers/legacy`），即 oapi-codegen 所依赖的版本 |
 | 前端的接口类型和请求：由 OpenAPI 文档生成 TypeScript 类型，按类型发出请求 | `openapi-typescript` 7.13.0 与 `openapi-fetch` 0.17.0 |
+| 发布的程序：构建前端，再为各平台构建 `unicode`，附校验和（§8） | GoReleaser v2.20.3（`.goreleaser.yaml`），由 `goreleaser/goreleaser-action` v7.3.0 运行 |
 
 规范格式的打印没有现成的库，由 `syntax` 自己完成。
 
 表达式前端由 `syntax.parseExpr` 和 `syntax.exprText` 提供，供设计载入和 Go 生成共用。表达式属性保存规范的源引用拼写，解析后的语义引用另存为 `refers`；不能直接把局部引用替换成绝对名称，否则可能与输入符号的名称冲突。
 
 查看器的接口定义在 `api/` 中：TypeSpec 源文件 `api/*.tsp`、编译配置 `api/tspconfig.yaml`，以及由它们生成并提交的 `api/openapi.yaml`。`api/` 用 pnpm 管理 TypeSpec 的版本，不属于任何 Go 组件。
+
+查看器的前端在 `web/` 中，也用 pnpm 管理，pnpm 的版本由 `web/package.json` 的 `packageManager` 固定。前端的构建写到 `internal/serve/ui/dist`，由 `serve` 用 Go 的 `embed`（`//go:embed all:ui`）嵌入程序；`embed` 只能取包目录之内的文件，所以构建结果放在 `serve` 的目录中。构建结果不进 Git。提交的 `internal/serve/ui/.gitkeep` 让嵌入的模式总有文件可取，所以没有 Node 时 `go build` 照样能编译，得到的程序只提供接口；Vite 每次构建前只清空 `dist/`，不会删掉它。带页面的程序由 `make build` 或发布流程构建（§8）。
 
 ## 4 语言后端
 
@@ -363,7 +366,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 
 查看器只渲染图，不另存数据。视觉规范是 Figma 原型（文件 `inTTk3ypjVqoB9tHq0ErO4`），样式取自 aegis-bench-site；界面的改动先画进原型，再实现。
 
-查看器由工具链提供：`unicode serve` 启动一个小型后端，读取本地 `unicode build` 编译出的数据，提供查询与交互的接口，并提供前端页面。接口用 TypeSpec 定义，由各视图需要显示的内容推出（§7.5.1）；前端的源码在 `web/`，只通过这些接口取数据。
+查看器由工具链提供：`unicode serve` 启动一个小型后端，读取本地 `unicode build` 编译出的数据，提供查询与交互的接口，并提供前端页面。接口用 TypeSpec 定义，由各视图需要显示的内容推出（§7.5.1）；前端的源码在 `web/`，只通过这些接口取数据。前端的构建结果嵌入 `unicode` 程序，`unicode serve` 因此在任何仓库中都能提供页面（§8）。
 
 - **视图是入口，实体页是落点。** 顶部的视图标签是探索的入口；类型、操作、流程、性质等节点各有实体页。图上的节点、设计树的条目、链接都能进入实体页，实体页中的引用又能继续进入下一页。右栏在视图中预览选中的节点，在实体页中显示导航路径。视图、选中项和导航路径都记在地址里。
 - **页面只放数据。** 说明性的文字，例如小节的说明、图例、读法和计数口径，收进标题旁的 ⓘ，悬停时显示；页面上不出现"点击……""另有……"之类的提示句。
@@ -516,9 +519,11 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 - **`build`**：建图有诊断时（不含 `check` 的约束）不写快照，退出码为 10；JSON 为 `{"diagnostics": [...], "snapshot": "路径"}`。快照之外，`build` 在同一目录写出 `build.json`，即 `{"commit": "…", "dirty": false}`：`commit` 是仓库所在提交的完整哈希，`dirty` 表示根目录下有没有未提交的改动或未跟踪的文件，`build` 自己写出的 `graph.json` 和 `build.json` 不算。不在 Git 的工作区中、还没有提交或找不到 `git` 时，写出 `{"commit": null, "dirty": true}`。`--out DIR` 把这两个文件写到 `DIR` 中。搜索索引 `index.json` 等查看器确定格式后再写。
 - **查询**：`node`、`slice`、`impact` 和 `view` 每次都按工作区重新建图；`--rev REV` 只用于这些查询，以 `git archive` 取出该提交的文件到临时目录。查询中的标识（包括 `--expand` 的）不存在时退出码为 3；视图不适用于输入时退出码为 2。`view architecture`、`view events`、`view ddd` 和 `view c4` 可以不给标识，表示整个系统。`--layer` 只用于类视图，缺省为 `design`；`--level` 只用于 C4 视图，缺省为 `container`；给其他视图这两个参数，或者取值不是这几种，是参数错误。JSON 的字段名是设计中的名称（小驼峰）。
 - **`diff`**：`unicode diff <rev>` 像查询的 `--rev` 一样取出 `<rev>` 并建图，与按工作区建出的图比较；带 `--to REV` 时，与 `REV` 的图比较。两张图按 [model.md](model.md) §8 比较（`graph.Compare`）：节点按标识对齐，内容哈希不同为修改；边按种类、起点、终点对齐，属性不同为修改；只列出新增、删除和修改的项。与查询一样，建图的诊断由 `check` 报出，`diff` 不报。JSON 与 `api/compare.tsp` 的 `Comparison` 相同：`{"base": 提交, "head": 提交, "nodes": [...], "edges": [...]}`。提交是 `{commit, short, branch, subject, time}`，`branch` 只在该提交正是检出的分支所在时给出，`time` 是提交时间（UTC）；`head` 另有 `dirty`，与工作区比较时同 `build.json` 的 `dirty`，与提交比较时为 `false`。`nodes` 中每项是 `{id, change, before, after, attrs}`，`change` 为 `added`、`removed` 或 `modified`，`before`、`after` 是两边的节点（与 `node get` 的节点相同），只在该边有它时给出；`attrs` 按键排序，列出两边的值不同的键，每项 `{key, removed, added}` 是该键上去掉和加上的值，按各自原来的次序，重复的值按出现次数计。`edges` 中每项是 `{kind, from, to, change, before, after}`。文本先写两端的提交，再在 `nodes` 和 `edges` 两节中每项一行，修改的节点之后每个变了的键一行。`<rev>` 或 `REV` 不是提交时退出码为 2，找不到 `git` 时为 7。`diff` 不接受 `--rev`。
-- **`serve`**：`--snapshot` 缺省为根目录下的 `.unicode/graph.json`，`--addr` 缺省为 `127.0.0.1:8765`。`serve` 在 `/` 下提供页面，在 `/api` 下提供接口。页面是 `--web DIR` 给出的目录中的文件，缺省为根目录下的 `web/dist`（存在时）；地址不是其中的文件时给出 `index.html`。没有页面目录时只提供接口，并在标准错误中说明。前端由 `web/` 构建到 `web/dist`；前端定型之后，构建结果用 Go 的 `embed` 嵌入程序，作为没有页面目录时的页面。`--web` 给出的不是目录时是参数错误。开始监听后，标准输出写出页面的地址（JSON 为 `{"url": …}`），每个请求的日志写到标准错误；收到中断信号时退出，退出码为 0。快照不存在或读不出时退出码为 7，提示先运行 `unicode build`；地址无法监听时退出码也为 7。`serve` 不接受 `--rev`，比较的基准由接口的 `base` 参数给出。
+- **`serve`**：`--snapshot` 缺省为根目录下的 `.unicode/graph.json`，`--addr` 缺省为 `127.0.0.1:8765`。`serve` 在 `/` 下提供页面，在 `/api` 下提供接口。页面缺省是嵌入程序中的前端（§3）。`--web DIR` 改为提供该目录中的文件，供开发前端时使用；给出的不是目录时是参数错误。地址不是页面中的文件时给出 `index.html`，由页面自己读地址的其余部分。程序没有嵌入页面时（不经前端构建、直接 `go build` 得到的程序），只提供接口，并在标准错误中说明，给出修正：用 `make build` 构建，或者用 `--web` 给出构建好的页面。开始监听后，标准输出写出页面的地址（JSON 为 `{"url": …}`），每个请求的日志写到标准错误；收到中断信号时退出，退出码为 0。快照不存在或读不出时退出码为 7，提示先运行 `unicode build`；地址无法监听时退出码也为 7。`serve` 不接受 `--rev`，比较的基准由接口的 `base` 参数给出。
 - **`check --design-only`**：解析 `design/` 和 `corpus/` 下的全部文件，报出语法、规范格式和 §5.1 的诊断；JSON 为 `{"diagnostics": [...]}`。M2 之前，不带 `--design-only` 的 `check` 是参数错误。
 - **路径参数**：按工作目录解析，必须是根目录下 `design/` 或 `corpus/` 之内的文件或目录。路径不存在、不在这两个目录之内，或者找不到缺省的根目录，都是参数错误。目录会被遍历。`design/` 或 `corpus/` 中 `KindOf` 拒绝的文件给出诊断 `cli.not-a-design-file`，读不出的文件给出 `cli.unreadable-file`，符号链接给出诊断 `cli.symlink`，既不跟随读取，也不改写。全局参数也可以写在命令之后。
+- **构建与版本**：`make build` 先构建前端（`pnpm --dir web install --frozen-lockfile`，再 `pnpm --dir web build`），再用 `go build` 构建带页面的 `bin/unicode`。`unicode --version` 在标准输出写出版本（JSON 为 `{"version": …}`），退出码为 0。版本由构建时的 `-ldflags "-X main.version=…"` 写入：`make build` 写入 `git describe --tags --always --dirty` 的结果，`make build VERSION=…` 可以另给；发布的程序写入标签。没有写入时取 Go 记录的模块版本（例如 `go install …@v1.2.3` 得到 `v1.2.3`），再没有时为 `dev`。
+- **发布**：推送 `v*` 标签时，`.github/workflows/release.yml` 用 GoReleaser 按 `.goreleaser.yaml` 构建并发布：先构建前端，再为 linux 和 darwin 的 amd64、arm64 构建程序，版本为标签，各打包成 `tar.gz`，附 `checksums.txt`。工作流中的各个 action 按提交固定版本，GoReleaser 固定为 v2.20.3。Windows 暂不发布（附录 B）。
 - **改写与输出**：改写是原子的，并保留文件的权限，失败时不留下临时文件；写入或输出失败时退出码为 1。`cli.not-canonical` 的位置是与规范格式第一处不同的字节。`--help` 写到标准输出，退出码为 0。JSON 缩进两个空格。带 `--format json` 时，诊断是数据，写在标准输出的 JSON 中，标准错误只放日志；文本模式下，诊断写到标准错误，标准输出只列出改写了的或不是规范格式的文件。
 - **诊断的 JSON**：`{code, subject, path, line, column, message, fix}`。`code` 是稳定的诊断码，写作 `<组件>.<短横线名称>`，例如 `syntax.unexpected-token`；每条约束有一个或几个，修正办法不同的子规则各用一个。`syntax` 和 `cli` 的诊断，对象是文件的路径。
 - **生成的 JSON**：与 `lang.Generation` 同形，为 `{edits: [{path, content, createOnly}], diagnostics: [...]}`；`content` 是 UTF-8 源码字符串，不是字节的 base64。`--dry-run` 返回同样的计划，不写文件。普通生成遇到诊断时不应用计划，文本模式只列生成文件的路径。已有文件缺少生成标记属于覆盖冲突，退出码为 5。
@@ -632,3 +637,4 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 10. 通用的 Go 规则放进 engineering-conventions skill 的 `reference/go.md`；本仓库的 AGENTS.md 只留本仓库特有的规则。
 11. 设计中的泛型类型（类型参数）：M1 不支持。
 12. 记法的词汇是否允许项目扩展。目前内置、固定，以保证校验。
+13. Windows 上的程序：改写文件用的 renameio 在 Windows 上没有 `WriteFile`，`unicode` 因此编译不出 Windows 的程序。是改用 `renameio/v2/maybe`（Windows 上退为不保证原子的写入，与 §8 的"改写是原子的"不符），还是不支持 Windows。

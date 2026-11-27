@@ -5,3 +5,5 @@
 
 # Local package-manager download cache.
 /.pnpm-store/
+/internal/serve/ui/dist/
+/dist/
