@@ -216,10 +216,15 @@ func spacingProblem(text []byte) string {
 	}
 }
 
+// expressionLine tells whether the line is a clause written with
+// expressions. A first word followed by = starts an assignment whatever the
+// word is (docs/language.md §3), so a case assigning a symbol named call is
+// not a call clause.
 func expressionLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
 	for _, prefix := range []string{"ensure ", "requires ", "call ", "changes "} {
-		if strings.HasPrefix(strings.TrimSpace(line), prefix) {
-			return true
+		if rest, ok := strings.CutPrefix(trimmed, prefix); ok {
+			return !strings.HasPrefix(rest, "=")
 		}
 	}
 	return false
