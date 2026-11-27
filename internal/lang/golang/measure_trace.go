@@ -305,7 +305,12 @@ func cloneFlowState(s flowState) flowState {
 	return s
 }
 func (m *flowMatcher) covers(s flowState, node graph.Node, label string) flowState {
-	s.coverage = append(s.coverage, lang.Coverage{Kind: "step", Node: node.Id, Path: node.Origin.Path, Line: node.Origin.Line, Column: node.Origin.Column, EndLine: node.Origin.Line, EndColumn: node.Origin.Column, Label: label})
+	point := lang.Coverage{Kind: "step", Node: node.Id, Path: node.Origin.Path, Line: node.Origin.Line, Column: node.Origin.Column, EndLine: node.Origin.Line, EndColumn: node.Origin.Column, Label: label}
+	s.coverage = append(s.coverage, point)
+	if label != "" {
+		point.Kind = "branch"
+		s.coverage = append(s.coverage, point)
+	}
 	return s
 }
 func (m *flowMatcher) errorMatches(actual, want string) bool {
