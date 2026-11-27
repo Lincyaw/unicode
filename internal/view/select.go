@@ -6,6 +6,7 @@ import (
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/lincyaw/unicode/internal/graph"
 )
@@ -189,18 +190,52 @@ func flow(ix index, r request) selection {
 }
 
 // events: the events in the container, the steps that emit them and the
-// operations that subscribe to them.
+// operations that subscribe to them; the errors in it, the call steps whose
+// operation raises them and the on steps that handle them.
 func events(ix index, r request) selection {
 	input := r.input
-	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindEmits, graph.EdgeKindSubscribes}}
+	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindEmits, graph.EdgeKindSubscribes, graph.EdgeKindHandles}}
+	raisers := map[string][]string{}
+	for _, id := range slices.Sorted(maps.Keys(ix.nodes)) {
+		if n := ix.nodes[id]; n.Kind == graph.NodeKindOp && n.Layer == graph.LayerDesign {
+			for _, e := range raises(n) {
+				raisers[e] = append(raisers[e], id)
+			}
+		}
+	}
 	for _, d := range ix.descendants(input) {
-		if n := ix.nodes[d]; n.Kind == graph.NodeKindType && n.Form == "event" {
+		switch n := ix.nodes[d]; {
+		case n.Kind == graph.NodeKindType && n.Form == "event":
 			s.add(d)
 			s.add(ix.sources(d, graph.EdgeKindEmits)...)
 			s.add(ix.sources(d, graph.EdgeKindSubscribes)...)
+		case n.Kind == graph.NodeKindType && n.Form == "error":
+			s.add(d)
+			for _, op := range raisers[d] {
+				for _, step := range ix.sources(op, graph.EdgeKindCalls) {
+					if ix.nodes[step].Kind == graph.NodeKindStep && ix.nodes[step].Form == "call" {
+						s.add(step)
+					}
+				}
+			}
+			s.add(ix.sources(d, graph.EdgeKindHandles)...)
 		}
 	}
 	return s
+}
+
+// raises returns the errors that the signature of the design operation op
+// raises, as identities.
+func raises(op graph.Node) []string {
+	sig := op.Attrs["signature"]
+	if len(sig) == 0 {
+		return nil
+	}
+	at := strings.LastIndex(sig[0], " raises ")
+	if at < 0 {
+		return nil
+	}
+	return strings.Split(sig[0][at+len(" raises "):], ", ")
 }
 
 // calls: the input with the functions that realize it, and every salient

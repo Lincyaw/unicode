@@ -119,7 +119,7 @@ func genGraph(t *rapid.T, minFlows int) graph.Fragment {
 		}
 	}
 	var types, events, errors []string
-	for i := range rapid.IntRange(0, 6).Draw(t, "types") {
+	for i := range rapid.IntRange(1, 8).Draw(t, "types") {
 		parent := b.pick("typeParent", append(append([]string{}, components...), externals...))
 		form := rapid.SampledFrom([]string{"object", "record", "event", "error", "interface", "enum"}).Draw(t, "typeForm")
 		id := fmt.Sprintf("%s.T%d", parent, i)
@@ -149,7 +149,11 @@ func genGraph(t *rapid.T, minFlows int) graph.Fragment {
 	var ops []string
 	for i := range rapid.IntRange(0, 6).Draw(t, "ops") {
 		parent := b.pick("opParent", append(append(append([]string{}, components...), externals...), types...))
-		id := b.node(fmt.Sprintf("%s.o%d", parent, i), graph.NodeKindOp, "op", graph.LayerDesign, true, nil)
+		signature := "(n: int)"
+		if raised := b.subset("raised", errors); raised != nil {
+			signature += " raises " + strings.Join(raised, ", ")
+		}
+		id := b.node(fmt.Sprintf("%s.o%d", parent, i), graph.NodeKindOp, "op", graph.LayerDesign, true, map[string][]string{"signature": {signature}})
 		b.edge(graph.EdgeKindContains, parent, id)
 		ops = append(ops, id)
 	}

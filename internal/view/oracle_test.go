@@ -155,7 +155,7 @@ var drawnKinds = map[ViewKind][]graph.EdgeKind{
 		graph.EdgeKindHandles, graph.EdgeKindTraces, graph.EdgeKindCovers},
 	ViewKindActivity: {graph.EdgeKindContains, graph.EdgeKindFrom, graph.EdgeKindCalls, graph.EdgeKindEmits,
 		graph.EdgeKindHandles, graph.EdgeKindTraces, graph.EdgeKindCovers},
-	ViewKindEvents:   {graph.EdgeKindEmits, graph.EdgeKindSubscribes},
+	ViewKindEvents:   {graph.EdgeKindEmits, graph.EdgeKindSubscribes, graph.EdgeKindHandles},
 	ViewKindCalls:    {graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindRealizes},
 	ViewKindProperty: {graph.EdgeKindAbout, graph.EdgeKindContains, graph.EdgeKindChecks},
 	ViewKindCode:     {graph.EdgeKindContains, graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindCovers},
@@ -318,6 +318,24 @@ func (w world) candidates(a asked) map[string]bool {
 				add(id)
 				add(w.from(id, graph.EdgeKindEmits)...)
 				add(w.from(id, graph.EdgeKindSubscribes)...)
+			}
+			if n := w.nodes[id]; n.Kind == graph.NodeKindType && n.Form == "error" {
+				add(id)
+				add(w.from(id, graph.EdgeKindHandles)...)
+				for _, op := range w.nodes {
+					sig := op.Attrs["signature"]
+					if op.Kind != graph.NodeKindOp || len(sig) == 0 || !strings.Contains(sig[0], " raises ") {
+						continue
+					}
+					_, raised, _ := strings.Cut(sig[0], " raises ")
+					if slices.Contains(strings.Split(raised, ", "), id) {
+						for _, s := range w.from(op.Id, graph.EdgeKindCalls) {
+							if w.nodes[s].Kind == graph.NodeKindStep && w.nodes[s].Form == "call" {
+								add(s)
+							}
+						}
+					}
+				}
 			}
 		}
 	case ViewKindCalls:
