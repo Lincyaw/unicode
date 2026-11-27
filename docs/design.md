@@ -45,7 +45,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | `internal/gen` | 生成计划：缺少的骨架，以及应有的生成文件 | graph、lang、diag |
 | `internal/evidence` | 覆盖选择、模型值缩减、规范录制文件及当前与历史证据 | graph、lang、syntax、diag |
 | `internal/review` | 不可变评审记录、内容指纹、待审候选和评审层片段 | graph、diag |
-| `internal/run` | 回放与探索：经后端运行驱动，按覆盖挑选输入，缩减并写出录制文件 | graph、lang、syntax、diag、evidence |
+| `internal/run` | 按语言根目录编排回放与探索，保存逐输入报告和仓库元数据；CLI 编排录制后重新生成 | graph、lang、syntax、diag、evidence、repo |
 | `cmd/unicode` | 解析参数，调用其余组件，输出结果和退出码 | 全部 |
 | `python/uc` | Python 运行时包 `uc`（装饰器），随工具链发布 | — |
 
@@ -63,7 +63,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | 改写文件，保留权限；在 POSIX 上原子，在 Windows 上不保证原子 | `github.com/google/renameio/v2/maybe` |
 | 深度验证中的变异测试 | `github.com/go-gremlins/gremlins` |
 | 生成器、性质测试与 fuzz 的驱动 | `pgregory.net/rapid` 与 Go 原生的 fuzz |
-| Go 代码的抽取（M2） | `golang.org/x/tools/go/packages` 与 `go/types` |
+| Go 代码的抽取（M2） | `golang.org/x/tools/go/packages`（v0.53.0）与 `go/types`；随轨迹库的模块最低版本选择更新 `x/mod` 至 v0.43.0、`x/sync` 至 v0.25.0、`x/sys` 至 v0.50.0 |
 | 骨架的 module 路径读取 | `golang.org/x/mod/modfile`，沿用 Go 工具链依赖的版本 |
 | 查看器的接口：用 TypeSpec 写，生成 OpenAPI 3 文档（§7.5.1） | `@typespec/compiler`、`@typespec/http`、`@typespec/openapi`、`@typespec/openapi3`，1.18.0 |
 | `serve` 的接口类型和路由：由 OpenAPI 文档生成 Go 代码 | `github.com/oapi-codegen/oapi-codegen/v2` v2.8.2，生成的代码依赖 `github.com/oapi-codegen/runtime` v1.9.0 |
@@ -105,7 +105,7 @@ type Runner interface {
 - **抽取**：后端读出 `container`、`type`、`op` 节点，以及 `contains`、`imports`、`calls`、`refers`、`extends`、`implements` 边。它同时读出代码中的绑定，写成 `realizes`、`checks`、`generates` 和 `observes` 边；绑定的写法不合格式时，给出诊断。带 `realizes` 绑定的类型，它的每个方法按反向的名称映射（例如 Go 的 `Submit` 对应 `submit`）得到一条到 `<类型的标识>.<操作名>` 的 `realizes` 边，来源为推导；推导时，终点不存在的这类边被丢掉，那些方法是细节。代码层 `op` 的 `signature` 属性按下面的类型映射归一化成设计的写法，引用写成从根起的标识，与设计层的签名直接按字符串比较。后端产出的是代码层的图片段，格式与快照相同。
 - **Go 后端**：在进程内用 `golang.org/x/tools/go/packages` 和 `go/types` 解析源码和类型。调用按静态类型解析，接口方法的调用解析到接口的方法。函数字面量中的调用属于能运行它的函数：写在函数体中的，属于这个函数；写在包级变量的初始值中的，属于引用了这个变量的每个函数，并经由初始值中引用的其他包级变量传递，调用位置仍是它在初始值中的位置。初始值在函数字面量之外引用的函数和方法（例如按种类取函数的表，或 `var f = g`），也算作引用了这个变量的每个函数对它们的调用，同样经由其他包级变量传递，调用位置是引用的位置：这是可能的调用，与经由接口的分派一样取宽。初始化时就执行的调用（不在函数字面量中）不属于任何函数，它直接调用的函数也不算被存放；函数体中对函数的引用不是调用。`implements` 按 Go 方法集的类型身份判断，参数名和返回值名不参与比较；包的测试变体仍按同一包路径识别类型，有符号性、整数宽度与可变参数等真实类型差异保留。抽取包括 `_test.go` 文件：谓词、生成器和只供它们使用的类型都在其中，它们的绑定照常读取。
 - **Python 后端**：工具链内嵌一个只用标准库的抽取脚本，以 `python3 -I` 运行。脚本用 `ast` 解析源码，把图片段以 JSON 写到标准输出。调用按名称和导入关系解析，解析不到的调用不成边，只计数。生成在 Go 中按模板完成。
-- **运行**：后端用该语言的测试工具运行驱动，在进程内逐个输入记录覆盖：Go 用 `-cover` 构建，并用 `runtime/coverage` 在每个输入前后清零和读出计数；Python 用标准库的 `sys.monitoring`。覆盖只统计谓词沿 `exercises` 可达的函数，不含生成文件和谓词本身。
+- **运行**：后端用该语言的测试工具运行生成的驱动。Go 按 §6.4 编译一次带 atomic 覆盖的二进制，每个输入独立执行并减去准备基线，读取真实基本块 profile；覆盖范围是谓词沿 `exercises` 可达的生产函数，不含生成文件和谓词本身。Python 的 `sys.monitoring` 接入属于 M5。
 - **测试类别**：Go 中，`func FuzzX(f *testing.F)` 为 `fuzz`，调用了 `rapid.Check` 的 `TestX` 为 `property`，其余 `TestX` 为 `example`。Python 中，带 `hypothesis.given` 的测试为 `property`，用 `atheris` 的为 `fuzz`。后端据此找出生成文件之外的测试函数（[model.md](model.md) §10 第 21 条）。
 - **名称映射**：
 
@@ -640,8 +640,11 @@ Go 先以只读源码覆盖插入 `runtime/trace.Log`，编译一次带 `atomic`
   | `lang.golang.missing-generator` | 生成符号缺少唯一的 Go 生成器绑定 |
   | `lang.golang.generator-dependency` | 输入生成器依赖未声明或尚未生成的符号 |
   | `lang.golang.unsupported-case` | 声明用例不能构造成受支持的 Go 值 |
+  | `lang.golang.coverage-failed` | 逐输入的原子覆盖 profile 或原始源码映射缺失、无效 |
+  | `lang.golang.trace-failed` | Go 运行轨迹无法解析为真实 goroutine 事件 |
+  | `lang.golang.trace-instrumentation-failed` | 只读源码覆盖或 cover 工具链适配无法建立 |
+  | `lang.golang.unreproducible-counterexample` | 冻结后的模型输入不能复现已经发现的失败 |
   | `lang.golang.run-failed` | Go 测试进程不能执行、编译或返回有效报告 |
-  | `lang.golang.driver-failed` | Go 测试驱动在契约报告之外失败 |
 
 ## 9 计划
 

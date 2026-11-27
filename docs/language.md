@@ -828,11 +828,11 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 | E9 | `lang.golang.observation-failed`、`lang.golang.unsupported-contract`、`lang.golang.ensure-failed` | `lang.golang.executes-contracts` |
 | E10 | `lang.golang.undeclared-error`、`lang.golang.ensure-failed` | `lang.golang.executes-contracts` |
 | E11 | `lang.golang.expression-failed`、`lang.golang.invalid-result`、`lang.golang.call-panicked` | `lang.golang.executes-contracts` |
-| E12 | `lang.golang.undeclared-error`、`lang.golang.ensure-failed`、`lang.golang.expression-failed`；流程入口与后置陈述由生成驱动执行，内部轨迹核对属于 M6 | `lang.golang.executes-contracts` |
+| E12 | `lang.golang.undeclared-error`、`lang.golang.ensure-failed`、`lang.golang.expression-failed`、`lang.golang.flow-mismatch`、`lang.golang.trace-missing`、`lang.golang.missing-publisher`；流程内部顺序按 M6 真实轨迹核对 | `lang.golang.executes-contracts` |
 | E13 | `lang.golang.undeclared-error`、`lang.golang.ensure-failed`、`lang.golang.expression-failed` | `lang.golang.executes-contracts` |
 | E14 | `lang.golang.ensure-failed`、`lang.golang.predicate-failed` | `lang.golang.executes-contracts` |
 | E15 | `lang.golang.missing-substitute`、`lang.golang.substitute-failed`、`lang.golang.ensure-failed`、`lang.golang.frame-violation`、`lang.golang.expression-failed`、`lang.golang.predicate-failed`；接口和外部客户端使用输入中的应答脚本 | `lang.golang.executes-contracts` |
-| E16 | `lang.golang.within-exceeded`；并入证据未实现：M6 | `lang.golang.executes-contracts` |
+| E16 | `lang.golang.within-exceeded` | `lang.golang.executes-contracts` |
 | E17 | `lang.golang.input-outside-domain`、`lang.golang.expression-failed` | `lang.golang.executes-contracts` |
 | E18 | `lang.golang.observation-failed`、`lang.golang.adapter-failed`、`lang.golang.unsupported-contract` | `lang.golang.executes-contracts` |
 | E19 | `lang.golang.expression-failed`、`lang.golang.frame-violation` | `lang.golang.executes-contracts` |
