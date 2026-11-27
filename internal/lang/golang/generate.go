@@ -99,7 +99,7 @@ func (b *Backend) Generate(plan lang.GenPlan) lang.Generation {
 		if e.Kind == graph.EdgeKindContains {
 			c.parents[e.To] = e.From
 		}
-		if e.Kind == graph.EdgeKindRealizes || e.Kind == graph.EdgeKindChecks || e.Kind == graph.EdgeKindGenerates || e.Kind == graph.EdgeKindObserves {
+		if e.Kind == graph.EdgeKindRealizes || e.Kind == graph.EdgeKindChecks || e.Kind == graph.EdgeKindGenerates || e.Kind == graph.EdgeKindObserves || e.Kind == graph.EdgeKindSubstitutes {
 			if c.bindings[e.Kind] == nil {
 				c.bindings[e.Kind] = map[string][]string{}
 			}
@@ -461,7 +461,7 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 			unit.spec.Observers = append(unit.spec.Observers, ucObserver{Name: lastName(node.Id), Type: first(node.Attrs["type"]), Inputs: node.Attrs["inputs"]})
 		}
 	}
-	if !c.configureSequences(unit) {
+	if !c.configureSequences(unit) || !c.configureDoubles(unit) {
 		return nil
 	}
 	earlier := map[string]string{}
@@ -617,6 +617,9 @@ func (c *contractCompiler) literal(text, goType string, pkg *packages.Package) (
 	return c.valueLiteral(value, goType, pkg)
 }
 func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packages.Package) (string, error) {
+	if text, ok, err := c.doubleLiteral(value, t, pkg); ok {
+		return text, err
+	}
 	if text, ok, err := c.callLiteral(value, t, pkg); ok {
 		return text, err
 	}
@@ -759,6 +762,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 	c.foreignNames, c.foreignOriginal = map[string]string{}, map[string]string{}
 	var body strings.Builder
 	body.WriteString(c.renderCallDeclarations(file))
+	body.WriteString(c.renderDoubles(file))
 	var bridges []string
 	for index, unit := range file.units {
 		id := strconv.Itoa(index)
@@ -863,6 +867,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 			fmt.Fprintf(&body, "s.Observers[%d].Read=reflect.ValueOf(%s);", i, c.qualify(d.obj, file.pkg, file.imports))
 		}
 		c.renderCallSpec(&body, file, unit)
+		c.renderDoubleSpec(&body, file, unit)
 		body.WriteString("return &s }\n")
 		predicate := ""
 		if unit.predicate != nil {
@@ -970,12 +975,23 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		fmt.Fprintf(&body, "if len(selected)==0||slices.Contains(selected,%s){t.Run(%s,func(t *testing.T){var result ucRunResult;defer func(){if result.Id==\"\"{result=ucRunResult{Id:%s,Passed:false}};result.Passed=result.Passed&&!t.Failed();results=append(results,result)}();ucDrive%d(t,mode,budget,&result)})};", strconv.Quote(unit.node.Id), strconv.Quote(unit.node.Id), strconv.Quote(unit.node.Id), i)
 	}
 	body.WriteString("}\n")
-	runtimeFile, err := parser.ParseFile(token.NewFileSet(), "runtime.go", contractRuntime, 0)
+	doubleFile, err := parser.ParseFile(token.NewFileSet(), "doubles_runtime.go", contractDoubleRuntime, 0)
+	if err != nil {
+		panic(err)
+	}
+	doubleStart := 0
+	for _, decl := range doubleFile.Decls {
+		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
+			doubleStart = int(gen.End())
+		}
+	}
+	runtimeSource := contractRuntime + "\n" + contractDoubleRuntime[doubleStart:]
+	runtimeFile, err := parser.ParseFile(token.NewFileSet(), "runtime.go", runtimeSource, 0)
 	if err != nil {
 		panic(err)
 	}
 	imports := map[string]string{"testing": "", "os": ""}
-	for _, spec := range runtimeFile.Imports {
+	for _, spec := range append(append([]*ast.ImportSpec{}, runtimeFile.Imports...), doubleFile.Imports...) {
 		path, _ := strconv.Unquote(spec.Path.Value)
 		imports[path] = ""
 	}
@@ -994,7 +1010,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 			start = int(gen.End())
 		}
 	}
-	out.WriteString(contractRuntime[start:])
+	out.WriteString(runtimeSource[start:])
 	out.WriteString(body.String())
 	fset := token.NewFileSet()
 	tree, err := parser.ParseFile(fset, "unicode_contracts_gen_test.go", out.Bytes(), parser.ParseComments)

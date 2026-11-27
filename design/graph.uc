@@ -211,3 +211,12 @@ property compare-self-contract postcondition "同一张图作为比较两端时�
   call compare(snapshot, snapshot)
   ensure size(result.nodes) == 0 and size(result.edges) == 0
 }
+
+property node-sequence-keeps-index transition "逐次加入节点后，每个节点都能按标识取回，且声明错误不减少原有节点数量" {
+  about Graph.addNode
+  forall snapshot: Graph generated "沿用原有随机图生成器，包含节点、边和既有标识"
+  forall steps: list<call<Graph.addNode>>
+  where steps size 0..8
+  ensure size(snapshot.nodes()) >= old(size(snapshot.nodes()))
+  ensure all(n in snapshot.nodes(): snapshot.node(n.id) == n)
+}
