@@ -188,7 +188,7 @@ func spacingProblem(text []byte) string {
 	if err != nil {
 		return "the printed text does not lex: " + err.Error()
 	}
-	var prev lexer.Token
+	var before, prev lexer.Token
 	line := 1
 	for {
 		tok, err := lex.Next()
@@ -199,20 +199,20 @@ func spacingProblem(text []byte) string {
 		case symbols["Whitespace"]:
 			continue
 		case symbols["NL"], symbols["Comment"]:
-			prev = lexer.Token{}
+			before, prev = lexer.Token{}, lexer.Token{}
 			line = tok.Pos.Line + strings.Count(tok.Value, "\n")
 			continue
 		}
 		if prev.Value != "" {
 			want := wantGap(prev, tok)
 			if line <= len(lines) && expressionLine(lines[line-1]) {
-				want = expressionGap(prev, tok)
+				want = expressionGap(before, prev, tok)
 			}
 			if gap := tok.Pos.Offset - prev.Pos.Offset - len(prev.Value); gap != want {
 				return fmt.Sprintf("line %d: %d spaces between %s and %s instead of %d", line, gap, prev.Value, tok.Value, want)
 			}
 		}
-		prev = tok
+		before, prev = prev, tok
 	}
 }
 
@@ -225,7 +225,13 @@ func expressionLine(line string) bool {
 	return false
 }
 
-func expressionGap(a, b lexer.Token) int {
+// expressionGap is the gap between the tokens a and b on a line of
+// expressions, where before is the token ahead of a, empty when a starts the
+// line. A word is a keyword or an operator by its place, not by its spelling
+// (L7): the clause keyword starts the line, and a word after a dot is a field
+// or an operation. Anywhere else ensure, requires and call are names, and a
+// name takes its arguments without a space.
+func expressionGap(before, a, b lexer.Token) int {
 	if a.Value == "," || a.Value == ":" {
 		return 1
 	}
@@ -235,11 +241,13 @@ func expressionGap(a, b lexer.Token) int {
 	if b.Value == "[" {
 		return 0
 	}
+	named := before.Value == "."
 	operators := []string{"==", "!=", "<", "<=", ">", ">=", "+", "-", "*", "/", "and", "or", "implies", "in"}
-	if slices.Contains(operators, a.Value) || slices.Contains(operators, b.Value) {
+	if !named && slices.Contains(operators, a.Value) || slices.Contains(operators, b.Value) {
 		return 1
 	}
-	if b.Value == "(" && slices.Contains([]string{"not", "ensure", "requires", "call"}, a.Value) {
+	clause := before.Value == "" && slices.Contains([]string{"ensure", "requires", "call"}, a.Value)
+	if b.Value == "(" && !named && (clause || a.Value == "not") {
 		return 1
 	}
 	return wantGap(a, b)
