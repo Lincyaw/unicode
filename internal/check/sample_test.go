@@ -37,6 +37,7 @@ type world struct {
 	checkables   []*checkable
 	steps        []*step
 	observations []*observation
+	drivers      []string // handwritten candidates, including methods whose receiver is generated
 	external     bool
 	client       *comp // the component that holds the external system's client
 }
@@ -235,6 +236,7 @@ func newWorld(t *rapid.T) *world {
 	for _, c := range w.comps {
 		w.componentCode(c)
 		w.componentTypes(c)
+		w.testEntries(c)
 	}
 	w.externalSystem()
 	w.relations()
@@ -287,6 +289,41 @@ func (w *world) function(parent, id, name, signature, form string) string {
 		map[string][]string{"name": {name}, "signature": {signature}, "testKind": {"none"}, "stub": {"false"}})
 	w.extracted(graph.EdgeKindContains, parent, id)
 	return id
+}
+
+// testEntries distinguishes an operation's declaration file from its
+// containment parent. Generated methods can have ordinary receiver types,
+// and ordinary helpers can have receiver types in generated files.
+func (w *world) testEntries(c *comp) {
+	generated := w.node("file:"+c.dir+"/unicode_contracts_gen_test.go", graph.LayerCode, graph.NodeKindContainer, "file", c.dir+"/unicode_contracts_gen_test.go",
+		map[string][]string{"language": {"go"}, "path": {c.dir + "/unicode_contracts_gen_test.go"}, "generated": {"true"}})
+	w.extracted(graph.EdgeKindContains, c.pkg, generated)
+	free := w.function(generated, c.pkg+".TestGenerated", "testGenerated", "(t: go:testing.T)", "func")
+	w.setOriginPath(free, strings.TrimPrefix(generated, "file:"))
+	w.setAttr(free, "testKind", []string{rapid.SampledFrom([]string{"example", "property", "fuzz"}).Draw(w.t, "generatedTestKind")})
+	receiver := w.typeNamed(objectOf(c)).code
+	method := w.function(receiver, receiver+".GeneratedTest", "generatedTest", "()", "method")
+	w.setOriginPath(method, strings.TrimPrefix(generated, "file:"))
+	w.setAttr(method, "testKind", []string{"property"})
+	generatedType := w.node(c.pkg+".GeneratedFixture", graph.LayerCode, graph.NodeKindType, "struct", strings.TrimPrefix(generated, "file:"), map[string][]string{"name": {"generatedFixture"}})
+	w.extracted(graph.EdgeKindContains, generated, generatedType)
+	w.drivers = append(w.drivers,
+		w.function(c.file, c.pkg+".TestCandidate", "testCandidate", "(t: go:testing.T)", "func"),
+		w.function(generatedType, generatedType+".TestCandidate", "testCandidate", "(t: go:testing.T)", "method"))
+	python := w.node("file:"+c.dir+"/test_spec.py", graph.LayerCode, graph.NodeKindContainer, "file", c.dir+"/test_spec.py",
+		map[string][]string{"language": {"python"}, "path": {c.dir + "/test_spec.py"}})
+	w.extracted(graph.EdgeKindContains, c.pkg, python)
+	pyTest := w.node("py:"+c.dir+".test_spec", graph.LayerCode, graph.NodeKindOp, "func", c.dir+"/test_spec.py",
+		map[string][]string{"name": {"test_spec"}, "signature": {"()"}, "testKind": {"property"}, "stub": {"false"}})
+	w.extracted(graph.EdgeKindContains, python, pyTest)
+}
+
+func (w *world) setOriginPath(id, path string) {
+	for i := range w.f.Nodes {
+		if w.f.Nodes[i].Id == id {
+			w.f.Nodes[i].Origin.Path = path
+		}
+	}
 }
 
 // componentTypes declares a component's types and operations with the code

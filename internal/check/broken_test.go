@@ -69,6 +69,11 @@ type breakage struct {
 }
 
 var breakages = []breakage{
+	{"check.handwritten-test", func(w *world) string {
+		entry := choose(w, w.drivers)
+		w.setAttr(entry, "testKind", []string{rapid.SampledFrom([]string{"example", "property", "fuzz"}).Draw(w.t, "handwrittenTestKind")})
+		return entry
+	}},
 	{"check.multiple-observes", func(w *world) string {
 		o := choose(w, w.observations)
 		twin := w.node(o.id+"Other", graph.LayerDesign, graph.NodeKindObservation, "snapshot", w.designFile(o.home), map[string][]string{"type": w.attr(o.id, "type"), "inputs": w.attr(o.id, "inputs")})
