@@ -5,6 +5,7 @@ import (
 	"maps"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"pgregory.net/rapid"
@@ -174,6 +175,36 @@ func added(f graph.Fragment, nodes map[string]graph.Node, focus string) map[stri
 		}
 	case graph.NodeKindProperty:
 		grow(graph.EdgeKindRefers, found, graph.NodeKindType)
+		for _, e := range f.Edges {
+			if e.Kind == graph.EdgeKindContains && e.From == focus && nodes[e.To].Kind == graph.NodeKindObservation {
+				found[e.To] = true
+				maps.Copy(found, added(f, nodes, e.To))
+			}
+		}
+	case graph.NodeKindObservation:
+		grow(graph.EdgeKindRefers, found, graph.NodeKindType)
+		for _, e := range f.Edges {
+			if e.Kind != graph.EdgeKindContains || e.To != focus || nodes[e.From].Kind != graph.NodeKindProperty {
+				continue
+			}
+			for _, declaration := range nodes[e.From].Attrs["symbols"] {
+				name, typ, _ := strings.Cut(declaration, ": ")
+				if !slices.Contains(nodes[focus].Attrs["inputs"], name) {
+					continue
+				}
+				for _, token := range strings.FieldsFunc(typ, func(r rune) bool { return strings.ContainsRune("<>, []", r) }) {
+					if n, exists := nodes[token]; exists && n.Kind == graph.NodeKindType {
+						found[token] = true
+					}
+				}
+			}
+		}
+		grow(graph.EdgeKindRefers, found, graph.NodeKindType)
+		for _, e := range f.Edges {
+			if e.Kind == graph.EdgeKindObserves && e.To == focus && nodes[e.From].Kind == graph.NodeKindOp {
+				found[e.From] = true
+			}
+		}
 	case graph.NodeKindFlow:
 		grow(graph.EdgeKindContains, found, graph.NodeKindStep)
 		steps := maps.Clone(found)

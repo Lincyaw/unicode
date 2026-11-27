@@ -69,6 +69,55 @@ type breakage struct {
 }
 
 var breakages = []breakage{
+	{"check.missing-observer", func(w *world) string {
+		o := choose(w, w.observations)
+		w.removeEdges(func(e graph.Edge) bool { return e.Kind == graph.EdgeKindObserves && e.To == o.id })
+		return o.id
+	}},
+	{"check.multiple-observers", func(w *world) string {
+		o := choose(w, w.observations)
+		twin := w.function(o.home.file, o.adapter+"Twin", "observe", w.attr(o.adapter, "signature")[0], "func")
+		w.declared(graph.EdgeKindObserves, twin, o.id)
+		return o.id
+	}},
+	{"check.observer-outside-container", func(w *world) string {
+		o := choose(w, w.observations)
+		outside := choose(w, where(w.comps, func(c *comp) bool { return c != o.home }))
+		w.reparent(o.adapter, outside.file)
+		return o.id
+	}},
+	{"check.observer-signature", func(w *world) string {
+		o := choose(w, w.observations)
+		signature := w.attr(o.adapter, "signature")[0]
+		params, rest, _ := splitParameters(signature)
+		switch uniform(w.t, 4) {
+		case 0:
+			params = append(params, handle)
+			signature = signatureOf(params, rest)
+		case 1:
+			signature = signatureOf(params, " -> (int, string)")
+		case 2:
+			params[0] = "changed: bytes"
+			signature = signatureOf(params, rest)
+		default:
+			rest, _, _ = strings.Cut(rest, " raises ")
+			signature = signatureOf(params, rest+" raises custom")
+		}
+		w.setAttr(o.adapter, "signature", []string{signature})
+		return o.id
+	}},
+	{"check.wrong-binding-kind", func(w *world) string {
+		o := choose(w, w.observations)
+		target := choose(w, w.types).id
+		w.retarget(graph.EdgeKindObserves, o.adapter, o.id, target)
+		return "observes " + o.adapter + " " + target
+	}},
+	{"check.wrong-binding-kind", func(w *world) string {
+		o := choose(w, w.observations)
+		owner := w.typeNamed(objectOf(o.home))
+		w.reparent(o.adapter, owner.code)
+		return "observes " + o.adapter + " " + o.id
+	}},
 	{"check.unowned-file", func(w *world) string {
 		w.node("go:m/other", graph.LayerCode, graph.NodeKindContainer, "package", "other", map[string][]string{"path": {"m/other"}})
 		file := w.node("file:other/code.go", graph.LayerCode, graph.NodeKindContainer, "file", "other/code.go", map[string][]string{"path": {"other/code.go"}})

@@ -83,7 +83,7 @@ func (s *sampler) pattern() string {
 
 // sampleDesign is what the code part of a sample binds to.
 type sampleDesign struct {
-	types, ops, others, properties []string
+	types, ops, others, properties, observations []string
 }
 
 func (s *sampler) design() sampleDesign {
@@ -137,6 +137,11 @@ func (s *sampler) design() sampleDesign {
 			p := s.node(c+".p", LayerDesign, NodeKindProperty, "invariant", map[string][]string{"symbols": {"v: int generated"}})
 			s.contains(c, p)
 			d.properties = append(d.properties, p)
+			if rapid.Bool().Draw(s.t, "observation") {
+				o := s.node(p+".state", LayerDesign, NodeKindObservation, "snapshot", map[string][]string{"type": {"int"}, "inputs": {"v"}})
+				s.contains(p, o)
+				d.observations = append(d.observations, o)
+			}
 		}
 	}
 	return d
@@ -168,7 +173,11 @@ func (s *sampler) code(d sampleDesign) {
 			packages[dir] = true
 			s.node("go:m/"+dir, LayerCode, NodeKindContainer, "package", map[string][]string{"path": {"m/" + dir}, "language": {"go"}})
 		}
-		s.node("file:"+f, LayerCode, NodeKindContainer, "file", map[string][]string{"path": {f}, "language": {"go"}})
+		attrs := map[string][]string{"path": {f}, "language": {"go"}}
+		if rapid.Bool().Draw(s.t, "generatedFile") {
+			attrs["generated"] = []string{"true"}
+		}
+		s.node("file:"+f, LayerCode, NodeKindContainer, "file", attrs)
 		s.contains("go:m/"+dir, "file:"+f)
 	}
 	if len(files) == 0 {
@@ -210,19 +219,27 @@ func (s *sampler) code(d sampleDesign) {
 			map[string][]string{"name": {rapid.SampledFrom([]string{"run", "load", "check"}).Draw(s.t, "funcName")}})
 		s.contains("file:"+f, id)
 		functions = append(functions, id)
-		switch rapid.IntRange(0, 3).Draw(s.t, "funcBinding") {
+		switch rapid.IntRange(0, 4).Draw(s.t, "funcBinding") {
 		case 0:
 			s.edge(EdgeKindRealizes, id, s.pick("funcTarget", slices.Concat(d.ops, d.ops, d.types, missing)), SourceDeclared, nil)
 		case 1:
 			s.edge(EdgeKindChecks, id, s.pick("checksTarget", slices.Concat(d.properties, d.properties, d.types, missing)), SourceDeclared, nil)
 		case 2:
 			s.edge(EdgeKindGenerates, id, s.pick("generatesTarget", slices.Concat(d.properties, missing)), SourceDeclared, map[string][]string{"symbols": {"v"}})
+		case 3:
+			s.edge(EdgeKindObserves, id, s.pick("observesTarget", slices.Concat(d.observations, missing)), SourceDeclared, nil)
 		}
 	}
 	for range rapid.IntRange(0, 16).Draw(s.t, "calls") {
 		from, to := s.pick("caller", functions), s.pick("callee", functions)
 		if from != "" {
 			s.edge(EdgeKindCalls, from, to, SourceExtracted, map[string][]string{"sites": {"code.go:1:1"}})
+		}
+	}
+	for i := range s.f.Nodes {
+		node := &s.f.Nodes[i]
+		if node.Layer == LayerCode && (node.Kind == NodeKindType || node.Kind == NodeKindOp) && rapid.Bool().Draw(s.t, "explicitSourceFile") {
+			node.Origin.Path = s.pick("sourceFile", files)
 		}
 	}
 	pkgs := slices.Sorted(maps.Keys(packages))
@@ -419,15 +436,22 @@ func (x *expectation) salience() {
 			binds = binds || k.from == n.Id
 		}
 		for k := range x.kept {
-			binds = binds || (k.kind == EdgeKindChecks || k.kind == EdgeKindGenerates) && k.from == n.Id
+			binds = binds || (k.kind == EdgeKindChecks || k.kind == EdgeKindGenerates || k.kind == EdgeKindObserves) && k.from == n.Id
 		}
 		switch {
 		case n.Layer == LayerDesign:
 			x.salient[n.Id] = true
 		case n.Layer == LayerCode && (n.Kind == NodeKindType || n.Kind == NodeKindOp) && binds:
+			file := "file:" + n.Origin.Path
+			if !x.is(file, LayerCode, NodeKindContainer, "file") {
+				file = x.fileOf(n.Id)
+			}
+			if slices.Contains(x.byID[file].Attrs["generated"], "true") {
+				continue
+			}
 			x.salient[n.Id] = true
-			for _, a := range x.ancestors(n.Id) {
-				if x.is(a, LayerCode, NodeKindContainer) {
+			for _, a := range append(x.ancestors(n.Id), file) {
+				if x.is(a, LayerCode, NodeKindContainer) && (!x.is(a, LayerCode, NodeKindContainer, "file") || !slices.Contains(x.byID[a].Attrs["generated"], "true")) {
 					x.salient[a] = true
 				}
 			}

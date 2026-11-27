@@ -22,7 +22,7 @@ type Question struct {
 }
 
 var nodeKinds = []graph.NodeKind{graph.NodeKindContainer, graph.NodeKindType, graph.NodeKindOp, graph.NodeKindActor,
-	graph.NodeKindFlow, graph.NodeKindStep, graph.NodeKindProperty, graph.NodeKindCase, graph.NodeKindRun,
+	graph.NodeKindFlow, graph.NodeKindStep, graph.NodeKindProperty, graph.NodeKindObservation, graph.NodeKindCase, graph.NodeKindRun,
 	graph.NodeKindResult, graph.NodeKindReview}
 
 // children are the kinds of node that a node of each kind contains (docs/model.md §4).
@@ -32,37 +32,40 @@ var children = map[graph.NodeKind][]graph.NodeKind{
 	graph.NodeKindType:      {graph.NodeKindOp},
 	graph.NodeKindFlow:      {graph.NodeKindStep, graph.NodeKindCase},
 	graph.NodeKindStep:      {graph.NodeKindStep},
-	graph.NodeKindProperty:  {graph.NodeKindCase},
+	graph.NodeKindProperty:  {graph.NodeKindCase, graph.NodeKindObservation},
 }
 
 // edgeKinds lists every edge kind.
 var edgeKinds = []graph.EdgeKind{graph.EdgeKindContains, graph.EdgeKindUses, graph.EdgeKindExtends,
 	graph.EdgeKindImplements, graph.EdgeKindRefers, graph.EdgeKindSubscribes, graph.EdgeKindImports, graph.EdgeKindCalls,
 	graph.EdgeKindFrom, graph.EdgeKindEmits, graph.EdgeKindHandles, graph.EdgeKindAbout, graph.EdgeKindRealizes,
-	graph.EdgeKindChecks, graph.EdgeKindGenerates, graph.EdgeKindOwns, graph.EdgeKindDepends, graph.EdgeKindTraces,
+	graph.EdgeKindChecks, graph.EdgeKindGenerates, graph.EdgeKindObserves, graph.EdgeKindOwns, graph.EdgeKindDepends, graph.EdgeKindTraces,
 	graph.EdgeKindExercises, graph.EdgeKindReaches, graph.EdgeKindCovers}
 
 // shapes are the edge kinds that docs/model.md §4 draws from a node of one
 // kind to a node of another.
 var shapes = map[[2]graph.NodeKind][]graph.EdgeKind{
-	{graph.NodeKindContainer, graph.NodeKindContainer}: {graph.EdgeKindContains, graph.EdgeKindUses, graph.EdgeKindDepends},
-	{graph.NodeKindContainer, graph.NodeKindType}:      {graph.EdgeKindContains},
-	{graph.NodeKindContainer, graph.NodeKindOp}:        {graph.EdgeKindContains},
-	{graph.NodeKindContainer, graph.NodeKindFlow}:      {graph.EdgeKindContains},
-	{graph.NodeKindContainer, graph.NodeKindProperty}:  {graph.EdgeKindContains},
-	{graph.NodeKindType, graph.NodeKindOp}:             {graph.EdgeKindContains},
-	{graph.NodeKindType, graph.NodeKindType}:           {graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements},
-	{graph.NodeKindOp, graph.NodeKindType}:             {graph.EdgeKindRefers, graph.EdgeKindSubscribes},
-	{graph.NodeKindOp, graph.NodeKindOp}:               {graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindRealizes},
-	{graph.NodeKindOp, graph.NodeKindProperty}:         {graph.EdgeKindChecks, graph.EdgeKindGenerates},
-	{graph.NodeKindProperty, graph.NodeKindType}:       {graph.EdgeKindRefers, graph.EdgeKindAbout},
-	{graph.NodeKindProperty, graph.NodeKindOp}:         {graph.EdgeKindAbout},
-	{graph.NodeKindProperty, graph.NodeKindCase}:       {graph.EdgeKindContains},
-	{graph.NodeKindFlow, graph.NodeKindStep}:           {graph.EdgeKindContains},
-	{graph.NodeKindFlow, graph.NodeKindType}:           {graph.EdgeKindRefers},
-	{graph.NodeKindStep, graph.NodeKindStep}:           {graph.EdgeKindContains},
-	{graph.NodeKindStep, graph.NodeKindOp}:             {graph.EdgeKindCalls, graph.EdgeKindTraces},
-	{graph.NodeKindStep, graph.NodeKindType}:           {graph.EdgeKindEmits, graph.EdgeKindHandles, graph.EdgeKindFrom},
+	{graph.NodeKindContainer, graph.NodeKindContainer}:  {graph.EdgeKindContains, graph.EdgeKindUses, graph.EdgeKindDepends},
+	{graph.NodeKindContainer, graph.NodeKindType}:       {graph.EdgeKindContains},
+	{graph.NodeKindContainer, graph.NodeKindOp}:         {graph.EdgeKindContains},
+	{graph.NodeKindContainer, graph.NodeKindFlow}:       {graph.EdgeKindContains},
+	{graph.NodeKindContainer, graph.NodeKindProperty}:   {graph.EdgeKindContains},
+	{graph.NodeKindType, graph.NodeKindOp}:              {graph.EdgeKindContains},
+	{graph.NodeKindType, graph.NodeKindType}:            {graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements},
+	{graph.NodeKindOp, graph.NodeKindType}:              {graph.EdgeKindRefers, graph.EdgeKindSubscribes},
+	{graph.NodeKindOp, graph.NodeKindOp}:                {graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindRealizes},
+	{graph.NodeKindOp, graph.NodeKindProperty}:          {graph.EdgeKindChecks, graph.EdgeKindGenerates},
+	{graph.NodeKindOp, graph.NodeKindObservation}:       {graph.EdgeKindObserves},
+	{graph.NodeKindProperty, graph.NodeKindType}:        {graph.EdgeKindRefers, graph.EdgeKindAbout},
+	{graph.NodeKindProperty, graph.NodeKindOp}:          {graph.EdgeKindAbout},
+	{graph.NodeKindProperty, graph.NodeKindCase}:        {graph.EdgeKindContains},
+	{graph.NodeKindProperty, graph.NodeKindObservation}: {graph.EdgeKindContains},
+	{graph.NodeKindObservation, graph.NodeKindType}:     {graph.EdgeKindRefers},
+	{graph.NodeKindFlow, graph.NodeKindStep}:            {graph.EdgeKindContains},
+	{graph.NodeKindFlow, graph.NodeKindType}:            {graph.EdgeKindRefers},
+	{graph.NodeKindStep, graph.NodeKindStep}:            {graph.EdgeKindContains},
+	{graph.NodeKindStep, graph.NodeKindOp}:              {graph.EdgeKindCalls, graph.EdgeKindTraces},
+	{graph.NodeKindStep, graph.NodeKindType}:            {graph.EdgeKindEmits, graph.EdgeKindHandles, graph.EdgeKindFrom},
 }
 
 // genText draws short strings over a tiny alphabet, so that identities,
@@ -121,7 +124,7 @@ func genFragment(t *rapid.T) graph.Fragment {
 		}
 	}
 	for _, n := range f.Nodes {
-		if (n.Kind == graph.NodeKindProperty || n.Kind == graph.NodeKindType) && len(types) > 0 {
+		if (n.Kind == graph.NodeKindProperty || n.Kind == graph.NodeKindObservation || n.Kind == graph.NodeKindType) && len(types) > 0 {
 			for range rapid.IntRange(0, 2).Draw(t, "refers") {
 				if k := (key{graph.EdgeKindRefers, n.Id, rapid.SampledFrom(types).Draw(t, "referred")}); !edges[k] {
 					edges[k] = true
@@ -141,6 +144,27 @@ func genFragment(t *rapid.T) graph.Fragment {
 			edges[k] = true
 			f.Edges = append(f.Edges, e)
 		}
+	}
+	for i := range len(f.Nodes) {
+		property := &f.Nodes[i]
+		if property.Kind != graph.NodeKindProperty || len(types) == 0 || !rapid.Bool().Draw(t, "namedObservation") {
+			continue
+		}
+		id := fmt.Sprintf("%s.snapshot%d", property.Id, len(f.Nodes))
+		adapter := id + ".adapter"
+		sourceType := rapid.SampledFrom(types).Draw(t, "observedInputType")
+		snapshotType := rapid.SampledFrom(types).Draw(t, "snapshotType")
+		if property.Attrs == nil {
+			property.Attrs = map[string][]string{}
+		}
+		property.Attrs["symbols"] = append(property.Attrs["symbols"], "observedInput: list<"+sourceType+">")
+		f.Nodes = append(f.Nodes,
+			graph.Node{Id: id, Kind: graph.NodeKindObservation, Layer: graph.LayerDesign, Salient: rapid.Bool().Draw(t, "observationSalience"), Attrs: map[string][]string{"inputs": {"observedInput"}, "type": {snapshotType}}},
+			graph.Node{Id: adapter, Kind: graph.NodeKindOp, Layer: graph.LayerCode, Salient: rapid.Bool().Draw(t, "adapterSalience")})
+		f.Edges = append(f.Edges,
+			graph.Edge{Kind: graph.EdgeKindContains, From: property.Id, To: id},
+			graph.Edge{Kind: graph.EdgeKindRefers, From: id, To: snapshotType},
+			graph.Edge{Kind: graph.EdgeKindObserves, From: adapter, To: id})
 	}
 	return f
 }
@@ -163,7 +187,7 @@ func genSliceQuestion() *rapid.Generator[Question] {
 		f := genFragment(t)
 		var adding []string
 		for _, n := range f.Nodes {
-			if n.Kind == graph.NodeKindOp || n.Kind == graph.NodeKindProperty || n.Kind == graph.NodeKindFlow {
+			if n.Kind == graph.NodeKindOp || n.Kind == graph.NodeKindProperty || n.Kind == graph.NodeKindObservation || n.Kind == graph.NodeKindFlow {
 				adding = append(adding, n.Id)
 			}
 		}

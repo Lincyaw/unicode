@@ -227,19 +227,20 @@ func (d *derivation) methodRealizes() {
 }
 
 // salience marks every design node, every code type and function that
-// realizes a design node or carries a checks or generates binding, and the
-// files and packages that hold them.
+// realizes a design node or carries a checks, generates or observes binding,
+// and the files and packages that hold them. Unicode-generated declarations
+// and files remain details.
 func (d *derivation) salience() {
 	salient := map[string]bool{}
 	for id, n := range d.g.nodes {
 		switch {
 		case n.Layer == LayerDesign:
 			salient[id] = true
-		case n.Layer == LayerCode && (n.Kind == NodeKindType || n.Kind == NodeKindOp) &&
-			len(d.out[EdgeKindRealizes][id])+len(d.out[EdgeKindChecks][id])+len(d.out[EdgeKindGenerates][id]) > 0:
+		case n.Layer == LayerCode && !d.inGeneratedFile(id) && (n.Kind == NodeKindType || n.Kind == NodeKindOp) &&
+			len(d.out[EdgeKindRealizes][id])+len(d.out[EdgeKindChecks][id])+len(d.out[EdgeKindGenerates][id])+len(d.out[EdgeKindObserves][id]) > 0:
 			salient[id] = true
-			for _, a := range d.ancestors(id) {
-				if d.is(a, LayerCode, NodeKindContainer) {
+			for _, a := range append(d.ancestors(id), d.definingFile(id)) {
+				if d.is(a, LayerCode, NodeKindContainer) && (!d.isFile(a) || !d.inGeneratedFile(a)) {
 					salient[a] = true
 				}
 			}
@@ -250,6 +251,18 @@ func (d *derivation) salience() {
 		n.Salient = true
 		d.g.nodes[id] = n
 	}
+}
+
+func (d *derivation) inGeneratedFile(id string) bool {
+	return slices.Contains(d.g.nodes[d.definingFile(id)].Attrs["generated"], "true")
+}
+
+func (d *derivation) definingFile(id string) string {
+	file := "file:" + d.g.nodes[id].Origin.Path
+	if !d.isFile(file) {
+		file = d.fileOf(id)
+	}
+	return file
 }
 
 // depends finds, for each pair of distinct design containers A and B, the

@@ -463,7 +463,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Edge'
-      description: A node a change reaches, with a shortest path of edges from it to a changed node (query.Affected).
+      description: |-
+        A node a change reaches, with a shortest connected path to a changed node (query.Affected).
+        The path keeps the original edges; an observes edge may be followed in either direction.
     AttrChange:
       type: object
       required:
@@ -886,6 +888,7 @@ components:
         - realizes
         - checks
         - generates
+        - observes
         - owns
         - depends
         - traces
@@ -1189,7 +1192,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Neighbor'
-          description: 'A code element: its bindings, each the realizes, checks or generates edge with the design node it points at'
+          description: 'A code element: its realizes, checks, generates or observes edges with the design nodes they point at'
         step:
           allOf:
             - $ref: '#/components/schemas/StepInfo'
@@ -1236,6 +1239,7 @@ components:
         - flow
         - step
         - property
+        - observation
         - case
         - run
         - result
@@ -1845,7 +1849,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Neighbor'
-          description: 'A code element: its bindings, each the realizes, checks or generates edge with the design node it points at'
+          description: 'A code element: its realizes, checks, generates or observes edges with the design nodes they point at'
         step:
           allOf:
             - $ref: '#/components/schemas/StepInfo'

@@ -42,6 +42,7 @@ enum NodeKind {
   flow,
   step,
   property,
+  observation,
   `case`,
   run,
   result,
@@ -65,6 +66,7 @@ enum EdgeKind {
   realizes,
   checks,
   generates,
+  observes,
   owns,
   depends,
   traces,
@@ -113,7 +115,7 @@ model Node {
   /** The status `unicode check` gives it; only declared design items have one */
   status?: Status;
 
-  /** A code element: its bindings, each the realizes, checks or generates edge with the design node it points at */
+  /** A code element: its realizes, checks, generates or observes edges with the design nodes they point at */
   bindings?: Neighbor[];
 
   /** A step: where it stands in its flow */
