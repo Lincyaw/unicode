@@ -373,6 +373,7 @@ export function CodeSections({ entity }: { entity: Entity }) {
   const links = useLinks();
   const { node } = entity;
   const detail = entity.code;
+  const file = fileOf(entity);
   const bindings = node.bindings ?? [];
   return (
     <>
@@ -382,7 +383,7 @@ export function CodeSections({ entity }: { entity: Entity }) {
         </Section>
       )}
       <Section title={SECTIONS.location}>
-        <Facts rows={[{ label: SECTIONS.file, value: <NodeLink node={{ id: fileOf(node.origin.path), title: node.origin.path }} tone="main" /> }, { label: SECTIONS.line, value: String(node.origin.line) }]} />
+        <Facts rows={[{ label: SECTIONS.file, value: file ? <NodeLink node={file} tone="main" /> : node.origin.path }, { label: SECTIONS.line, value: String(node.origin.line) }]} />
       </Section>
       {detail?.declaration !== undefined && <Section title={SECTIONS.signature}><CodePanel lines={[detail.declaration]} /></Section>}
       {detail?.owner && <Section title={SECTIONS.owner}><ChipList nodes={[detail.owner]} /></Section>}

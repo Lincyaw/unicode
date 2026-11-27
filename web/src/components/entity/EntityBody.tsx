@@ -25,6 +25,7 @@ import styles from './entity.module.css';
 function Head({ entity }: { entity: Entity }) {
   const { node } = entity;
   const realized = entity.realizedBy[0]?.node;
+  const file = fileOf(entity);
   return (
     <header className={styles.head}>
       <div className={styles.identity}>
@@ -38,8 +39,8 @@ function Head({ entity }: { entity: Entity }) {
       {node.summary !== '' && <h2 className={styles.summary}>{node.summary}</h2>}
       {node.kind === 'op' && node.layer === 'design' && <OpSignature op={node} />}
       <p className={styles.origin}>
-        {node.layer === 'code' && node.form !== 'file'
-          ? <NodeLink node={{ id: fileOf(node.origin.path), title: node.origin.path }} className={styles.place} tone="inherit" label={<><FileCode size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{node.origin.path}:{node.origin.line}</>} />
+        {file
+          ? <NodeLink node={file} className={styles.place} tone="inherit" label={<><FileCode size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{node.origin.path}:{node.origin.line}</>} />
           : <span className={styles.place}><FileCode size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{node.origin.path}:{node.origin.line}</span>}
         {realized && (
           <NodeLink node={realized} className={styles.place} label={<><Code size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{realized.origin.path}:{realized.origin.line}</>} />

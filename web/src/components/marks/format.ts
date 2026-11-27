@@ -1,4 +1,4 @@
-import type { Node, StepInfo } from '../../api/types';
+import type { Entity, Node, StepInfo } from '../../api/types';
 
 /*
  * How identities and signatures read on a page. The graph writes every reference from the root (docs/design.md §5.2);
@@ -114,9 +114,9 @@ export function messageOf(step: Pick<Node, 'form' | 'attrs'> & { step?: StepInfo
   return `${step.step?.target?.title ?? ''}(${argsOf(step)})`;
 }
 
-/** The identity of the code file at a path (docs/model.md §8). */
-export function fileOf(path: string): string {
-  return `file:${path}`;
+/** The code file a code element is declared in, among its ancestors; none for a design node or a file itself. */
+export function fileOf(entity: Pick<Entity, 'ancestors'>): Node | undefined {
+  return entity.ancestors.findLast(ancestor => ancestor.layer === 'code' && ancestor.kind === 'container' && ancestor.form === 'file');
 }
 
 /** The last segment of a path, or of a code identity's dotted name. */

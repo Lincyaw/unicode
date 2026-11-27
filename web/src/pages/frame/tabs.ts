@@ -1,7 +1,6 @@
 import { useOptionalEntity, useSnapshot, useTree } from '../../api/client';
 import { viewKindValues } from '../../api/schema';
 import type { Entity, Node, TreeNode, ViewKind } from '../../api/types';
-import { fileOf } from '../../components/marks/format';
 import type { TabLink } from '../../components/shell/ViewTabs';
 import { requestedView, type ViewAddress } from '../../routes/address';
 import { TAB_REASONS } from '../../terms';
@@ -66,14 +65,19 @@ function nearest(places: TreeNode[], test: (node: Node) => boolean): Node | unde
   return undefined;
 }
 
+/** The identity of the code file at a path; the server will name the code view's input itself. */
+function fileAt(path: string): string {
+  return `file:${path}`;
+}
+
 /** The file a source's code lies in: the source itself, the file it is declared in, or that of the code realizing it. */
 function codeFile(source: Entity): string | undefined {
   const { node } = source;
   if (node.layer === 'code') {
-    return node.form === 'file' ? node.id : node.kind === 'container' ? source.container?.files[0]?.id : fileOf(node.origin.path);
+    return node.form === 'file' ? node.id : node.kind === 'container' ? source.container?.files[0]?.id : fileAt(node.origin.path);
   }
   const realized = source.realizedBy[0]?.node;
-  return realized ? fileOf(realized.origin.path) : source.container?.files[0]?.id;
+  return realized ? fileAt(realized.origin.path) : source.container?.files[0]?.id;
 }
 
 const isFlow = (node: Node) => node.kind === 'flow';
