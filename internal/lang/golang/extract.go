@@ -317,10 +317,11 @@ func (x *extraction) addImplements() {
 			interfaces = append(interfaces, d)
 		}
 	}
+	identity := nativeIdentity{packages: map[string]*types.Package{}, named: map[string][]nativeNamed{}}
 	for _, c := range concrete {
-		have := methodKeys(types.NewMethodSet(types.NewPointer(c.name.Type())))
+		have := methodKeys(types.NewMethodSet(types.NewPointer(c.name.Type())), &identity)
 		for _, i := range interfaces {
-			want := methodKeys(types.NewMethodSet(i.name.Type()))
+			want := methodKeys(types.NewMethodSet(i.name.Type()), &identity)
 			if implementsAll(have, want) {
 				x.addEdge(graph.EdgeKindImplements, c.id, i.id, x.position(c.pkg, c.pos))
 			}
@@ -328,20 +329,114 @@ func (x *extraction) addImplements() {
 	}
 }
 
-// methodKeys maps each method of a method set, by its package-qualified
-// name, to its signature written with package paths.
-func methodKeys(set *types.MethodSet) map[string]string {
-	keys := map[string]string{}
+// Native identity uses go/types, with named objects interned by package path
+// across test variants. Instantiation arguments retain their native identities.
+type nativeNamed struct {
+	arguments []types.Type
+	typ       *types.Named
+}
+type nativeIdentity struct {
+	packages map[string]*types.Package
+	named    map[string][]nativeNamed
+}
+
+func (n *nativeIdentity) pkg(p *types.Package) *types.Package {
+	if p == nil {
+		return nil
+	}
+	if canonical := n.packages[p.Path()]; canonical != nil {
+		return canonical
+	}
+	canonical := types.NewPackage(p.Path(), p.Name())
+	n.packages[p.Path()] = canonical
+	return canonical
+}
+func (n *nativeIdentity) tuple(tuple *types.Tuple) *types.Tuple {
+	vars := make([]*types.Var, tuple.Len())
+	for i := range vars {
+		v := tuple.At(i)
+		vars[i] = types.NewVar(v.Pos(), n.pkg(v.Pkg()), v.Name(), n.typ(v.Type()))
+	}
+	return types.NewTuple(vars...)
+}
+func (n *nativeIdentity) typ(t types.Type) types.Type {
+	t = types.Unalias(t)
+	switch t := t.(type) {
+	case *types.Named:
+		arguments := make([]types.Type, t.TypeArgs().Len())
+		for i := range arguments {
+			arguments[i] = n.typ(t.TypeArgs().At(i))
+		}
+		obj := t.Origin().Obj()
+		path := ""
+		if obj.Pkg() != nil {
+			path = obj.Pkg().Path()
+		}
+		key := path + "\x00" + obj.Name()
+		for _, entry := range n.named[key] {
+			same := len(arguments) == len(entry.arguments)
+			for i := range arguments {
+				if !same || !types.Identical(arguments[i], entry.arguments[i]) {
+					same = false
+					break
+				}
+			}
+			if same {
+				return entry.typ
+			}
+		}
+		canonical := types.NewNamed(types.NewTypeName(obj.Pos(), n.pkg(obj.Pkg()), obj.Name(), nil), types.Typ[types.Invalid], nil)
+		n.named[key] = append(n.named[key], nativeNamed{arguments, canonical})
+		return canonical
+	case *types.Signature:
+		return types.NewSignatureType(nil, nil, nil, n.tuple(t.Params()), n.tuple(t.Results()), t.Variadic())
+	case *types.Pointer:
+		return types.NewPointer(n.typ(t.Elem()))
+	case *types.Slice:
+		return types.NewSlice(n.typ(t.Elem()))
+	case *types.Array:
+		return types.NewArray(n.typ(t.Elem()), t.Len())
+	case *types.Map:
+		return types.NewMap(n.typ(t.Key()), n.typ(t.Elem()))
+	case *types.Chan:
+		return types.NewChan(t.Dir(), n.typ(t.Elem()))
+	case *types.Struct:
+		fields := make([]*types.Var, t.NumFields())
+		tags := make([]string, len(fields))
+		for i := range fields {
+			f := t.Field(i)
+			fields[i] = types.NewField(f.Pos(), n.pkg(f.Pkg()), f.Name(), n.typ(f.Type()), f.Embedded())
+			tags[i] = t.Tag(i)
+		}
+		return types.NewStruct(fields, tags)
+	case *types.Interface:
+		t.Complete()
+		if !t.IsMethodSet() {
+			return t
+		}
+		methods := make([]*types.Func, t.NumMethods())
+		for i := range methods {
+			m := t.Method(i)
+			methods[i] = types.NewFunc(m.Pos(), n.pkg(m.Pkg()), m.Name(), n.typ(m.Type()).(*types.Signature))
+		}
+		return types.NewInterfaceType(methods, nil).Complete()
+	default:
+		return t
+	}
+}
+
+// methodKeys retains package-qualified method names and native signatures.
+func methodKeys(set *types.MethodSet, identity *nativeIdentity) map[string]types.Type {
+	keys := map[string]types.Type{}
 	for sel := range set.Methods() {
 		m := sel.Obj().(*types.Func)
-		keys[m.Id()] = types.TypeString(m.Type(), pathQualifier)
+		keys[m.Id()] = identity.typ(m.Type())
 	}
 	return keys
 }
-
-func implementsAll(have, want map[string]string) bool {
-	for id, sig := range want {
-		if have[id] != sig {
+func implementsAll(have, want map[string]types.Type) bool {
+	for id, signature := range want {
+		if !types.Identical(have[id], signature) {
 			return false
 		}
 	}
