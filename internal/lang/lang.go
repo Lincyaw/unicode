@@ -200,6 +200,10 @@ type RunResult struct {
 	Observations []string          `json:"observations"`
 	Differences  []string          `json:"differences"`
 	Diagnostics  []diag.Diagnostic `json:"diagnostics"`
+	Cases        []CaseResult      `json:"cases"`
+	CodeTotal    int               `json:"codeTotal,omitempty"`
+	BranchTotal  int               `json:"branchTotal,omitempty"`
+	ErrorTotal   int               `json:"errorTotal,omitempty"`
 }
 
 // RunReport combines check results and toolchain diagnostics.
