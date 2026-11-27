@@ -22,7 +22,7 @@ var impactKinds = map[graph.EdgeKind]bool{
 	graph.EdgeKindCalls: true, graph.EdgeKindReaches: true, graph.EdgeKindRefers: true,
 	graph.EdgeKindSubscribes: true, graph.EdgeKindEmits: true, graph.EdgeKindRealizes: true,
 	graph.EdgeKindTraces: true, graph.EdgeKindExercises: true, graph.EdgeKindDepends: true,
-	graph.EdgeKindAbout: true, graph.EdgeKindChecks: true, graph.EdgeKindObserves: true,
+	graph.EdgeKindAbout: true, graph.EdgeKindChecks: true, graph.EdgeKindObserves: true, graph.EdgeKindSubstitutes: true,
 }
 
 // Impact returns the salient nodes affected by changes of ids: backwards

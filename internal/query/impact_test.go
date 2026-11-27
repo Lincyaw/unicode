@@ -13,7 +13,7 @@ import (
 // spreading are the edge kinds of docs/design.md §7.4, along which a change spreads backwards.
 var spreading = []graph.EdgeKind{graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindRefers,
 	graph.EdgeKindSubscribes, graph.EdgeKindEmits, graph.EdgeKindRealizes, graph.EdgeKindTraces,
-	graph.EdgeKindExercises, graph.EdgeKindDepends, graph.EdgeKindAbout, graph.EdgeKindChecks, graph.EdgeKindObserves}
+	graph.EdgeKindExercises, graph.EdgeKindDepends, graph.EdgeKindAbout, graph.EdgeKindChecks, graph.EdgeKindObserves, graph.EdgeKindSubstitutes}
 
 //uc:checks query.impact-is-reverse-reachability
 func checkImpactIsReverseReachability(t rapid.TB, question Question) {
