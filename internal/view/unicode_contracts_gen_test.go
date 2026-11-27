@@ -3289,15 +3289,28 @@ func unicodeGeneratedCandidateWorker(t *testing.T, units []unicodeGeneratedWorke
 		}
 	case "draw":
 		complete := false
+		var drawIssue *unicodeGeneratedIssue
 		defer func() {
-			if !complete {
+			if !complete && drawIssue == nil {
 				response.Rejected = true
 			}
 		}()
 		rapid.MakeFuzz(func(rt *rapid.T) {
+			defer func() {
+				if problem := recover(); problem != nil {
+					if issue, ok := problem.(unicodeGeneratedIssue); ok {
+						drawIssue = &issue
+						return
+					}
+					panic(problem)
+				}
+			}()
 			response.Input = unicodeGeneratedFreezeInputs(spec, selected.Draw(rt, spec))
 			complete = true
 		})(t, unicodeGeneratedWorkerBits(request.Seed))
+		if drawIssue != nil {
+			panic(*drawIssue)
+		}
 	case "prepare", "execute":
 		values := unicodeGeneratedThawInputs(request.Input, selected.Types, spec)
 		response.Input = request.Input
