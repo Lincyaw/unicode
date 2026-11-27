@@ -129,6 +129,15 @@ type Generator interface {
 	Generate(plan GenPlan) Generation
 }
 
+// GenerationExtractor is the optional extraction path for repairing stale
+// generated output without changing the files on disk.
+//
+//uc:realizes lang.GenerationExtractor
+type GenerationExtractor interface {
+	Language() string
+	ExtractForGeneration(root string, srcRoots []string) (Extracted, error)
+}
+
 // Runner is the optional execution capability of a language backend.
 //
 //uc:realizes lang.Runner
