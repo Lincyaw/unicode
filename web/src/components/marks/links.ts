@@ -36,10 +36,14 @@ export function useLinks(): NodeLinks {
   return links;
 }
 
-/** What makes an element preview a node on a click and enter its page on a double click or Enter. */
+/**
+ * What makes an element preview a node on a click and enter its page on a double click or Enter. The element carries
+ * the node's identity, by which a canvas finds the selected node to bring it into view.
+ */
 export function useNodeActions(id: string) {
   const links = useLinks();
   return {
+    'data-node': id,
     'aria-pressed': links.selected === id,
     onClick: () => links.select(id),
     onDoubleClick: () => links.open(id),

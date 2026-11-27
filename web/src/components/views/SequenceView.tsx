@@ -1,4 +1,3 @@
-import type { KeyboardEvent } from 'react';
 import type { View, ViewNode } from '../../api/types';
 import { ABOUT, VIEW_NAMES } from '../../terms';
 import { ICON_SMALL, ICON_TINY } from '../../ui/hint';
@@ -8,7 +7,7 @@ import { monoWidth } from '../canvas/measure';
 import { chipWidth } from '../canvas/sizes';
 import { messageOf, relative, scopeOf } from '../marks/format';
 import { KindIcon } from '../marks/icons';
-import { useLinks } from '../marks/links';
+import { useLinks, useNodeActions } from '../marks/links';
 import { NodeRef } from '../marks/NodeButton';
 import { StatusDot } from '../marks/StatusDot';
 import { StepLabel } from './StepLabel';
@@ -134,18 +133,16 @@ function layout(tree: StepTree) {
 }
 
 function LaneHead({ lane }: { lane: Lane }) {
-  const links = useLinks();
   const { node } = lane;
   return (
-    <div
-      className={styles.laneHead} data-person={node.kind === 'actor' && node.form === 'person'} data-external={node.kind === 'actor' && node.form === 'external'}
-      aria-pressed={links.selected === node.id} role="button" tabIndex={0} onClick={() => links.select(node.id)} onDoubleClick={() => links.open(node.id)}
-      onKeyDown={(event: KeyboardEvent) => (event.key === 'Enter' ? links.open(node.id) : undefined)}
+    <button
+      type="button" className={styles.laneHead} data-person={node.kind === 'actor' && node.form === 'person'} data-external={node.kind === 'actor' && node.form === 'external'}
+      {...useNodeActions(node.id)}
     >
       {node.kind !== 'actor' && <StatusDot status={node.status} />}
       <KindIcon node={node} size={ICON_SMALL} />
       {node.title}
-    </div>
+    </button>
   );
 }
 

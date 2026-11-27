@@ -11,7 +11,8 @@ import { ViaBadge } from '../details/sections';
 import { Badge } from '../marks/Badge';
 import { relative, scopeOf, shortPath, statusOf } from '../marks/format';
 import { KindIcon } from '../marks/icons';
-import { useLinks } from '../marks/links';
+import { useLinks, useNodeActions } from '../marks/links';
+import { NodeRef } from '../marks/NodeButton';
 import { NodeChip } from '../marks/NodeChip';
 import { edgeKey } from './graphParts';
 import styles from './views.module.css';
@@ -72,6 +73,16 @@ function fileBox(file: ViewNode, input: boolean): FileBox {
     y += details.height + GAP;
   }
   return { file, rows, details, width, height: y + PADDING - GAP };
+}
+
+/** The head of a file's box, which previews the file. */
+function FileHead({ file }: { file: ViewNode }) {
+  return (
+    <button type="button" className={styles.fileHead} {...useNodeActions(file.id)}>
+      <KindIcon node={file} size={ICON_TINY} />
+      {shortPath(file.title)}
+    </button>
+  );
 }
 
 /**
@@ -152,20 +163,17 @@ export function CodeView({ view }: { view: View }) {
         return rect && (
           <Placed key={box.file.id} rect={{ ...rect, height: box.height }}>
             <div className={styles.fileBox} aria-current={isInput ? 'true' : undefined}>
-              <button type="button" className={styles.fileHead} onClick={() => links.select(box.file.id)} onDoubleClick={() => links.open(box.file.id)}>
-                <KindIcon node={box.file} size={ICON_TINY} />
-                {shortPath(box.file.title)}
-              </button>
+              <FileHead file={box.file} />
               {box.rows.map(row => {
                 const bound = bindingOf(row.node);
                 return (
                   <Placed key={row.node.id} rect={row.rect} className={styles.fileRow}>
                     <NodeChip node={row.node} label={rowLabel(row.node, row.depth)} status={statusOf(row.node)} className={styles.rowChip} />
                     {bound && (
-                      <button type="button" className={styles.binding} onClick={() => links.select(bound.id)} onDoubleClick={() => links.open(bound.id)}>
+                      <NodeRef id={bound.id} className={styles.binding}>
                         <KindIcon node={bound} size={ICON_TINY} />
                         {relative(bound.id, scopeOf(bound.id))}
-                      </button>
+                      </NodeRef>
                     )}
                   </Placed>
                 );

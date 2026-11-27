@@ -5,7 +5,7 @@ import type { Diagnostic, ViewNode } from '../../api/types';
 import { CONTROLS, SECTIONS, STATUS_NAMES } from '../../terms';
 import hintStyles from '../../ui/hint.module.css';
 import { Badge } from '../marks/Badge';
-import { useLinks } from '../marks/links';
+import { useNodeActions } from '../marks/links';
 import { StatusDot } from '../marks/StatusDot';
 import styles from './views.module.css';
 
@@ -14,12 +14,8 @@ import styles from './views.module.css';
  * its page on a double click; a step with diagnostics opens a card with them while the pointer rests on it.
  */
 export function StepLabel({ step, diagnostics, children, className }: { step: ViewNode; diagnostics: Diagnostic[]; children: ReactNode; className?: string }) {
-  const links = useLinks();
   const label = (
-    <button
-      type="button" className={clsx(styles.stepLabel, className)} aria-pressed={links.selected === step.id}
-      onClick={() => links.select(step.id)} onDoubleClick={() => links.open(step.id)}
-    >
+    <button type="button" className={clsx(styles.stepLabel, className)} {...useNodeActions(step.id)}>
       <span className={styles.stepIndex}>{step.title}</span>
       <StatusDot status={step.status} />
       {children}

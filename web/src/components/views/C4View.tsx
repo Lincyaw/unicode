@@ -7,7 +7,7 @@ import { Lines, Marker, type Line } from '../canvas/Edges';
 import { arrange, routeAll, shifted, type Link, type Rect } from '../canvas/layout';
 import { linesOf, monoWidth, textWidth } from '../canvas/measure';
 import { KindIcon } from '../marks/icons';
-import { useLinks } from '../marks/links';
+import { useLinks, useNodeActions } from '../marks/links';
 import { Above, CoverButton } from '../marks/NodeButton';
 import { StatusDot } from '../marks/StatusDot';
 import { HiddenCount, UndeclaredBadge } from './ArchitectureView';
@@ -47,6 +47,17 @@ function C4Card({ node, style }: { node: ViewNode; style?: CSSProperties }) {
       {node.summary !== '' && <span className={styles.c4Summary}>{node.summary}</span>}
       {(node.attrs.paths ?? []).map(path => <span key={path} className={styles.c4Path}>{path}</span>)}
     </div>
+  );
+}
+
+/** The head of the system's boundary, which previews the system. */
+function BoundaryHead({ boundary }: { boundary: ViewNode }) {
+  return (
+    <button type="button" className={styles.boundaryHead} {...useNodeActions(boundary.id)}>
+      <StatusDot status={boundary.status} />
+      <KindIcon node={boundary} size={ICON_SMALL} />
+      {boundary.title}
+    </button>
   );
 }
 
@@ -129,12 +140,8 @@ export function C4View({ view, toolbar }: { view: View; toolbar: ReactNode }) {
     <Canvas about={ABOUT.c4} label={VIEW_NAMES.c4} width={width} height={height} toolbar={toolbar} footer={view.hidden > 0 ? <HiddenCount hidden={view.hidden} /> : undefined}>
       {boundary && boundaryRect && (
         <Placed rect={boundaryRect}>
-          <div className={styles.boundary} aria-pressed={links.selected === boundary.id}>
-            <button type="button" className={styles.boundaryHead} onClick={() => links.select(boundary.id)} onDoubleClick={() => links.open(boundary.id)}>
-              <StatusDot status={boundary.status} />
-              <KindIcon node={boundary} size={ICON_SMALL} />
-              {boundary.title}
-            </button>
+          <div className={styles.boundary} data-selected={links.selected === boundary.id}>
+            <BoundaryHead boundary={boundary} />
           </div>
         </Placed>
       )}

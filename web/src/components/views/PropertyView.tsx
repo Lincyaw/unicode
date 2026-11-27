@@ -10,7 +10,7 @@ import { CodePanel, Section, SymbolLine } from '../details/sections';
 import { Badge } from '../marks/Badge';
 import { placeOf, relative, scopeOf, signatureTypes, statusOf } from '../marks/format';
 import { KindIcon } from '../marks/icons';
-import { useLinks } from '../marks/links';
+import { useLinks, useNodeActions } from '../marks/links';
 import { NodeRef } from '../marks/NodeButton';
 import { NodeChip } from '../marks/NodeChip';
 import { TypeRefs } from '../canvas/cards';
@@ -34,6 +34,11 @@ function AboutSignature({ op }: { op: ViewNode }) {
       {raises && <> raises <TypeRefs parts={raises} /></>}
     </span>
   );
+}
+
+/** A case's name in the case table, which previews the case. */
+function CaseButton({ item }: { item: ViewNode }) {
+  return <button type="button" className={styles.code} {...useNodeActions(item.id)}>{item.title}</button>;
 }
 
 function Adequacy({ label, value }: { label: string; value?: number }) {
@@ -63,7 +68,7 @@ function PropertyBlock({ property, view }: { property: ViewNode; view: View }) {
         <div className={styles.cardHead}>
           <StatusDot status={property.status} />
           <KindIcon node={property} size={16} />
-          <button type="button" className={styles.identity} onClick={() => links.select(property.id)} onDoubleClick={() => links.open(property.id)}>{property.id}</button>
+          <button type="button" className={styles.identity} {...useNodeActions(property.id)}>{property.id}</button>
           <span className="t-small c-muted">{property.form}</span>
         </div>
         <p className={styles.statement}>{property.summary}</p>
@@ -81,7 +86,7 @@ function PropertyBlock({ property, view }: { property: ViewNode; view: View }) {
           ? (
             <div className={styles.predicate}>
               <StatusDot status={statusOf(predicate)} />
-              <button type="button" className={styles.code} onClick={() => links.select(predicate.id)} onDoubleClick={() => links.open(predicate.id)}>{predicateLine(predicate, scope)}</button>
+              <NodeRef id={predicate.id} className={styles.code}>{predicateLine(predicate, scope)}</NodeRef>
               <span className={styles.place}><FileCode size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{placeOf(predicate.origin)}</span>
             </div>
           )
@@ -108,7 +113,7 @@ function PropertyBlock({ property, view }: { property: ViewNode; view: View }) {
               const gain = item.evidence?.coverageGain;
               return (
                 <div key={item.id} className={clsx(table.row, styles.bodyRow)} role="row" aria-selected={links.selected === item.id}>
-                  <span role="cell"><button type="button" className={styles.code} onClick={() => links.select(item.id)} onDoubleClick={() => links.open(item.id)}>{item.title}</button></span>
+                  <span role="cell"><CaseButton item={item} /></span>
                   <span role="cell"><Badge tone={item.form === 'declared' ? 'neutral' : item.attrs.reason?.[0] === 'counterexample' ? 'warning' : 'info'}>{source}</Badge></span>
                   <span role="cell" className={styles.values}>{(item.attrs.values ?? []).map(value => value.replace(/^\w+ = /, '')).join(', ')}</span>
                   <span role="cell" className={styles.outcome} data-outcome={outcome}>{outcome && <><StatusDot status={outcome === 'passed' ? 'verified' : 'contradicted'} />{OUTCOMES[outcome]}</>}</span>

@@ -1,4 +1,6 @@
+import { Fragment } from 'react';
 import { useView } from '../api/client';
+import type { View } from '../api/types';
 import { SwitchLinks } from '../components/shell/SwitchLinks';
 import { ActivityView } from '../components/views/ActivityView';
 import { ArchitectureView } from '../components/views/ArchitectureView';
@@ -13,9 +15,17 @@ import { SequenceView } from '../components/views/SequenceView';
 import { viewPath, type ViewAddress } from '../routes/address';
 import { C4_LEVELS, CLASS_LAYERS, CONTROLS } from '../terms';
 
-/** The drawing of the view the address names; the class view's layer and the C4 view's level switch in place. */
+/**
+ * The drawing of the view the address names, drawn afresh for each input, layer and level, so that it opens at its own
+ * scale; an expansion or a selection redraws it in place, keeping the reader's zoom.
+ */
 export function ViewDrawing({ address }: { address: ViewAddress }) {
   const view = useView(address);
+  return <Fragment key={[view.kind, view.input.id, view.layer, view.level].join(' ')}><Drawing view={view} address={address} /></Fragment>;
+}
+
+/** The drawing of a view; the class view's layer and the C4 view's level switch in place. */
+function Drawing({ view, address }: { view: View; address: ViewAddress }) {
   switch (view.kind) {
     case 'architecture':
       return <ArchitectureView view={view} />;

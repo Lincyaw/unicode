@@ -20,7 +20,7 @@ export function CoverButton({ id, className, children }: { id: string; className
 
 /** A reference inside a box to another node, lifted above the box's cover: it previews and enters that node. */
 export function NodeRef({ id, className, children }: { id: string; className?: string; children: ReactNode }) {
-  return <button type="button" className={clsx(styles.ref, className)} {...useNodeActions(id)}>{children}</button>;
+  return <button type="button" className={clsx(styles.ref, className)} data-ref {...useNodeActions(id)}>{children}</button>;
 }
 
 /** Lifts the controls it holds, such as a hint or a toggle, above the cover of their box. */
