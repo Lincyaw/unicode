@@ -72,7 +72,9 @@ func loadPackagesOverlay(root string, srcRoots []string, forGeneration bool, ext
 	}
 	// Extraction needs no version control stamps; making them fails in a
 	// checkout whose git status cannot be read.
-	cfg := &packages.Config{Mode: loadMode, Dir: abs, Tests: true, BuildFlags: []string{"-buildvcs=false"}}
+	cfg := &packages.Config{
+		Mode: loadMode, Dir: abs, Tests: true, BuildFlags: []string{"-buildvcs=false"}, ParseFile: parseFile,
+	}
 	if forGeneration {
 		cfg.BuildFlags = append(cfg.BuildFlags, "-mod=readonly")
 		cfg.Overlay, err = generatedTestOverlay(abs, srcRoots)
@@ -181,6 +183,13 @@ func ordinarySourceRoot(root, relative string) bool {
 		}
 	}
 	return true
+}
+
+// parseFile parses a file with its comments, which hold the bindings, and
+// without the deprecated object resolution: names are resolved by go/types,
+// and the normal form of a body (normalForm) never meets an ast.Object.
+func parseFile(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
+	return parser.ParseFile(fset, filename, src, parser.AllErrors|parser.ParseComments|parser.SkipObjectResolution)
 }
 
 // moreFiles tells whether p is the better variant of the package than other:

@@ -1,6 +1,7 @@
 package view
 
 import (
+	"cmp"
 	"maps"
 	"slices"
 	"strings"
@@ -19,6 +20,11 @@ type folding struct {
 	drawn   map[string]bool
 	folded  map[string]bool
 	hidden  map[string]bool
+	// into maps a node placed into a folded container to that container,
+	// and a node that a utility container keeps out of the view to "".
+	into map[string]string
+	// home is the selection's home (see selection).
+	home string
 }
 
 type edgeKey struct {
@@ -34,10 +40,12 @@ var focusFolding = []ViewKind{ViewKindArchitecture, ViewKindClass, ViewKindCalls
 // fold draws the salient nodes of a selection, folding support containers
 // and leaving out utility ones when the view is one of focusFolding; then it
 // draws what the expanded salient functions and reaches edges reveal; then
-// every edge between drawn nodes that the selection or an expansion picks.
-func (ix index) fold(kind ViewKind, input string, sel selection, expand []string) View {
+// the edges that the selection or an expansion picks, between the nodes
+// that stand for their ends.
+func (ix index) fold(r request, sel selection, expand []string) View {
+	kind, input := r.kind, r.input
 	f := folding{ix: ix, byFocus: slices.Contains(focusFolding, kind), exempt: map[string]bool{input: true},
-		drawn: map[string]bool{}, folded: map[string]bool{}, hidden: map[string]bool{}}
+		drawn: map[string]bool{}, folded: map[string]bool{}, hidden: map[string]bool{}, into: map[string]string{}, home: sel.home}
 	for _, id := range append(ix.enclosing(input), expand...) {
 		f.exempt[id] = true
 	}
@@ -56,18 +64,14 @@ func (ix index) fold(kind ViewKind, input string, sel selection, expand []string
 			revealed[e] = true
 		}
 	}
-	v := View{Kind: kind, Nodes: []graph.Node{}, Edges: []graph.Edge{}, Folded: append([]string{}, slices.Sorted(maps.Keys(f.folded))...), Hidden: len(f.hidden)}
+	v := View{Kind: kind, Nodes: []ViewNode{}, Edges: []ViewEdge{}, Folded: append([]string{}, slices.Sorted(maps.Keys(f.folded))...), Hidden: len(f.hidden)}
 	if kind != ViewKindSequence && kind != ViewKindActivity {
 		slices.Sort(f.order)
 	}
 	for _, id := range f.order {
-		v.Nodes = append(v.Nodes, ix.nodes[id])
+		v.Nodes = append(v.Nodes, ViewNode{Node: ix.nodes[id]})
 	}
-	for _, e := range ix.edges {
-		if f.drawn[e.From] && f.drawn[e.To] && (slices.Contains(sel.kinds, e.Kind) || revealed[edgeKey{e.Kind, e.From, e.To}]) {
-			v.Edges = append(v.Edges, e)
-		}
-	}
+	v.Edges = f.edges(sel, revealed)
 	return v
 }
 
@@ -78,11 +82,89 @@ func (f *folding) place(id string) {
 	case "support":
 		f.draw(c)
 		f.folded[c] = true
+		if c != id {
+			f.into[id] = c
+		}
 	case "utility":
 		f.hidden[c] = true
+		f.into[id] = ""
 	default:
 		f.draw(id)
 	}
+}
+
+// stand returns the drawn node that stands for id: id itself, the folded
+// container it was placed into, or what stands for the node the selection
+// maps it to; "" when the view draws none of them.
+func (f *folding) stand(id string, sel selection) string {
+	if f.drawn[id] {
+		return id
+	}
+	if c, placed := f.into[id]; placed {
+		return c
+	}
+	if sel.boxOf != nil {
+		if b := sel.boxOf(id); b != "" && b != id {
+			return f.stand(b, sel)
+		}
+	}
+	return ""
+}
+
+// edges draws each edge of the kinds the selection picks, and each edge an
+// expansion reveals, between the nodes that stand for its ends. The edges
+// that come to join the same two nodes because an end was folded merge
+// into one edge, which counts them; an edge folded into a single node is
+// not drawn.
+func (f *folding) edges(sel selection, revealed map[edgeKey]bool) []ViewEdge {
+	groups := map[edgeKey][]graph.Edge{}
+	moved := map[edgeKey]bool{}
+	for _, e := range f.ix.edges {
+		if !slices.Contains(sel.kinds, e.Kind) && !revealed[edgeKey{e.Kind, e.From, e.To}] {
+			continue
+		}
+		from, to := f.stand(e.From, sel), f.stand(e.To, sel)
+		shifted := from != e.From || to != e.To
+		if from == "" || to == "" || shifted && from == to {
+			continue
+		}
+		k := edgeKey{e.Kind, from, to}
+		groups[k] = append(groups[k], e)
+		moved[k] = moved[k] || shifted
+	}
+	drawn := []ViewEdge{}
+	for _, k := range slices.SortedFunc(maps.Keys(groups), edgeKey.compare) {
+		e := ViewEdge{Edge: groups[k][0], Labels: f.ix.labels(k.from, groups[k])}
+		if moved[k] {
+			e.Edge, e.Count = merged(k, groups[k]), len(groups[k])
+		}
+		drawn = append(drawn, e)
+	}
+	return drawn
+}
+
+func (k edgeKey) compare(o edgeKey) int {
+	return cmp.Or(cmp.Compare(k.kind, o.kind), cmp.Compare(k.from, o.from), cmp.Compare(k.to, o.to))
+}
+
+// merged is the edge k that stands for the edges of the graph es: derived
+// from them, at the origin of the first, with the values of their
+// attributes in the order they first appear.
+func merged(k edgeKey, es []graph.Edge) graph.Edge {
+	e := graph.Edge{Kind: k.kind, From: k.from, To: k.to, Source: graph.SourceDerived, Origin: es[0].Origin}
+	for _, x := range es {
+		for _, key := range slices.Sorted(maps.Keys(x.Attrs)) {
+			if e.Attrs == nil {
+				e.Attrs = map[string][]string{}
+			}
+			for _, v := range x.Attrs[key] {
+				if !slices.Contains(e.Attrs[key], v) {
+					e.Attrs[key] = append(e.Attrs[key], v)
+				}
+			}
+		}
+	}
+	return e
 }
 
 func (f *folding) draw(id string) {
@@ -102,11 +184,22 @@ func (f *folding) cover(id string) (string, string) {
 	chain := f.ix.enclosing(id)
 	slices.Reverse(chain)
 	for _, c := range append(chain, id) {
-		if focus := f.ix.focus(c); !f.exempt[c] && (focus == "support" || focus == "utility") {
+		if focus := f.focus(c); !f.exempt[c] && (focus == "support" || focus == "utility") {
 			return c, focus
 		}
 	}
 	return "", ""
+}
+
+// focus is the focus by which a container folds: its own, except that a
+// design container outside the selection's home folds as support unless it
+// is a utility.
+func (f *folding) focus(c string) string {
+	focus := f.ix.focus(c)
+	if f.home != "" && focus != "utility" && isDesignContainer(f.ix.nodes[c]) && c != f.home && !slices.Contains(f.ix.containers(c), f.home) {
+		return "support"
+	}
+	return focus
 }
 
 // reveal returns the detail functions, and the calls edges to them, that

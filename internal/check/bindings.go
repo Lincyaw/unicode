@@ -254,40 +254,25 @@ func (c *checker) matches(id, r string) {
 		}
 		return
 	}
-	code := map[string]string{}
-	for _, f := range c.byID[r].Attrs["fields"] {
-		n, typ, _ := strings.Cut(f, ": ")
-		code[n] = typ
-	}
-	for _, f := range c.byID[id].Attrs["fields"] {
-		n, typ, _ := strings.Cut(f, ": ")
-		switch got, ok := code[n]; {
-		case !ok:
+	for _, m := range compare(func(x string) (graph.Node, bool) { n, ok := c.byID[x]; return n, ok }, id, r) {
+		f := m.Name + ": " + m.Type
+		switch {
+		case m.Kind == MemberKindField && *m.Status == graph.StatusMissing:
 			c.fail("check.missing-field", id, graph.StatusContradicted, at,
-				fmt.Sprintf("the design gives %s the field %s, but %s, which realizes it, has no field %s", id, f, r, n),
+				fmt.Sprintf("the design gives %s the field %s, but %s, which realizes it, has no field %s", id, f, r, m.Name),
 				fmt.Sprintf("add the field %s to %s", f, r))
-		case !c.sameType(typ, got):
+		case m.Kind == MemberKindField && *m.Status == graph.StatusContradicted:
 			c.fail("check.field-type-mismatch", id, graph.StatusContradicted, at,
-				fmt.Sprintf("the field %s of %s has the type %s, but in %s, which realizes it, the type %s", n, id, typ, r, got),
-				fmt.Sprintf("give the field %s of %s the type %s, or change the design", n, r, typ))
-		}
-	}
-	if c.byID[id].Form != "enum" {
-		return
-	}
-	values, constants := c.byID[id].Attrs["values"], c.byID[r].Attrs["values"]
-	for _, v := range values {
-		if !slices.Contains(constants, v) {
+				fmt.Sprintf("the field %s of %s has the type %s, but in %s, which realizes it, the type %s", m.Name, id, m.Type, r, m.CodeType),
+				fmt.Sprintf("give the field %s of %s the type %s, or change the design", m.Name, r, m.Type))
+		case m.Kind == MemberKindValue && *m.Status == graph.StatusMissing:
 			c.fail("check.missing-value", id, graph.StatusContradicted, at,
-				fmt.Sprintf("the design gives the enum %s the value %s, but %s, which realizes it, has no constant for it", id, v, r),
-				fmt.Sprintf("declare the constant of the value %s for %s", v, r))
-		}
-	}
-	for _, v := range constants {
-		if !slices.Contains(values, v) {
+				fmt.Sprintf("the design gives the enum %s the value %s, but %s, which realizes it, has no constant for it", id, m.Name, r),
+				fmt.Sprintf("declare the constant of the value %s for %s", m.Name, r))
+		case m.Kind == MemberKindValue && *m.Status == graph.StatusContradicted:
 			c.fail("check.extra-value", id, graph.StatusContradicted, at,
-				fmt.Sprintf("%s, which realizes the enum %s, has a constant for the value %s, which the design does not give the enum", r, id, v),
-				fmt.Sprintf("remove the constant of the value %s from %s, or add the value %s to %s in the design", v, r, v, id))
+				fmt.Sprintf("%s, which realizes the enum %s, has a constant for the value %s, which the design does not give the enum", r, id, m.Name),
+				fmt.Sprintf("remove the constant of the value %s from %s, or add the value %s to %s in the design", m.Name, r, m.Name, id))
 		}
 	}
 }

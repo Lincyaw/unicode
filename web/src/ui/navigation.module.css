@@ -1,0 +1,19 @@
+.crumbs { display: flex; flex-wrap: wrap; color: var(--text-muted); }
+.pager { display: flex; justify-content: center; align-items: center; gap: var(--space-4); }
+.crumbs a:hover { color: var(--text-main); }
+.slash { margin: 0 var(--space-2); color: var(--text-faint); }
+
+/* A tab row's user may set --tab-gap and --tab-padding to fit the space it sits in. */
+.tabs { position: relative; display: flex; gap: var(--tab-gap, var(--space-8)); overflow-x: auto; scrollbar-width: none; }
+.tab { flex: none; padding: var(--tab-padding, var(--space-2) 0); color: var(--text-muted); white-space: nowrap; transition: color var(--duration-base); }
+.tab:hover, .tab:is([aria-current="true"], [aria-selected="true"]) { color: var(--text-main); }
+.indicator {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: var(--size-border-thick);
+  border-radius: var(--size-hairline);
+  background: var(--loop-gradient);
+  pointer-events: none;
+  transition: transform var(--duration-slow) var(--ease-out), width var(--duration-slow) var(--ease-out), opacity var(--duration-base);
+}

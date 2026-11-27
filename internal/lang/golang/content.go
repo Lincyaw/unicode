@@ -1,65 +1,89 @@
 package golang
 
 import (
-	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"go/ast"
-	"go/format"
-	"go/parser"
 	"go/token"
+	"reflect"
+	"strings"
 )
 
-// addContent records implementation syntax without retaining source layout or
-// comments. Abstract operations have no body; a type's methods are separate ops.
+// The content that a code node adds to its content hash (docs/model.md §6,
+// docs/design.md §5.2): a function's body, and a type's declaration without
+// its name, plus a concrete operation's native header. Each is the SHA-256
+// of a normal form that formatting and comments do not change.
+
+var (
+	posType      = reflect.TypeFor[token.Pos]()
+	commentsType = reflect.TypeFor[*ast.CommentGroup]()
+)
+
+// addContent retains the native declaration of a concrete operation, including
+// its receiver and type parameters. The loaded syntax remains unchanged; the
+// body and type declaration digests are already recorded when nodes are added.
 func (x *extraction) addContent(d declared) {
-	attrs := x.nodes[d.id].Attrs
-	if d.decl != nil {
-		header := *d.decl
-		header.Body = nil
-		attrs["declaration"] = []string{normalizedContent(d.pkg.Fset, &header)}
-		if d.decl.Body != nil {
-			attrs["body"] = []string{normalizedContent(d.pkg.Fset, d.decl.Body)}
-		}
+	if d.decl == nil {
+		return
 	}
-	if d.spec != nil {
-		attrs["declaration"] = []string{normalizedContent(d.pkg.Fset, d.spec)}
-	}
+	header := *d.decl
+	header.Body = nil
+	x.nodes[d.id].Attrs["declaration"] = []string{digest(&header)}
 }
 
-// normalizedContent reparses a standalone declaration without comments so the
-// loaded AST and its binding metadata remain intact. Printing the clean node
-// with an empty file set removes positions, including line directives.
-func normalizedContent(positions *token.FileSet, node ast.Node) string {
-	var source bytes.Buffer
-	if err := format.Node(&source, positions, node); err != nil {
-		panic(fmt.Sprintf("golang: cannot print a loaded declaration: %v", err))
+// bodyDigest is the digest of a function's body.
+func bodyDigest(body *ast.BlockStmt) string { return digest(body) }
+
+// declarationDigest is the digest of what a type declares: its type
+// parameters and its definition.
+func declarationDigest(spec *ast.TypeSpec) string { return digest(spec.TypeParams, spec.Type) }
+
+func digest(nodes ...any) string {
+	var b strings.Builder
+	for _, n := range nodes {
+		normalForm(&b, reflect.ValueOf(n))
 	}
-	prefix := "package content\n"
-	switch node.(type) {
-	case *ast.BlockStmt:
-		prefix += "func content() "
-	case *ast.TypeSpec:
-		prefix += "type "
-	case *ast.FuncDecl:
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])
+}
+
+// normalForm writes a syntax tree, parsed without object resolution
+// (parseFile), as only its structure decides: every node's type and fields
+// in order, of a position only whether it is present, and no comments.
+// Neither printer of the standard library does this: go/printer prints the
+// comments attached to nodes, and ast.Fprint cannot keep a position's
+// presence, which tells f(xs...) from f(xs).
+func normalForm(b *strings.Builder, v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if v.IsNil() {
+			b.WriteString("nil;")
+			return
+		}
+		normalForm(b, v.Elem())
+	case reflect.Slice:
+		fmt.Fprintf(b, "[%d;", v.Len())
+		for i := range v.Len() {
+			normalForm(b, v.Index(i))
+		}
+	case reflect.Struct:
+		b.WriteString(v.Type().Name() + "{")
+		for i := range v.NumField() {
+			switch field := v.Field(i); field.Type() {
+			case posType:
+				fmt.Fprintf(b, "%t;", token.Pos(field.Int()).IsValid())
+			case commentsType:
+			default:
+				normalForm(b, field)
+			}
+		}
+		b.WriteString("}")
+	case reflect.String:
+		fmt.Fprintf(b, "%q;", v.String())
+	case reflect.Bool:
+		fmt.Fprintf(b, "%t;", v.Bool())
 	default:
-		panic(fmt.Sprintf("golang: unsupported implementation node %T", node))
+		fmt.Fprintf(b, "%d;", v.Int())
 	}
-	file, err := parser.ParseFile(token.NewFileSet(), "", prefix+source.String(), parser.SkipObjectResolution)
-	if err != nil {
-		panic(fmt.Sprintf("golang: cannot reparse a loaded declaration: %v", err))
-	}
-	var clean ast.Node
-	switch node.(type) {
-	case *ast.BlockStmt:
-		clean = file.Decls[0].(*ast.FuncDecl).Body
-	case *ast.TypeSpec:
-		clean = file.Decls[0].(*ast.GenDecl).Specs[0].(*ast.TypeSpec)
-	case *ast.FuncDecl:
-		clean = file.Decls[0].(*ast.FuncDecl)
-	}
-	var canonical bytes.Buffer
-	if err := format.Node(&canonical, token.NewFileSet(), clean); err != nil {
-		panic(fmt.Sprintf("golang: cannot normalize a loaded declaration: %v", err))
-	}
-	return canonical.String()
 }

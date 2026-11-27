@@ -1,0 +1,40 @@
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: var(--space-6);
+  padding: 0 var(--space-2);
+  border: var(--rule-emphasis);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.dashed { border-style: dashed; }
+
+.sectionHeading { margin-bottom: var(--space-10); }
+
+/* A heading and its ⓘ share a line; a heading that wraps keeps the mark beside its middle. */
+.hinted { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+
+/* A raised surface for quoted text, code and conclusions inside a page. */
+.panel { display: grid; gap: var(--space-3); padding: var(--space-4); border: var(--rule-hairline); border-radius: var(--radius-md); background: var(--bg-panel); }
+
+.stacked { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-10); }
+.stacked > div { display: grid; gap: var(--space-px); }
+
+.rows { border-top: var(--rule-hairline); }
+.rows > div { display: grid; grid-template-columns: 12.5rem 1fr; gap: var(--space-4); padding: var(--space-3) 0; border-bottom: var(--rule-hairline); }
+
+.inline { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-6); }
+.inline > div { display: flex; align-items: baseline; gap: var(--space-2); }
+
+.loading { padding: var(--space-10) 0; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--space-4); }
+.stat { display: grid; align-content: start; gap: var(--space-1); padding: var(--space-4) var(--space-5); border: var(--rule-hairline); border-radius: var(--radius-lg); background: var(--bg-panel); }
+/* Every tile's name takes the ⓘ's height, so the figures of a row line up whether or not their names carry one. */
+.statLabel { display: flex; align-items: center; gap: var(--space-1); min-height: var(--space-5); }
+.statValue { font: var(--type-title); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 760px) {
+  .rows > div { grid-template-columns: 6rem 1fr; }
+}

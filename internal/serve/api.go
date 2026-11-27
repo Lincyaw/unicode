@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/lincyaw/unicode/internal/check"
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/query"
 	"github.com/lincyaw/unicode/internal/view"
@@ -42,7 +43,14 @@ func (answers) GetView(ctx context.Context, request GetViewRequestObject) (GetVi
 		return nil, refuse(http.StatusBadRequest, "serve.bad-parameter", "give one of the view kinds of api/openapi.yaml, such as architecture",
 			"there is no view kind %q", request.Kind)
 	}
-	v, err := stateOf(ctx).view(view.ViewKind(request.Kind), value(request.Params.Input), value(request.Params.Expand))
+	layer, level := view.ClassLayerDesign, view.C4LevelContainer
+	if l := request.Params.Layer; l != nil {
+		layer = view.ClassLayer(*l)
+	}
+	if l := request.Params.Level; l != nil {
+		level = view.C4Level(*l)
+	}
+	v, err := stateOf(ctx).view(view.ViewKind(request.Kind), value(request.Params.Input), value(request.Params.Expand), layer, level)
 	if err != nil {
 		return nil, err
 	}
@@ -223,15 +231,16 @@ func (st *state) queryNodes(nodes []graph.Node) []Node {
 	return out
 }
 
-// view is the data of a view: view.Select's nodes and edges, with the input,
-// its ancestors and the diagnostics of what it draws.
-func (st *state) view(kind view.ViewKind, input string, expand []string) (View, error) {
+// view is the data of a view: view.Select's input, ancestors, nodes with
+// their cards and edges with their counts and labels, each node written as
+// the interface writes it, with the diagnostics of what it draws.
+func (st *state) view(kind view.ViewKind, input string, expand []string, layer view.ClassLayer, level view.C4Level) (View, error) {
 	for _, id := range viewIdentities(input, expand) {
 		if _, ok := st.nodes[id]; !ok {
 			return View{}, st.unknown(id)
 		}
 	}
-	v, err := view.Select(&st.g, kind, input, expand)
+	v, err := view.Select(&st.g, kind, input, expand, layer, level)
 	var na view.NotApplicable
 	switch {
 	case errors.As(err, &na):
@@ -239,28 +248,82 @@ func (st *state) view(kind view.ViewKind, input string, expand []string) (View, 
 	case err != nil:
 		return View{}, err
 	}
-	if input == "" {
-		input = st.system
+	var ancestors []string
+	for _, a := range v.Ancestors {
+		ancestors = append(ancestors, a.Id)
 	}
-	out := View{Kind: ViewKind(kind), Input: st.node(input), Ancestors: st.nodeList(st.ancestors(input)), Expand: append([]string{}, expand...),
+	out := View{Kind: ViewKind(kind), Input: st.node(v.Input.Id), Ancestors: st.nodeList(ancestors), Expand: append([]string{}, v.Expand...),
 		Nodes: []ViewNode{}, Edges: []ViewEdge{}, Folded: append([]string{}, v.Folded...), Hidden: int32(v.Hidden)}
+	if v.Layer != nil {
+		l := ClassLayer(*v.Layer)
+		out.Layer = &l
+	}
+	if v.Level != nil {
+		l := C4Level(*v.Level)
+		out.Level = &l
+	}
 	drawn := map[string]bool{}
 	for _, n := range v.Nodes {
-		drawn[n.Id] = true
-		out.Nodes = append(out.Nodes, viewNode(st.node(n.Id)))
+		out.Nodes = append(out.Nodes, st.viewNode(n, drawn))
 	}
 	for _, e := range v.Edges {
 		drawn[edgeID(e.Kind, e.From, e.To)] = true
-		ed := st.edge(e)
-		out.Edges = append(out.Edges, ViewEdge{Kind: ed.Kind, From: ed.From, To: ed.To, Source: ed.Source, Origin: ed.Origin, Attrs: ed.Attrs, Status: ed.Status})
+		ed := st.edge(e.Edge)
+		out.Edges = append(out.Edges, ViewEdge{Kind: ed.Kind, From: ed.From, To: ed.To, Source: ed.Source, Origin: ed.Origin, Attrs: ed.Attrs, Status: ed.Status,
+			Count: optional(int32(e.Count))})
+		if len(e.Labels) > 0 {
+			labels := append([]string{}, e.Labels...)
+			out.Edges[len(out.Edges)-1].Labels = &labels
+		}
 	}
 	out.Diagnostics = st.diagnostics(func(subject string) bool { return drawn[subject] })
 	return out, nil
 }
 
-func viewNode(n Node) ViewNode {
-	return ViewNode{Id: n.Id, Kind: n.Kind, Form: n.Form, Layer: n.Layer, Source: n.Source, Origin: n.Origin, Summary: n.Summary,
-		Salient: n.Salient, Digest: n.Digest, Attrs: n.Attrs, Title: n.Title, Status: n.Status, Bindings: n.Bindings, Step: n.Step}
+// viewNode writes a node of a view with its card, and records it and the
+// nodes of its contents as drawn.
+func (st *state) viewNode(n view.ViewNode, drawn map[string]bool) ViewNode {
+	drawn[n.Id] = true
+	d := st.node(n.Id)
+	out := ViewNode{Id: d.Id, Kind: d.Kind, Form: d.Form, Layer: d.Layer, Source: d.Source, Origin: d.Origin, Summary: d.Summary,
+		Salient: d.Salient, Digest: d.Digest, Attrs: d.Attrs, Title: d.Title, Status: d.Status, Bindings: d.Bindings, Step: d.Step,
+		Details: optional(int32(n.Details))}
+	if len(n.Members) > 0 {
+		members := make([]Member, 0, len(n.Members))
+		for _, m := range n.Members {
+			members = append(members, member(m))
+		}
+		out.Members = &members
+	}
+	if len(n.Contents) > 0 {
+		contents := make([]ViewNode, 0, len(n.Contents))
+		for _, c := range n.Contents {
+			contents = append(contents, st.viewNode(c, drawn))
+		}
+		out.Contents = &contents
+	}
+	return out
+}
+
+// member writes a member of a type card, check's comparison of a field or
+// an enum value with the code.
+func member(m check.Member) Member {
+	out := Member{Kind: MemberKind(m.Kind), Name: m.Name, Type: optional(m.Type), CodeType: optional(m.CodeType),
+		InDesign: m.InDesign, InCode: m.InCode, Refers: append([]string{}, m.Refers...)}
+	if m.Status != nil {
+		s := Status(*m.Status)
+		out.Status = &s
+	}
+	return out
+}
+
+// optional is a pointer to v, or nil when v is its type's zero value.
+func optional[T comparable](v T) *T {
+	var zero T
+	if v == zero {
+		return nil
+	}
+	return &v
 }
 
 // viewIdentities are the node identities a view request names: its input,

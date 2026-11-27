@@ -40,6 +40,15 @@ func (ix index) targets(id string, kind graph.EdgeKind) []string {
 	return ids
 }
 
+// targetsOf returns the ends of the edges of the kinds that start at id.
+func (ix index) targetsOf(id string, kinds ...graph.EdgeKind) []string {
+	var ids []string
+	for _, k := range kinds {
+		ids = append(ids, ix.targets(id, k)...)
+	}
+	return ids
+}
+
 // sources returns the starts of the edges of the kind that end at id.
 func (ix index) sources(id string, kind graph.EdgeKind) []string {
 	var ids []string
@@ -85,6 +94,17 @@ func (ix index) parent(id string) string {
 		return p[0]
 	}
 	return ""
+}
+
+// containers returns the nodes that contain id along contains, innermost first.
+func (ix index) containers(id string) []string {
+	seen := map[string]bool{id: true}
+	var chain []string
+	for p := ix.parent(id); p != "" && !seen[p]; p = ix.parent(p) {
+		seen[p] = true
+		chain = append(chain, p)
+	}
+	return chain
 }
 
 // enclosing returns what encloses id, innermost first: a code file's owner

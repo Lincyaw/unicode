@@ -1,0 +1,66 @@
+/* A type card (the prototype's type card): a head with status, kind and name, then one row per field, value and operation. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-3);
+  overflow: hidden;
+  border: var(--rule-emphasis);
+  border-radius: var(--radius-md);
+  background: var(--bg-page);
+  color: var(--text-main);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast), background-color var(--duration-fast);
+}
+.card:hover { border-color: var(--text-faint); }
+.card[data-status="contradicted"] { border-color: var(--accent-warning); }
+.card[aria-pressed="true"] { border-color: var(--accent-brand); background: var(--bg-brand-soft); box-shadow: 0 0 0 calc(var(--size-stroke) - var(--size-hairline)) var(--accent-brand); }
+
+.head { display: flex; flex: none; align-items: center; gap: var(--space-2); height: calc(var(--space-4) + var(--space-px)); min-width: 0; }
+.title { flex: 1; min-width: 0; overflow: hidden; font: var(--type-mono-strong); text-overflow: ellipsis; white-space: nowrap; }
+.mutedTitle { flex: none; color: var(--text-muted); }
+.hint { display: flex; }
+
+.field { display: flex; flex: none; align-items: center; gap: var(--space-2); height: calc(var(--space-4) + var(--space-px)); font: var(--type-mono); white-space: nowrap; }
+.field[data-warn="true"] { color: var(--accent-warning); }
+.fieldType { flex: 1; min-width: 0; overflow: hidden; color: var(--text-faint); text-align: right; text-overflow: ellipsis; }
+.field[data-warn="true"] .fieldType { color: var(--accent-warning); }
+.more { color: var(--text-faint); }
+.op { display: block; flex: none; height: calc(var(--space-4) + var(--space-px)); overflow: hidden; color: var(--accent-info); font: var(--type-mono); line-height: calc(var(--space-4) + var(--space-px)); text-overflow: ellipsis; white-space: nowrap; }
+
+/* A folded container: muted, with the names of what it holds. */
+.folded { border-color: var(--border-hairline); border-radius: var(--radius-lg); background: var(--bg-muted); }
+.toggle { display: grid; place-items: center; color: var(--text-muted); }
+.toggle:hover { color: var(--text-main); }
+.names { display: flex; flex-wrap: wrap; gap: var(--space-2) calc(var(--space-2) + var(--space-px)); color: var(--text-muted); }
+.name { display: inline-flex; align-items: center; gap: var(--space-1); height: calc(var(--space-4) + var(--space-px)); font: var(--type-mono); }
+
+/* An external system: dashed, outside the system's own components. */
+.external { border-style: dashed; border-color: var(--border-emphasis); background: none; }
+.external[aria-pressed="true"] { border-style: dashed; }
+
+/* An expanded container: a box around what it holds. */
+.container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border: var(--rule-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--bg-muted);
+}
+.container[aria-pressed="true"] { border: var(--size-stroke) solid var(--accent-brand); background: var(--bg-brand-soft); }
+.container[aria-pressed="true"] > .containerHead .title { color: var(--accent-brand); }
+.containerHead {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: calc(var(--space-4) + var(--space-px));
+  cursor: pointer;
+}
+.containerHead .title { flex: none; }

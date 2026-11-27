@@ -27,5 +27,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: api/pnpm-lock.yaml
+          cache-dependency-path: |
+            api/pnpm-lock.yaml
+            web/pnpm-lock.yaml
       - run: make api-check
+      - run: make web-check

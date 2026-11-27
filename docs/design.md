@@ -39,7 +39,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | `internal/lang/python` | Python 后端，嵌入抽取脚本 | lang、graph、diag |
 | `internal/check` | 归属、依赖、绑定、可执行、生成与录制这几组约束 | graph、diag |
 | `internal/query` | 节点、引用、搜索、切片和影响 | graph |
-| `internal/view` | 视图的选取与折叠 | graph |
+| `internal/view` | 视图的选取与折叠；类型卡片的成员沿用 `check` 对字段和枚举值的逐项比较 | graph、check |
 | `internal/serve` | 查看器的后端：读取快照，载入时按 `check` 的约束检查，回答 §7.5.1 的接口 | graph、diag、check、query、view、lang.golang |
 | `internal/gen` | 生成计划：缺少的骨架，以及应有的生成文件 | graph、lang、diag |
 | `internal/run` | 回放与探索：经后端运行驱动，按覆盖挑选输入，缩减并写出录制文件 | graph、lang、syntax、diag |
@@ -95,7 +95,7 @@ type Runner interface {
 ```
 
 - **抽取**：后端读出 `container`、`type`、`op` 节点，以及 `contains`、`imports`、`calls`、`refers`、`extends`、`implements` 边。它同时读出代码中的绑定，写成 `realizes`、`checks`、`generates` 和 `observes` 边；绑定的写法不合格式时，给出诊断。带 `realizes` 绑定的类型，它的每个方法按反向的名称映射（例如 Go 的 `Submit` 对应 `submit`）得到一条到 `<类型的标识>.<操作名>` 的 `realizes` 边，来源为推导；推导时，终点不存在的这类边被丢掉，那些方法是细节。代码层 `op` 的 `signature` 属性按下面的类型映射归一化成设计的写法，引用写成从根起的标识，与设计层的签名直接按字符串比较。后端产出的是代码层的图片段，格式与快照相同。
-- **Go 后端**：在进程内用 `golang.org/x/tools/go/packages` 和 `go/types` 解析源码和类型。调用按静态类型解析，接口方法的调用解析到接口的方法。`implements` 按 Go 方法集的类型身份判断，参数名和返回值名不参与比较；包的测试变体仍按同一包路径识别类型，有符号性、整数宽度与可变参数等真实类型差异保留。抽取包括 `_test.go` 文件：谓词、生成器和只供它们使用的类型都在其中，它们的绑定照常读取。
+- **Go 后端**：在进程内用 `golang.org/x/tools/go/packages` 和 `go/types` 解析源码和类型。调用按静态类型解析，接口方法的调用解析到接口的方法。函数字面量中的调用属于能运行它的函数：写在函数体中的，属于这个函数；写在包级变量的初始值中的，属于引用了这个变量的每个函数，并经由初始值中引用的其他包级变量传递，调用位置仍是它在初始值中的位置。初始化时就执行的调用（不在函数字面量中）不属于任何函数；对函数的引用不是调用。`implements` 按 Go 方法集的类型身份判断，参数名和返回值名不参与比较；包的测试变体仍按同一包路径识别类型，有符号性、整数宽度与可变参数等真实类型差异保留。抽取包括 `_test.go` 文件：谓词、生成器和只供它们使用的类型都在其中，它们的绑定照常读取。
 - **Python 后端**：工具链内嵌一个只用标准库的抽取脚本，以 `python3 -I` 运行。脚本用 `ast` 解析源码，把图片段以 JSON 写到标准输出。调用按名称和导入关系解析，解析不到的调用不成边，只计数。生成在 Go 中按模板完成。
 - **运行**：后端用该语言的测试工具运行驱动，在进程内逐个输入记录覆盖：Go 用 `-cover` 构建，并用 `runtime/coverage` 在每个输入前后清零和读出计数；Python 用标准库的 `sys.monitoring`。覆盖只统计谓词沿 `exercises` 可达的函数，不含生成文件和谓词本身。
 - **测试类别**：Go 中，`func FuzzX(f *testing.F)` 为 `fuzz`，调用了 `rapid.Check` 的 `TestX` 为 `property`，其余 `TestX` 为 `example`。Python 中，带 `hypothesis.given` 的测试为 `property`，用 `atheris` 的为 `fuzz`。后端据此找出生成文件之外的测试函数（[model.md](model.md) §10 第 21 条）。
@@ -174,8 +174,11 @@ type Runner interface {
 | 种类 | 属性的键 |
 | --- | --- |
 | container（`package`、`file`） | `language`、`path`（文件的路径，或包的导入路径）；工具生成的文件另带 `generated: true` |
-| type | `name`、`fields`（每项 `名称: 类型`；未导出的字段是细节，不列出）、`declaration`（规范类型声明）、`values`（以字符串为底层类型、带常量的类型，每项是常量名按反向映射得到的枚举值，例如 `OrderStatusDraft` 写作 `draft`） |
-| op（`func`、`method`、`abstract`） | `name`（带 `checks` 绑定的谓词，写作性质或流程的名称）、`signature`、`testKind`（`none`、`example`、`property` 或 `fuzz`）、`stub`（`true` 或 `false`）、`body`（规范函数体）、`declaration`（具体操作的原生声明头） |
+| type | `name`、`fields`（每项 `名称: 类型`；未导出的字段是细节，不列出）、`values`、`declaration`（类型参数和定义的规范形式 SHA-256，不含类型名或方法体） |
+| op（`func`、`method`、`abstract`） | `name`（带 `checks` 绑定的谓词写作检查名称）、`signature`、`testKind`、`stub`、`body`（函数体规范形式的 SHA-256，无函数体时省略）、`declaration`（具体操作的原生声明头的 SHA-256，包含接收者、原生签名及泛型约束） |
+
+`body` 和 `declaration` 让内容哈希含有实际实现。Go 按语法树编码，依次记录节点类型与字段，位置只记有无，忽略注释；摘要写成小写十六进制。声明头不含函数体，接口抽象操作没有原生声明头。
+
 
 `calls` 边的属性 `sites` 列出每个调用位置，写作 `路径:行:列`；`generates` 边的属性 `symbols` 列出符号的名称。Go 签名的写法：指针 `*T` 写作 `optional<T>`，`check` 比较时把设计中 `object` 类型的 `optional<X>` 与 `X` 视为相同；末尾的 `error` 写作 ` raises error`，与设计中非空的 `raises` 相符；谓词的第一个参数（`rapid.TB`）保留在签名中，比较符号时跳过。绑定边的终点是设计层的标识。`Graph.AddFragment` 先暂存终点不在图中的绑定边和方法的候选边；推导时加入能解析的，绑定边中终点仍不存在的报为 `graph.unresolved-binding`，即 [model.md](model.md) §10 第 15 条中"目标存在"的一半；其余端点缺失的边仍是 `DanglingEdge`。
 
@@ -191,7 +194,7 @@ type Runner interface {
 
 M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通过。
 
-代码层 `op` 的 `attrs.body` 是去掉注释和出处的规范 Go AST 函数体；包括函数体中的闭包，接口抽象操作没有此属性。具体操作另以 `attrs.declaration` 保存不含函数体的原生声明头，包含接收者、原生参数与结果和泛型约束；从指针接收者改为值接收者也产生变化。代码层 `type` 的 `attrs.declaration` 是同形规范类型声明，不含方法体。以新的空 `token.FileSet` 对 AST 节点作 `go/format` 打印，排版和位置不进入值。比较只改函数体的工作区时也必须改变操作内容哈希；顶层变量的赋值跟踪仍按现有模型，不扩大为运行证据。
+代码层 `op` 的 `attrs.body` 是去掉注释和出处的规范 Go AST 函数体；包括函数体中的闭包，接口抽象操作没有此属性。具体操作另以 `attrs.declaration` 保存不含函数体的原生声明头，包含接收者、原生参数与结果和泛型约束；从指针接收者改为值接收者也产生变化。代码层 `type` 的 `attrs.declaration` 是同形规范类型声明，不含方法体。以忽略注释和实际行列、保留位置有无的 AST 规范编码计算 SHA-256，排版和出处不进入值。比较只改函数体的工作区时也必须改变操作内容哈希；顶层变量的赋值跟踪仍按现有模型，不扩大为运行证据。
 
 ## 6 生成与运行
 
@@ -293,7 +296,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 | --- | --- | --- |
 | 架构 `architecture` | 容器，缺省为整个系统 | 子容器、外部系统、`uses`、`depends` 及其状态；展开的容器另带其中的类型、操作、流程、性质和错误，类型带字段和枚举值与代码的逐项比较 |
 | 类 `class` | 容器或类型 | 类型及其字段和操作、类型之间的边，以及被引用的其他容器中的类型（所在的容器折叠）；可以在设计层和落实它们的代码层类型之间切换 |
-| 时序 `sequence` | 流程 | 步骤树、按首次出现排列的生命线、嵌套的激活、发送和发布，以及每一步的 `traces`、状态和设计覆盖 |
+| 时序 `sequence` | 流程 | 步骤树、按首次出现排列的生命线、嵌套的激活、发送和发布，异步步骤所调用操作订阅的事件及其 `subscribes`，以及每一步的 `traces`、状态和设计覆盖 |
 | 活动 `activity` | 流程 | 同一个步骤树，按控制结构画出 |
 | 事件 `events` | 容器，缺省为整个系统 | 事件、发布它的步骤和订阅它的操作；错误、抛出它的调用步骤和处理它的 `on` 片段 |
 | 调用 `calls` | 操作或函数 | 显著函数之间的 `calls` 和 `reaches` |
@@ -374,7 +377,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 | 系统、组件、外部系统、参与者 | `network`、`box`、`cloud`、`user` |
 | 类型（object、record）、枚举、接口、错误、事件 | `braces`、`list`、`puzzle`、`octagon-x`、`zap` |
 | 操作、细节函数 | `square-function`、`code` |
-| 流程、步骤、性质、用例 | `workflow`、`corner-down-right`、`shield-check`、`flask-conical` |
+| 流程、步骤、性质、用例、观察 | `workflow`、`corner-down-right`、`shield-check`、`flask-conical`、`eye` |
 | 进入实体页、展开、比较、诊断 | `arrow-up-right`、`chevron-right`、`git-compare-arrows`、`triangle-alert` |
 | 回放、探索、模糊测试、分支、异步 | `play`、`dices`、`repeat`、`split`、`radio` |
 | 提交、文件、隐藏的节点、说明 | `git-commit-horizontal`、`file-code`、`eye-off`、`info` |
@@ -407,7 +410,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 
 - 节点和边是快照中的节点和边（§5.2、[model.md](model.md) §8），节点带内容哈希 `digest`。节点另有 `title`（页面上的名称）、`status`（`check` 给出的状态）、代码元素的 `bindings`（绑定边及其指向的设计节点）、步骤的 `step`（所在流程、序号、发起方、目标、接收方、外层步骤和子步骤）；边另有 `status`。
 - 诊断与 `unicode check --format json` 的相同。一条边加另一端的节点沿用 `query.Neighbor`，切片沿用 `query.Context`，影响沿用 `query.Affected`，单个节点沿用 `query.NodeView`。
-- 视图在 `view.View`（`kind`、`nodes`、`edges`、`folded`、`hidden`）之上，加上输入节点、它的祖先和视图中各项的诊断。类型卡片带 `members`，即字段和枚举值与代码的逐项比较；容器卡片带 `contents`，展开时是其中的类型、操作、流程、性质和错误，折叠时是其中类型的名称；代码文件和代码类型带 `details`，即未画出的细节函数的个数。边的一端是折叠的容器时，`count` 是它代表的边数；`labels` 是边承载的操作。
+- 视图沿用 `view.View`（`kind`、`input`、`ancestors`、`expand`、`layer`、`level`、`nodes`、`edges`、`folded`、`hidden`），加上视图中各项的诊断。类型卡片带 `members`，即字段和枚举值与代码的逐项比较；容器卡片带 `contents`，展开时是其中的类型、操作、流程、性质和错误，折叠时是其中类型的名称；代码文件和代码类型带 `details`，即未画出的细节函数的个数。边的一端是折叠的容器时，`count` 是它代表的边数；`labels` 是边承载的操作。
 - 拒绝的请求返回 `{code, message, fix}`：标识、边、文件或接口不存在为 404 `serve.not-found`；视图不适用于输入为 400 `serve.not-applicable`，提交读不出为 400 `serve.bad-revision`，路径不是设计文件、录制文件或快照中的代码文件为 400 `serve.bad-path`，参数缺失或不合类型（包括不存在的视图、节点或边的种类）为 400 `serve.bad-parameter`。快照文件在运行中变得读不出时，请求得到 503 `serve.unreadable-snapshot`，文件恢复后照常回答；比较要等 `graph.Compare`，在此之前为 501 `serve.not-implemented`；服务端自身的失败为 500 `serve.internal-error`。
 
 **接口。** 路径都在 `/api` 之下：
@@ -503,7 +506,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 | `unicode node refs <id>` | 给出指向它的边 | 无 |
 | `unicode slice <id>... [--expand ID]... [--with-code]` | 切片 | 无 |
 | `unicode impact <id>...` | 影响 | 无 |
-| `unicode view <kind> <id> [--expand ID]...` | 视图的数据 | 无 |
+| `unicode view <kind> [<id>] [--expand ID]... [--layer design\|code] [--level context\|container]` | 视图的数据 | 无 |
 | `unicode schema` | 输出命令、参数和各命令输出的 JSON Schema | 无 |
 | `unicode serve [--snapshot FILE] [--addr HOST:PORT] [--web DIR]` | 启动查看器：读取快照，回答 §7.5.1 的接口，并提供前端页面 | 无 |
 
@@ -511,7 +514,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 - **退出码**：0 成功；1 未知错误；2 参数错误；3 标识不存在；5 冲突（`gen` 要写的位置已有不同的内容）；7 环境错误（找不到 `python3` 或 Go 工具链）；10 存在诊断；11 有谓词未通过。
 - **`check`**：建图并检查全部约束；设计有错时，各阶段照样运行，诊断全部报出。JSON 为 `{"diagnostics": [...], "statuses": {...}}`。代码无法抽取时给出 `cli.extract-failed`，位置在系统文件中该语言的块，退出码为 10；找不到语言的工具链时退出码为 7；尚无后端的语言给出 `cli.unsupported-language` 并跳过。
 - **`build`**：建图有诊断时（不含 `check` 的约束）不写快照，退出码为 10；JSON 为 `{"diagnostics": [...], "snapshot": "路径"}`。快照之外，`build` 在同一目录写出 `build.json`，即 `{"commit": "…", "dirty": false}`：`commit` 是仓库所在提交的完整哈希，`dirty` 表示根目录下有没有未提交的改动或未跟踪的文件，`build` 自己写出的 `graph.json` 和 `build.json` 不算。不在 Git 的工作区中、还没有提交或找不到 `git` 时，写出 `{"commit": null, "dirty": true}`。`--out DIR` 把这两个文件写到 `DIR` 中。搜索索引 `index.json` 等查看器确定格式后再写。
-- **查询**：`node`、`slice`、`impact` 和 `view` 每次都按工作区重新建图；`--rev REV` 只用于这些查询，以 `git archive` 取出该提交的文件到临时目录。查询中的标识（包括 `--expand` 的）不存在时退出码为 3；视图不适用于输入时退出码为 2。`view architecture` 和 `view events` 可以不给标识，表示整个系统。JSON 的字段名是设计中的名称（小驼峰）。
+- **查询**：`node`、`slice`、`impact` 和 `view` 每次都按工作区重新建图；`--rev REV` 只用于这些查询，以 `git archive` 取出该提交的文件到临时目录。查询中的标识（包括 `--expand` 的）不存在时退出码为 3；视图不适用于输入时退出码为 2。`view architecture`、`view events`、`view ddd` 和 `view c4` 可以不给标识，表示整个系统。`--layer` 只用于类视图，缺省为 `design`；`--level` 只用于 C4 视图，缺省为 `container`；给其他视图这两个参数，或者取值不是这几种，是参数错误。JSON 的字段名是设计中的名称（小驼峰）。
 - **`diff`**：`unicode diff <rev>` 像查询的 `--rev` 一样取出 `<rev>` 并建图，与按工作区建出的图比较；带 `--to REV` 时，与 `REV` 的图比较。两张图按 [model.md](model.md) §8 比较（`graph.Compare`）：节点按标识对齐，内容哈希不同为修改；边按种类、起点、终点对齐，属性不同为修改；只列出新增、删除和修改的项。与查询一样，建图的诊断由 `check` 报出，`diff` 不报。JSON 与 `api/compare.tsp` 的 `Comparison` 相同：`{"base": 提交, "head": 提交, "nodes": [...], "edges": [...]}`。提交是 `{commit, short, branch, subject, time}`，`branch` 只在该提交正是检出的分支所在时给出，`time` 是提交时间（UTC）；`head` 另有 `dirty`，与工作区比较时同 `build.json` 的 `dirty`，与提交比较时为 `false`。`nodes` 中每项是 `{id, change, before, after, attrs}`，`change` 为 `added`、`removed` 或 `modified`，`before`、`after` 是两边的节点（与 `node get` 的节点相同），只在该边有它时给出；`attrs` 按键排序，列出两边的值不同的键，每项 `{key, removed, added}` 是该键上去掉和加上的值，按各自原来的次序，重复的值按出现次数计。`edges` 中每项是 `{kind, from, to, change, before, after}`。文本先写两端的提交，再在 `nodes` 和 `edges` 两节中每项一行，修改的节点之后每个变了的键一行。`<rev>` 或 `REV` 不是提交时退出码为 2，找不到 `git` 时为 7。`diff` 不接受 `--rev`。
 - **`serve`**：`--snapshot` 缺省为根目录下的 `.unicode/graph.json`，`--addr` 缺省为 `127.0.0.1:8765`。`serve` 在 `/` 下提供页面，在 `/api` 下提供接口。页面是 `--web DIR` 给出的目录中的文件，缺省为根目录下的 `web/dist`（存在时）；地址不是其中的文件时给出 `index.html`。没有页面目录时只提供接口，并在标准错误中说明。前端由 `web/` 构建到 `web/dist`；前端定型之后，构建结果用 Go 的 `embed` 嵌入程序，作为没有页面目录时的页面。`--web` 给出的不是目录时是参数错误。开始监听后，标准输出写出页面的地址（JSON 为 `{"url": …}`），每个请求的日志写到标准错误；收到中断信号时退出，退出码为 0。快照不存在或读不出时退出码为 7，提示先运行 `unicode build`；地址无法监听时退出码也为 7。`serve` 不接受 `--rev`，比较的基准由接口的 `base` 参数给出。
 - **`check --design-only`**：解析 `design/` 和 `corpus/` 下的全部文件，报出语法、规范格式和 §5.1 的诊断；JSON 为 `{"diagnostics": [...]}`。M2 之前，不带 `--design-only` 的 `check` 是参数错误。

@@ -266,7 +266,7 @@ func loadSkeletonMirror(root, temp string, roots []string) (loaded, error) {
 		if err == nil && filepath.IsLocal(rel) {
 			name = filepath.Join(root, rel)
 		}
-		return parser.ParseFile(set, name, source, parser.ParseComments|parser.AllErrors)
+		return parseFile(set, name, source)
 	}
 	all, err := packages.Load(cfg, patterns...)
 	if err != nil {
