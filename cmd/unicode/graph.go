@@ -141,7 +141,7 @@ func buildGraphWithMode(root string, mode graphLoadMode) (graph.Graph, []diag.Di
 		}
 		var extracted lang.Extracted
 		if mode == graphLoadStrict {
-			extracted, err = b.Backend.Extract(root, r.dirs)
+			extracted, err = b.Extract(root, r.dirs)
 		} else {
 			extracted, err = generationExtract(b.Backend, root, r.dirs)
 		}
