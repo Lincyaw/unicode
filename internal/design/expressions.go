@@ -55,7 +55,11 @@ func (c *expressionCheck) reference(target *entity, expr *syntax.Expr) {
 	}
 	c.l.depends(c.owner, []ref{{written: target.id, pos: expr.Pos, target: target}})
 	key := edgeKey{graph.EdgeKindRefers, c.owner.id, target.id}
-	entry := c.clause + " " + strconv.Itoa(c.ordinal) + " " + syntax.ExprText(expr)
+	entry := c.clause + "#" + strconv.Itoa(c.ordinal)
+	path := ""
+	if target.kind == graph.NodeKindType && target.form != "enum" && (expr.Kind == "field" || expr.Kind == "index") {
+		path = syntax.ExprText(expr)
+	}
 	for i := range c.l.edges {
 		e := &c.l.edges[i]
 		if e.Kind == key.kind && e.From == key.from && e.To == key.to {
@@ -64,11 +68,20 @@ func (c *expressionCheck) reference(target *entity, expr *syntax.Expr) {
 			}
 			if !slices.Contains(e.Attrs["clauses"], entry) {
 				e.Attrs["clauses"] = append(e.Attrs["clauses"], entry)
+				slices.Sort(e.Attrs["clauses"])
+			}
+			if path != "" && !slices.Contains(e.Attrs["paths"], path) {
+				e.Attrs["paths"] = append(e.Attrs["paths"], path)
+				slices.Sort(e.Attrs["paths"])
 			}
 			return
 		}
 	}
-	c.l.edge(graph.EdgeKindRefers, c.owner, target, c.owner.file, expr.Pos, graph.SourceDeclared, map[string][]string{"clauses": {entry}})
+	attrs := map[string][]string{"clauses": {entry}}
+	if path != "" {
+		attrs["paths"] = []string{path}
+	}
+	c.l.edge(graph.EdgeKindRefers, c.owner, target, c.owner.file, expr.Pos, graph.SourceDeclared, attrs)
 }
 
 func pathNames(e *syntax.Expr) ([]string, bool) {
@@ -86,7 +99,7 @@ func (c *expressionCheck) localRoot(e *syntax.Expr) bool {
 	for e.Kind == "field" || e.Kind == "index" {
 		e = e.Children[0]
 	}
-	return e.Kind == "name" && c.locals[e.Text] != nil
+	return e.Kind == "name" && (e.Text == "result" || c.locals[e.Text] != nil)
 }
 
 func (c *expressionCheck) infer(e *syntax.Expr) *typ {
@@ -139,7 +152,7 @@ func (c *expressionCheck) infer(e *syntax.Expr) *typ {
 	case "call":
 		return c.invoke(e, false)
 	case "old":
-		if !c.allowOld || forbidden(e.Children[0], map[string]bool{"old": true, "result": true, "raised": true, "failure": true}, c.bound) {
+		if !c.allowOld || forbidden(e.Children[0], map[string]bool{"old": true, "result": true, "raised": true, "failure": true}, nil) || constraintReference(e.Children[0], c.bound) {
 			return c.bad(e, "old needs a tested call and an expression without old, results, errors or quantified variables", "snapshot an input or observation expression before the tested call")
 		}
 		return c.infer(e.Children[0])
@@ -173,6 +186,7 @@ func (c *expressionCheck) infer(e *syntax.Expr) *typ {
 		delete(c.locals, e.Text)
 		delete(c.bound, e.Text)
 		if e.Kind == "sum" {
+			body = unwrap(body)
 			if body.builtin == "int" || body.builtin == "float" {
 				return body
 			}
@@ -279,16 +293,28 @@ func forbidden(e *syntax.Expr, kinds, names map[string]bool) bool {
 	if kinds[e.Kind] || e.Kind == "name" && (kinds[e.Text] || names[e.Text]) {
 		return true
 	}
-	if e.Kind == "all" || e.Kind == "any" || e.Kind == "count" || e.Kind == "sum" {
-		copy := map[string]bool{}
-		for key, value := range names {
-			copy[key] = value
-		}
-		copy[e.Text] = true
-		return forbidden(e.Children[0], kinds, names) || forbidden(e.Children[1], kinds, copy)
-	}
 	for _, child := range e.Children {
 		if forbidden(child, kinds, names) {
+			return true
+		}
+	}
+	return false
+}
+
+func constraintReference(e *syntax.Expr, names map[string]bool) bool {
+	if e.Kind == "name" && names[e.Text] {
+		return true
+	}
+	if e.Kind == "all" || e.Kind == "any" || e.Kind == "count" || e.Kind == "sum" {
+		bound := map[string]bool{}
+		for name, value := range names {
+			bound[name] = value
+		}
+		bound[e.Text] = true
+		return constraintReference(e.Children[0], names) || constraintReference(e.Children[1], bound)
+	}
+	for _, child := range e.Children {
+		if constraintReference(child, names) {
 			return true
 		}
 	}
@@ -434,7 +460,11 @@ func (l *loader) checkPropertyExpressions(e, scope *entity, d *syntax.PropertyDe
 					if len(p.Segments) == 0 || e.symbol(p.Segments[0]) == nil {
 						l.report(e.file, p.Pos, "design.invalid-observation", e.id, "a direct observation starts from a forall input", "observe an input or use a named adapter observation")
 					}
-					if why := snapshotType(c.infer(expr), map[*entity]bool{}); why != "" {
+					observedType := c.infer(expr)
+					for _, ref := range observedType.allRefs() {
+						c.reference(ref.target, expr)
+					}
+					if why := snapshotType(observedType, map[*entity]bool{}); why != "" {
 						l.report(e.file, p.Pos, "design.invalid-observation", e.id, why, "observe finite declared value fields or use a snapshot adapter")
 					}
 					observations = append(observations, syntax.ExprText(expr))

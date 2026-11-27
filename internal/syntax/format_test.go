@@ -239,6 +239,9 @@ func expressionLine(line string) bool {
 }
 
 func expressionGap(a, b lexer.Token) int {
+	if a.Value == "," || a.Value == ":" {
+		return 1
+	}
 	if a.Value == "." || b.Value == "." {
 		return 0
 	}

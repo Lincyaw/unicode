@@ -318,8 +318,32 @@ type NamedObservation struct {
 
 type Changes struct {
 	Pos   lexer.Position
-	None  bool          `parser:"'changes' ( @'none'"`
-	Paths []*expression `parser:"| @@ ( ',' @@ )* ) NL"`
+	None  bool         `parser:"'changes' ( @'none'"`
+	Paths []*statePath `parser:"| @@ ( ',' @@ )* ) NL"`
+}
+
+type statePath struct {
+	Pos   lexer.Position
+	Root  Lower            `parser:"@Ident"`
+	Tails []*statePathTail `parser:"@@*"`
+}
+
+type statePathTail struct {
+	Pos   lexer.Position
+	Field *Lower      `parser:"  '.' @Ident"`
+	Index *expression `parser:"| '[' @@ ']'"`
+}
+
+func (p *statePath) Expr() *Expr {
+	e := node("name", string(p.Root), p.Pos)
+	for _, tail := range p.Tails {
+		if tail.Field != nil {
+			e = node("field", string(*tail.Field), e.Pos, e)
+		} else {
+			e = node("index", "", e.Pos, e, tail.Index.Expr())
+		}
+	}
+	return e
 }
 
 // Symbol is a `forall`; Domain describes a generated symbol and is nil
