@@ -82,17 +82,17 @@ func buildGraph(root string) (graph.Graph, []diag.Diagnostic, error) {
 }
 
 func buildInputGraph(root string) (graph.Graph, []diag.Diagnostic, error) {
-	return buildGraphWithExtractor(root, lang.Backend.Extract, design.Load)
+	return buildGraphWithMode(root, graphLoadStrict)
 }
 
 // buildGraphForGeneration lets a backend repair stale generated output while
 // keeping the ordinary extraction path strict.
 func buildGraphForGeneration(root string) (graph.Graph, []diag.Diagnostic, error) {
-	return buildGraphWithExtractor(root, generationExtract, design.Load)
+	return buildGraphWithMode(root, graphLoadGeneration)
 }
 
 func buildGraphForExploration(root string) (graph.Graph, []diag.Diagnostic, error) {
-	return buildGraphWithExtractor(root, generationExtract, func(files []syntax.File) design.Loaded { return design.LoadForExploration(files).Loaded })
+	return buildGraphWithMode(root, graphLoadExploration)
 }
 
 func generationExtract(b lang.Backend, root string, roots []string) (lang.Extracted, error) {
@@ -102,12 +102,25 @@ func generationExtract(b lang.Backend, root string, roots []string) (lang.Extrac
 	return b.Extract(root, roots)
 }
 
-func buildGraphWithExtractor(root string, extract func(lang.Backend, string, []string) (lang.Extracted, error), load func([]syntax.File) design.Loaded) (graph.Graph, []diag.Diagnostic, error) {
+type graphLoadMode uint8
+
+const (
+	graphLoadStrict graphLoadMode = iota
+	graphLoadGeneration
+	graphLoadExploration
+)
+
+func buildGraphWithMode(root string, mode graphLoadMode) (graph.Graph, []diag.Diagnostic, error) {
 	files, diags, err := readDesign(root)
 	if err != nil {
 		return graph.Graph{}, nil, err
 	}
-	loaded := load(files)
+	var loaded design.Loaded
+	if mode == graphLoadExploration {
+		loaded = design.LoadForExploration(files).Loaded
+	} else {
+		loaded = design.Load(files)
+	}
 	g := loaded.Graph
 	diags = append(diags, loaded.Diagnostics...)
 	available := backends()
@@ -126,7 +139,12 @@ func buildGraphWithExtractor(root string, extract func(lang.Backend, string, []s
 			return graph.Graph{}, nil, &exitError{code: exitEnvironment,
 				err: fmt.Errorf("extracting the %s code needs the command %s on PATH: %w", r.language, b.tool, err)}
 		}
-		extracted, err := extract(b.Backend, root, r.dirs)
+		var extracted lang.Extracted
+		if mode == graphLoadStrict {
+			extracted, err = b.Backend.Extract(root, r.dirs)
+		} else {
+			extracted, err = generationExtract(b.Backend, root, r.dirs)
+		}
 		var failed lang.ExtractFailed
 		switch {
 		case errors.As(err, &failed):
