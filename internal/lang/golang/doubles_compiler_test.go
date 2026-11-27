@@ -22,7 +22,14 @@ func checkDoubleExpressionDependencies(t rapid.TB, sample DoubleSample) {
 	g := graph.NewGraph()
 	nodes := map[string]graph.Node{}
 	add := func(id string, kind graph.NodeKind, form string, layer graph.Layer) {
-		n := graph.Node{Id: id, Kind: kind, Form: form, Layer: layer, Origin: diag.Position{Path: "design/domain.uc", Line: 1, Column: 1}}
+		path := "design/domain.uc"
+		if layer == graph.LayerCode {
+			path = "domain/domain.go"
+		}
+		if id == "go:sample/domain.Install" {
+			path = "domain/install.go"
+		}
+		n := graph.Node{Id: id, Kind: kind, Form: form, Layer: layer, Origin: diag.Position{Path: path, Line: 1, Column: 1}}
 		if err := g.AddNode(n); err != nil {
 			t.Fatal(err)
 		}
@@ -34,10 +41,19 @@ func checkDoubleExpressionDependencies(t rapid.TB, sample DoubleSample) {
 		}
 	}
 	add("remote", graph.NodeKindActor, "external", graph.LayerDesign)
+	add("domain", graph.NodeKindContainer, "component", graph.LayerDesign)
+	add("other", graph.NodeKindContainer, "component", graph.LayerDesign)
+	add("file:domain/domain.go", graph.NodeKindContainer, "file", graph.LayerCode)
+	add("file:domain/install.go", graph.NodeKindContainer, "file", graph.LayerCode)
+	edge(graph.EdgeKindOwns, "domain", "file:domain/domain.go")
+	edge(graph.EdgeKindOwns, "domain", "file:domain/install.go")
+	edge(graph.EdgeKindUses, "domain", "remote")
+	edge(graph.EdgeKindUses, "other", "remote")
 	add("remote.calc", graph.NodeKindOp, "op", graph.LayerDesign)
 	add("domain.read", graph.NodeKindOp, "op", graph.LayerDesign)
 	add("domain.check", graph.NodeKindProperty, "invariant", graph.LayerDesign)
 	add("go:sample/domain.Calc", graph.NodeKindOp, "func", graph.LayerCode)
+	add("go:sample/domain.Install", graph.NodeKindOp, "func", graph.LayerCode)
 	edge(graph.EdgeKindRealizes, "go:sample/domain.Calc", "remote.calc")
 	add("go:sample/domain.Read", graph.NodeKindOp, "func", graph.LayerCode)
 	edge(graph.EdgeKindRealizes, "go:sample/domain.Read", "domain.read")
@@ -74,6 +90,25 @@ func checkDoubleExpressionDependencies(t rapid.TB, sample DoubleSample) {
 	unit.spec.Symbols = append(unit.spec.Symbols, ucSymbol{Name: "answers", Type: "replies<remote.calc>"})
 	if !c.configureDoubles(unit) {
 		t.Fatalf("a complete expression dependency and installer were rejected: %+v", c.diagnostics)
+	}
+	otherGraph := graph.NewGraph()
+	for _, n := range g.Nodes() {
+		if err := otherGraph.AddNode(n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, e := range g.Edges() {
+		if e.Kind == graph.EdgeKindOwns && e.To == "file:domain/install.go" {
+			e.From = "other"
+		}
+		if err := otherGraph.AddEdge(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c.plan.Graph = &otherGraph
+	c.diagnostics = nil
+	if c.configureDoubles(unit) {
+		t.Fatal("an installer owned by a different permitted component was accepted for generation")
 	}
 }
 

@@ -147,8 +147,8 @@ func (c *contractCompiler) configureDoubles(unit *contractUnit) bool {
 		if kind, args := ucSplitType(model); kind == "replies" {
 			d, ok := c.bound(graph.EdgeKindSubstitutes, args[0])
 			fn, fnok := d.obj.(*types.Func)
-			if !ok || !fnok || !installerMatches(fn.Signature(), sigs[args[0]]) {
-				c.diagnostic(unit.node, "lang.golang.missing-substitute", "the external operation has no unique installer with the exact native client signature: "+args[0], "bind a free installer using //uc:substitutes; accept the client function signature and return func()")
+			if !ok || !fnok || !installerMatches(fn.Signature(), sigs[args[0]]) || !c.substituteOwnersMatch(args[0]) {
+				c.diagnostic(unit.node, "lang.golang.missing-substitute", "the external operation needs one installer with its native signature in the client's owning component: "+args[0], "bind a free installer in the client's component using //uc:substitutes; accept the client function signature and return func()")
 				valid = false
 			}
 		}
@@ -214,6 +214,47 @@ func (c *contractCompiler) configureDoubles(unit *contractUnit) bool {
 		}
 	}
 	return valid
+}
+
+func (c *contractCompiler) substituteOwnersMatch(target string) bool {
+	client, clientOK := c.bound(graph.EdgeKindRealizes, target)
+	installer, installerOK := c.bound(graph.EdgeKindSubstitutes, target)
+	if !clientOK || !installerOK {
+		return false
+	}
+	clientFn, clientIsFn := client.obj.(*types.Func)
+	installerFn, installerIsFn := installer.obj.(*types.Func)
+	if !clientIsFn || !installerIsFn || clientFn.Signature().Recv() != nil {
+		return false
+	}
+	clientPath := c.nodes[funcID(clientFn)].Origin.Path
+	installerPath := c.nodes[funcID(installerFn)].Origin.Path
+	if clientPath == "" || installerPath == "" {
+		return false
+	}
+	clientFile := "file:" + clientPath
+	installerFile := "file:" + installerPath
+	owners := map[string]bool{}
+	for _, e := range c.plan.Graph.Edges() {
+		if e.Kind == graph.EdgeKindOwns && e.To == clientFile {
+			owners[e.From] = true
+		}
+	}
+	for _, e := range c.plan.Graph.Edges() {
+		if e.Kind != graph.EdgeKindOwns || e.To != installerFile || !owners[e.From] {
+			continue
+		}
+		seen := map[string]bool{}
+		for owner := e.From; owner != "" && !seen[owner]; owner = c.parents[owner] {
+			seen[owner] = true
+			for _, use := range c.plan.Graph.Edges() {
+				if use.Kind == graph.EdgeKindUses && use.From == owner && use.To == c.parents[target] {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 func doubleName(model string) string {
 	return fmt.Sprintf("unicodeGeneratedDouble_%x", sha256.Sum256([]byte(model)))
