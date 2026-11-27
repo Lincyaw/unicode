@@ -4,7 +4,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Node, ViewNode } from '../../api/types';
 import { ABOUT, CONTROLS, kindWord } from '../../terms';
-import { ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
+import { Hint, ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
 import { opLine } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks, useSelectedBox } from '../marks/links';
@@ -49,7 +49,8 @@ function Rows({ rows, onUnfold }: { rows: CardRow[]; onUnfold?: () => void }) {
       case 'value':
         return <span key={index} className={styles.field} data-warn={row.warn}><span>{row.name}</span></span>;
       case 'op':
-        return <NodeRef key={index} id={row.op.id} className={styles.op}>{row.text}</NodeRef>;
+        // A long signature is cut short on the card; its whole text shows while the pointer rests on it.
+        return <Hint key={index} content={row.text}><NodeRef id={row.op.id} className={styles.op}>{row.text}</NodeRef></Hint>;
       case 'more':
         return <button key={index} type="button" className={clsx(styles.field, styles.more)} aria-expanded="false" onClick={onUnfold}>+{row.count}</button>;
     }

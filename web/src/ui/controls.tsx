@@ -1,7 +1,7 @@
 import * as RadixSelect from '@radix-ui/react-select';
 import { clsx } from 'clsx';
 import { Maximize, Minus, Plus } from 'lucide-react';
-import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Link } from 'react-router';
 import styles from './controls.module.css';
 import { Hint, ICON_STROKE, ICON_TINY } from './hint';
@@ -187,6 +187,23 @@ export function SegmentedControl<T extends string>({ label, choices, value, onCh
 export type PlaceChoice<T extends string> = Choice<T> & ({ to: string } | { reason?: string });
 
 /**
+ * A place that cannot be chosen now: a disabled link, faint, which keeps the keyboard's focus so that its reason, behind
+ * a hint, reaches the eye and, as its description, assistive technology.
+ */
+function FaintChoice({ value, label, reason }: { value: string; label: string; reason?: string }) {
+  const described = useId();
+  const faint = (
+    <span data-value={value} className={styles.segment} role="link" aria-disabled="true" tabIndex={0} aria-describedby={reason === undefined ? undefined : described}>{label}</span>
+  );
+  return reason === undefined ? faint : (
+    <>
+      <Hint content={reason}>{faint}</Hint>
+      <span id={described} className="visually-hidden">{reason}</span>
+    </>
+  );
+}
+
+/**
  * The link variant of the segmented control, for choices that are places, such as the views of one subject: each choice
  * is a link, the current one sits on the thumb, and one that cannot be chosen now stays faint, its reason behind a hint.
  */
@@ -200,8 +217,7 @@ export function SegmentedLinks<T extends string>({ label, choices, value }: { la
         if ('to' in choice) {
           return <Link key={choice.value} data-value={choice.value} className={styles.segment} to={choice.to} aria-current={choice.value === value ? 'page' : undefined}>{choice.label}</Link>;
         }
-        const faint = <span key={choice.value} data-value={choice.value} className={styles.segment} aria-disabled="true" tabIndex={choice.reason === undefined ? undefined : 0}>{choice.label}</span>;
-        return choice.reason === undefined ? faint : <Hint key={choice.value} content={choice.reason}>{faint}</Hint>;
+        return <FaintChoice key={choice.value} value={choice.value} label={choice.label} reason={choice.reason} />;
       })}
     </nav>
   );
