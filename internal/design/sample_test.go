@@ -303,6 +303,7 @@ func count(d *designer, label string, low, high int) int {
 // genSample draws a valid design: a system file, a tree of components with
 // types, operations, flows and properties, and corpus files.
 //
+//uc:generates design.exploration-prunes-recorded-inputs.sample
 //uc:generates design.accepts-valid-design.sample
 func genSample() *rapid.Generator[Sample] {
 	return rapid.Custom(func(t *rapid.T) Sample {

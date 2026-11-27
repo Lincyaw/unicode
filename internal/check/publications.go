@@ -8,8 +8,8 @@ import (
 )
 
 func (c *checker) publisherBinding(e graph.Edge) {
-	if !c.isFunction(e.From) || !c.is(e.To, graph.LayerDesign, graph.NodeKindType, "event") {
-		c.wrongKind(e, "a publisher is a function or method targeting a design event")
+	if !c.is(e.From, graph.LayerCode, graph.NodeKindOp, "func", "method") || !c.is(e.To, graph.LayerDesign, graph.NodeKindType, "event") {
+		c.wrongKind(e, "a publisher is a concrete function or method targeting a design event")
 		return
 	}
 	if len(c.out[graph.EdgeKindPublishes][e.From]) > 1 {

@@ -63,6 +63,8 @@ func (l *loader) codecRepresentations() {
 		}
 		if why := codecRepresentation(e.codecEncoder.result, map[*entity]bool{e: true}, map[*entity]bool{}); why != "" {
 			l.invalidCodec(e, e.codec.Pos, fmt.Sprintf("the codec of %s has no finite representation: %s", e.id, why))
+		} else {
+			e.setAttr("codecType", []string{e.codecEncoder.result.text()})
 		}
 	}
 }
@@ -94,7 +96,7 @@ func codecRepresentation(t *typ, codecs, seen map[*entity]bool) string {
 		defer delete(codecs, n)
 		return codecRepresentation(n.codecEncoder.result, codecs, map[*entity]bool{})
 	}
-	if seen[n] {
+	if n.form == "enum" || seen[n] {
 		return ""
 	}
 	seen[n] = true

@@ -69,6 +69,15 @@ type breakage struct {
 }
 
 var breakages = []breakage{
+	{"check.wrong-binding-kind", func(w *world) string {
+		publication := w.publicationSample()
+		for index := range w.f.Nodes {
+			if w.f.Nodes[index].Id == publication.function {
+				w.f.Nodes[index].Form = "abstract"
+			}
+		}
+		return "publishes " + publication.function + " " + publication.event
+	}},
 	{"check.publisher-signature", func(w *world) string {
 		publication := w.publicationSample()
 		w.setAttr(publication.function, "signature", []string{"(event: int) -> bool"})
