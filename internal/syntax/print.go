@@ -98,6 +98,8 @@ func (pr *printer) node(n any) {
 		pr.line("extends " + ref(Ref(n.Type)))
 	case *Implements:
 		pr.line("implements " + ref(Ref(n.Type)))
+	case *Codec:
+		pr.line("codec " + ref(Ref(n.Encode)) + ", " + ref(Ref(n.Decode)))
 	case *Field:
 		pr.line("field " + string(n.Name) + ": " + typeExpr(n.Type))
 	case *EnumValue:
@@ -252,6 +254,8 @@ type part struct {
 func parts(v Value) (string, []part, string) {
 	var items []part
 	switch v := v.(type) {
+	case *EncodedValue:
+		return "encoded(", []part{{value: v.Value}}, ")"
 	case *ListValue:
 		for _, it := range v.Items {
 			items = append(items, part{value: it})

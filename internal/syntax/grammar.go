@@ -175,7 +175,7 @@ type TypeDecl struct {
 	Lines   []Member `parser:"( '{' NL @@* '}' )? NL"`
 }
 
-// Member is *Comment, *Label, *Extends, *Implements, *Field, *EnumValue or *OpDecl.
+// Member is *Comment, *Label, *Extends, *Implements, *Codec, *Field, *EnumValue or *OpDecl.
 type Member interface{ member() }
 
 type Extends struct {
@@ -186,6 +186,13 @@ type Extends struct {
 type Implements struct {
 	Pos  lexer.Position
 	Type TypeRef `parser:"'implements' @@ NL"`
+}
+
+// Codec names the instance encoder and the free decoder of a model type.
+type Codec struct {
+	Pos    lexer.Position
+	Encode OpRef `parser:"'codec' @@ ','"`
+	Decode OpRef `parser:"@@ NL"`
 }
 
 type Field struct {
@@ -470,7 +477,7 @@ type Loop struct {
 }
 
 // Value is *NumberValue, *StringValue, *CallValue, *BoolValue, *NoneValue,
-// *NameValue, *ListValue or *BraceValue. A value is read by its symbol's
+// *NameValue, *ListValue, *BraceValue or *EncodedValue. A value is read by its symbol's
 // type, which the design component knows. Inside brackets a value may break
 // its line after the opening bracket, around commas and before the closing one.
 type Value interface{ value() }
@@ -490,6 +497,12 @@ type CallValue struct {
 	Pos  lexer.Position
 	Op   Lower `parser:"@Ident '(' NL?"`
 	Args []Arg `parser:"( @@ NL? ( ',' NL? @@ NL? )* ( ',' NL? )? )? ')'"`
+}
+
+// EncodedValue is a model representation decoded by the named type's codec.
+type EncodedValue struct {
+	Pos   lexer.Position
+	Value Value `parser:"'encoded' '(' NL? @@ NL? ( ',' NL? )? ')'"`
 }
 
 type Arg struct {
@@ -578,6 +591,7 @@ func (*Comment) member()    {}
 func (*Label) member()      {}
 func (*Extends) member()    {}
 func (*Implements) member() {}
+func (*Codec) member()      {}
 func (*Field) member()      {}
 func (*EnumValue) member()  {}
 func (*OpDecl) member()     {}
@@ -633,14 +647,15 @@ func (*Alt) step()     {}
 func (*Opt) step()     {}
 func (*Loop) step()    {}
 
-func (*NumberValue) value() {}
-func (*StringValue) value() {}
-func (*CallValue) value()   {}
-func (*BoolValue) value()   {}
-func (*NoneValue) value()   {}
-func (*NameValue) value()   {}
-func (*ListValue) value()   {}
-func (*BraceValue) value()  {}
+func (*NumberValue) value()  {}
+func (*StringValue) value()  {}
+func (*CallValue) value()    {}
+func (*EncodedValue) value() {}
+func (*BoolValue) value()    {}
+func (*NoneValue) value()    {}
+func (*NameValue) value()    {}
+func (*ListValue) value()    {}
+func (*BraceValue) value()   {}
 
 // union is one union of the grammar: an interface of the syntax tree and its
 // members, in the order participle tries them.
@@ -667,7 +682,7 @@ var unions = []union{
 	unionOf[LanguageLine](&Comment{}, &Root{}),
 	unionOf[ExternalLine](&Comment{}, &TypeDecl{}, &OpDecl{}),
 	unionOf[ComponentLine](&Comment{}, &Label{}, &Focus{}, &Paths{}, &Uses{}),
-	unionOf[Member](&Comment{}, &Label{}, &Extends{}, &Implements{}, &Field{}, &EnumValue{}, &OpDecl{}),
+	unionOf[Member](&Comment{}, &Label{}, &Extends{}, &Implements{}, &Codec{}, &Field{}, &EnumValue{}, &OpDecl{}),
 	unionOf[TypeExpr](&Builtin{}, &ElemType{}, &MapType{}, &CallType{}, &RepliesType{}, &NamedType{}),
 	unionOf[FlowLine](&Comment{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &Within{}, &Ensure{}, &Manual{}, &CaseDecl{},
 		&OnBlock{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
@@ -675,7 +690,7 @@ var unions = []union{
 		&Act{}, &Within{}, &Ensure{}, &Manual{}, &CaseDecl{}),
 	unionOf[CaseLine](&Comment{}, &Assignment{}),
 	unionOf[Step](&Comment{}, &OnBlock{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
-	unionOf[Value](&NumberValue{}, &StringValue{}, &CallValue{}, &BoolValue{}, &NoneValue{},
+	unionOf[Value](&EncodedValue{}, &NumberValue{}, &StringValue{}, &CallValue{}, &BoolValue{}, &NoneValue{},
 		&NameValue{}, &ListValue{}, &BraceValue{}),
 }
 

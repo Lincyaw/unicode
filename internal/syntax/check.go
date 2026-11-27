@@ -76,7 +76,7 @@ var (
 	languageOrder  = newOrder("language block", "syntax.member-order", [][]string{{"root"}})
 	componentOrder = newOrder("component block", "syntax.member-order", [][]string{{"label"}, {"focus"}, {"paths"}, {"uses"}}, "focus", "paths", "uses")
 	externalOrder  = newOrder("external actor", "syntax.member-order", [][]string{{"type"}, {"op"}})
-	typeOrder      = newOrder("type", "syntax.member-order", [][]string{{"label"}, {"extends"}, {"implements"}, {"field", "value"}, {"op"}})
+	typeOrder      = newOrder("type", "syntax.member-order", [][]string{{"label"}, {"extends"}, {"implements"}, {"codec"}, {"field", "value"}, {"op"}})
 	flowOrder      = newOrder("flow", "syntax.member-order",
 		[][]string{{"forall"}, {"where"}, {step, "on", "async", "alt", "opt", "loop"}, {"within"}, {"ensure", "manual"}, {"case"}}, "within", "manual")
 	propertyOrder = newOrder("property", "syntax.member-order", [][]string{{"about"}, {"forall"}, {"where"}, {"observe"}, {"requires"}, {"changes"}, {"call"}, {"within"}, {"ensure", "manual"}, {"case"}}, "about", "changes", "call", "within", "manual")

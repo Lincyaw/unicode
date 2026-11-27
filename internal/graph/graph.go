@@ -88,6 +88,7 @@ const (
 	EdgeKindGenerates   EdgeKind = "generates"
 	EdgeKindObserves    EdgeKind = "observes"
 	EdgeKindSubstitutes EdgeKind = "substitutes"
+	EdgeKindPublishes   EdgeKind = "publishes"
 	EdgeKindOwns        EdgeKind = "owns"
 	EdgeKindDepends     EdgeKind = "depends"
 	EdgeKindTraces      EdgeKind = "traces"
