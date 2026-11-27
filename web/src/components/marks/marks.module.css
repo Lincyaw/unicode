@@ -58,7 +58,8 @@ a.badge:hover, button.badge:hover { box-shadow: inset 0 0 0 var(--size-hairline)
 .cover { display: flex; flex: 1; align-items: center; gap: var(--space-2); min-width: 0; text-align: left; }
 .cover::after { position: absolute; inset: 0; border-radius: var(--radius-md); content: ""; }
 .cover:focus-visible { outline: none; }
-.cover:focus-visible::after { outline: var(--size-border-thick) solid var(--accent-brand); outline-offset: var(--size-border-thick); }
+/* The ring is drawn inside the box, where the box's own clipping cannot cut it off. */
+.cover:focus-visible::after { outline: var(--size-border-thick) solid var(--accent-brand); outline-offset: calc(-1 * var(--size-border-thick)); }
 /* A reference keeps its whole width; the rows that hold references cut them short where they must (a card's op, a folded name). */
 .ref { position: relative; z-index: 1; border-radius: var(--radius-sm); text-align: left; white-space: nowrap; transition: color var(--duration-fast); }
 .ref:hover { color: var(--text-main); text-decoration: underline; text-underline-offset: var(--space-px); }
