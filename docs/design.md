@@ -438,10 +438,11 @@ Go 先以只读源码覆盖插入 `runtime/trace.Log`，编译一次带 `atomic`
 | 代码中函数的形式 `method`、`abstract`（`func` 即种类的用词：函数） | 方法、抽象方法 |
 | 用例的形式 `declared`、`recorded`；观察的形式 `snapshot` | 声明、录制；快照 |
 | 边的种类 `contains`、`uses`、`extends`、`implements`、`refers`、`subscribes`、`imports`、`calls`、`from`、`emits`、`handles`、`about` | 包含、声明的依赖、继承、实现接口、引用、订阅、导入、调用、发起、发布、处理、约束 |
-| 边的种类 `realizes`、`checks`、`generates`、`observes`、`substitutes`、`owns`、`depends`、`traces`、`exercises`、`reaches`、`covers` | 实现、检查、生成、观察、替身、归属、依赖、代码追溯、可达、经由细节函数的调用、覆盖 |
+| 边的种类 `realizes`、`checks`、`generates`、`observes`、`substitutes`、`publishes`、`owns`、`depends`、`traces`、`exercises`、`reaches`、`covers` | 实现、检查、生成、观察、替身、发布边界、归属、依赖、代码追溯、可达、经由细节函数的调用、覆盖 |
 | 变更中的属性（§5.2 的键）`focus`、`labels`、`paths`、`notations`、`roots`、`language`、`path`、`fields`、`values`、`signature`、`pure` | 关注级别、标签、路径、记法、根目录、语言、路径、字段、取值、签名、纯操作 |
 | 变更中的属性 `symbols`、`limits`、`call`、`within`、`ensure`、`manual`、`requires`、`observe`、`changes`、`type`、`inputs` | 符号、限定、被测调用、时限、断言、人工性质的原因、前提、观察范围、允许变化的范围、快照类型、输入 |
 | 变更中的属性 `index`、`label`、`args`、`reason`、`name`、`declaration`、`testKind`、`stub`、`body`、`generated`、`globals` | 序号、分支标签、实参、录制原因、名称、声明、测试类别、骨架、函数体、生成、顶层声明 |
+| 变更中的属性 `codec`、`codecType` | 编解码操作、可回放表示类型 |
 | 合并成一条的边；未画出的工具组件 | 合并的边；未画出的组件 |
 
 #### 7.5.1 接口
