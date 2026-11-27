@@ -96,7 +96,7 @@ type RunPlan struct {
 	Root    string        `json:"root"`
 	Roots   []string      `json:"roots"`
 	Graph   *graph.Graph  `json:"graph"`
-	IDs     []string      `json:"ids"`
+	Ids     []string      `json:"ids"`
 	Explore time.Duration `json:"explore"`
 }
 
@@ -104,7 +104,7 @@ type RunPlan struct {
 //
 //uc:realizes lang.RunResult
 type RunResult struct {
-	ID           string            `json:"id"`
+	Id           string            `json:"id"`
 	Passed       bool              `json:"passed"`
 	Accepted     int               `json:"accepted"`
 	Rejected     int               `json:"rejected"`
