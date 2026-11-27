@@ -29,7 +29,14 @@ func genSinceSample() *rapid.Generator[SinceSample] {
 			nodes = append(nodes, graph.Node{Id: id, Kind: kind, Layer: layer, Form: string(kind), Source: graph.SourceDeclared, Salient: layer == graph.LayerDesign, Attrs: attrs})
 		}
 		addEdge := func(kind graph.EdgeKind, from, to string) {
-			edges = append(edges, graph.Edge{Kind: kind, From: from, To: to, Source: graph.SourceDeclared})
+			edge := graph.Edge{Kind: kind, From: from, To: to, Source: graph.SourceDeclared}
+			if kind == graph.EdgeKindCalls {
+				edge.Attrs = map[string][]string{"sites": {"source.go:4:2", "source.go:9:3"}}
+				if rapid.Bool().Draw(t, "empty call attribute") {
+					edge.Attrs["notes"] = nil
+				}
+			}
+			edges = append(edges, edge)
 		}
 		count := rapid.IntRange(0, 4).Draw(t, "groups")
 		addNode("model", graph.NodeKindContainer, graph.LayerDesign, nil)
@@ -80,7 +87,8 @@ func genSinceSample() *rapid.Generator[SinceSample] {
 					}
 				}
 			}
-			switch rapid.IntRange(0, 17).Draw(t, "mutation") {
+			mutation := rapid.IntRange(0, 25).Draw(t, "mutation")
+			switch mutation {
 			case 0:
 			case 1:
 				setAttr(sinceCode(i, "native"), "body", "new")
@@ -138,6 +146,34 @@ func genSinceSample() *rapid.Generator[SinceSample] {
 				id := property + "-new"
 				addNode(id, graph.NodeKindProperty, graph.LayerDesign, map[string][]string{"ensure": {"true"}})
 				addEdge(graph.EdgeKindContains, "model", id)
+			case 18, 19, 20, 22, 23, 24, 25:
+				for j := range edges {
+					if edges[j].Kind != graph.EdgeKindCalls || edges[j].From != sinceCode(i, "helper") || edges[j].To != sinceCode(i, "native") {
+						continue
+					}
+					sites := edges[j].Attrs["sites"]
+					switch mutation {
+					case 18:
+						edges[j].Attrs["sites"] = []string{"source.go:6:8", "source.go:11:4"}
+					case 19:
+						slices.Reverse(sites)
+					case 20:
+						edges[j].Attrs["sites"] = []string{"source.go:6:8"}
+						edges[j].Attrs["relation"] = []string{"changed"}
+					case 22:
+						delete(edges[j].Attrs, "sites")
+					case 23:
+						edges[j].Attrs["sites"] = nil
+					case 24:
+						edges[j].Attrs["sites"] = []string{"source.go:6:8"}
+						delete(edges[j].Attrs, "notes")
+					case 25:
+						edges[j].Attrs["sites"] = []string{"source.go:6:8"}
+						edges[j].Attrs["notes"] = []string{}
+					}
+				}
+			case 21:
+				addEdge(graph.EdgeKindCalls, sinceCode(i, "native"), sinceCode(i, "predicate"))
 			}
 		}
 		if rapid.Bool().Draw(t, "isolated deletion") {
@@ -215,7 +251,27 @@ func checkChangedChecksAreSelected(t rapid.TB, sample SinceSample) {
 	}
 	for key, before := range baseEdges {
 		after, exists := headEdges[key]
-		if !exists || !sameSinceAttrs(before.Attrs, after.Attrs) {
+		equal := exists
+		if exists {
+			for attr, value := range before.Attrs {
+				if key.kind == graph.EdgeKindCalls && attr == "sites" {
+					continue
+				}
+				other, present := after.Attrs[attr]
+				if !present || !slices.Equal(value, other) {
+					equal = false
+				}
+			}
+			for attr := range after.Attrs {
+				if key.kind == graph.EdgeKindCalls && attr == "sites" {
+					continue
+				}
+				if _, present := before.Attrs[attr]; !present {
+					equal = false
+				}
+			}
+		}
+		if !equal {
 			changed[key.from], changed[key.to] = true, true
 		}
 	}
