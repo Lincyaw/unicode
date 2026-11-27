@@ -137,7 +137,11 @@ func writeEdit(target string, edit lang.Edit, mode os.FileMode) error {
 	if writeErr == nil && n != len(edit.Content) {
 		writeErr = io.ErrShortWrite
 	}
-	return errors.Join(writeErr, file.Close())
+	err = errors.Join(writeErr, file.Close())
+	if err != nil {
+		err = errors.Join(err, os.Remove(target))
+	}
+	return err
 }
 
 func hasMarker(src []byte) bool {

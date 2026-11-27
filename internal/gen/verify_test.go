@@ -67,6 +67,12 @@ func checkCheckFilesAreCurrent(t rapid.TB, sample WriteSample) {
 			t.Fatalf("CheckFiles diagnostic %+v does not identify stale file %s", checked[i], path)
 		}
 	}
+	if slices.ContainsFunc(sample.Edits, func(edit lang.Edit) bool { return edit.CreateOnly }) {
+		if ds := checkReadOnly(t, base, root, sample.Edits); len(ds) == 0 {
+			t.Fatal("checking an already-created skeleton did not reject the stale plan")
+		}
+		return
+	}
 	if ds := checkReadOnly(t, base, root, sample.Edits); len(ds) != 0 {
 		t.Fatalf("CheckFiles rejected files just written from the same plan: %+v", ds)
 	}
