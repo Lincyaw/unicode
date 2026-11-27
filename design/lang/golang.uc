@@ -37,6 +37,25 @@ type Lines record "文件中相连的几行：首行和末行，都从 1 起，�
   field to: int
 }
 
+type SkeletonSample record "只新增骨架的样本：原有类型、方法及外部客户端" {
+  field name: string
+  field existingType: bool
+  field existingMethod: bool
+  field external: bool
+}
+
+type ExecutionSample record "调用序列、流程入口及纯性核对的有状态样本" {
+  field initial: int
+  field deltas: list<int>
+  field failAt: int
+  field impure: bool
+}
+
+type DoubleSample record "确定性替身的输入：应答数量及声明错误" {
+  field count: int
+  field fail: bool
+}
+
 op newBackend() -> Backend "一个 Go 后端"
 
 op declaration(src: bytes, line: int, column: int) -> optional<Lines> "Go 源码中包含这一位置的顶层声明所占的行，从它的文档注释起；分组的类型声明中，取包含这一位置的那个类型；源码解析不了，或者这一位置不在任何声明之中时没有"
@@ -65,4 +84,22 @@ property generation-extraction-is-read-only invariant "普通抽取严格检查�
   forall linked: bool
   forall sourceName: string generated "合法且非关键字的 Go 标识符，用于构造已改名的函数及旧引用"
   manual "需要建立实际 Go 模块、旧生成文件和符号链接，调用两种抽取并逐字节比较磁盘内容"
+}
+
+property skeletons-preserve-source invariant "一次规划缺少的类型、操作和人工谓词及其驱动，骨架只新增且有绑定；重建图后再次生成不再产生骨架，已有函数体保持逐字节相同；旧只新增计划拒绝覆盖" {
+  about Backend
+  forall sample: SkeletonSample generated "合法名称及已有类型、方法、外部操作的组合，含空包和不存在的源码目录"
+  manual "需要规划和载入实际 Go 模块，核对文件树、绑定、编译结果与函数体字节"
+}
+
+property executes-sequences-and-flows invariant "序列检查初态及每个声明调用后的关系，逐步刷新 old 并在声明错误后继续；自动流程只调用入口；纯操作重复核对冻结的结果、错误及接收者与实参" {
+  about Backend
+  forall sample: ExecutionSample generated "初始计数、零到八次增减、声明失败位置与纯性破坏方式"
+  manual "需要执行实际 Go 方法并记录调用次序，与独立状态演算、返回和错误快照比较"
+}
+
+property scripted-doubles-follow-inputs invariant "接口及外部客户端的每次应答来自输入脚本，末项重复，声明错误保留字段；安装及清理覆盖拒绝、失败和 panic，不调用真实外部服务" {
+  about Backend
+  forall sample: DoubleSample generated "一到五个成功或声明错误的应答，包含多个接口方法及客户端安装边界"
+  manual "需要构造实际原生接口和客户端安装器，记录调用及清理并比较脚本的独立预期值"
 }

@@ -64,10 +64,11 @@ Param         = Lower ":" TypeExpr .
 TypeExpr      = Builtin | TypeRef
               | ( "list" | "set" | "optional" ) "<" TypeExpr ">"
               | "map" "<" TypeExpr "," TypeExpr ">"
-              | "call" "<" Ref { "," Ref } ">" .
+              | "call" "<" Ref { "," Ref } ">"
+              | "replies" "<" OpRef ">" .
 Builtin       = "bool" | "int" | "float" | "string" | "bytes" | "time" | "duration" .
 
-FlowDecl      = "flow" Kebab String "{" NL { Symbol } { Limit } { Step } [ Within ] { Ensure } { CaseDecl } "}" NL .
+FlowDecl      = "flow" Kebab String "{" NL { Symbol } { Limit } { Step } [ Within ] { Ensure } [ Manual ] { CaseDecl } "}" NL .
 Step          = Call { OnBlock } | Send | Emit | Async | Fragment .
 Call          = Participant "->" OpRef Args [ "{" NL { Step } "}" ] NL .
 Send          = Participant "->>" OpRef Args NL .
@@ -139,7 +140,7 @@ NL            = 换行 { 换行 } .
 - **G0** 每个文件合乎 §3 中它的种类的产生式，包括产生式规定的声明次序、块的成员和只出现一次的子句。
 - **G1** 组件文件中的声明按组件、类型、操作、流程、性质分组，各组内部保持作者写的次序。
 - **G2** 类型的成员按 `label`、`extends`、`implements`、`field` 或 `value`、`op` 的次序排列。`value` 只出现在 `enum` 中；`field` 不出现在 `enum` 和 `interface` 中。
-- **G3** 流程的成员按 `forall`、`where`、步骤、`case` 的次序排列；性质的成员按 `about`、`forall`、`where`、`observe`、`requires`、`changes`、`call`、`within`、`ensure` 或 `manual`、`case` 的次序排列；流程的 `within` 和 `ensure` 在步骤之后、`case` 之前。
+- **G3** 流程的成员按 `forall`、`where`、步骤、`within`、`ensure` 或有理由的 `manual`、`case` 的次序排列；性质的成员按 `about`、`forall`、`where`、`observe`、`requires`、`changes`、`call`、`within`、`ensure` 或 `manual`、`case` 的次序排列；流程的 `within` 和 `ensure` 在步骤之后、`case` 之前。
 - **G4** `{` 总在行尾，`}` 总在行首；同一行中 `{` 之后或 `}` 之前不能有别的内容。`alt` 的分支写作一行 `} else "标签" {`。
 - **G5** 在流程中，一行的第一个词之后是 `->`、`->>` 或 `.`，或是 `emits` 再接一个大驼峰的词或带 `.` 的引用时，这一行是一个步骤；否则第一个词是关键字。
 - **G6** 调用后面的 `{ … }` 是这次调用的子步骤。`on` 紧跟在一个调用之后，调用带子步骤时在它的 `}` 之后；一个调用之后可以有几个 `on`。调用与 `on` 之间的注释属于 `on`。
@@ -314,8 +315,8 @@ NL            = 换行 { 换行 } .
 
 **检查。** 一条带陈述的性质或流程，对每个用例（声明的、录制的和生成的）：
 
-- **E12** 有被测的调用时，先取得调用前观察值并检查全部前提；只有前提成立，才固定变化路径、求值全部 `old(e)` 和被测调用的接收者与实参，再执行一次调用，冻结返回值或错误的数据，取得调用后观察值，最后检查全部 `ensure` 和范围外不变。拒绝输入时不执行调用，也不预先求值 `old(e)`。被测调用抛出不在其操作的 `raises` 中的错误时，这个用例是反例。流程的被测调用由流程的驱动执行，执行时按步骤核对调用的先后（[design.md](design.md) §6.3）。
-- **E13** 有调用序列的符号时（G14），先检查前提，再求值一次全部 `ensure`；再把调用依次作用到类型为 T 的符号上，每次调用之前求值 `old(e)`，之后求值全部 `ensure`。调用抛出它的 `raises` 中的错误时，接着执行下一个调用；抛出其他错误时，这个用例是反例。
+- **E12** 有被测的调用时，先取得调用前观察值并检查全部前提；只有前提成立，才固定变化路径、求值全部 `old(e)` 和被测调用的接收者与实参，再执行一次调用，冻结返回值或错误的数据，取得调用后观察值，最后检查全部 `ensure` 和范围外不变。拒绝输入时不执行调用，也不预先求值 `old(e)`。被测调用抛出不在其操作的 `raises` 中的错误时，这个用例是反例。流程的被测调用由流程的驱动执行，M4 执行入口并检查后置陈述，M6 再核对内部步骤的调用先后（[design.md](design.md) §6.3）。自动流程入口实参必须是已声明且类型匹配的输入符号；方法入口须有唯一的所属类型输入作为接收者。需要额外环境准备的流程声明 `manual` 理由。
+- **E13** 有调用序列的符号时（G14），先检查前提，初态的 `old(e)` 取初态副本，求值一次全部 `ensure`；再把调用依次作用到类型为 T 的符号上，每次调用之前求值 `old(e)`，之后求值全部 `ensure`。调用抛出它的 `raises` 中的错误时，接着执行下一个调用；抛出其他错误时，这个用例是反例。
 - **E14** 其余的性质，前提成立时求值全部 `ensure`；人工性质的前提成立时调用手写谓词。
 - **E15** 任一 `ensure` 为假、范围外有变化，或陈述出现求值错误，这个用例就是反例。前提求值错误、域外用例、观察适配失败和缺少有效执行是检查错误，分别报告，不伪造成业务反例。外部系统的应答和类型为接口的字段由替身给出，也是生成的输入（[design.md](design.md) §6.2）。
 - **E16** 带 `within` 的性质或流程，记下一次运行中每个用例的被测调用的耗时；这些耗时的第 95 百分位超过 `within` 的时长时，这条性质或流程不通过。
@@ -390,8 +391,10 @@ NL            = 换行 { 换行 } .
 - **`generates <标识>`**：写在生成器函数上，标识是性质或流程的标识后接 `.` 和一个生成的符号的名称，表示它给出这个符号的生成器。同一个生成器可以用于几个符号，每个符号写一行 `generates`。
 - **`observes <标识>`**：写在只读的观察适配器自由函数上，指向性质内的具名观察。参数按 `from` 的次序，返回快照；Go 可以另带末尾的 `error`，Python 抛出的异常也属于观察失败。这些失败是检查环境错误，不是被测操作的业务错误。
 
-- **B1** 绑定的动词只有 `realizes`、`checks`、`generates` 和 `observes`，后接一个空格和一个设计标识；`generates` 指向生成的符号，`observes` 指向具名观察。
-- **B2** 绑定写在类型或函数的文档注释中，独占一行；`checks`、`generates` 只写在函数上，`observes` 只写在自由函数上。
+- **`substitutes <标识>`**：写在外部客户端的替身安装自由函数上。目标是外部直接操作；Go 参数是与真实客户端完全同签名的函数，唯一返回值是清理函数 `func()`。脚本通过 `forall answers: replies<外部操作>` 提供；接口字段按操作名给出同形脚本。每项应答是 `{returns: 值}` 或 `{raises: "绝对错误标识", fields: {…}}`，无返回值的成功值为 `none`；脚本非空，末项重复。类型、声明错误及字段均在设计载入时检查。
+
+- **B1** 绑定的动词只有 `realizes`、`checks`、`generates`、`observes` 和 `substitutes`，后接一个空格和一个设计标识；`generates` 指向生成的符号，`observes` 指向具名观察。
+- **B2** 绑定写在类型或函数的文档注释中，独占一行；`checks`、`generates` 只写在函数上，`observes` 和 `substitutes` 只写在自由函数上。
 
 ### 6.1 Go
 
@@ -811,10 +814,10 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 | E9 | `lang.golang.observation-failed`、`lang.golang.unsupported-contract`、`lang.golang.ensure-failed` | `lang.golang.executes-contracts` |
 | E10 | `lang.golang.undeclared-error`、`lang.golang.ensure-failed` | `lang.golang.executes-contracts` |
 | E11 | `lang.golang.expression-failed`、`lang.golang.invalid-result`、`lang.golang.call-panicked` | `lang.golang.executes-contracts` |
-| E12 | `lang.golang.undeclared-error`、`lang.golang.ensure-failed`、`lang.golang.expression-failed`；完整流程执行未实现：M4 后续阶段 | `lang.golang.executes-contracts` |
-| E13 | `lang.golang.unsupported-contract`；调用序列执行未实现：M4 后续阶段 | `lang.golang.executes-contracts` |
+| E12 | `lang.golang.undeclared-error`、`lang.golang.ensure-failed`、`lang.golang.expression-failed`；流程入口与后置陈述由生成驱动执行，内部轨迹核对属于 M6 | `lang.golang.executes-contracts` |
+| E13 | `lang.golang.undeclared-error`、`lang.golang.ensure-failed`、`lang.golang.expression-failed` | `lang.golang.executes-contracts` |
 | E14 | `lang.golang.ensure-failed`、`lang.golang.predicate-failed` | `lang.golang.executes-contracts` |
-| E15 | `lang.golang.ensure-failed`、`lang.golang.frame-violation`、`lang.golang.expression-failed`、`lang.golang.predicate-failed`；接口替身未实现：M4 后续阶段 | `lang.golang.executes-contracts` |
+| E15 | `lang.golang.ensure-failed`、`lang.golang.frame-violation`、`lang.golang.expression-failed`、`lang.golang.predicate-failed`；接口和外部客户端使用输入中的应答脚本 | `lang.golang.executes-contracts` |
 | E16 | `lang.golang.within-exceeded`；并入证据未实现：M6 | `lang.golang.executes-contracts` |
 | E17 | `lang.golang.input-outside-domain`、`lang.golang.expression-failed` | `lang.golang.executes-contracts` |
 | E18 | `lang.golang.observation-failed`、`lang.golang.adapter-failed`、`lang.golang.unsupported-contract` | `lang.golang.executes-contracts` |

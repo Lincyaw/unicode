@@ -29,6 +29,7 @@ type Backend interface "一种语言的后端：静态抽取代码层，给出�
 type Edit record "生成计划中的一个文件，路径相对于仓库根目录" {
   field path: string
   field content: bytes
+  field createOnly: bool
 }
 
 type Generation record "生成的文件及诊断；有诊断时不应用计划" {

@@ -36,6 +36,7 @@ flow answer-request "查看器发来一次接口请求：快照文件自上次�
       Server -> check.conform(g)
     }
   }
+  manual "需要准备实际文件系统、命令或 HTTP 环境并核对独立预期值，由手写谓词实现边界"
 }
 
 property answers-follow-contract invariant "每个应答都合乎 api/openapi.yaml：状态码是该接口声明的，正文合乎声明的模式；接口没有声明的拒绝，正文是诊断码为 serve.* 的 {code, message, fix}" {
