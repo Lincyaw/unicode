@@ -24,7 +24,7 @@ This project's engineering conventions are the general rules of the `engineering
 
 - The main session designs and reviews. It writes the design files, then dispatches implementation to subagents, one lane per coherent piece of work. Each task names the design nodes it implements and the documents to read (from M3 it carries `unicode slice`).
 - A lane works in its own worktree at `../unicode-wt/<lane>` on branch `<lane>`, commits there, and never touches the main checkout.
-- The main session reviews every lane with a code-reviewer subagent and by reading the code, runs `make check` on the result, merges with `git merge --no-ff`, and removes the worktree. Findings about the specification go into the documents in the same merge. A review reads the code and may run a few targeted probes; it does not run batches of mutants, which belong to the deep stage.
+- The main session reviews every lane with a code-reviewer subagent and by reading the code, rebases the lane's branch onto main, runs `make check` on the result, fast-forwards main to it (`git merge --ff-only`), and removes the worktree. History stays linear: no merge commits, `git pull --rebase` (or `--ff-only`) when taking the remote, and a lane that falls behind rebases rather than merges main in. Findings about the specification go into the documents as commits of their own on top. A review reads the code and may run a few targeted probes; it does not run batches of mutants, which belong to the deep stage.
 - Lane briefs ask for `make check` and a commit, never for mutant confirmation or long runs.
 - The toolchain itself never schedules agents.
 
