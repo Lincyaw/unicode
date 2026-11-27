@@ -50,7 +50,7 @@ property answers-follow-contract invariant "每个应答都合乎 api/openapi.ya
   manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"
 }
 
-property identities-resolve invariant "应答中作为节点标识出现的每个值，经 /api/entity 都能取到实体页" {
+property identities-resolve invariant "应答中作为节点标识出现的每个值，经 /api/entity 都能取到实体页；比较中各项在基准中的样子和删除的项不在快照中，除外" {
   about Server.answer
   forall exchange: Exchange generated "一张随机的图，以及对各个接口的请求，标识多取自图中的节点"
   manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"
