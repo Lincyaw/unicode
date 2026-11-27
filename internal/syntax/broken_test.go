@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"testing"
 	"unicode"
 
 	"pgregory.net/rapid"
@@ -987,16 +986,4 @@ func numbered(text string) string {
 		fmt.Fprintf(&b, "%4d  %s\n", i+1, l)
 	}
 	return b.String()
-}
-
-func TestRejectsBrokenText(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkRejectsBrokenText(t, genBroken().Draw(t, "broken"))
-	})
-}
-
-func FuzzRejectsBrokenText(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkRejectsBrokenText(t, genBroken().Draw(t, "broken"))
-	}))
 }

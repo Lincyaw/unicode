@@ -3,10 +3,14 @@ package diag
 import (
 	"encoding/json"
 	"reflect"
-	"testing"
 
 	"pgregory.net/rapid"
 )
+
+//uc:generates diag.diagnostic-json-is-flat.diagnostic
+func genDiagnostic() *rapid.Generator[Diagnostic] {
+	return rapid.Make[Diagnostic]()
+}
 
 //uc:checks diag.diagnostic-json-is-flat
 func checkDiagnosticJSONIsFlat(t rapid.TB, diagnostic Diagnostic) {
@@ -42,11 +46,4 @@ func checkDiagnosticJSONIsFlat(t rapid.TB, diagnostic Diagnostic) {
 			t.Fatalf("diagnostic JSON field %s = %s, want %s", key, got, valueJSON)
 		}
 	}
-}
-
-func TestDiagnosticJSONIsFlat(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkDiagnosticJSONIsFlat(t, rapid.Make[Diagnostic]().Draw(t, "diagnostic")) })
-}
-func FuzzDiagnosticJSONIsFlat(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) { checkDiagnosticJSONIsFlat(t, rapid.Make[Diagnostic]().Draw(t, "diagnostic")) }))
 }

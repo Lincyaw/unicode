@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
-	"testing"
 	"time"
 
 	"pgregory.net/rapid"
@@ -161,18 +160,4 @@ func checkFlowDiffSnapshots(t rapid.TB, base map[string]RepoFile, head map[strin
 	if len(got) != 4 {
 		t.Fatalf("the output of unicode %s holds the keys %v, not only base, head, nodes and edges", strings.Join(command, " "), sortedKeys(got))
 	}
-}
-
-func TestFlowDiffSnapshots(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkFlowDiffSnapshots(t, genRepo().Draw(t, "base"), genRepo().Draw(t, "head"),
-			rapid.Bool().Draw(t, "toCommit"), rapid.Bool().Draw(t, "jsonOutput"), rapid.Bool().Draw(t, "readable"))
-	})
-}
-
-func FuzzFlowDiffSnapshots(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkFlowDiffSnapshots(t, genRepo().Draw(t, "base"), genRepo().Draw(t, "head"),
-			rapid.Bool().Draw(t, "toCommit"), rapid.Bool().Draw(t, "jsonOutput"), rapid.Bool().Draw(t, "readable"))
-	}))
 }

@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 
@@ -314,17 +313,4 @@ func checkPlanFollowsLanguageRoots(t rapid.TB, sample PlanSample) {
 			t.Fatal("Plan accepted a backend without generation capability")
 		}
 	}
-}
-
-func TestWritePreservesUnownedFiles(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkWritePreservesUnownedFiles(t, genWriteSample().Draw(t, "sample")) })
-}
-func FuzzWritePreservesUnownedFiles(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) { checkWritePreservesUnownedFiles(t, genWriteSample().Draw(t, "sample")) }))
-}
-func TestPlanFollowsLanguageRoots(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkPlanFollowsLanguageRoots(t, genPlanSample().Draw(t, "sample")) })
-}
-func FuzzPlanFollowsLanguageRoots(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) { checkPlanFollowsLanguageRoots(t, genPlanSample().Draw(t, "sample")) }))
 }

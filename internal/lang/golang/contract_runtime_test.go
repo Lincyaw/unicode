@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"testing"
 	"unicode/utf8"
 
 	"pgregory.net/rapid"
@@ -338,10 +337,4 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
-}
-func TestExecutesContracts(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkExecutesContracts(t, genContractSample().Draw(t, "sample")) })
-}
-func FuzzExecutesContracts(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) { checkExecutesContracts(t, genContractSample().Draw(t, "sample")) }))
 }

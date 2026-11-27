@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"testing"
 
 	"github.com/alecthomas/participle/v2/lexer"
 	"github.com/mattn/go-runewidth"
@@ -65,18 +64,6 @@ func checkFormatIsStable(t rapid.TB, sample Sample) {
 	if again := second.File.Print(); !bytes.Equal(again, printed) {
 		t.Fatalf("t parsed and printed again is not t\nt:\n%s\nprinted again:\n%s", printed, again)
 	}
-}
-
-func TestFormatIsStable(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkFormatIsStable(t, genSample().Draw(t, "sample"))
-	})
-}
-
-func FuzzFormatIsStable(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkFormatIsStable(t, genSample().Draw(t, "sample"))
-	}))
 }
 
 func describeDiagnostics(p Parsed) string {

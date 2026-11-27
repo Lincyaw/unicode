@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 
@@ -116,16 +115,4 @@ func checkGenerationExtractionIsReadOnly(t rapid.TB, repairable, linked bool, so
 			t.Fatalf("extraction replaced the source symlink: %v", err)
 		}
 	}
-}
-
-func TestGenerationExtractionIsReadOnly(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkGenerationExtractionIsReadOnly(t, rapid.Bool().Draw(t, "repairable"), rapid.Bool().Draw(t, "linked"), genGenerationSourceName().Draw(t, "sourceName"))
-	})
-}
-
-func FuzzGenerationExtractionIsReadOnly(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkGenerationExtractionIsReadOnly(t, rapid.Bool().Draw(t, "repairable"), rapid.Bool().Draw(t, "linked"), genGenerationSourceName().Draw(t, "sourceName"))
-	}))
 }

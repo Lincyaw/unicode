@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"reflect"
 	"slices"
-	"testing"
 
 	"pgregory.net/rapid"
 
@@ -101,16 +100,4 @@ func checkImpactIsReverseReachability(t rapid.TB, question Question) {
 			t.Fatalf("the path for %q ends at %q, which is not a changed node: %+v", id, at, a.Path)
 		}
 	}
-}
-
-func TestImpactIsReverseReachability(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkImpactIsReverseReachability(t, genImpactQuestion().Draw(t, "question"))
-	})
-}
-
-func FuzzImpactIsReverseReachability(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkImpactIsReverseReachability(t, genImpactQuestion().Draw(t, "question"))
-	}))
 }

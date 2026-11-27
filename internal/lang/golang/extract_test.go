@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 
@@ -111,16 +110,4 @@ func listing(module Module) string {
 		}
 	}
 	return b.String()
-}
-
-func TestExtractsGeneratedModule(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkExtractsGeneratedModule(t, genModule().Draw(t, "module"))
-	})
-}
-
-func FuzzExtractsGeneratedModule(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkExtractsGeneratedModule(t, genModule().Draw(t, "module"))
-	}))
 }

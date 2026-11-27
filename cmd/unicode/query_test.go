@@ -13,7 +13,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 
@@ -393,18 +392,4 @@ func checkCode(t rapid.TB, root string, files map[string]RepoFile, got any, s qu
 			t.Fatalf("slice --with-code attaches to %s the code\n%s\nwhich lacks the line of its declaration %q", id, text, line)
 		}
 	}
-}
-
-func TestFlowQueryGraph(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		files := genRepo().Draw(t, "files")
-		checkFlowQueryGraph(t, files, genQueryCommand(files).Draw(t, "command"))
-	})
-}
-
-func FuzzFlowQueryGraph(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		files := genRepo().Draw(t, "files")
-		checkFlowQueryGraph(t, files, genQueryCommand(files).Draw(t, "command"))
-	}))
 }

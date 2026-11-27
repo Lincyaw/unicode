@@ -3,7 +3,6 @@ package design
 import (
 	"fmt"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 )
@@ -93,8 +92,14 @@ property moves-balance postcondition "Transfer changes only the allowed state" {
 	}}
 }
 
-func TestContractGraphIsDeclared(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkAcceptsValidDesign(t, contractFixture(t)) })
+//uc:generates design.contract-graph-is-declared.sample
+func genContractFixture() *rapid.Generator[Sample] {
+	return rapid.Custom(contractFixture)
+}
+
+//uc:checks design.contract-graph-is-declared
+func checkContractGraphIsDeclared(t rapid.TB, sample Sample) {
+	checkAcceptsValidDesign(t, sample)
 }
 
 func resultContractFixture(t *rapid.T) Sample {
@@ -129,14 +134,14 @@ property returned-value postcondition "Returned values support pure observations
 	}
 }
 
-func TestReturnedValueContractIsDeclared(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkAcceptsValidDesign(t, resultContractFixture(t)) })
+//uc:generates design.returned-value-contract-is-declared.sample
+func genResultContractFixture() *rapid.Generator[Sample] {
+	return rapid.Custom(resultContractFixture)
 }
 
-func TestContractRejectsInvalidRelations(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkRejectsBrokenDesign(t, brokenContractFixture(t))
-	})
+//uc:checks design.returned-value-contract-is-declared
+func checkReturnedValueContractIsDeclared(t rapid.TB, sample Sample) {
+	checkAcceptsValidDesign(t, sample)
 }
 
 func brokenContractFixture(t *rapid.T) Broken {
@@ -171,4 +176,14 @@ func brokenContractFixture(t *rapid.T) Broken {
 		line = strings.Count(sample.Files[path][:strings.Index(sample.Files[path], "call account.move")], "\n") + 1
 	}
 	return Broken{Files: sample.Files, Path: path, Line: line, Code: variant.code}
+}
+
+//uc:generates design.contract-rejects-invalid-relations.broken
+func genBrokenContractFixture() *rapid.Generator[Broken] {
+	return rapid.Custom(brokenContractFixture)
+}
+
+//uc:checks design.contract-rejects-invalid-relations
+func checkContractRejectsInvalidRelations(t rapid.TB, broken Broken) {
+	checkRejectsBrokenDesign(t, broken)
 }

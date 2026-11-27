@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 )
@@ -101,16 +100,4 @@ func checkFlowBuildSnapshot(t rapid.TB, files map[string]RepoFile, committed boo
 	if got, outside := headRecord(t, out), (map[string]any{"commit": nil, "dirty": true}); !reflect.DeepEqual(got, outside) {
 		t.Fatalf("build.json records %v for a repository outside any Git work tree, not %v", got, outside)
 	}
-}
-
-func TestFlowBuildSnapshot(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkFlowBuildSnapshot(t, genRepo().Draw(t, "files"), rapid.Bool().Draw(t, "committed"), rapid.Bool().Draw(t, "edited"))
-	})
-}
-
-func FuzzFlowBuildSnapshot(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkFlowBuildSnapshot(t, genRepo().Draw(t, "files"), rapid.Bool().Draw(t, "committed"), rapid.Bool().Draw(t, "edited"))
-	}))
 }

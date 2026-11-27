@@ -3,7 +3,6 @@ package check
 import (
 	"fmt"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 
@@ -69,14 +68,6 @@ func checkAcceptsConformingGraph(t rapid.TB, sample Sample) {
 	}
 }
 
-func TestAcceptsConformingGraph(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkAcceptsConformingGraph(t, genSample().Draw(t, "sample")) })
-}
-
-func FuzzAcceptsConformingGraph(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) { checkAcceptsConformingGraph(t, genSample().Draw(t, "sample")) }))
-}
-
 //uc:checks check.rejects-broken-graph
 func checkRejectsBrokenGraph(t rapid.TB, broken Broken) {
 	g := graph.NewGraph()
@@ -99,12 +90,4 @@ func checkRejectsBrokenGraph(t rapid.TB, broken Broken) {
 	if status, ok := checked.Statuses[broken.Subject]; ok && status == graph.StatusVerified {
 		t.Fatalf("Conform reported %s about the declared item %s, yet left its status verified", broken.Code, broken.Subject)
 	}
-}
-
-func TestRejectsBrokenGraph(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkRejectsBrokenGraph(t, genBroken().Draw(t, "broken")) })
-}
-
-func FuzzRejectsBrokenGraph(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) { checkRejectsBrokenGraph(t, genBroken().Draw(t, "broken")) }))
 }

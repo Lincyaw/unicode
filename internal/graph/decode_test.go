@@ -3,7 +3,6 @@ package graph
 import (
 	"bytes"
 	"errors"
-	"testing"
 
 	"pgregory.net/rapid"
 )
@@ -31,6 +30,8 @@ func checkDecodeInvertsEncode(t rapid.TB, content Fragment, noise []byte) {
 
 // genNoise draws bytes that are often near JSON: brackets, quotes, the
 // snapshot's field names and digits, and now and then any byte.
+//
+//uc:generates graph.decode-inverts-encode.noise
 func genNoise() *rapid.Generator[[]byte] {
 	pieces := []string{"{", "}", "[", "]", `"`, ":", ",", " ", "0", "-1", "null", "true", `"nodes"`, `"edges"`, `"id"`, `"a"`, `"attrs"`, `"origin"`}
 	return rapid.Custom(func(t *rapid.T) []byte {
@@ -44,16 +45,4 @@ func genNoise() *rapid.Generator[[]byte] {
 		}
 		return b
 	})
-}
-
-func TestDecodeInvertsEncode(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkDecodeInvertsEncode(t, genFragment().Draw(t, "content"), genNoise().Draw(t, "noise"))
-	})
-}
-
-func FuzzDecodeInvertsEncode(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkDecodeInvertsEncode(t, genFragment().Draw(t, "content"), genNoise().Draw(t, "noise"))
-	}))
 }

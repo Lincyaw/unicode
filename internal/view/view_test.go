@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 
@@ -159,18 +158,6 @@ func set(ids []string) map[string]bool {
 	return s
 }
 
-func TestViewIsFoldedSubgraph(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkViewIsFoldedSubgraph(t, genRequest().Draw(t, "request"))
-	})
-}
-
-func FuzzViewIsFoldedSubgraph(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkViewIsFoldedSubgraph(t, genRequest().Draw(t, "request"))
-	}))
-}
-
 //uc:checks view.sequence-follows-steps
 func checkSequenceFollowsSteps(t rapid.TB, request Request) {
 	g := graphOf(t, request.Fragment)
@@ -209,16 +196,4 @@ func checkSequenceFollowsSteps(t rapid.TB, request Request) {
 			t.Fatalf("the %s view of %q draws the lifeline %q before %q, though %q appears first in the flow", request.Kind, request.Id, l, lifelines[i-1], lifelines[i-1])
 		}
 	}
-}
-
-func TestSequenceFollowsSteps(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkSequenceFollowsSteps(t, genFlowRequest().Draw(t, "request"))
-	})
-}
-
-func FuzzSequenceFollowsSteps(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkSequenceFollowsSteps(t, genFlowRequest().Draw(t, "request"))
-	}))
 }
