@@ -99,7 +99,84 @@ type RunPlan struct {
 	Graph   *graph.Graph  `json:"graph"`
 	Ids     []string      `json:"ids"`
 	Explore time.Duration `json:"explore"`
+	Record  bool          `json:"record"`
 }
+
+// Value is a finite replayable model value. Encoded values hold their declared
+// representation as their single item.
+//
+//uc:realizes lang.Value
+type Value struct {
+	Kind    string       `json:"kind"`
+	Text    string       `json:"text"`
+	Items   []Value      `json:"items"`
+	Entries []ValueEntry `json:"entries"`
+}
+
+// ValueEntry is one record, map, call or response-script entry.
+//
+//uc:realizes lang.ValueEntry
+type ValueEntry struct {
+	Key   Value `json:"key"`
+	Value Value `json:"value"`
+}
+
+// Input freezes all symbols before a business call changes their native values.
+//
+//uc:realizes lang.Input
+type Input struct {
+	Values map[string]Value `json:"values"`
+}
+
+// Coverage is a measured source block or design step, branch or declared error.
+//
+//uc:realizes lang.Coverage
+type Coverage struct {
+	Kind      string `json:"kind"`
+	Node      string `json:"node"`
+	Path      string `json:"path"`
+	Line      int    `json:"line"`
+	Column    int    `json:"column"`
+	EndLine   int    `json:"endLine"`
+	EndColumn int    `json:"endColumn"`
+	Label     string `json:"label"`
+}
+
+// TraceEvent is an observed runtime event with its actual goroutine lineage.
+//
+//uc:realizes lang.TraceEvent
+type TraceEvent struct {
+	Kind      string `json:"kind"`
+	Node      string `json:"node"`
+	Goroutine int    `json:"goroutine"`
+	Parent    int    `json:"parent"`
+	Time      int    `json:"time"`
+	Detail    string `json:"detail"`
+}
+
+// CaseResult is a final candidate result, independent of minimization attempts.
+//
+//uc:realizes lang.CaseResult
+type CaseResult struct {
+	Id           string            `json:"id"`
+	Check        string            `json:"check"`
+	Form         string            `json:"form"`
+	Reason       string            `json:"reason"`
+	Input        Input             `json:"input"`
+	InputHash    string            `json:"inputHash"`
+	Passed       bool              `json:"passed"`
+	Rejected     bool              `json:"rejected"`
+	Coverage     []Coverage        `json:"coverage"`
+	Trace        []TraceEvent      `json:"trace"`
+	Observations []string          `json:"observations"`
+	Differences  []string          `json:"differences"`
+	Diagnostics  []diag.Diagnostic `json:"diagnostics"`
+}
+
+// CandidateRunner executes one reconstructed input at an isolated boundary.
+//
+//uc:realizes lang.CandidateRunner
+type CandidateRunner interface{ Evaluate(input Input) CaseResult }
 
 // RunResult records one check's effective inputs, observations and failures.
 //
@@ -120,6 +197,12 @@ type RunResult struct {
 type RunReport struct {
 	Results     []RunResult       `json:"results"`
 	Diagnostics []diag.Diagnostic `json:"diagnostics"`
+	Version     int               `json:"version"`
+	Snapshot    string            `json:"snapshot"`
+	Commit      string            `json:"commit"`
+	Dirty       bool              `json:"dirty"`
+	At          string            `json:"at"`
+	Mode        string            `json:"mode"`
 }
 
 // Generator is the optional generation capability of a language backend.
