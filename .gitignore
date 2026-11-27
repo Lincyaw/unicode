@@ -1,3 +1,4 @@
 /.unicode/
 /bin/
 **/testdata/rapid/
+/api/node_modules/

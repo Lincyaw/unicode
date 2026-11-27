@@ -1,0 +1,9 @@
+emit:
+  - "@typespec/openapi3"
+options:
+  "@typespec/openapi3":
+    # The OpenAPI document is committed beside its sources: oapi-codegen (the server's Go types) and
+    # openapi-typescript (the frontend's types) both read it. make api-check confirms it matches the sources.
+    emitter-output-dir: "{project-root}"
+    output-file: openapi.yaml
+    file-type: yaml
