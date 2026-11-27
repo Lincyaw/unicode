@@ -10,6 +10,7 @@ import { monoWidth } from '../canvas/measure';
 import { messageOf, relative, scopeOf } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
+import { NodeRef } from '../marks/NodeButton';
 import { StepLabel } from './StepLabel';
 import { diagnosticsAbout, stepTree, type StepTree } from './stepTree';
 import styles from './views.module.css';
@@ -234,7 +235,12 @@ export function ActivityView({ view }: { view: View }) {
           case 'event':
             return (
               <Placed key={`event ${piece.step.id}`} rect={piece.rect} className={styles.chipSlot}>
-                <span className={styles.pill}><KindIcon node={{ kind: 'type', form: 'event', layer: 'design', salient: true }} size={ICON_TINY} />{piece.step.step?.target ? relative(piece.step.step.target.id, scope) : ''}</span>
+                {piece.step.step?.target && (
+                  <NodeRef id={piece.step.step.target.id} className={styles.pill}>
+                    <KindIcon node={{ kind: 'type', form: 'event', layer: 'design', salient: true }} size={ICON_TINY} />
+                    {relative(piece.step.step.target.id, scope)}
+                  </NodeRef>
+                )}
               </Placed>
             );
           case 'group':

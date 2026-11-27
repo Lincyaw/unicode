@@ -3,6 +3,7 @@ import type { View } from '../../api/types';
 import { ABOUT, VIEW_NAMES } from '../../terms';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { FoldedCard, TypeCard } from '../canvas/cards';
+import { useUnfolded } from '../canvas/unfolded';
 import { CARD_WIDTH, cardHeight, foldedHeight, typeRows } from '../canvas/sizes';
 import { Lines, type Line } from '../canvas/Edges';
 import { arrange, routeAll, type Link } from '../canvas/layout';
@@ -18,8 +19,9 @@ const SPACING = { node: 32, rank: 44 };
  */
 export function ClassView({ view, toolbar }: { view: View; toolbar: ReactNode }) {
   const links = useLinks();
+  const unfolded = useUnfolded();
   const folded = new Set(view.folded);
-  const cards = view.nodes.map(node => ({ node, rows: folded.has(node.id) ? [] : typeRows(node) }));
+  const cards = view.nodes.map(node => ({ node, rows: folded.has(node.id) ? [] : typeRows(node, unfolded.full.has(node.id)) }));
   const drawn = new Set(view.nodes.map(node => node.id));
   const byId = new Map(view.nodes.flatMap(node => [[node.id, node] as const, ...(node.contents ?? []).map(child => [child.id, child] as const)]));
   const edges = boxEdges(view.edges, drawn);
@@ -50,7 +52,7 @@ export function ClassView({ view, toolbar }: { view: View; toolbar: ReactNode })
         const rect = rects.get(node.id);
         return rect && (
           <Placed key={node.id} rect={rect}>
-            {folded.has(node.id) ? <FoldedCard node={node} names={node.contents ?? []} /> : <TypeCard node={node} rows={rows} />}
+            {folded.has(node.id) ? <FoldedCard node={node} names={node.contents ?? []} /> : <TypeCard node={node} rows={rows} onToggle={() => unfolded.toggle(node.id)} />}
           </Placed>
         );
       })}

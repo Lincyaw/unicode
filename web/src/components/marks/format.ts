@@ -20,6 +20,39 @@ export function relative(text: string, scope: string): string {
   return text.replace(new RegExp(`(?<![\\w.-])${escaped(scope)}\\.`, 'g'), '');
 }
 
+/** A part of a written type or signature: plain text, or the reference to the design node it names. */
+export interface TypePart {
+  text: string;
+  id?: string;
+}
+
+/** A design identity as types and signatures write it: dotted segments, such as `graph.Fragment` or `payment-gateway.Rejected`. */
+const REFERENCE = /[A-Za-z_][\w-]*(?:\.[A-Za-z_][\w-]*)+/g;
+
+/**
+ * A written type or signature as parts: each reference it makes is a part of its own, written relative to `scope`.
+ * With `refs`, only those identities are references (a field's `refers`); otherwise every dotted identity is.
+ */
+export function typeParts(text: string, scope: string, refs?: readonly string[]): TypePart[] {
+  const parts: TypePart[] = [];
+  let at = 0;
+  for (const match of text.matchAll(REFERENCE)) {
+    const id = match[0];
+    if (refs !== undefined && !refs.includes(id)) {
+      continue;
+    }
+    if (match.index > at) {
+      parts.push({ text: relative(text.slice(at, match.index), scope) });
+    }
+    parts.push({ text: relative(id, scope), id });
+    at = match.index + id.length;
+  }
+  if (at < text.length) {
+    parts.push({ text: relative(text.slice(at), scope) });
+  }
+  return parts;
+}
+
 /** An operation's signature, `(params) -> result raises errors`, written relative to its component. */
 export function signatureOf(op: Pick<Node, 'id' | 'attrs'>): string {
   return relative(op.attrs.signature?.[0] ?? '()', scopeOf(op.id));

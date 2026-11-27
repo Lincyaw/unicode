@@ -120,9 +120,12 @@ function OpsTable({ entity }: { entity: Entity }) {
   );
 }
 
-/** A diagram of one node between two columns of nodes, such as what refers to a type and what it refers to. */
-function Between({ node, before, after, beforeTitle, afterTitle, badge }: {
-  node: Node; before: Node[]; after: Neighbor[] | Node[]; beforeTitle: string; afterTitle: string; badge?: (neighbor: Neighbor) => ReactNode;
+/**
+ * A diagram of one node between two columns of nodes, such as what refers to a type and what it refers to. The node in
+ * the middle is the page's own (`page`), or a link to the node that stands for it, such as the function realizing it.
+ */
+function Between({ node, page, before, after, beforeTitle, afterTitle, badge }: {
+  node: Node; page: string; before: Node[]; after: Neighbor[] | Node[]; beforeTitle: string; afterTitle: string; badge?: (neighbor: Neighbor) => ReactNode;
 }) {
   const scope = scopeOf(node.id);
   const nodes = after.map(item => ('edge' in item ? item : undefined));
@@ -133,7 +136,7 @@ function Between({ node, before, after, beforeTitle, afterTitle, badge }: {
         {before.map(item => <NodeChip key={item.id} node={item} label={displayName(item, scope)} status={statusOf(item)} link />)}
       </div>
       <ArrowRight className={styles.arrow} size={ICON_SMALL} strokeWidth={ICON_STROKE} aria-hidden="true" />
-      <div className={styles.center}><NodeChip node={node} label={displayName(node, scope)} className={styles.self} /></div>
+      <div className={styles.center}><NodeChip node={node} label={displayName(node, scope)} current={node.id === page} link /></div>
       <ArrowRight className={styles.arrow} size={ICON_SMALL} strokeWidth={ICON_STROKE} aria-hidden="true" />
       <div className={styles.column}>
         <span className="t-micro c-faint">{afterTitle}</span>
@@ -188,7 +191,7 @@ function TypeBody({ entity }: { entity: Entity }) {
       <OpsTable entity={entity} />
       {detail && (detail.refers.length > 0 || detail.referredBy.length > 0) && (
         <Section title={SECTIONS.relations}>
-          <Between node={entity.node} before={detail.referredBy} after={detail.refers} beforeTitle={SECTIONS.referredBy} afterTitle={SECTIONS.refers} />
+          <Between node={entity.node} page={entity.node.id} before={detail.referredBy} after={detail.refers} beforeTitle={SECTIONS.referredBy} afterTitle={SECTIONS.refers} />
         </Section>
       )}
       <TypeSections entity={entity} preview={false} />
@@ -211,7 +214,7 @@ function OpBody({ entity }: { entity: Entity }) {
       {detail && (detail.callers.length > 0 || detail.callees.length > 0) && (
         <Section title={SECTIONS.calls} about={ABOUT.calls}>
           <Between
-            node={self} before={detail.callers.map(neighbor => neighbor.node)} after={detail.callees}
+            node={self} page={entity.node.id} before={detail.callers.map(neighbor => neighbor.node)} after={detail.callees}
             beforeTitle={SECTIONS.caller} afterTitle={SECTIONS.callee}
             badge={neighbor => (neighbor.edge.kind === 'reaches' ? <ViaBadge count={neighbor.edge.attrs.via?.length ?? 0} /> : null)}
           />

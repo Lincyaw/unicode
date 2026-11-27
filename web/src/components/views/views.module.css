@@ -30,6 +30,8 @@
 
 /* C4: cards with a summary and paths, the system's dashed boundary, and the operations labelling each edge. */
 .c4Card {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -42,7 +44,7 @@
   cursor: pointer;
 }
 .c4Card[data-external="true"] { border-style: dashed; }
-.c4Card[aria-pressed="true"] { border-color: var(--accent-brand); background: var(--bg-brand-soft); box-shadow: 0 0 0 calc(var(--size-stroke) - var(--size-hairline)) var(--accent-brand); }
+.c4Card[data-selected="true"] { border-color: var(--accent-brand); background: var(--bg-brand-soft); box-shadow: 0 0 0 calc(var(--size-stroke) - var(--size-hairline)) var(--accent-brand); }
 .c4Head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); }
 .c4Title { flex: 1; min-width: 0; font: var(--type-mono-strong); }
 .c4Summary { color: var(--text-main); font: var(--type-small); }
@@ -55,6 +57,8 @@
 /* Events: cards of steps and operations either side of an event's pill or an error's chip. */
 .columnHead { position: absolute; color: var(--text-faint); font: var(--type-micro); }
 .eventCard {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -66,8 +70,9 @@
   background: var(--bg-page);
   cursor: pointer;
 }
-.eventCard[aria-pressed="true"] { border-color: var(--accent-brand); background: var(--bg-brand-soft); }
+.eventCard[data-selected="true"] { border-color: var(--accent-brand); background: var(--bg-brand-soft); }
 .eventHead { display: flex; align-items: center; gap: var(--space-2); font: var(--type-code); white-space: nowrap; }
+.refLine { display: inline-flex; align-items: center; gap: var(--space-1); }
 .eventSecond { display: flex; align-items: center; gap: var(--space-1); padding-left: var(--space-4); color: var(--text-muted); font: var(--type-mono); white-space: nowrap; }
 .eventPill { border-color: var(--ink-warn); border-radius: var(--radius-full); background: var(--bg-warn-soft); color: var(--ink-warn); }
 

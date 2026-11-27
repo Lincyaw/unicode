@@ -4,7 +4,7 @@ import { Link } from 'react-router';
 import type { Node } from '../../api/types';
 import { ICON_SMALL } from '../../ui/hint';
 import { KindIcon } from './icons';
-import { useLinks } from './links';
+import { useLinks, useNodeActions } from './links';
 import { StatusDot } from './StatusDot';
 import styles from './marks.module.css';
 
@@ -13,18 +13,21 @@ export type ChipState = 'default' | 'detail' | 'folded';
 
 /**
  * A node as a small chip: status, kind icon and name. On a canvas it previews on a click and enters its page on a
- * double click; in a list it is a link to its page. The selected node is outlined in the brand colour.
+ * double click; in a list it is a link to its page; the node of the page itself (`current`) is no control. The
+ * selected node is outlined in the brand colour.
  */
-export function NodeChip({ node, label, state = 'default', link = false, status, children, className }: {
+export function NodeChip({ node, label, state = 'default', link = false, current = false, status, children, className }: {
   node: Node;
   label?: ReactNode;
   state?: ChipState;
   link?: boolean;
+  current?: boolean;
   status?: Node['status'];
   children?: ReactNode;
   className?: string;
 }) {
   const links = useLinks();
+  const actions = useNodeActions(node.id);
   const content = (
     <>
       {state !== 'detail' && <StatusDot status={status ?? node.status} />}
@@ -34,15 +37,11 @@ export function NodeChip({ node, label, state = 'default', link = false, status,
     </>
   );
   const classes = clsx(styles.chip, className);
+  if (current) {
+    return <span className={classes} data-state={state} aria-current="page">{content}</span>;
+  }
   if (link) {
     return <Link className={classes} data-state={state} to={links.entityHref(node.id)}>{content}</Link>;
   }
-  return (
-    <button
-      type="button" className={classes} data-state={state} aria-pressed={links.selected === node.id}
-      onClick={() => links.select(node.id)} onDoubleClick={() => links.open(node.id)}
-    >
-      {content}
-    </button>
-  );
+  return <button type="button" className={classes} data-state={state} {...actions}>{content}</button>;
 }

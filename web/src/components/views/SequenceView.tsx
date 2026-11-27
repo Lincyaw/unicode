@@ -9,6 +9,7 @@ import { chipWidth } from '../canvas/sizes';
 import { messageOf, relative, scopeOf } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
+import { NodeRef } from '../marks/NodeButton';
 import { StatusDot } from '../marks/StatusDot';
 import { StepLabel } from './StepLabel';
 import { descendants, diagnosticsAbout, stepTree, type StepTree } from './stepTree';
@@ -195,10 +196,12 @@ export function SequenceView({ view }: { view: View }) {
             return (
               <div key={mark.step.id}>
                 <Placed rect={{ x: mark.pill, y: mark.y - 12, width: 0, height: 24 }} className={styles.messageSlot}>
-                  <span className={styles.pill}>
-                    <KindIcon node={mark.step} size={ICON_TINY} />
-                    {mark.step.step?.target ? relative(mark.step.step.target.id, scope) : ''}
-                  </span>
+                  {mark.step.step?.target && (
+                    <NodeRef id={mark.step.step.target.id} className={styles.pill}>
+                      <KindIcon node={mark.step} size={ICON_TINY} />
+                      {relative(mark.step.step.target.id, scope)}
+                    </NodeRef>
+                  )}
                 </Placed>
                 <Placed rect={{ x: mark.from + 6, y: mark.y + EMIT_LABEL - EMIT_PILL - LABEL / 2, width: 0, height: LABEL - 2 }} className={styles.messageSlot}>
                   <StepLabel step={mark.step} diagnostics={diagnosticsAbout(view, mark.step.id)}>emits {messageOf(mark.step)}</StepLabel>

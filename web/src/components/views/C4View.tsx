@@ -1,4 +1,4 @@
-import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { View, ViewEdge, ViewNode } from '../../api/types';
 import { ABOUT, VIEW_NAMES } from '../../terms';
 import { ICON_SMALL, InfoHint } from '../../ui/hint';
@@ -8,6 +8,7 @@ import { arrange, routeAll, shifted, type Link, type Rect } from '../canvas/layo
 import { linesOf, monoWidth, textWidth } from '../canvas/measure';
 import { KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
+import { Above, CoverButton } from '../marks/NodeButton';
 import { StatusDot } from '../marks/StatusDot';
 import { HiddenCount, UndeclaredBadge } from './ArchitectureView';
 import { edgeKey, toneOf } from './graphParts';
@@ -34,16 +35,14 @@ function C4Card({ node, style }: { node: ViewNode; style?: CSSProperties }) {
   const links = useLinks();
   const external = node.kind === 'actor' && node.form === 'external';
   return (
-    <div
-      className={styles.c4Card} data-external={external} data-person={node.form === 'person'} aria-pressed={links.selected === node.id} style={style}
-      role="button" tabIndex={0} onClick={() => links.select(node.id)} onDoubleClick={() => links.open(node.id)}
-      onKeyDown={(event: KeyboardEvent) => (event.key === 'Enter' ? links.open(node.id) : undefined)}
-    >
+    <div className={styles.c4Card} data-external={external} data-person={node.form === 'person'} data-selected={links.selected === node.id} style={style}>
       <span className={styles.c4Head}>
         {node.form !== 'person' && <StatusDot status={node.status} />}
-        <KindIcon node={node} size={ICON_SMALL} />
-        <span className={styles.c4Title}>{node.title}</span>
-        <span role="presentation" onClick={event => event.stopPropagation()}><InfoHint label={node.id}>{node.id}</InfoHint></span>
+        <CoverButton id={node.id}>
+          <KindIcon node={node} size={ICON_SMALL} />
+          <span className={styles.c4Title}>{node.title}</span>
+        </CoverButton>
+        <Above><InfoHint label={node.id}>{node.id}</InfoHint></Above>
       </span>
       {node.summary !== '' && <span className={styles.c4Summary}>{node.summary}</span>}
       {(node.attrs.paths ?? []).map(path => <span key={path} className={styles.c4Path}>{path}</span>)}

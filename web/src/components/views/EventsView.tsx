@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { View, ViewNode } from '../../api/types';
 import { ABOUT, EVENTS_COLUMNS, VIEW_NAMES } from '../../terms';
 import { ICON_SMALL, ICON_TINY } from '../../ui/hint';
@@ -11,6 +11,7 @@ import { DiagnosticTag } from '../details/sections';
 import { messageOf, relative, scopeOf, stepName } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
+import { Above, CoverButton, NodeRef } from '../marks/NodeButton';
 import { NodeChip } from '../marks/NodeChip';
 import { StatusDot } from '../marks/StatusDot';
 import styles from './views.module.css';
@@ -50,18 +51,20 @@ function EventCard({ card, diagnostics }: { card: Card; diagnostics: View['diagn
   const { node } = card;
   const label = node.kind === 'step' ? stepName(node) : relative(node.id, scopeOf(node.id));
   return (
-    <div
-      className={styles.eventCard} aria-pressed={links.selected === node.id} role="button" tabIndex={0}
-      onClick={() => links.select(node.id)} onDoubleClick={() => links.open(node.id)}
-      onKeyDown={(event: KeyboardEvent) => (event.key === 'Enter' ? links.open(node.id) : undefined)}
-    >
+    <div className={styles.eventCard} data-selected={links.selected === node.id}>
       <span className={styles.eventHead}>
-        <StatusDot status={node.status} />
-        <KindIcon node={node} size={ICON_SMALL} />
-        {label}
+        <CoverButton id={node.id}>
+          <StatusDot status={node.status} />
+          <KindIcon node={node} size={ICON_SMALL} />
+          {label}
+        </CoverButton>
       </span>
-      {card.second && <span className={styles.eventSecond}><KindIcon node={card.second.node} size={ICON_TINY} />{card.second.text}</span>}
-      {diagnostics.filter(diagnostic => diagnostic.subject === node.id).map(diagnostic => <DiagnosticTag key={diagnostic.code} diagnostic={diagnostic} />)}
+      {card.second && (
+        <span className={styles.eventSecond}>
+          <NodeRef id={card.second.node.id} className={styles.refLine}><KindIcon node={card.second.node} size={ICON_TINY} />{card.second.text}</NodeRef>
+        </span>
+      )}
+      {diagnostics.filter(diagnostic => diagnostic.subject === node.id).map(diagnostic => <Above key={diagnostic.code}><DiagnosticTag diagnostic={diagnostic} /></Above>)}
     </div>
   );
 }

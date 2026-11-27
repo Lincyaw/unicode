@@ -22,7 +22,6 @@
 .between { display: grid; grid-template-columns: repeat(5, max-content); gap: var(--space-4); align-items: center; }
 .column { display: grid; gap: var(--space-2); justify-items: start; }
 .center { display: grid; }
-.self { pointer-events: none; }
 .arrow { color: var(--text-faint); }
 .withBadge { display: inline-flex; align-items: center; gap: var(--space-1); }
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }

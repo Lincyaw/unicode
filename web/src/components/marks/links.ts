@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, type KeyboardEvent } from 'react';
 import type { ViewRequest } from '../../api/types';
 
 /**
@@ -34,4 +34,20 @@ export function useLinks(): NodeLinks {
     throw new Error('A page provides LinksContext around the marks it renders');
   }
   return links;
+}
+
+/** What makes an element preview a node on a click and enter its page on a double click or Enter. */
+export function useNodeActions(id: string) {
+  const links = useLinks();
+  return {
+    'aria-pressed': links.selected === id,
+    onClick: () => links.select(id),
+    onDoubleClick: () => links.open(id),
+    onKeyDown: (event: KeyboardEvent) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        links.open(id);
+      }
+    },
+  };
 }

@@ -1,6 +1,6 @@
 import type { Node, ViewNode } from '../../api/types';
 import { ICON_SMALL } from '../../ui/hint';
-import { fieldParts, opLine, relative, scopeOf } from '../marks/format';
+import { fieldParts, opLine, relative, scopeOf, typeParts, type TypePart } from '../marks/format';
 import { CODE_SIZE, monoWidth, MONO_SIZE } from './measure';
 
 /*
@@ -26,30 +26,40 @@ export function cardHeight(rows: number): number {
   return 2 * BORDER + 2 * PADDING + HEAD + rows * (ROW + GAP);
 }
 
-/** A row of a type card: a field with its type, an enum value, an operation's signature, or how many more fields. */
+/**
+ * A row of a type card: a field with its type, the references in it apart; an enum value; an operation's signature; how
+ * many more fields the card folds; or, on a card unfolded to all its fields, the control that folds them again.
+ */
 export type CardRow =
-  | { kind: 'field'; name: string; type: string; warn: boolean }
+  | { kind: 'field'; name: string; type: TypePart[]; warn: boolean }
   | { kind: 'value'; name: string; warn: boolean }
   | { kind: 'op'; op: Node; text: string }
-  | { kind: 'more'; count: number };
+  | { kind: 'more'; count: number }
+  | { kind: 'less' };
 
-/** The rows of a type's card: its fields or enum values, compared with the code where the view says so, then its operations. */
-export function typeRows(node: ViewNode): CardRow[] {
+/**
+ * The rows of a type's card: its fields or enum values, compared with the code where the view says so, then its
+ * operations. Past MAX_FIELDS the fields fold into +n, unless the card is unfolded (`full`).
+ */
+export function typeRows(node: ViewNode, full = false): CardRow[] {
   // A code type reads relative to the component of the design type it realizes.
   const scope = scopeOf(node.bindings?.[0]?.node.id ?? node.id);
   const members: CardRow[] = node.members
     ? node.members.map(member => {
       const warn = member.status === 'contradicted' || member.status === 'missing';
-      return member.kind === 'value' ? { kind: 'value', name: member.name, warn } : { kind: 'field', name: member.name, type: relative(member.type ?? member.codeType ?? '', scope), warn };
+      return member.kind === 'value'
+        ? { kind: 'value', name: member.name, warn }
+        : { kind: 'field', name: member.name, type: typeParts(member.type ?? member.codeType ?? '', scope, member.refers), warn };
     })
     : [
       ...(node.attrs.fields ?? []).map((field): CardRow => {
         const { name, type } = fieldParts(field);
-        return { kind: 'field', name, type: relative(type, scope), warn: false };
+        return { kind: 'field', name, type: typeParts(type, scope), warn: false };
       }),
       ...(node.attrs.values ?? []).map((name): CardRow => ({ kind: 'value', name, warn: false })),
     ];
-  const shown = members.length > MAX_FIELDS ? [...members.slice(0, MAX_FIELDS), { kind: 'more' as const, count: members.length - MAX_FIELDS }] : members;
+  const folds = members.length > MAX_FIELDS;
+  const shown = !folds ? members : full ? [...members, { kind: 'less' as const }] : [...members.slice(0, MAX_FIELDS), { kind: 'more' as const, count: members.length - MAX_FIELDS }];
   // A method's title carries its type's name, which the card's head already gives.
   const ops = (node.contents ?? []).filter(child => child.kind === 'op').map((op): CardRow => {
     const title = op.title.startsWith(`${node.title}.`) ? op.title.slice(node.title.length + 1) : op.title;

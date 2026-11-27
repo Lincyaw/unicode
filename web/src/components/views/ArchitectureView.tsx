@@ -5,6 +5,7 @@ import { ABOUT, DIAGNOSTIC_WORDS, VIEW_NAMES } from '../../terms';
 import { ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { ContainerBox, ExternalCard, FoldedCard, TypeCard } from '../canvas/cards';
+import { useUnfolded } from '../canvas/unfolded';
 import { CARD_WIDTH, cardHeight, CHIP_HEIGHT, chipWidth, CONTAINER_HEAD, CONTAINER_PADDING, externalHeight, foldedHeight, typeRows, type CardRow } from '../canvas/sizes';
 import { Lines, Marker, type Line } from '../canvas/Edges';
 import { arrange, routeAll, type Box, type Link, type Rect } from '../canvas/layout';
@@ -27,7 +28,7 @@ interface Inside {
   height: number;
 }
 
-function inside(container: ViewNode): Inside {
+function inside(container: ViewNode, full: ReadonlySet<string>): Inside {
   const contents = container.contents ?? [];
   const typed = contents.filter(node => node.kind === 'type' && node.form !== 'error');
   const chipNodes = contents.filter(node => !(node.kind === 'type' && node.form !== 'error'));
@@ -36,7 +37,7 @@ function inside(container: ViewNode): Inside {
   const cards: Inside['cards'] = [];
   let y = CONTAINER_HEAD;
   for (let start = 0; start < typed.length; start += columns) {
-    const row = typed.slice(start, start + columns).map(node => ({ node, rows: typeRows(node) }));
+    const row = typed.slice(start, start + columns).map(node => ({ node, rows: typeRows(node, full.has(node.id)) }));
     const height = Math.max(...row.map(card => cardHeight(card.rows.length)));
     row.forEach((card, column) => cards.push({ ...card, rect: { x: CONTAINER_PADDING + column * (CARD_WIDTH + GRID_GAP), y, width: CARD_WIDTH, height: cardHeight(card.rows.length) } }));
     y += height + GRID_GAP;
@@ -87,10 +88,11 @@ export function HiddenCount({ hidden }: { hidden: number }) {
 /** The architecture view (Figma 01): components and external systems with their dependencies. */
 export function ArchitectureView({ view: answer }: { view: View }) {
   const links = useLinks();
+  const unfolded = useUnfolded();
   const view = { ...answer, ...componentGraph(answer) };
   const folded = new Set(view.folded);
   const expandedOnRequest = new Set(view.expand);
-  const insides = new Map(view.nodes.filter(node => node.kind === 'container' && !folded.has(node.id)).map(node => [node.id, inside(node)]));
+  const insides = new Map(view.nodes.filter(node => node.kind === 'container' && !folded.has(node.id)).map(node => [node.id, inside(node, unfolded.full)]));
   const boxes: Box[] = view.nodes.map(node => {
     const layout = insides.get(node.id);
     if (layout) {
@@ -121,7 +123,7 @@ export function ArchitectureView({ view: answer }: { view: View }) {
           return (
             <Placed key={node.id} rect={rect}>
               <ContainerBox node={node} collapsible={expandedOnRequest.has(node.id)}>
-                {layout.cards.map(card => <Placed key={card.node.id} rect={card.rect}><TypeCard node={card.node} rows={card.rows} /></Placed>)}
+                {layout.cards.map(card => <Placed key={card.node.id} rect={card.rect}><TypeCard node={card.node} rows={card.rows} onToggle={() => unfolded.toggle(card.node.id)} /></Placed>)}
                 {layout.chips.map(chip => <Placed key={chip.node.id} rect={chip.rect} className={styles.chipSlot}><NodeChip node={chip.node} /></Placed>)}
               </ContainerBox>
             </Placed>
