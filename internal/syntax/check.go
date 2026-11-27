@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -23,6 +24,7 @@ func check(at locator, f *File) []diag.Diagnostic {
 	c := &checker{at: at}
 	c.file(f)
 	c.walk(reflect.ValueOf(f.Decls), false)
+	c.checkExpressions(reflect.ValueOf(f.Decls))
 	slices.SortStableFunc(c.diags, func(a, b diag.Diagnostic) int {
 		return cmp.Or(cmp.Compare(a.Position.Line, b.Position.Line), cmp.Compare(a.Position.Column, b.Position.Column), strings.Compare(a.Code, b.Code))
 	})
@@ -76,8 +78,8 @@ var (
 	externalOrder  = newOrder("external actor", "syntax.member-order", [][]string{{"type"}, {"op"}})
 	typeOrder      = newOrder("type", "syntax.member-order", [][]string{{"label"}, {"extends"}, {"implements"}, {"field", "value"}, {"op"}})
 	flowOrder      = newOrder("flow", "syntax.member-order",
-		[][]string{{"forall"}, {"where"}, {step, "on", "async", "alt", "opt", "loop"}, {"case"}})
-	propertyOrder = newOrder("property", "syntax.member-order", [][]string{{"about"}, {"forall"}, {"where"}, {"case"}}, "about")
+		[][]string{{"forall"}, {"where"}, {step, "on", "async", "alt", "opt", "loop"}, {"within"}, {"ensure"}, {"case"}}, "within")
+	propertyOrder = newOrder("property", "syntax.member-order", [][]string{{"about"}, {"forall"}, {"where"}, {"observe"}, {"requires"}, {"changes"}, {"call"}, {"within"}, {"ensure", "manual"}, {"case"}}, "about", "changes", "call", "within", "manual")
 )
 
 var (
@@ -171,19 +173,80 @@ func (c *checker) file(f *File) {
 				if t, ok := l.(*TypeDecl); ok {
 					c.typeDecl(t)
 				}
+				if op, ok := l.(*OpDecl); ok {
+					c.expressionName(string(op.Name), op.Pos)
+				}
 			}
+		case *OpDecl:
+			c.expressionName(string(d.Name), d.Pos)
 		case *ComponentDecl:
 			seen := lines(c, componentOrder, d.Lines)
 			c.require(seen, "paths", d.Pos, "a component block needs paths", `add paths "pattern" to the component block`)
 		case *TypeDecl:
 			c.typeDecl(d)
 		case *FlowDecl:
-			lines(c, flowOrder, d.Lines)
+			seen := lines(c, flowOrder, d.Lines)
 			steps(c, d.Lines)
+			if seen["ensure"] != 0 || seen["within"] != 0 {
+				found := false
+				for _, line := range d.Lines {
+					if _, ok := line.(*Comment); ok {
+						continue
+					}
+					if _, ok := line.(Step); ok {
+						found = true
+						if _, call := line.(*Call); !call {
+							c.report(position(line), "syntax.invalid-flow-call", "a checked flow must start with a synchronous call", "start the flow's steps with sender -> op(args)")
+						}
+						break
+					}
+				}
+				if !found {
+					c.report(d.Pos, "syntax.invalid-flow-call", "a checked flow needs a first synchronous call", "start the flow's steps with sender -> op(args)")
+				}
+			}
 		case *PropertyDecl:
 			seen := lines(c, propertyOrder, d.Lines)
 			c.require(seen, "about", d.Pos, "a property needs about", "add about and what the property constrains as the first line of its block")
+			c.propertyClaim(d, seen)
 		}
+	}
+}
+
+func (c *checker) propertyClaim(d *PropertyDecl, seen map[string]int) {
+	if seen["ensure"]+seen["within"]+seen["manual"] == 0 {
+		c.report(d.Pos, "syntax.missing-claim", "a property needs ensure, within or manual", "state its claim as ensure expressions or declare manual with a reason")
+	}
+	if seen["manual"] != 0 && seen["ensure"]+seen["within"] != 0 {
+		c.report(d.Pos, "syntax.mixed-claim", "manual cannot be combined with ensure or within", "use either a generated claim or a manual reason")
+	}
+	checked := seen["ensure"]+seen["within"] != 0
+	if d.Form == "postcondition" && checked && seen["call"] != 1 || d.Form != "postcondition" && seen["call"] != 0 || seen["manual"] != 0 && seen["call"] != 0 {
+		c.report(d.Pos, "syntax.invalid-tested-call", "only a generated postcondition has exactly one call clause", "add one call to a generated postcondition, or remove the call from another property form")
+	}
+	if seen["within"] != 0 && seen["call"] == 0 {
+		c.report(d.Pos, "syntax.invalid-time-budget", "a property's time budget needs a tested call", "add a call in a postcondition or remove within")
+	}
+	if seen["observe"] != 0 || seen["changes"] != 0 {
+		if seen["observe"] == 0 || seen["changes"] != 1 || seen["call"] != 1 || d.Form != "postcondition" || seen["manual"] != 0 {
+			c.report(d.Pos, "syntax.invalid-observation-scope", "observe and changes form a pair on a generated postcondition with one call", "declare both observe and changes in a generated postcondition")
+		}
+	}
+	var none int
+	for _, line := range d.Lines {
+		switch x := line.(type) {
+		case *Observe:
+			if x.None {
+				none++
+			}
+		case *Changes:
+			if none != 0 && !x.None {
+				c.report(x.Pos, "syntax.invalid-observation-scope", "observe none permits only changes none", "use changes none or observe the changed roots")
+			}
+		}
+	}
+	if none != 0 && seen["observe"] != 1 {
+		c.report(d.Pos, "syntax.invalid-observation-scope", "observe none must be the only observation", "remove the other observe clauses")
 	}
 }
 
@@ -271,6 +334,17 @@ func (c *checker) walk(v reflect.Value, sizeBound bool) {
 	case reflect.Struct:
 		if v.Type() == positionType {
 			return
+		}
+		if within, ok := v.Interface().(Within); ok {
+			if _, err := time.ParseDuration(string(within.Duration)); err != nil {
+				c.report(within.Pos, "syntax.invalid-time-budget", "within must contain a duration", `write a duration such as within "500ms"`)
+			}
+		}
+		switch n := v.Interface().(type) {
+		case Symbol:
+			c.expressionName(string(n.Name), n.Pos)
+		case NamedObservation:
+			c.expressionName(string(n.Name), n.Pos)
 		}
 		if p := v.FieldByName("Pos"); p.IsValid() {
 			// What a node holds comes after the keyword it starts with, which may be spelled like a name.

@@ -120,6 +120,34 @@ func (pr *printer) node(n any) {
 		pr.line("where " + names(n.Path, ".") + " in {" + names(n.Members, ", ") + "}")
 	case *IntervalLimit:
 		pr.line("where " + names(n.Path, ".") + " " + n.Op + " " + string(n.Low) + ".." + string(n.High))
+	case *Act:
+		pr.line("call " + ExprText(n.Expression.Expr()))
+	case *Ensure:
+		pr.line("ensure " + ExprText(n.Expression.Expr()))
+	case *Requires:
+		pr.line("requires " + ExprText(n.Expression.Expr()))
+	case *Within:
+		pr.line("within " + quote(string(n.Duration)))
+	case *Manual:
+		pr.line("manual " + quote(string(n.Reason)))
+	case *Observe:
+		text := "none"
+		if n.Named != nil {
+			text = string(n.Named.Name) + ": " + typeExpr(n.Named.Type) + " from " + names(n.Named.Inputs, ", ")
+		} else if len(n.Paths) != 0 {
+			text = refs(n.Paths)
+		}
+		pr.line("observe " + text)
+	case *Changes:
+		text := "none"
+		if len(n.Paths) != 0 {
+			paths := make([]string, len(n.Paths))
+			for i, path := range n.Paths {
+				paths[i] = ExprText(path.Expr())
+			}
+			text = strings.Join(paths, ", ")
+		}
+		pr.line("changes " + text)
 	case *CaseDecl:
 		head := "case " + string(n.Name)
 		if n.Summary != nil {
@@ -169,6 +197,9 @@ func opLine(o *OpDecl) string {
 	l := "op " + string(o.Name) + "(" + strings.Join(params, ", ") + ")"
 	if o.Result != nil {
 		l += " -> " + typeExpr(o.Result)
+	}
+	if o.Pure {
+		l += " pure"
 	}
 	if len(o.Raises) > 0 {
 		raises := make([]string, len(o.Raises))

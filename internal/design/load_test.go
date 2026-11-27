@@ -95,6 +95,12 @@ func checkAcceptsValidDesign(t rapid.TB, sample Sample) {
 			t.Fatalf("the node %s has other attributes than the design gives it\ngot: %v\nwant: %v\n%s", id, got, want, dump(sample.Files))
 		}
 	}
+	for _, edge := range loaded.Graph.Edges() {
+		key := string(edge.Kind) + " " + edge.From + " " + edge.To
+		if want, ok := sample.EdgeAttrs[key]; ok && !maps.EqualFunc(edge.Attrs, want, slices.Equal) {
+			t.Fatalf("the edge %s has other attributes than the design gives it\ngot: %v\nwant: %v\n%s", key, edge.Attrs, want, dump(sample.Files))
+		}
+	}
 }
 
 func TestAcceptsValidDesign(t *testing.T) {

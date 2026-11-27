@@ -34,6 +34,9 @@ var samplePaths = map[FileKind]string{
 //uc:generates syntax.format-is-stable.sample
 func genSample() *rapid.Generator[Sample] {
 	return rapid.Custom(func(t *rapid.T) Sample {
+		if rapid.IntRange(0, 2).Draw(t, "expression") == 0 {
+			return expressionSample(t)
+		}
 		f := genFile(t)
 		w := &writer{t: t}
 		w.file(f)
@@ -94,6 +97,10 @@ func treeDifference(a, b reflect.Value, path string) string {
 	}
 	if a.Type() == posType {
 		return ""
+	}
+	if a.Type() == reflect.TypeFor[expression]() {
+		x, y := a.Interface().(expression), b.Interface().(expression)
+		return treeDifference(reflect.ValueOf(x.Expr()), reflect.ValueOf(y.Expr()), path+".normalized")
 	}
 	switch a.Kind() {
 	case reflect.Pointer, reflect.Interface:
@@ -189,6 +196,7 @@ func canonicalProblem(text []byte) string {
 // spacingProblem describes the first pair of tokens on one line of text whose
 // gap breaks the spacing of docs/language.md §3, or returns "".
 func spacingProblem(text []byte) string {
+	lines := strings.Split(string(text), "\n")
 	lex, err := ucLexer.LexString("", string(text))
 	if err != nil {
 		return "the printed text does not lex: " + err.Error()
@@ -209,12 +217,45 @@ func spacingProblem(text []byte) string {
 			continue
 		}
 		if prev.Value != "" {
-			if gap, want := tok.Pos.Offset-prev.Pos.Offset-len(prev.Value), wantGap(prev, tok); gap != want {
+			want := wantGap(prev, tok)
+			if line <= len(lines) && expressionLine(lines[line-1]) {
+				want = expressionGap(prev, tok)
+			}
+			if gap := tok.Pos.Offset - prev.Pos.Offset - len(prev.Value); gap != want {
 				return fmt.Sprintf("line %d: %d spaces between %s and %s instead of %d", line, gap, prev.Value, tok.Value, want)
 			}
 		}
 		prev = tok
 	}
+}
+
+func expressionLine(line string) bool {
+	for _, prefix := range []string{"ensure ", "requires ", "call ", "changes "} {
+		if strings.HasPrefix(strings.TrimSpace(line), prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func expressionGap(a, b lexer.Token) int {
+	if a.Value == "," || a.Value == ":" {
+		return 1
+	}
+	if a.Value == "." || b.Value == "." {
+		return 0
+	}
+	if b.Value == "[" {
+		return 0
+	}
+	operators := []string{"==", "!=", "<", "<=", ">", ">=", "+", "-", "*", "/", "and", "or", "implies", "in"}
+	if slices.Contains(operators, a.Value) || slices.Contains(operators, b.Value) {
+		return 1
+	}
+	if b.Value == "(" && slices.Contains([]string{"not", "ensure", "requires", "call"}, a.Value) {
+		return 1
+	}
+	return wantGap(a, b)
 }
 
 // wantGap is the number of spaces §3 puts between two tokens on one line: none

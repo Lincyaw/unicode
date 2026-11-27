@@ -205,6 +205,7 @@ type OpDecl struct {
 	Name    Lower     `parser:"'op' @Ident '('"`
 	Params  []Param   `parser:"( @@ ( ',' @@ )* )? ')'"`
 	Result  TypeExpr  `parser:"( '->' @@ )?"`
+	Pure    bool      `parser:"@'pure'?"`
 	Raises  []TypeRef `parser:"( 'raises' @@ ( ',' @@ )* )?"`
 	Handles *TypeRef  `parser:"( 'handles' @@ )?"`
 	Summary *Summary  `parser:"@String? NL"`
@@ -272,6 +273,77 @@ type PropertyLine interface{ propertyLine() }
 type About struct {
 	Pos  lexer.Position
 	Refs []Ref `parser:"'about' @@ ( ',' @@ )* NL"`
+}
+
+// Act executes the single operation whose postcondition is checked.
+type Act struct {
+	Pos        lexer.Position
+	Expression *expression `parser:"'call' @@ NL"`
+}
+
+type Ensure struct {
+	Pos        lexer.Position
+	Expression *expression `parser:"'ensure' @@ NL"`
+}
+
+type Requires struct {
+	Pos        lexer.Position
+	Expression *expression `parser:"'requires' @@ NL"`
+}
+
+type Within struct {
+	Pos      lexer.Position
+	Duration Text `parser:"'within' @String NL"`
+}
+
+type Manual struct {
+	Pos    lexer.Position
+	Reason Summary `parser:"'manual' @String NL"`
+}
+
+// Observe is either a list of input paths, a named adapter observation, or none.
+type Observe struct {
+	Pos   lexer.Position
+	None  bool              `parser:"'observe' ( @'none'"`
+	Named *NamedObservation `parser:"| @@"`
+	Paths []Ref             `parser:"| @@ ( ',' @@ )* ) NL"`
+}
+
+type NamedObservation struct {
+	Pos    lexer.Position
+	Name   Lower    `parser:"@Ident ':'"`
+	Type   TypeExpr `parser:"@@ 'from'"`
+	Inputs []Lower  `parser:"@Ident ( ',' @Ident )*"`
+}
+
+type Changes struct {
+	Pos   lexer.Position
+	None  bool         `parser:"'changes' ( @'none'"`
+	Paths []*statePath `parser:"| @@ ( ',' @@ )* ) NL"`
+}
+
+type statePath struct {
+	Pos   lexer.Position
+	Root  Lower            `parser:"@Ident"`
+	Tails []*statePathTail `parser:"@@*"`
+}
+
+type statePathTail struct {
+	Pos   lexer.Position
+	Field *Lower      `parser:"  '.' @Ident"`
+	Index *expression `parser:"| '[' @@ ']'"`
+}
+
+func (p *statePath) Expr() *Expr {
+	e := node("name", string(p.Root), p.Pos)
+	for _, tail := range p.Tails {
+		if tail.Field != nil {
+			e = node("field", string(*tail.Field), e.Pos, e)
+		} else {
+			e = node("index", "", e.Pos, e, tail.Index.Expr())
+		}
+	}
+	return e
 }
 
 // Symbol is a `forall`; Domain describes a generated symbol and is nil
@@ -515,6 +587,8 @@ func (*Symbol) flowLine()        {}
 func (*SubsetLimit) flowLine()   {}
 func (*IntervalLimit) flowLine() {}
 func (*CaseDecl) flowLine()      {}
+func (*Within) flowLine()        {}
+func (*Ensure) flowLine()        {}
 func (*Call) flowLine()          {}
 func (*Send) flowLine()          {}
 func (*Emit) flowLine()          {}
@@ -530,6 +604,13 @@ func (*Symbol) propertyLine()        {}
 func (*SubsetLimit) propertyLine()   {}
 func (*IntervalLimit) propertyLine() {}
 func (*CaseDecl) propertyLine()      {}
+func (*Act) propertyLine()           {}
+func (*Ensure) propertyLine()        {}
+func (*Within) propertyLine()        {}
+func (*Manual) propertyLine()        {}
+func (*Requires) propertyLine()      {}
+func (*Observe) propertyLine()       {}
+func (*Changes) propertyLine()       {}
 
 func (*Comment) caseLine()    {}
 func (*Assignment) caseLine() {}
@@ -580,9 +661,10 @@ var unions = []union{
 	unionOf[ComponentLine](&Comment{}, &Label{}, &Focus{}, &Paths{}, &Uses{}),
 	unionOf[Member](&Comment{}, &Label{}, &Extends{}, &Implements{}, &Field{}, &EnumValue{}, &OpDecl{}),
 	unionOf[TypeExpr](&Builtin{}, &ElemType{}, &MapType{}, &CallType{}, &NamedType{}),
-	unionOf[FlowLine](&Comment{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &CaseDecl{},
+	unionOf[FlowLine](&Comment{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &Within{}, &Ensure{}, &CaseDecl{},
 		&OnBlock{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
-	unionOf[PropertyLine](&Comment{}, &About{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &CaseDecl{}),
+	unionOf[PropertyLine](&Comment{}, &About{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &Observe{}, &Requires{}, &Changes{},
+		&Act{}, &Within{}, &Ensure{}, &Manual{}, &CaseDecl{}),
 	unionOf[CaseLine](&Comment{}, &Assignment{}),
 	unionOf[Step](&Comment{}, &OnBlock{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
 	unionOf[Value](&NumberValue{}, &StringValue{}, &CallValue{}, &BoolValue{}, &NoneValue{},

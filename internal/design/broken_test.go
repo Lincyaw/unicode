@@ -413,7 +413,7 @@ func (d *designer) fresh(free func(name string) bool) string {
 func (d *designer) extraProperty(name string) *syntax.PropertyDecl {
 	d.used[name] = true
 	about := &syntax.About{Refs: []syntax.Ref{{Segments: strings.Split(d.skel.service.id, ".")}}}
-	return &syntax.PropertyDecl{Name: syntax.Kebab(name), Form: "invariant", Summary: "clash", Lines: []syntax.PropertyLine{about}}
+	return &syntax.PropertyDecl{Name: syntax.Kebab(name), Form: "invariant", Summary: "clash", Lines: []syntax.PropertyLine{about, &syntax.Manual{Reason: "Generated graph fixture"}}}
 }
 
 // digitAfterDash draws an unused name for a property or a flow of the
@@ -575,6 +575,9 @@ func genBroken() *rapid.Generator[Broken] {
 		}
 	})
 	return rapid.Custom(func(t *rapid.T) Broken {
+		if rapid.IntRange(0, 2).Draw(t, "contract") == 0 {
+			return brokenContractFixture(t)
+		}
 		d := newDesign(t, true)
 		code := rapid.SampledFrom(codes).Draw(t, "code")
 		path, mark := breakages[code](d)

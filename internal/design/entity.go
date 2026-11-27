@@ -26,16 +26,20 @@ type entity struct {
 	// virtual is the root standing in for a missing system file; it is not a node.
 	virtual bool
 
-	uses    []*entity // a component's uses
-	focus   string    // a component's focus, inherited when it has none
-	fields  []member  // a type's fields
-	values  []string  // an enum's values
-	ops     []*entity // a type's operations, in the order written
-	params  []member  // an operation's parameters
-	raises  []*entity // an operation's errors
-	handles *entity   // the event an operation subscribes to
-	symbols []symbol  // a flow's or a property's symbols
-	limits  []*limit  // a flow's or a property's limits
+	uses         []*entity // a component's uses
+	focus        string    // a component's focus, inherited when it has none
+	fields       []member  // a type's fields
+	values       []string  // an enum's values
+	ops          []*entity // a type's operations, in the order written
+	params       []member  // an operation's parameters
+	result       *typ      // an operation's optional return type
+	pure         bool      // whether expressions may call the operation
+	raises       []*entity // an operation's errors
+	handles      *entity   // the event an operation subscribes to
+	symbols      []symbol  // a flow's or a property's symbols
+	limits       []*limit  // a flow's or a property's limits
+	observations []*entity // named snapshot observations of a property
+	snapshot     *typ      // an observation's declared snapshot type
 }
 
 // member is a field of a type or a parameter of an operation.

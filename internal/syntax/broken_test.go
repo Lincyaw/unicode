@@ -301,8 +301,10 @@ func propertyRank(l any) int {
 		return 1
 	case *SubsetLimit, *IntervalLimit:
 		return 2
-	case *CaseDecl:
+	case *Manual:
 		return 3
+	case *CaseDecl:
+		return 4
 	}
 	return -1
 }
@@ -957,6 +959,9 @@ var breakages = []breakage{
 //uc:generates syntax.rejects-broken-text.broken
 func genBroken() *rapid.Generator[Broken] {
 	return rapid.Custom(func(t *rapid.T) Broken {
+		if rapid.IntRange(0, 2).Draw(t, "contract") == 0 {
+			return brokenContractSyntax(t)
+		}
 		return breakages[uniform(t, len(breakages))](t)
 	})
 }
