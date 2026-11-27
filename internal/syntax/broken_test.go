@@ -301,8 +301,10 @@ func propertyRank(l any) int {
 		return 1
 	case *SubsetLimit, *IntervalLimit:
 		return 2
-	case *CaseDecl:
+	case *Manual:
 		return 3
+	case *CaseDecl:
+		return 4
 	}
 	return -1
 }

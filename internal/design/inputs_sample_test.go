@@ -502,6 +502,7 @@ func (d *designer) genProperties() {
 			for _, line := range d.inputs(p, c, skeleton) {
 				decl.Lines = append(decl.Lines, line.(syntax.PropertyLine))
 			}
+			decl.Lines = append(decl.Lines, &syntax.Manual{Reason: "Generated graph fixture"})
 			at := 0
 			if skeleton {
 				at = 1
