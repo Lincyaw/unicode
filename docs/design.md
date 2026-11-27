@@ -191,7 +191,7 @@ type Runner interface {
 
 M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通过。
 
-代码层 `op` 的 `attrs.body` 是去掉注释和出处的规范 Go AST 函数体；包括函数体中的闭包，接口抽象操作没有此属性。代码层 `type` 的 `attrs.declaration` 是同形规范类型声明，不含方法体。以新的空 `token.FileSet` 对 AST 节点作 `go/format` 打印，排版和位置不进入值。比较只改函数体的工作区时也必须改变操作内容哈希；顶层变量的赋值跟踪仍按现有模型，不扩大为运行证据。
+代码层 `op` 的 `attrs.body` 是去掉注释和出处的规范 Go AST 函数体；包括函数体中的闭包，接口抽象操作没有此属性。具体操作另以 `attrs.declaration` 保存不含函数体的原生声明头，包含接收者、原生参数与结果和泛型约束；从指针接收者改为值接收者也产生变化。代码层 `type` 的 `attrs.declaration` 是同形规范类型声明，不含方法体。以新的空 `token.FileSet` 对 AST 节点作 `go/format` 打印，排版和位置不进入值。比较只改函数体的工作区时也必须改变操作内容哈希；顶层变量的赋值跟踪仍按现有模型，不扩大为运行证据。
 
 ## 6 生成与运行
 
