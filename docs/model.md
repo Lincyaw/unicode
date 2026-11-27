@@ -384,7 +384,7 @@
 | 29 | `design.unresolved-reference`、`design.wrong-reference-kind`、`cli.not-canonical` | `design.rejects-broken-design`、`cli.check-design` |
 | 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5；生成器的 map 名称未实现：[design.md](design.md) §4 没有给出生成器的名称映射 | `design.rejects-broken-design` |
 | 31 | `design.expression-type` | `design.rejects-broken-design` |
-| 32 | `lang.golang.purity-violation` | `lang.golang.executes-contracts` |
+| 32 | `lang.golang.purity-violation`，核对表达式中的纯调用；被测 `call` 的重复核对与操作状态传播未实现：M4 后续阶段 | `lang.golang.executes-contracts` |
 | 33 | 未实现：M7，评审 | — |
 | 34 | `check.missing-observer`、`check.multiple-observers`、`check.observer-signature`、`check.observer-outside-container` | `check.rejects-broken-graph` |
 | 35 | `design.invalid-observation`、`design.invalid-change-path`、`lang.golang.expression-failed`、`lang.golang.frame-violation`、`lang.golang.observation-failed` | `design.rejects-broken-design`、`lang.golang.executes-contracts` |
