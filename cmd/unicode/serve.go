@@ -29,9 +29,10 @@ func serveCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
 		Short: "Serve the viewer: its interface from the snapshot that build wrote, and its pages",
 		Long: "serve reads the snapshot that unicode build wrote, checks it as check does, and answers the viewer's\n" +
 			"read-only interface (api/openapi.yaml) under /api; when the snapshot file changes, the next request reads\n" +
-			"it again. It serves the pages of the directory --web names, by default web/dist under the root when it\n" +
-			"exists, under /. Once it listens, standard output gives the address; each request is logged on standard\n" +
-			"error. An interrupt stops it.",
+			"it again. Under / it serves the viewer's pages that make build built into unicode, or, for developing the\n" +
+			"frontend, those of the directory --web names. A unicode built without pages, as a plain go build is,\n" +
+			"serves the interface only and says so on standard error. Once it listens, standard output gives the\n" +
+			"address; each request is logged on standard error. An interrupt stops it.",
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			root, err := findRoot(g.root)
@@ -49,7 +50,7 @@ func serveCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
 	}
 	c.Flags().StringVar(&snapshot, "snapshot", "", "the snapshot to serve (default: .unicode/graph.json under the root)")
 	c.Flags().StringVar(&addr, "addr", addr, "the address to listen on, host:port")
-	c.Flags().StringVar(&web, "web", "", "the directory of the built pages (default: web/dist under the root, when it exists)")
+	c.Flags().StringVar(&web, "web", "", "a directory of built pages to serve instead of those built into unicode")
 	return c
 }
 
@@ -59,21 +60,21 @@ type pageDir struct {
 	given bool
 }
 
-// pagesOf is the directory of the pages to serve: the one --web names,
-// which must exist, or else web/dist under the root when it exists. When
-// there is none, it is nil, and the note tells why.
-func pagesOf(root string, web pageDir) (fs.FS, string, error) {
-	dir := web.dir
-	if !web.given {
-		dir = filepath.Join(root, "web", "dist")
-	}
-	if info, err := os.Stat(dir); err == nil && info.IsDir() {
-		return os.DirFS(dir), "", nil
-	}
+// pagesOf is the pages to serve: the directory --web names, which must
+// exist, or else the pages built into unicode. When unicode carries none,
+// it is nil, and the note tells why and how to get them.
+func pagesOf(web pageDir) (fs.FS, string, error) {
 	if web.given {
-		return nil, "", usageError("--web %s is not a directory", web.dir)
+		if info, err := os.Stat(web.dir); err != nil || !info.IsDir() {
+			return nil, "", usageError("--web %s is not a directory", web.dir)
+		}
+		return os.DirFS(web.dir), "", nil
 	}
-	return nil, fmt.Sprintf("unicode: no pages, since %s does not exist; serving the interface under /api only\n", dir), nil
+	if pages := serve.Pages(); pages != nil {
+		return pages, "", nil
+	}
+	return nil, "unicode: no pages, since this unicode was built without them; serving the interface under /api only. " +
+		"Build unicode with make build, which builds the pages into it, or give built pages with --web DIR\n", nil
 }
 
 // serveReport is the JSON of serve: the address of the pages.
@@ -85,7 +86,7 @@ type serveReport struct {
 // address and serves until an interrupt. A snapshot that cannot be read and
 // an address that cannot be listened on are environment errors.
 func runServe(root, snapshot, addr string, web pageDir, format string, stdout, stderr io.Writer) error {
-	pages, note, err := pagesOf(root, web)
+	pages, note, err := pagesOf(web)
 	if err != nil {
 		return err
 	}
