@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/lincyaw/unicode/internal/check"
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/view"
 )
@@ -334,64 +335,12 @@ func (p *page) typeDetail(id string) *TypeDetail {
 	}
 }
 
-// members compares the fields and enum values of a design type with those
-// of the code type that realizes it (docs/model.md §10, rule 18). A field is
-// alike when its two types are written the same, or when check finds the
-// whole type verified, since check compares the types by their structure.
+// members are check's comparison of a design type's fields and enum values
+// with the code type that realizes it, which a type's card shows too.
 func (p *page) members(id string) []Member {
-	st := p.st
-	code := ""
-	for _, r := range st.sources(id, graph.EdgeKindRealizes) {
-		if st.is(r, graph.LayerCode, graph.NodeKindType) {
-			code = r
-			break
-		}
-	}
-	codeFields := map[string]string{}
-	for _, f := range st.nodes[code].Attrs["fields"] {
-		name, typ, _ := strings.Cut(f, ": ")
-		codeFields[name] = typ
-	}
-	codeValues := st.nodes[code].Attrs["values"]
-	alike := st.checked.Statuses[id] == graph.StatusVerified
-	status := func(s graph.Status) *Status {
-		if code == "" {
-			return nil
-		}
-		out := Status(s)
-		return &out
-	}
 	rows := []Member{}
-	for _, f := range st.nodes[id].Attrs["fields"] {
-		name, typ, _ := strings.Cut(f, ": ")
-		m := Member{Kind: MemberKindField, Name: name, Type: &typ, InDesign: true, Refers: st.typeRefs(typ)}
-		codeType, inCode := codeFields[name]
-		m.InCode = inCode
-		switch {
-		case !inCode:
-			m.Status = status(graph.StatusMissing)
-		case codeType == typ || alike:
-			m.CodeType, m.Status = &codeType, status(graph.StatusVerified)
-		default:
-			m.CodeType, m.Status = &codeType, status(graph.StatusContradicted)
-		}
-		rows = append(rows, m)
-	}
-	values := st.nodes[id].Attrs["values"]
-	for _, v := range values {
-		m := Member{Kind: MemberKindValue, Name: v, InDesign: true, InCode: slices.Contains(codeValues, v), Refers: []string{},
-			Status: status(graph.StatusMissing)}
-		if m.InCode {
-			m.Status = status(graph.StatusVerified)
-		}
-		rows = append(rows, m)
-	}
-	for _, v := range codeValues {
-		if !slices.Contains(values, v) {
-			rows = append(rows, Member{Kind: MemberKindValue, Name: v, InCode: true, Refers: []string{}, Status: status(graph.StatusContradicted)})
-		}
-	}
-	for _, m := range rows {
+	for _, m := range check.Members(&p.st.g, []string{id})[id] {
+		rows = append(rows, member(m))
 		for _, r := range m.Refers {
 			p.listed[r] = true
 		}
