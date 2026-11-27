@@ -13,7 +13,7 @@ import { Badge } from '../marks/Badge';
 import { relative, scopeOf, shortPath, statusOf } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks, useNodeActions } from '../marks/links';
-import { NodeRef } from '../marks/NodeButton';
+import { NodeRef } from '../marks/NodeRef';
 import { NodeChip } from '../marks/NodeChip';
 import { edgeKey } from './graphParts';
 import styles from './views.module.css';

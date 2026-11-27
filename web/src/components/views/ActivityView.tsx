@@ -10,7 +10,7 @@ import { monoWidth } from '../canvas/measure';
 import { messageOf, relative, scopeOf } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useNodeActions } from '../marks/links';
-import { NodeRef } from '../marks/NodeButton';
+import { NodeRef } from '../marks/NodeRef';
 import { StepLabel } from './StepLabel';
 import { diagnosticsAbout, stepTree, type StepTree } from './stepTree';
 import styles from './views.module.css';

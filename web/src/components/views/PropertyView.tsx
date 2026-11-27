@@ -11,7 +11,7 @@ import { Badge } from '../marks/Badge';
 import { placeOf, relative, scopeOf, signatureTypes, statusOf } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks, useNodeActions } from '../marks/links';
-import { NodeRef } from '../marks/NodeButton';
+import { NodeRef } from '../marks/NodeRef';
 import { NodeChip } from '../marks/NodeChip';
 import { TypeRefs } from '../canvas/cards';
 import { StatusDot } from '../marks/StatusDot';

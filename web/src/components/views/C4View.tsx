@@ -9,7 +9,8 @@ import { arrange, routeAll, shifted, type Link, type Rect } from '../canvas/layo
 import { linesOf, monoWidth, textWidth } from '../canvas/measure';
 import { KindIcon } from '../marks/icons';
 import { useLinks, useNodeActions, useSelectedBox } from '../marks/links';
-import { Above, CoverButton } from '../marks/NodeButton';
+import { Above } from '../marks/Above';
+import { CoverButton } from '../marks/CoverButton';
 import { StatusDot } from '../marks/StatusDot';
 import { HiddenCount, UndeclaredBadge } from './ArchitectureView';
 import { edgeKey, toneOf } from './graphParts';

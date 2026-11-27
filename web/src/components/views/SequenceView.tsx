@@ -9,7 +9,7 @@ import { chipWidth } from '../canvas/sizes';
 import { messageOf, relative, scopeOf } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks, useNodeActions } from '../marks/links';
-import { NodeRef } from '../marks/NodeButton';
+import { NodeRef } from '../marks/NodeRef';
 import { StatusDot } from '../marks/StatusDot';
 import { StepLabel } from './StepLabel';
 import { descendants, diagnosticsAbout, stepTree, type StepTree } from './stepTree';
