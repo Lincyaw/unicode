@@ -346,6 +346,24 @@ func (d *designer) sample() Sample {
 		}
 	}
 	attrs := map[string]map[string][]string{d.system.id: system}
+	for _, flow := range d.flows {
+		expected := map[string][]string{"manual": {"Generated graph fixture with descriptive internal arguments"}}
+		for _, symbol := range flow.symbols {
+			text := symbol.name + ": " + sampleTypeText(symbol.t)
+			if symbol.generated {
+				text += " generated"
+			}
+			expected["symbols"] = append(expected["symbols"], text)
+		}
+		for _, limit := range flow.limits {
+			text := strings.Join(limit.path, ".") + " " + limit.op + " " + strconv.Itoa(limit.low) + ".." + strconv.Itoa(limit.high)
+			if limit.op == "subset" {
+				text = strings.Join(limit.path, ".") + " in {" + strings.Join(limit.members, ", ") + "}"
+			}
+			expected["limits"] = append(expected["limits"], text)
+		}
+		attrs[flow.id] = expected
+	}
 	return Sample{Files: files, Nodes: slices.Clone(d.nodes), Edges: slices.Clone(d.edges), Attrs: attrs}
 }
 
@@ -841,4 +859,22 @@ func (d *designer) String() string {
 		fmt.Fprintf(&b, "--- %s\n%s", p, d.files[p].Print())
 	}
 	return b.String()
+}
+
+// sampleTypeText is the independent fixture model's canonical type spelling.
+func sampleTypeText(t *gType) string {
+	if t.builtin != "" {
+		return t.builtin
+	}
+	if t.named != nil {
+		return t.named.id
+	}
+	var parts []string
+	for _, elem := range t.elems {
+		parts = append(parts, sampleTypeText(elem))
+	}
+	for _, target := range t.targets {
+		parts = append(parts, target.id)
+	}
+	return t.kind + "<" + strings.Join(parts, ", ") + ">"
 }
