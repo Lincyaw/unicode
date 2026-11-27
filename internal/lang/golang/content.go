@@ -12,9 +12,8 @@ import (
 
 // The content that a code node adds to its content hash (docs/model.md §6,
 // docs/design.md §5.2): a function's body, a type's declaration without its
-// name, and a file's declarations of package-level variables, constants and
-// init functions, which are no nodes. Each is the SHA-256 of a normal form
-// that formatting and comments do not change.
+// name, and a file's top-level declarations that are no nodes. Each is the
+// SHA-256 of a normal form that formatting and comments do not change.
 
 var (
 	posType      = reflect.TypeFor[token.Pos]()
@@ -28,20 +27,21 @@ func bodyDigest(body *ast.BlockStmt) string { return digest(body) }
 // parameters and its definition.
 func declarationDigest(spec *ast.TypeSpec) string { return digest(spec.TypeParams, spec.Type) }
 
-// globalsDigest is the digest of a file's declarations of package-level
-// variables and constants, each with its specs, and of its init functions'
-// bodies, in the order of the source; "" when it has none.
+// globalsDigest is the digest of a file's top-level declarations that are no
+// nodes, in the order of the source: each declaration of variables,
+// constants or type aliases with those specs, and each init function or
+// function named _ whole; "" when it has none.
 func globalsDigest(file *ast.File) string {
 	var items []any
 	for _, decl := range file.Decls {
 		switch decl := decl.(type) {
 		case *ast.GenDecl:
-			if decl.Tok == token.VAR || decl.Tok == token.CONST {
-				items = append(items, decl.Tok.String(), decl.Specs)
+			if specs := looseSpecs(decl); len(specs) > 0 {
+				items = append(items, decl.Tok.String(), specs)
 			}
 		case *ast.FuncDecl:
-			if decl.Recv == nil && decl.Name.Name == "init" {
-				items = append(items, "init", decl.Body)
+			if !funcIsNode(decl) {
+				items = append(items, decl)
 			}
 		}
 	}
@@ -49,6 +49,24 @@ func globalsDigest(file *ast.File) string {
 		return ""
 	}
 	return digest(items...)
+}
+
+// looseSpecs are the specs of a declaration that are no nodes: all of a
+// declaration of variables or constants, and a type declaration's aliases.
+func looseSpecs(decl *ast.GenDecl) []ast.Spec {
+	switch decl.Tok {
+	case token.VAR, token.CONST:
+		return decl.Specs
+	case token.TYPE:
+		var aliases []ast.Spec
+		for _, spec := range decl.Specs {
+			if !typeIsNode(spec.(*ast.TypeSpec)) {
+				aliases = append(aliases, spec)
+			}
+		}
+		return aliases
+	}
+	return nil
 }
 
 func digest(nodes ...any) string {

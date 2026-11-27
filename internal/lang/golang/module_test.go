@@ -228,10 +228,11 @@ type gconst struct {
 	name string
 }
 
-// gloose is a declaration that is no node: a constant, a variable, an
-// init function, or a comment that belongs to no declaration.
+// gloose is a declaration that is no node: a constant, a variable, a type
+// alias, an init function, a function named _, or a comment that belongs to
+// no declaration.
 type gloose struct {
-	kind string // const, var, trailing, init or floating
+	kind string // const, var, trailing, alias, init, blank (a function named _) or floating
 	name string
 	doc  []binding
 }

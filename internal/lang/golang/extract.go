@@ -165,8 +165,7 @@ func (x *extraction) addDecl(p *packages.Package, f sourceFile, fileID string, d
 		}
 	case *ast.FuncDecl:
 		fn, ok := p.TypesInfo.Defs[decl.Name].(*types.Func)
-		if !ok || decl.Name.Name == "_" || decl.Recv == nil && decl.Name.Name == "init" {
-			// Neither has an identity: a package may declare several of each.
+		if !ok || !funcIsNode(decl) {
 			return
 		}
 		form, parent := "func", fileID
@@ -178,9 +177,19 @@ func (x *extraction) addDecl(p *packages.Package, f sourceFile, fileID string, d
 	}
 }
 
+// funcIsNode tells whether a function declaration is a node. Neither a
+// function named _ nor an init function has an identity: a package may
+// declare several of each.
+func funcIsNode(decl *ast.FuncDecl) bool {
+	return decl.Name.Name != "_" && (decl.Recv != nil || decl.Name.Name != "init")
+}
+
+// typeIsNode tells whether a type spec is a node; an alias is not.
+func typeIsNode(spec *ast.TypeSpec) bool { return !spec.Assign.IsValid() }
+
 func (x *extraction) addType(p *packages.Package, f sourceFile, fileID string, doc *ast.CommentGroup, spec *ast.TypeSpec, docs map[*ast.CommentGroup]bound) {
 	name, ok := p.TypesInfo.Defs[spec.Name].(*types.TypeName)
-	if !ok || spec.Assign.IsValid() {
+	if !ok || !typeIsNode(spec) {
 		return
 	}
 	d := declared{id: typeID(name), pkg: p, file: f, pos: spec.Name.Pos(), spec: spec, name: name}
