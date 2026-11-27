@@ -52,6 +52,10 @@ export function SizedFrame({ place, ...parts }: {
   const treeMax = Math.max(TREE_MIN, room - canvas - (drawers.includes('pane') ? 0 : paneWidth));
   const paneMax = Math.max(PANE_MIN, room - canvas - treeWidth);
   const [opened, setOpened] = useState<{ drawer: Drawer; at: string }>();
+  // A drawer whose column the window holds again is closed for good, so narrowing the window later does not reopen it.
+  if (opened !== undefined && !drawers.includes(opened.drawer)) {
+    setOpened(undefined);
+  }
   return (
     <Frame
       {...parts}
