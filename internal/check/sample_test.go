@@ -219,6 +219,13 @@ func genSample() *rapid.Generator[Sample] {
 	return rapid.Custom(func(t *rapid.T) Sample { return Sample{Fragment: newWorld(t).f} })
 }
 
+//uc:generates check.conforming-result-contract.snapshot
+func genConformingSnapshot() *rapid.Generator[*graph.Graph] {
+	return rapid.Custom(func(t *rapid.T) *graph.Graph {
+		return derived(t, genSample().Draw(t, "sample").Fragment)
+	})
+}
+
 func newWorld(t *rapid.T) *world {
 	w := &world{t: t}
 	w.node("sys", graph.LayerDesign, graph.NodeKindContainer, "system", "design/system.uc", nil)

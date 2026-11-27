@@ -119,6 +119,15 @@ func genFragment() *rapid.Generator[Fragment] {
 	})
 }
 
+//uc:generates graph.compare-self-contract.snapshot
+func genComparisonSnapshot() *rapid.Generator[*Graph] {
+	return rapid.Custom(func(t *rapid.T) *Graph {
+		fragment := genFragment().Draw(t, "fragment")
+		snapshot := build(t, fragment.Nodes, fragment.Edges)
+		return &snapshot
+	})
+}
+
 func rotate[T any](s []T, by int) []T {
 	if len(s) == 0 {
 		return s
