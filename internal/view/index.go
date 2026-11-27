@@ -40,6 +40,15 @@ func (ix index) targets(id string, kind graph.EdgeKind) []string {
 	return ids
 }
 
+// targetsOf returns the ends of the edges of the kinds that start at id.
+func (ix index) targetsOf(id string, kinds ...graph.EdgeKind) []string {
+	var ids []string
+	for _, k := range kinds {
+		ids = append(ids, ix.targets(id, k)...)
+	}
+	return ids
+}
+
 // sources returns the starts of the edges of the kind that end at id.
 func (ix index) sources(id string, kind graph.EdgeKind) []string {
 	var ids []string

@@ -55,25 +55,36 @@ func architecture(ix index, r request) selection {
 	return s
 }
 
-// class: for a container, the containers, external systems and types in it;
-// for a type, it and the types of its layer one refers, extends or
-// implements edge away. Each type comes with its operations.
+// class: for a container, the containers, external systems and types in
+// it, and the design types in other containers that its types refer to,
+// extend or implement; for a type, it and the design types one refers,
+// extends or implements edge away. Each type comes with its operations.
+// Containers outside the input's home, the input or the type's container,
+// fold whatever their focus. The code layer draws, instead of each design
+// type and operation, the salient code that realizes it.
 func class(ix index, r request) selection {
 	input := r.input
-	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements, graph.EdgeKindContains}}
+	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements, graph.EdgeKindContains},
+		home: input}
 	s.add(input)
+	isDesignType := func(id string) bool {
+		n := ix.nodes[id]
+		return n.Kind == graph.NodeKindType && n.Layer == graph.LayerDesign
+	}
 	if ix.nodes[input].Kind == graph.NodeKindContainer {
 		for _, d := range ix.descendants(input) {
 			if n := ix.nodes[d]; n.Kind == graph.NodeKindContainer || n.Kind == graph.NodeKindType || isExternal(n) {
 				s.add(d)
 			}
 		}
-	} else {
-		for _, o := range ix.neighbors(input, graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements) {
-			if n := ix.nodes[o]; n.Kind == graph.NodeKindType && n.Layer == ix.nodes[input].Layer {
-				s.add(o)
+		for _, id := range slices.Clone(s.nodes) {
+			if isDesignType(id) {
+				s.add(slices.DeleteFunc(ix.targetsOf(id, typeRelations...), func(o string) bool { return !isDesignType(o) })...)
 			}
 		}
+	} else {
+		s.home = ix.parent(input)
+		s.add(slices.DeleteFunc(ix.neighbors(input, typeRelations...), func(o string) bool { return !isDesignType(o) })...)
 	}
 	for _, id := range slices.Clone(s.nodes) {
 		if ix.nodes[id].Kind == graph.NodeKindType {
@@ -84,7 +95,32 @@ func class(ix index, r request) selection {
 			}
 		}
 	}
+	if r.layer == ClassLayerCode {
+		s = s.realized(ix)
+	}
 	return s
+}
+
+// typeRelations are the edges between types that the class view draws.
+var typeRelations = []graph.EdgeKind{graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements}
+
+// realized is the selection with each design type and operation replaced
+// by the salient code types and functions that realize it.
+func (s selection) realized(ix index) selection {
+	code := selection{kinds: s.kinds, home: s.home}
+	for _, id := range s.nodes {
+		n := ix.nodes[id]
+		if n.Layer != graph.LayerDesign || n.Kind != graph.NodeKindType && n.Kind != graph.NodeKindOp {
+			code.add(id)
+			continue
+		}
+		for _, c := range ix.sources(id, graph.EdgeKindRealizes) {
+			if m := ix.nodes[c]; m.Layer == graph.LayerCode && m.Kind == n.Kind && m.Salient {
+				code.add(c)
+			}
+		}
+	}
+	return code
 }
 
 // steps returns the steps of a flow sorted by their index in the flow.

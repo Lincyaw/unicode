@@ -99,14 +99,14 @@ func checkViewIsFoldedSubgraph(t rapid.TB, request Request) {
 			}
 		}
 	}
-	exempt := w.exempt(request.Kind, input, request.Expand)
+	exempt, home := w.exempt(request.Kind, input, request.Expand), w.home(asked{request.Kind, input, request.Layer, request.Level})
 	if !slices.Contains(foldingKinds, request.Kind) && (len(got.Folded) > 0 || got.Hidden > 0) {
 		t.Fatalf("the %s view of %q folds %q and leaves out %d utility containers, yet it does not fold by focus", request.Kind, request.Id, got.Folded, got.Hidden)
 	}
 	folded := set(got.Folded)
 	for _, id := range got.Folded {
-		if !drawn[id] || exempt[id] || !w.designContainer(id) || w.focus(id) != "support" {
-			t.Fatalf("the %s view of %q lists %q as folded, which is not a drawn, unexpanded support container", request.Kind, request.Id, id)
+		if !drawn[id] || exempt[id] || !w.designContainer(id) || w.foldFocus(id, home) != "support" {
+			t.Fatalf("the %s view of %q lists %q as folded, which is not a drawn, unexpanded support container, nor in the class view another container than the input's", request.Kind, request.Id, id)
 		}
 	}
 	for _, n := range got.Nodes {
@@ -119,12 +119,12 @@ func checkViewIsFoldedSubgraph(t rapid.TB, request Request) {
 			}
 		}
 		if !exempt[n.Id] && w.designContainer(n.Id) {
-			switch w.focus(n.Id) {
+			switch w.foldFocus(n.Id, home) {
 			case "utility":
 				t.Fatalf("the %s view of %q draws the unexpanded utility container %q, which it should leave out", request.Kind, request.Id, n.Id)
 			case "support":
 				if !folded[n.Id] {
-					t.Fatalf("the %s view of %q draws the unexpanded support container %q without folding it", request.Kind, request.Id, n.Id)
+					t.Fatalf("the %s view of %q draws the unexpanded container %q without folding it, though it is a support container or, in the class view, outside the input's container", request.Kind, request.Id, n.Id)
 				}
 			}
 		}

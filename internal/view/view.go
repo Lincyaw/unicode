@@ -148,6 +148,9 @@ type selection struct {
 	nodes []string
 	kinds []graph.EdgeKind
 	seen  map[string]bool
+	// home, when set, is the container outside which every design container
+	// folds whatever its focus; only utility ones are still left out.
+	home string
 }
 
 func (s *selection) add(ids ...string) {

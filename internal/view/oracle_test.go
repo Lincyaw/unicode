@@ -242,9 +242,12 @@ func (w world) candidates(a asked) map[string]bool {
 			}
 		}
 	case ViewKindClass:
+		designType := func(id string) bool {
+			return w.nodes[id].Kind == graph.NodeKindType && w.nodes[id].Layer == graph.LayerDesign
+		}
 		if w.nodes[input].Kind == graph.NodeKindType {
 			for _, o := range w.adjacent(input, graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements) {
-				if w.nodes[o].Kind == graph.NodeKindType && w.nodes[o].Layer == w.nodes[input].Layer {
+				if designType(o) {
 					add(o)
 				}
 			}
@@ -254,11 +257,36 @@ func (w world) candidates(a asked) map[string]bool {
 					add(id)
 				}
 			}
+			for id := range below {
+				for _, k := range []graph.EdgeKind{graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements} {
+					for _, o := range w.to(id, k) {
+						if designType(id) && designType(o) {
+							add(o)
+						}
+					}
+				}
+			}
 		}
 		for _, id := range keys(c) {
 			for _, o := range w.to(id, graph.EdgeKindContains) {
 				if w.nodes[id].Kind == graph.NodeKindType && w.nodes[o].Kind == graph.NodeKindOp {
 					add(o)
+				}
+			}
+		}
+		if a.layer == ClassLayerCode {
+			design := keys(c)
+			clear(c)
+			for _, id := range design {
+				n := w.nodes[id]
+				if n.Layer != graph.LayerDesign || n.Kind != graph.NodeKindType && n.Kind != graph.NodeKindOp {
+					add(id)
+					continue
+				}
+				for _, r := range w.from(id, graph.EdgeKindRealizes) {
+					if m := w.nodes[r]; m.Layer == graph.LayerCode && m.Kind == n.Kind {
+						add(r)
+					}
 				}
 			}
 		}
@@ -375,10 +403,10 @@ func (w world) exempt(kind ViewKind, input string, expand []string) map[string]b
 // folder returns the container that decides how id is drawn, with its
 // focus: of the containers that enclose or are id, not exempt, with focus
 // support or utility, the one no other of them encloses.
-func (w world) folder(id string, exempt map[string]bool) (string, string) {
+func (w world) folder(id string, exempt map[string]bool, home string) (string, string) {
 	var folding []string
 	for _, c := range append(w.up(id), id) {
-		if f := w.focus(c); !exempt[c] && (f == "support" || f == "utility") {
+		if f := w.foldFocus(c, home); !exempt[c] && (f == "support" || f == "utility") {
 			folding = append(folding, c)
 		}
 	}
@@ -388,10 +416,37 @@ func (w world) folder(id string, exempt map[string]bool) (string, string) {
 			enclosed = enclosed || other != c && slices.Contains(w.up(c), other)
 		}
 		if !enclosed {
-			return c, w.focus(c)
+			return c, w.foldFocus(c, home)
 		}
 	}
 	return "", ""
+}
+
+// home is the container outside which the class view folds every design
+// container (§7.1): its input container, or the container of its input
+// type; "" for the other views.
+func (w world) home(a asked) string {
+	if a.kind != ViewKindClass {
+		return ""
+	}
+	if w.nodes[a.input].Kind == graph.NodeKindType {
+		if parents := w.from(a.input, graph.EdgeKindContains); len(parents) > 0 {
+			return parents[0]
+		}
+		return ""
+	}
+	return a.input
+}
+
+// foldFocus is the focus by which the container c folds in a view with the
+// home: its focus, except support for a design container outside the home
+// that is not a utility.
+func (w world) foldFocus(c, home string) string {
+	f := w.focus(c)
+	if home != "" && f != "utility" && w.designContainer(c) && c != home && !slices.Contains(w.up(c), home) {
+		return "support"
+	}
+	return f
 }
 
 // expectation is what a view must draw: its nodes, the folded containers,
@@ -406,8 +461,8 @@ type expectation struct {
 
 // placeInto draws id, or the support container it folds into, or records the
 // utility container that keeps it out.
-func (w world) placeInto(x *expectation, id string, exempt map[string]bool) {
-	switch c, f := w.folder(id, exempt); f {
+func (w world) placeInto(x *expectation, id string, exempt map[string]bool, home string) {
+	switch c, f := w.folder(id, exempt, home); f {
 	case "support":
 		x.nodes[c], x.folded[c] = true, true
 		x.home[id] = c
@@ -441,10 +496,10 @@ func (w world) detailFunction(id string) bool {
 func (w world) expected(a asked, expand []string) expectation {
 	kind, input := a.kind, a.input
 	x := expectation{nodes: map[string]bool{}, folded: map[string]bool{}, hiders: map[string]bool{}, edges: map[edgeKey][]graph.Edge{}, home: map[string]string{}}
-	exempt := w.exempt(kind, input, expand)
+	exempt, home := w.exempt(kind, input, expand), w.home(a)
 	for _, id := range keys(w.candidates(a)) {
 		if w.nodes[id].Salient {
-			w.placeInto(&x, id, exempt)
+			w.placeInto(&x, id, exempt, home)
 		}
 	}
 	firstPass := maps.Clone(x.nodes)
@@ -470,7 +525,7 @@ func (w world) expected(a asked, expand []string) expectation {
 	for k := range revealed {
 		for _, id := range []string{k.from, k.to} {
 			if w.detailFunction(id) {
-				w.placeInto(&x, id, exempt)
+				w.placeInto(&x, id, exempt, home)
 			}
 		}
 	}

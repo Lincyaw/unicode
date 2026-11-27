@@ -23,6 +23,8 @@ type folding struct {
 	// into maps a node placed into a folded container to that container,
 	// and a node that a utility container keeps out of the view to "".
 	into map[string]string
+	// home is the selection's home (see selection).
+	home string
 }
 
 type edgeKey struct {
@@ -43,7 +45,7 @@ var focusFolding = []ViewKind{ViewKindArchitecture, ViewKindClass, ViewKindCalls
 func (ix index) fold(r request, sel selection, expand []string) View {
 	kind, input := r.kind, r.input
 	f := folding{ix: ix, byFocus: slices.Contains(focusFolding, kind), exempt: map[string]bool{input: true},
-		drawn: map[string]bool{}, folded: map[string]bool{}, hidden: map[string]bool{}, into: map[string]string{}}
+		drawn: map[string]bool{}, folded: map[string]bool{}, hidden: map[string]bool{}, into: map[string]string{}, home: sel.home}
 	for _, id := range append(ix.enclosing(input), expand...) {
 		f.exempt[id] = true
 	}
@@ -173,11 +175,22 @@ func (f *folding) cover(id string) (string, string) {
 	chain := f.ix.enclosing(id)
 	slices.Reverse(chain)
 	for _, c := range append(chain, id) {
-		if focus := f.ix.focus(c); !f.exempt[c] && (focus == "support" || focus == "utility") {
+		if focus := f.focus(c); !f.exempt[c] && (focus == "support" || focus == "utility") {
 			return c, focus
 		}
 	}
 	return "", ""
+}
+
+// focus is the focus by which a container folds: its own, except that a
+// design container outside the selection's home folds as support unless it
+// is a utility.
+func (f *folding) focus(c string) string {
+	focus := f.ix.focus(c)
+	if f.home != "" && focus != "utility" && isDesignContainer(f.ix.nodes[c]) && c != f.home && !slices.Contains(f.ix.containers(c), f.home) {
+		return "support"
+	}
+	return focus
 }
 
 // reveal returns the detail functions, and the calls edges to them, that

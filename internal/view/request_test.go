@@ -245,7 +245,7 @@ func (b *builder) code(components, types, ops, steps, cases []string) {
 		}
 		files = append(files, id)
 	}
-	for i := range rapid.IntRange(0, 3).Draw(t, "codeTypes") {
+	for i := range rapid.IntRange(0, 4).Draw(t, "codeTypes") {
 		parent := b.pick("codeTypeFile", files)
 		salient := rapid.Bool().Draw(t, "codeTypeSalient")
 		id := b.node(fmt.Sprintf("%s.CT%d", parent, i), graph.NodeKindType, "struct", graph.LayerCode, salient, nil)
@@ -254,6 +254,10 @@ func (b *builder) code(components, types, ops, steps, cases []string) {
 			b.edge(graph.EdgeKindRealizes, id, b.pick("realizedType", types))
 		}
 		codeTypes = append(codeTypes, id)
+	}
+	for range rapid.IntRange(0, 3).Draw(t, "codeTypeEdges") {
+		kind := rapid.SampledFrom([]graph.EdgeKind{graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements}).Draw(t, "codeTypeEdge")
+		b.edge(kind, b.pick("codeTypeFrom", codeTypes), b.pick("codeTypeTo", codeTypes))
 	}
 	properties := b.ofKind(graph.NodeKindProperty)
 	for i := range rapid.IntRange(2, 10).Draw(t, "functions") {
