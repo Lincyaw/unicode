@@ -2,6 +2,7 @@ package golang
 
 import (
 	"bytes"
+	"crypto/sha256"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -125,6 +126,7 @@ func (b *Backend) Generate(plan lang.GenPlan) lang.Generation {
 		files[key].units = append(files[key].units, unit)
 	}
 	generation := lang.Generation{}
+	outputs := map[string]bool{}
 	for _, key := range slices.Sorted(maps.Keys(files)) {
 		file := files[key]
 		content := c.render(file)
@@ -132,8 +134,27 @@ func (b *Backend) Generate(plan lang.GenPlan) lang.Generation {
 			continue
 		}
 		dir := filepath.Dir(c.positionFile(file.pkg))
-		generation.Edits = append(generation.Edits, lang.Edit{Path: filepath.ToSlash(filepath.Join(dir, "unicode_contracts_gen_test.go")), Content: content})
+		path := filepath.ToSlash(filepath.Join(dir, "unicode_contracts_gen_test.go"))
+		outputs[path] = true
+		generation.Edits = append(generation.Edits, lang.Edit{Path: path, Content: content})
 	}
+	// Owned tests no longer emitted by this plan retain only their package and
+	// build constraints, so removed or moved contracts cannot leave live drivers.
+	overlay, err := generatedTestOverlay(c.loaded.root, plan.Roots)
+	if err != nil {
+		return lang.Generation{Diagnostics: append(c.diagnostics, runDiagnostic("lang.golang.generate-failed", err.Error(), "make owned generated tests readable before generation"))}
+	}
+	for _, name := range slices.Sorted(maps.Keys(overlay)) {
+		rel, err := filepath.Rel(c.loaded.root, name)
+		if err != nil || !filepath.IsLocal(rel) {
+			continue
+		}
+		path := filepath.ToSlash(rel)
+		if !outputs[path] {
+			generation.Edits = append(generation.Edits, lang.Edit{Path: path, Content: overlay[name]})
+		}
+	}
+	slices.SortFunc(generation.Edits, func(a, b lang.Edit) int { return strings.Compare(a.Path, b.Path) })
 	generation.Diagnostics = c.diagnostics
 	return generation
 }
@@ -495,18 +516,7 @@ func lastName(id string) string { _, name, _ := cutLast(id, "."); return name }
 func (c *contractCompiler) qualify(obj types.Object, pkg *packages.Package, imports map[string]string) string {
 	if obj.Pkg() == nil || obj.Pkg().Path() == pkg.PkgPath {
 		if strings.HasPrefix(obj.Name(), "uc") {
-			if c.foreignNames == nil {
-				c.foreignNames = map[string]string{}
-				c.foreignOriginal = map[string]string{}
-			}
-			key := pkg.PkgPath + "." + obj.Name()
-			if alias, ok := c.foreignNames[key]; ok {
-				return alias
-			}
-			alias := "unicodeContractForeign" + strconv.Itoa(len(c.foreignNames))
-			c.foreignNames[key] = alias
-			c.foreignOriginal[alias] = obj.Name()
-			return alias
+			return c.protectName(obj.Name(), pkg, pkg.PkgPath+"."+obj.Name())
 		}
 		return obj.Name()
 	}
@@ -521,6 +531,22 @@ func (c *contractCompiler) qualify(obj types.Object, pkg *packages.Package, impo
 		imports[path] = alias
 	}
 	return alias + "." + obj.Name()
+}
+func (c *contractCompiler) protectName(name string, pkg *packages.Package, key string) string {
+	if c.foreignNames == nil {
+		c.foreignNames = map[string]string{}
+		c.foreignOriginal = map[string]string{}
+	}
+	if alias, ok := c.foreignNames[key]; ok {
+		return alias
+	}
+	alias := "unicodeContractForeign" + strconv.Itoa(len(c.foreignOriginal))
+	for c.foreignOriginal[alias] != "" || pkg.Types.Scope().Lookup(alias) != nil {
+		alias += "_"
+	}
+	c.foreignNames[key] = alias
+	c.foreignOriginal[alias] = name
+	return alias
 }
 func (c *contractCompiler) goType(text string, pkg *packages.Package, imports map[string]string) string {
 	kind, args := ucSplitType(text)
@@ -723,6 +749,7 @@ func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packa
 func (c *contractCompiler) render(file *contractFile) []byte {
 	c.literalImports = file.imports
 	var body strings.Builder
+	var bridges []string
 	for index, unit := range file.units {
 		id := strconv.Itoa(index)
 		specName := "ucSpec" + id
@@ -821,25 +848,50 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 			fmt.Fprintf(&body, "s.Observers[%d].Read=reflect.ValueOf(%s);", i, c.qualify(d.obj, file.pkg, file.imports))
 		}
 		body.WriteString("return &s }\n")
-		var params, values []string
-		for _, s := range unit.spec.Symbols {
-			t := c.goType(s.Type, file.pkg, file.imports)
-			params = append(params, s.Name+" "+t)
-			values = append(values, strconv.Quote(s.Name)+":reflect.ValueOf(&"+s.Name+").Elem()")
-		}
 		predicate := ""
 		if unit.predicate != nil {
 			predicate = c.qualify(unit.predicate, file.pkg, file.imports)
 		} else {
 			predicate = (&Backend{}).MapName(lang.NameRolePredicate, lastName(unit.node.Id))
-			fmt.Fprintf(&body, "//uc:checks %s\nfunc %s(t rapid.TB", unit.node.Id, predicate)
+			bridge := "ucPredicate" + id + "_"
+			handle := "t"
+			symbolNames := map[string]bool{}
+			for _, symbol := range unit.spec.Symbols {
+				symbolNames[symbol.Name] = true
+			}
+			for symbolNames[handle] {
+				handle += "_"
+			}
+			for symbolNames["unicodeGenerated"+strings.TrimPrefix(bridge, "uc")] {
+				bridge += "_"
+			}
+			bridges = append(bridges, bridge)
+			var params, args, bridgeParams, values []string
+			for i, symbol := range unit.spec.Symbols {
+				t := c.goType(symbol.Type, file.pkg, file.imports)
+				name := c.protectName(symbol.Name, file.pkg, unit.node.Id+"#symbol#"+symbol.Name)
+				params = append(params, name+" "+t)
+				args = append(args, name)
+				local := "value" + strconv.Itoa(i)
+				bridgeParams = append(bridgeParams, local+" "+t)
+				values = append(values, strconv.Quote(symbol.Name)+":reflect.ValueOf(&"+local+").Elem()")
+			}
+			fmt.Fprintf(&body, "//uc:checks %s\nfunc %s(%s rapid.TB", unit.node.Id, predicate, handle)
 			if len(params) > 0 {
 				body.WriteString("," + strings.Join(params, ","))
 			}
+			fmt.Fprintf(&body, "){ %s(%s", bridge, handle)
+			if len(args) > 0 {
+				body.WriteString("," + strings.Join(args, ","))
+			}
+			body.WriteString(") }\n")
+			fmt.Fprintf(&body, "func %s(t rapid.TB", bridge)
+			if len(bridgeParams) > 0 {
+				body.WriteString("," + strings.Join(bridgeParams, ","))
+			}
 			fmt.Fprintf(&body, "){ ucCheck(t,%s(),map[string]reflect.Value{%s}) }\n", specName, strings.Join(values, ","))
 		}
-		fmt.Fprintf(&body, "func ucDrive%s(t *testing.T, explore bool, budget time.Duration, r *ucRunResult) { s:=%s(); *r=ucRunResult{Id:s.ID,Passed:true,Observations:append([]string{},s.Observe...)}; for _,o:=range s.Observers {r.Observations=append(r.Observations,o.Name)}; ucCurrent=r; ucExploring=explore; defer func(){ucFailedPredicate(t,s,r);ucCurrent=nil}();", id, specName)
-		fmt.Fprintf(&body, "invoke:=func(tb rapid.TB, values map[string]reflect.Value){")
+		fmt.Fprintf(&body, "func ucInvoke%s(tb rapid.TB, s *ucContract, values map[string]reflect.Value){", id)
 		if unit.predicate != nil {
 			body.WriteString("pre:=*s;pre.Call=nil;pre.Ensures=nil;ucCheck(tb,&pre,values);")
 		}
@@ -851,20 +903,8 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		if len(args) > 0 {
 			body.WriteString("," + strings.Join(args, ","))
 		}
-		body.WriteString(")};")
-		for _, ca := range unit.cases {
-			var vals []string
-			for i, text := range ca {
-				x, err := c.literal(text, c.goType(unit.spec.Symbols[i].Type, file.pkg, file.imports), file.pkg)
-				if err != nil {
-					c.diagnostic(unit.node, "lang.golang.unsupported-case", err.Error(), "use a finite replay value supported by the Go backend")
-					return nil
-				}
-				vals = append(vals, strconv.Quote(unit.spec.Symbols[i].Name)+":reflect.ValueOf("+x+")")
-			}
-			fmt.Fprintf(&body, "if !explore {invoke(t,map[string]reflect.Value{%s})};", strings.Join(vals, ","))
-		}
-		body.WriteString("if explore {start:=time.Now(); rapid.Check(t,func(rt *rapid.T){if time.Since(start)>budget {return}; values:=map[string]reflect.Value{};")
+		body.WriteString(")}\n")
+		fmt.Fprintf(&body, "func ucInputs%s(rt *rapid.T,s *ucContract) map[string]reflect.Value{ values:=map[string]reflect.Value{};", id)
 		for _, s := range unit.spec.Symbols {
 			if fn := unit.generators[s.Name]; fn != nil {
 				selector := c.qualify(fn, file.pkg, file.imports)
@@ -887,11 +927,27 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 				fmt.Fprintf(&body, "values[%s]=ucDraw(rt,reflect.TypeFor[%s](),%s,s.Types,%#v,%s,0);", strconv.Quote(s.Name), c.goType(s.Type, file.pkg, file.imports), strconv.Quote(s.Type), unit.limits, strconv.Quote(s.Name))
 			}
 		}
-		body.WriteString("invoke(rt,values)})};ucFinish(t,s,r);return }\n")
+		body.WriteString("return values}\n")
+		fmt.Fprintf(&body, "func ucRandom%s(rt *rapid.T,s *ucContract){ucInvoke%s(rt,s,ucInputs%s(rt,s))}\n", id, id, id)
+		fmt.Fprintf(&body, "func ucDrive%s(t *testing.T, mode string, budget time.Duration, r *ucRunResult) { s:=%s(); *r=ucRunResult{Id:s.ID,Passed:true,Observations:append([]string{},s.Observe...)}; for _,o:=range s.Observers {r.Observations=append(r.Observations,o.Name)}; restore:=ucContext(r,false); defer restore(); defer func(){ucFailedPredicate(t,s,r);ucFinish(t,s,r)}();", id, specName)
+		for _, ca := range unit.cases {
+			var vals []string
+			for i, text := range ca {
+				x, err := c.literal(text, c.goType(unit.spec.Symbols[i].Type, file.pkg, file.imports), file.pkg)
+				if err != nil {
+					c.diagnostic(unit.node, "lang.golang.unsupported-case", err.Error(), "use a finite replay value supported by the Go backend")
+					return nil
+				}
+				vals = append(vals, strconv.Quote(unit.spec.Symbols[i].Name)+":reflect.ValueOf("+x+")")
+			}
+			fmt.Fprintf(&body, "ucInvoke%s(t,s,map[string]reflect.Value{%s});", id, strings.Join(vals, ","))
+		}
+		fmt.Fprintf(&body, "if mode!=\"replay\" { restoreRandom:=ucContext(r,true); defer restoreRandom(); start:=time.Now(); rapid.Check(t,func(rt *rapid.T){if mode==\"explore\"&&time.Since(start)>budget{return};ucRandom%s(rt,s)})} }\n", id)
+		fmt.Fprintf(&body, "// FuzzUnicode_%x checks %s.\nfunc FuzzUnicode_%x(f *testing.F){f.Fuzz(rapid.MakeFuzz(func(rt *rapid.T){restore:=ucContext(nil,true);defer restore();ucRandom%s(rt,%s())}))}\n", sha256.Sum256([]byte(unit.node.Id)), unit.node.Id, sha256.Sum256([]byte(unit.node.Id)), id, specName)
 	}
-	body.WriteString("func TestUnicodeContracts(t *testing.T){ var selected []string; _=json.Unmarshal([]byte(os.Getenv(\"UNICODE_CONTRACT_IDS\")),&selected); explore:=os.Getenv(\"UNICODE_CONTRACT_EXPLORE\")!=\"\" || os.Getenv(\"UNICODE_CONTRACT_RESULTS\")==\"\"; budget,_:=time.ParseDuration(os.Getenv(\"UNICODE_CONTRACT_EXPLORE\"));if budget<=0 {budget=time.Minute}; results:=[]ucRunResult{}; defer func(){if path:=os.Getenv(\"UNICODE_CONTRACT_RESULTS\");path!=\"\"{data,err:=json.Marshal(results);if err!=nil{t.Error(err);return};if err=os.WriteFile(path,data,0600);err!=nil{t.Error(err)}}}();")
+	body.WriteString("func TestUnicodeContracts(t *testing.T){ var selected []string; _=json.Unmarshal([]byte(os.Getenv(\"UNICODE_CONTRACT_IDS\")),&selected); mode:=\"test\";if os.Getenv(\"UNICODE_CONTRACT_RESULTS\")!=\"\" {mode=\"replay\"};if os.Getenv(\"UNICODE_CONTRACT_EXPLORE\")!=\"\"{mode=\"explore\"}; budget,_:=time.ParseDuration(os.Getenv(\"UNICODE_CONTRACT_EXPLORE\")); results:=[]ucRunResult{}; defer func(){if path:=os.Getenv(\"UNICODE_CONTRACT_RESULTS\");path!=\"\"{data,err:=json.Marshal(results);if err!=nil{t.Error(err);return};if err=os.WriteFile(path,data,0600);err!=nil{t.Error(err)}}}();")
 	for i, unit := range file.units {
-		fmt.Fprintf(&body, "if len(selected)==0||slices.Contains(selected,%s){t.Run(%s,func(t *testing.T){var result ucRunResult;defer func(){if result.Id==\"\"{result=ucRunResult{Id:%s,Passed:false}};result.Passed=result.Passed&&!t.Failed();results=append(results,result)}();ucDrive%d(t,explore,budget,&result)})};", strconv.Quote(unit.node.Id), strconv.Quote(unit.node.Id), strconv.Quote(unit.node.Id), i)
+		fmt.Fprintf(&body, "if len(selected)==0||slices.Contains(selected,%s){t.Run(%s,func(t *testing.T){var result ucRunResult;defer func(){if result.Id==\"\"{result=ucRunResult{Id:%s,Passed:false}};result.Passed=result.Passed&&!t.Failed();results=append(results,result)}();ucDrive%d(t,mode,budget,&result)})};", strconv.Quote(unit.node.Id), strconv.Quote(unit.node.Id), strconv.Quote(unit.node.Id), i)
 	}
 	body.WriteString("}\n")
 	runtimeFile, err := parser.ParseFile(token.NewFileSet(), "runtime.go", contractRuntime, 0)
@@ -953,6 +1009,12 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 	for i := range file.units {
 		owned["ucSpec"+strconv.Itoa(i)] = true
 		owned["ucDrive"+strconv.Itoa(i)] = true
+		owned["ucInputs"+strconv.Itoa(i)] = true
+		owned["ucInvoke"+strconv.Itoa(i)] = true
+		owned["ucRandom"+strconv.Itoa(i)] = true
+	}
+	for _, name := range bridges {
+		owned[name] = true
 	}
 	ast.Inspect(tree, func(node ast.Node) bool {
 		if id, ok := node.(*ast.Ident); ok && owned[id.Name] {
@@ -968,6 +1030,37 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		}
 		return true
 	})
+	// Check the final emitted names, after helper names and protected source
+	// identifiers have been restored. The loaded scope excludes owned outputs.
+	declared := map[string]bool{}
+	for _, decl := range tree.Decls {
+		var names []*ast.Ident
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if d.Recv == nil {
+				names = append(names, d.Name)
+			}
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				switch spec := spec.(type) {
+				case *ast.TypeSpec:
+					names = append(names, spec.Name)
+				case *ast.ValueSpec:
+					names = append(names, spec.Names...)
+				}
+			}
+		}
+		for _, name := range names {
+			if name.Name == "_" {
+				continue
+			}
+			if declared[name.Name] || file.pkg.Types.Scope().Lookup(name.Name) != nil {
+				c.diagnostic(file.units[0].node, "lang.golang.driver-name-collision", "generated declaration "+name.Name+" conflicts with another declaration in package "+file.pkg.PkgPath, "rename the handwritten declaration or give the conflicting properties distinct predicate names")
+				return nil
+			}
+			declared[name.Name] = true
+		}
+	}
 	var formatted bytes.Buffer
 	if err := format.Node(&formatted, fset, tree); err != nil {
 		c.diagnostic(file.units[0].node, "lang.golang.generate-failed", err.Error(), "correct unsupported Go bindings before generation")
