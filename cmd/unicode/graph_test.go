@@ -165,6 +165,8 @@ func repoFiles(texts map[string]string) map[string]RepoFile {
 //
 //uc:generates cli.build-snapshot.files
 //uc:generates cli.query-graph.files
+//uc:generates cli.diff-snapshots.base
+//uc:generates cli.diff-snapshots.head
 func genRepo() *rapid.Generator[map[string]RepoFile] {
 	return rapid.Custom(func(t *rapid.T) map[string]RepoFile {
 		return repoFiles(drawRepo(t).texts(t))
@@ -262,19 +264,31 @@ func sameDiagnostics(got, want []diagnosticJSON) string {
 // gitCommit commits every file of the repository at root into a new git
 // repository there.
 func gitCommit(t rapid.TB, root string) {
-	for _, args := range [][]string{
-		{"init", "-q"},
-		{"add", "-A"},
-		{"-c", "user.name=unicode", "-c", "user.email=unicode@example.com", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
-			"commit", "-q", "-m", "the drawn repository"},
-	} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = root
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("setup failed: git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
+	runGit(t, root, "init", "-q")
+	commitAll(t, root, "the drawn repository")
+}
+
+// commitAll commits every file of the working tree at root with the message
+// subject, even when nothing changed.
+func commitAll(t rapid.TB, root, subject string) {
+	runGit(t, root, "add", "-A")
+	runGit(t, root, "-c", "user.name=unicode", "-c", "user.email=unicode@example.com", "-c", "commit.gpgsign=false",
+		"-c", "core.hooksPath=/dev/null", "commit", "-q", "--allow-empty", "-m", subject)
+}
+
+// runGit runs git in root without the user's and the system's configuration
+// and returns its standard output, trimmed.
+func runGit(t rapid.TB, root string, args ...string) string {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("setup failed: git %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
 	}
+	return strings.TrimSpace(string(out))
 }
 
 // sortedKeys lists a map's keys in order.

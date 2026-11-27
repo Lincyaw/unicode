@@ -107,7 +107,44 @@ type Fragment record "一组节点和边：一种语言抽取出的代码层，�
   field edges: list<Edge>
 }
 
+type ChangeKind enum "两个快照之间一项的差别（model.md §8）" {
+  value added
+  value removed
+  value modified
+  value unchanged
+}
+
+type AttrChange record "一个属性键上，比较去掉的值和加上的值" {
+  field key: string
+  field removed: list<string>
+  field added: list<string>
+}
+
+type NodeChange record "一个节点的差别：标识、差别的种类、它在 base 和 head 中的样子，以及属性上去掉和加上的值" {
+  field id: string
+  field change: ChangeKind
+  field before: optional<Node>
+  field after: optional<Node>
+  field attrs: list<AttrChange>
+}
+
+type EdgeChange record "一条边的差别：种类、起点、终点、差别的种类，以及它在 base 和 head 中的样子" {
+  field kind: EdgeKind
+  field from: string
+  field to: string
+  field change: ChangeKind
+  field before: optional<Edge>
+  field after: optional<Edge>
+}
+
+type Comparison record "两个快照的差别：新增、删除和修改的节点，按标识排序；新增、删除和修改的边，按种类、起点、终点排序" {
+  field nodes: list<NodeChange>
+  field edges: list<EdgeChange>
+}
+
 op newGraph() -> Graph "一张空图"
+
+op compare(base: Graph, head: Graph) -> Comparison "按标识对齐两张图的节点和边（model.md §8），列出 head 相对 base 新增、删除和修改的项：节点的修改是内容哈希不同，边的修改是属性不同"
 
 property encode-ignores-order relation "同一组节点和边，以任何次序加入，编码出的快照逐字节相同；快照中节点按标识、边按种类、起点、终点排序" {
   about Graph.encode
@@ -125,4 +162,23 @@ property digest-follows-content invariant "两个节点的摘要相同，当且�
   about Graph.digest
   forall first: Node
   forall second: Node
+}
+
+property compare-follows-identity relation "比较按标识对齐：只在 head 中的节点为新增，只在 base 中的为删除，两边都有而内容哈希不同的为修改，其余的不列出；边按种类、起点和终点对齐，两边都有而属性不同的为修改；before 和 after 是该项在 base 和 head 中的样子；节点的 attrs 按键排序，恰列出两边的值不同的键，每个键上去掉的值是 base 中的值的子序列，加上的值是 head 中的值的子序列，两者没有相同的值，从两边分别除去它们之后剩下的值相同；节点按标识排序，边按种类、起点、终点排序" {
+  about compare
+  forall base: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
+  forall head: Fragment generated "base 的一份改动：去掉一些节点和边，改动一些节点的内容和一些边的属性，改动一些项的出处、来源、层或显著性而不改内容，再加上一些新的节点和边"
+}
+
+property compare-reverses relation "compare(head, base) 是 compare(base, head) 的反面：列出的项和次序相同，新增与删除互换，修改仍是修改，before 与 after 互换，每个属性键上去掉的值与加上的值互换" {
+  about compare
+  forall base: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
+  forall head: Fragment generated "base 的一份改动：去掉一些节点和边，改动一些节点的内容和一些边的属性，改动一些项的出处、来源、层或显著性而不改内容，再加上一些新的节点和边"
+}
+
+property compare-with-itself-is-empty invariant "一张图与它自己比较，或者与以另一种次序加入同一组节点和边的图比较，没有新增、删除和修改" {
+  about compare
+  forall content: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
+  forall rotation: int
+  where rotation in 0..1000
 }

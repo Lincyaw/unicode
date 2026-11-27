@@ -402,6 +402,12 @@ func writeRepo(t rapid.TB, files map[string]RepoFile) string {
 		t.Fatalf("setup failed: cannot create a temporary directory: %v", err)
 	}
 	root := filepath.Join(base, "repo")
+	writeFiles(t, root, files)
+	return root
+}
+
+// writeFiles writes the files under root, each with its own mode.
+func writeFiles(t rapid.TB, root string, files map[string]RepoFile) {
 	for path, f := range files {
 		full := filepath.Join(root, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -420,7 +426,6 @@ func writeRepo(t rapid.TB, files map[string]RepoFile) string {
 			t.Fatalf("setup failed: cannot set the mode of %s: %v", path, err)
 		}
 	}
-	return root
 }
 
 // readRepo reads the files of a repository without following symbolic

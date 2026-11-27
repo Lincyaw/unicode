@@ -47,8 +47,10 @@ flow check-code "用户运行 unicode check：载入设计，抽取每种已配�
   }
 }
 
-flow build-snapshot "用户运行 unicode build：建出图，把快照写到 .unicode/graph.json；相同的仓库总是写出逐字节相同的快照" {
+flow build-snapshot "用户运行 unicode build：建出图，把快照写到 .unicode/graph.json，把仓库所在的提交和工作区是否有改动写到 .unicode/build.json；不在 Git 的工作区中、或者还没有提交时，提交为 null，工作区算作有改动；build 自己写出的这两个文件不算改动；相同的仓库总是写出逐字节相同的快照" {
   forall files: map<string, RepoFile> generated "一个合法的小仓库：设计文件、录制文件和 Go 源码"
+  forall committed: bool
+  forall edited: bool
   user -> main(args) {
     cli -> design.load(files)
     cli -> lang.Backend.extract(root, srcRoots)
@@ -66,5 +68,20 @@ flow query-graph "用户运行 node get、node search、node refs、slice、impa
     cli -> graph.Graph.derive()
     cli -> query.slice(g, ids, expand)
     cli -> view.select(g, kind, id, expand)
+  }
+}
+
+flow diff-snapshots "用户运行 unicode diff <rev>：像查询的 --rev 一样取出该提交并建图，与工作区的图比较；带 --to <rev> 时，与另一个提交的图比较；JSON 的 nodes 和 edges 与直接调用 graph.compare 得到的相同，base 和 head 给出两端的提交，head 另给出它是否有未提交的改动；文本列出每个变化的节点和边；提交读不出时是参数错误" {
+  forall base: map<string, RepoFile> generated "一个合法的小仓库：设计文件、录制文件和 Go 源码，提交为比较的基准"
+  forall head: map<string, RepoFile> generated "另一个合法的小仓库，写在基准的工作区中：留在工作区，或者再提交一次"
+  forall toCommit: bool
+  forall jsonOutput: bool
+  forall readable: bool
+  user -> main(args) {
+    cli -> design.load(files)
+    cli -> lang.Backend.extract(root, srcRoots)
+    cli -> graph.Graph.addFragment(fragment)
+    cli -> graph.Graph.derive()
+    cli -> graph.compare(base, head)
   }
 }
