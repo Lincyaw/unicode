@@ -140,6 +140,11 @@ func genQueryCommand(files map[string]RepoFile) *rapid.Generator[[]string] {
 		case 1:
 			command = []string{"node", "refs", id("refs", nil)}
 		case 2:
+			observations := slices.DeleteFunc(slices.Clone(known), func(c candidate) bool { return c.kind != graph.NodeKindObservation })
+			if len(observations) > 0 && rapid.Bool().Draw(t, "observationSearch") {
+				command = []string{"node", "search", rapid.SampledFrom(observations).Draw(t, "observation").id, "--kind", string(graph.NodeKindObservation)}
+				break
+			}
 			text := id("searched", nil)
 			runes := []rune(text)
 			start := rapid.IntRange(0, len(runes)).Draw(t, "start")

@@ -650,7 +650,7 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]RepoFile, check bool, tar
 
 func TestFlowFormatFiles(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
-		files := genFiles(fileModes).Draw(t, "files")
+		files := genFormatFiles().Draw(t, "files")
 		checkFlowFormatFiles(t, files, rapid.Bool().Draw(t, "check"), genTargets(files).Draw(t, "targets"),
 			genAt(files).Draw(t, "at"), rapid.Bool().Draw(t, "explicitRoot"))
 	})
@@ -658,7 +658,7 @@ func TestFlowFormatFiles(t *testing.T) {
 
 func FuzzFlowFormatFiles(f *testing.F) {
 	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		files := genFiles(fileModes).Draw(t, "files")
+		files := genFormatFiles().Draw(t, "files")
 		checkFlowFormatFiles(t, files, rapid.Bool().Draw(t, "check"), genTargets(files).Draw(t, "targets"),
 			genAt(files).Draw(t, "at"), rapid.Bool().Draw(t, "explicitRoot"))
 	}))

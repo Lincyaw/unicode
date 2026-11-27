@@ -6,6 +6,7 @@ component lang.golang "Go 后端：抽取、名称映射、生成与运行" {
 type Backend object "Go 的后端：用 go/packages 和 go/types 静态抽取" {
   implements lang.Backend
   implements lang.Generator
+  implements lang.GenerationExtractor
   implements lang.Runner
 }
 

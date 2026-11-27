@@ -69,6 +69,13 @@ type breakage struct {
 }
 
 var breakages = []breakage{
+	{"check.multiple-observes", func(w *world) string {
+		o := choose(w, w.observations)
+		twin := w.node(o.id+"Other", graph.LayerDesign, graph.NodeKindObservation, "snapshot", w.designFile(o.home), map[string][]string{"type": w.attr(o.id, "type"), "inputs": w.attr(o.id, "inputs")})
+		w.declared(graph.EdgeKindContains, w.parentOf(o.id), twin)
+		w.declared(graph.EdgeKindObserves, o.adapter, twin)
+		return o.adapter
+	}},
 	{"check.missing-observer", func(w *world) string {
 		o := choose(w, w.observations)
 		w.removeEdges(func(e graph.Edge) bool { return e.Kind == graph.EdgeKindObserves && e.To == o.id })

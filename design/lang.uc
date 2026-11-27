@@ -70,6 +70,11 @@ type Generator interface "后端可选的生成能力；不扩充只读 Backend 
   op generate(plan: GenPlan) -> Generation "生成语言文件；不写仓库，未支持的目标给出诊断"
 }
 
+type GenerationExtractor interface "生成规划可选的代码抽取能力，排除本工具拥有的旧生成测试以修复陈旧输出" {
+  op language() -> string "系统文件中的语言名称"
+  op extractForGeneration(root: string, srcRoots: list<string>) -> Extracted raises ExtractFailed "以只读内存覆盖排除已确认归属的生成测试；手写源码仍严格检查，普通 extract 不受影响"
+}
+
 type Runner interface "后端可选的运行能力" {
   op language() -> string "系统文件中的语言名称"
   op run(plan: RunPlan) -> RunReport "核对已生成文件，执行回放或预算内探索，返回每条性质的结论"

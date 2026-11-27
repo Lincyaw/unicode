@@ -12,6 +12,7 @@ import (
 // place allows. Bindings to no node are graph.Derive's to report.
 func (c *checker) bindings() {
 	checks := map[string][]graph.Edge{}
+	observers := map[string][]graph.Edge{}
 	for _, e := range c.edges {
 		if e.Source != graph.SourceDeclared {
 			continue
@@ -30,9 +31,21 @@ func (c *checker) bindings() {
 			if !c.isFunction(e.From) || c.isMethod(e.From) || !c.is(e.To, graph.LayerDesign, graph.NodeKindObservation, "snapshot") {
 				c.wrongKind(e, "an observation adapter is a free function that observes a named snapshot")
 			}
+			observers[e.From] = append(observers[e.From], e)
 		}
 	}
 	for _, f := range c.nodes {
+		if edges := observers[f.Id]; len(edges) > 1 {
+			var targets []string
+			for _, edge := range edges {
+				targets = append(targets, edge.To)
+				c.mark(edgeID(edge), graph.StatusContradicted)
+				c.mark(edge.To, graph.StatusContradicted)
+			}
+			c.fail("check.multiple-observes", f.Id, graph.StatusContradicted, f.Origin,
+				fmt.Sprintf("%s carries %d observes bindings (%s), but an adapter observes exactly one named snapshot", c.describe(f.Id), len(edges), strings.Join(targets, ", ")),
+				"keep one observes binding on the adapter and give each other named snapshot its own adapter")
+		}
 		if edges := checks[f.Id]; len(edges) > 1 {
 			var targets []string
 			for _, e := range edges {

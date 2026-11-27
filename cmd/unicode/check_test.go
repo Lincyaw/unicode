@@ -58,7 +58,7 @@ func genDesign(t *rapid.T) map[string]string {
 		}
 		b.WriteString("}\n\nop run(x: int) -> Item \"runs\"\n\nflow runs \"the person runs it\" {\nwho -> run(a)\n}\n\n")
 		low := rapid.IntRange(0, 5).Draw(t, "low")
-		fmt.Fprintf(&b, "property bounded invariant \"n stays small\" {\nabout Item, run\nforall n: int\nwhere n in %d..%d\ncase one {\nn = %d\n}\n}\n",
+		fmt.Fprintf(&b, "property bounded postcondition \"the result keeps the input number\" {\nabout Item, run\nforall n: int\nwhere n in %d..%d\ncall run(n)\nensure result.n == n\ncase one {\nn = %d\n}\n}\n",
 			low, low+4, low+rapid.IntRange(0, 4).Draw(t, "value"))
 		path := "design/" + name + ".uc"
 		files[path] = canonical(t, path, b.String())
