@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"go/types"
 	"regexp"
 	"strings"
 
@@ -51,6 +52,18 @@ type bindingKey struct{ id, verb, target string }
 func (x *extraction) readBindings(p *packages.Package, f sourceFile, fileID string, docs map[*ast.CommentGroup]bound) {
 	for _, group := range f.syntax.Comments {
 		for _, c := range group.List {
+			if strings.HasPrefix(c.Text, "//uc:model-type ") {
+				valid := false
+				for _, d := range x.declared {
+					if d.file.syntax == f.syntax && d.name != nil && x.carrierModel(d.name.Type().(*types.Named)) != "" && docs[group].id == d.id {
+						valid = true
+						break
+					}
+				}
+				if valid {
+					continue
+				}
+			}
 			if strings.HasPrefix(c.Text, bindingPrefix) {
 				owner, attached := docs[group]
 				x.readBinding(x.position(p, c.Pos()), c.Text, fileID, owner, attached)
