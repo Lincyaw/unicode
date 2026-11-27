@@ -42,7 +42,7 @@ op search(
 
   /** At most this many; 50 when not given */
   @query limit?: int32,
-): Node[];
+): Node[] | BadRequest | Refusals;
 
 /** The slice of the nodes (`unicode slice`). */
 @route("/slice")
@@ -51,9 +51,9 @@ op getSlice(
   @query(#{ explode: true }) id: string[],
   @query(#{ explode: true }) expand?: string[],
   @query withCode?: boolean,
-): Slice | NotFound;
+): Slice | NotFound | BadRequest | Refusals;
 
 /** The salient nodes a change of the nodes reaches, grouped by kind (`unicode impact`, docs/design.md §7.4). */
 @route("/impact")
 @get
-op getImpact(@query(#{ explode: true }) id: string[]): Affected[] | NotFound;
+op getImpact(@query(#{ explode: true }) id: string[]): Affected[] | NotFound | BadRequest | Refusals;

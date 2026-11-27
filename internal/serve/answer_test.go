@@ -84,11 +84,7 @@ func checkAnswersFollowContract(t rapid.TB, exchange Exchange) {
 			continue
 		}
 		if route.Operation.Responses.Status(resp.Status) == nil {
-			if _, why := problemOf(resp.Body); why != "" || resp.Status < 400 {
-				t.Fatalf("%s got the status %d, which api/openapi.yaml does not declare for %s, and its body is not a refusal: %s\n%s",
-					req, resp.Status, route.Operation.OperationID, why, resp.Body)
-			}
-			continue
+			t.Fatalf("%s got the status %d, which api/openapi.yaml does not declare for %s\n%s", req, resp.Status, route.Operation.OperationID, resp.Body)
 		}
 		err = openapi3filter.ValidateResponse(context.Background(), &openapi3filter.ResponseValidationInput{
 			RequestValidationInput: &openapi3filter.RequestValidationInput{Request: httpReq, PathParams: params, Route: route},
