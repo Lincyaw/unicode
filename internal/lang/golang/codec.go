@@ -18,8 +18,7 @@ func (c *contractCompiler) configureCodecs(unit *contractUnit) {
 	unit.spec.Codecs = map[string]ucCodec{}
 	seen := map[string]bool{}
 	var visitType func(string)
-	var visitOperation func(string)
-	visitOperation = func(id string) {
+	visitOperation := func(id string) {
 		key := "op:" + id
 		if seen[key] {
 			return
