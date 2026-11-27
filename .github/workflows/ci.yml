@@ -19,3 +19,12 @@ jobs:
       - run: go run ./cmd/unicode fmt --check
       - run: go run ./cmd/unicode check
       - run: python3 scripts/rulecodes.py
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: api/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: api/pnpm-lock.yaml
+      - run: make api-check

@@ -1,7 +1,7 @@
-.PHONY: check lint test fmt-check self-check rule-check deep
+.PHONY: check lint test fmt-check self-check rule-check api api-check deep
 
 # check is what a lane runs before it commits: fast, default rapid settings.
-check: lint test fmt-check self-check rule-check
+check: lint test fmt-check self-check rule-check api-check
 
 lint:
 	golangci-lint run
@@ -20,6 +20,16 @@ self-check:
 # that report it broken, and the tables list exactly the codes of the source.
 rule-check:
 	python3 scripts/rulecodes.py
+
+# The viewer's interface (docs/design.md §7.5): api/openapi.yaml is generated
+# from api/*.tsp. api regenerates it; api-check fails when it differs.
+api:
+	pnpm --dir api install --frozen-lockfile --silent
+	pnpm --dir api run --silent build
+
+api-check:
+	pnpm --dir api install --frozen-lockfile --silent
+	pnpm --dir api run --silent check
 
 # deep is the asynchronous stage after a merge (CLAUDE.md principle 9):
 # many rapid checks, a fuzz burst per Fuzz target, and mutation testing.

@@ -58,8 +58,13 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | 深度验证中的变异测试 | `github.com/go-gremlins/gremlins` |
 | 生成器、性质测试与 fuzz 的驱动 | `pgregory.net/rapid` 与 Go 原生的 fuzz |
 | Go 代码的抽取（M2） | `golang.org/x/tools/go/packages` 与 `go/types` |
+| 查看器的接口：用 TypeSpec 写，生成 OpenAPI 3 文档（§7.5.1） | `@typespec/compiler`、`@typespec/http`、`@typespec/openapi`、`@typespec/openapi3`，1.18.0 |
+| `serve` 的接口类型和路由：由 OpenAPI 文档生成 Go 代码 | `github.com/oapi-codegen/oapi-codegen/v2` v2.8.2，生成的代码依赖 `github.com/oapi-codegen/runtime` v1.9.0 |
+| 前端的接口类型和请求：由 OpenAPI 文档生成 TypeScript 类型，按类型发出请求 | `openapi-typescript` 7.13.0 与 `openapi-fetch` 0.17.0 |
 
 规范格式的打印没有现成的库，由 `syntax` 自己完成。
+
+查看器的接口定义在 `api/` 中：TypeSpec 源文件 `api/*.tsp`、编译配置 `api/tspconfig.yaml`，以及由它们生成并提交的 `api/openapi.yaml`。`api/` 用 pnpm 管理 TypeSpec 的版本，不属于任何 Go 组件。
 
 ## 4 语言后端
 
@@ -302,7 +307,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 
 查看器只渲染图，不另存数据。视觉规范是 Figma 原型（文件 `inTTk3ypjVqoB9tHq0ErO4`），样式取自 aegis-bench-site；界面的改动先画进原型，再实现。
 
-查看器由工具链提供：`unicode serve` 启动一个小型后端，读取本地 `unicode build` 编译出的数据，提供查询与交互的接口，并提供前端页面。接口用 TypeSpec 定义，由各视图需要显示的内容推出；前端的源码在 `web/`，只通过这些接口取数据。接口和后端的细节在视图原型评审之后确定。
+查看器由工具链提供：`unicode serve` 启动一个小型后端，读取本地 `unicode build` 编译出的数据，提供查询与交互的接口，并提供前端页面。接口用 TypeSpec 定义，由各视图需要显示的内容推出（§7.5.1）；前端的源码在 `web/`，只通过这些接口取数据。
 
 - **视图是入口，实体页是落点。** 顶部的视图标签是探索的入口；类型、操作、流程、性质等节点各有实体页。图上的节点、设计树的条目、链接都能进入实体页，实体页中的引用又能继续进入下一页。右栏在视图中预览选中的节点，在实体页中显示导航路径。视图、选中项和导航路径都记在地址里。
 - **页面只放数据。** 说明性的文字，例如小节的说明、图例、读法和计数口径，收进标题旁的 ⓘ，悬停时显示；页面上不出现"点击……""另有……"之类的提示句。
@@ -339,6 +344,94 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 | 评审记录 | 评审：未评审、已评审 |
 | 实体页的来路 | 导航路径 |
 
+#### 7.5.1 接口
+
+**数据来源。** `unicode serve` 读取 `unicode build` 写出的快照 `.unicode/graph.json`，载入时按 `unicode check` 的约束检查一遍，得到诊断和每个声明项的状态。快照文件改变后，下一次请求时重新读入。比较的基准由后端按查询的 `--rev` 的方式取出该提交并建图，在进程内保留。
+
+**约定。** 接口只读：视图、输入、展开、选中项和导航路径都记在页面地址中，服务端不保存状态。标识中含有 `.`、`#`、`:` 和 `/`，一律放在查询参数里，不放在路径中。接口的源文件是 `api/*.tsp`，`api/openapi.yaml` 由它生成，`make api-check` 确认二者一致；各字段的含义和取法以源文件中的说明为准。证据（运行、结果、覆盖，M6）和评审记录（M7）的字段是可选的，图中有了这些数据之后才给出。
+
+**形状。** 已有的形状都沿用，字段名与命令行的 JSON 相同：
+
+- 节点和边是快照中的节点和边（§5.2、[model.md](model.md) §8），节点带内容哈希 `digest`。节点另有 `title`（页面上的名称）、`status`（`check` 给出的状态）、代码元素的 `bindings`（绑定边及其指向的设计节点）、步骤的 `step`（所在流程、序号、发起方、目标、接收方、外层步骤和子步骤）；边另有 `status`。
+- 诊断与 `unicode check --format json` 的相同。一条边加另一端的节点沿用 `query.Neighbor`，切片沿用 `query.Context`，影响沿用 `query.Affected`，单个节点沿用 `query.NodeView`。
+- 视图在 `view.View`（`kind`、`nodes`、`edges`、`folded`、`hidden`）之上，加上输入节点、它的祖先和视图中各项的诊断。类型卡片带 `members`，即字段和枚举值与代码的逐项比较；容器卡片带 `contents`，展开时是其中的类型、操作、流程、性质和错误，折叠时是其中类型的名称；代码文件和代码类型带 `details`，即未画出的细节函数的个数。边的一端是折叠的容器时，`count` 是它代表的边数；`labels` 是边承载的操作。
+- 拒绝的请求返回 `{code, message, fix}`：标识或文件不存在为 404 `serve.not-found`；视图不适用于输入为 400 `serve.not-applicable`，提交读不出为 400 `serve.bad-revision`，路径不是设计文件、录制文件或快照中的代码文件为 400 `serve.bad-path`。
+
+**接口。** 路径都在 `/api` 之下：
+
+| 接口 | 内容 | 对应的命令 |
+| --- | --- | --- |
+| `GET /snapshot` | 快照的元数据：系统节点、读入时工作区所在的提交、快照文件及其写出时间，以及节点、边、诊断和各状态的计数 | — |
+| `GET /tree` | 设计树：设计层的节点按 `contains` 组成的树，不含步骤和用例 | — |
+| `GET /views/{kind}` | 十种视图之一，参数 `input`、可重复的 `expand`，类视图另有 `layer`（设计层或代码层），C4 视图另有 `level`（系统上下文或容器） | `unicode view` |
+| `GET /entity?id=` | 实体页：共有的各部分，以及按节点种类的一部分；带 `base` 时附上变更 | — |
+| `GET /edge?kind=&from=&to=` | 边的预览 | — |
+| `GET /nodes?id=…` | 按标识取一组节点，用于导航路径 | — |
+| `GET /node?id=` | 一个节点及其出边和入边 | `unicode node get` |
+| `GET /search?text=` | 搜索，可按 `kind` 过滤 | `unicode node search` |
+| `GET /slice?id=…` | 切片，参数 `expand` 和 `withCode` | `unicode slice` |
+| `GET /impact?id=…` | 影响 | `unicode impact` |
+| `GET /diagnostics` | 全部诊断和状态 | `unicode check` |
+| `GET /code?path=&from=&to=` | 一个文件中的若干行 | — |
+| `GET /compare?base=` | 与基准提交的快照比较，列出新增、删除和修改的节点和边 | `unicode diff <rev>` |
+| `GET /revisions` | 当前分支最近的提交，供比较按钮选择基准 | — |
+
+架构、事件、领域和 C4 视图不给 `input` 时，输入是整个系统。实体页的共有部分是：节点及其祖先、诊断、相关视图、实现、相关性质、参与的流程、代码、覆盖它的用例（M6）、证据（M6）、变更和评审（M7）；按种类的部分是容器（也用于参与者）、类型、操作、流程、性质、步骤、用例和代码元素各一种。参与的流程是这样一些步骤：调用该节点或它的操作、所调用操作的签名引用该节点、发布或处理该节点，或者由作为人的该节点发起。
+
+**界面元素与字段。** 每个原型中的元素由下表的接口和字段提供；接口一栏省略 `/api`，同一行的多个元素用顿号分开：
+
+| 界面元素 | 接口 | 字段 |
+| --- | --- | --- |
+| 顶栏的系统名 | `/snapshot` | `system.title` |
+| 顶栏的搜索 | `/search` | 节点的 `title`、`kind`、`form`、`summary` |
+| 标题区的路径和标题 | `/views/{kind}`、`/entity` | `ancestors`、`input.title`；`ancestors`、`node.title` |
+| 视图标签 | `/snapshot`、`/entity` | 领域和 C4 是否可用看 `system.attrs.notations`；切换后的输入取自选中项的 `views` |
+| 标题区和状态栏的诊断计数 | `/snapshot`、`/diagnostics` | `counts.diagnostics`；`diagnostics` |
+| 比较按钮 | `/revisions`、`/compare` | 提交列表；`base`、`nodes`、`edges` |
+| 状态栏的分支和提交 | `/snapshot` | `head.branch`、`head.short`、`head.dirty` |
+| 设计树 | `/tree` | `node.title`、`node.status`、`node.attrs.focus`、`children` |
+| 右栏的预览 | `/entity`、`/edge` | 选中的节点或边，各部分同下文的实体页 |
+| 右栏的导航路径 | `/nodes` | `title`、`kind`、`form` |
+| 架构：组件卡片、类型卡片（01） | `/views/architecture` | 组件的 `attrs.focus`、`attrs.labels`、`attrs.paths`；`contents`；类型的 `members`，操作的 `attrs.signature` |
+| 架构：折叠的组件、隐藏的工具组件（01、12） | `/views/architecture` | `folded`、`contents`；`hidden` |
+| 架构：依赖边及其诊断（01、07、12） | `/views/architecture` | 边的 `kind`、`status`、`attrs.imports`、`attrs.calls`；`diagnostics` |
+| 领域（07） | `/views/ddd` | 类型的 `attrs.labels`；refers、extends、implements 边 |
+| 类：层的切换、类型卡片（08） | `/views/class` | `layer`；`members`、操作的 `attrs.signature` |
+| 类：其他组件中被引用的类型（08） | `/views/class` | 折叠的组件及其 `contents`；边的 `count` |
+| 时序：生命线、步骤、激活、片段（02） | `/views/sequence` | `nodes` 的次序；步骤的 `step`、`attrs.args`、`attrs.label`；from、calls、emits、handles 边，contains 边的 `attrs.branch` |
+| 时序：步骤的状态和诊断卡片（02） | `/views/sequence` | 步骤的 `status`；`diagnostics` 中 `subject` 为该步骤的各条 |
+| 活动（09） | `/views/activity` | 同时序 |
+| 事件：发布、事件、订阅；抛出、错误、处理（10） | `/views/events` | 步骤的 `step`（发起方、目标、子步骤）；emits、subscribes、handles 边；`diagnostics` |
+| 调用：函数、reaches 边、折叠的组件（04） | `/views/calls` | 函数的 `bindings`（设计名称与状态）；calls、reaches 边，reaches 的 `attrs.via`；边的 `count` |
+| 调用：展开与收起（04） | `/views/calls` | 请求的 `expand` |
+| 性质：陈述、约束对象、输入（03） | `/views/property` | 性质的 `summary`、`attrs.symbols`、`attrs.limits`；about 边及其另一端操作的 `attrs.signature` |
+| 性质：谓词、驱动（03） | `/views/property` | checks 边的起点及其 `origin`；`evidence.drivers`（M4） |
+| 性质：用例表、测试充分性（03） | `/views/property` | 用例的 `form`、`attrs.values`、`attrs.reason`；`evidence.outcome`、`evidence.coverageGain`、`evidence.adequacy`（M6） |
+| 代码：文件中的类型和函数（11） | `/views/code` | 代码元素的 `bindings`；`details` |
+| 代码：进出的调用（11） | `/views/code` | calls、reaches 边；边的 `count`；被调用方按 `origin.path` 分组 |
+| 覆盖到它的用例（11 的画布，02、09 的右栏） | `/views/code`、`/entity` | covers 边及其起点的用例；`coveredBy`、`evidence.branches`（M6） |
+| C4：层级切换、人、组件、外部系统、带操作名的边（12） | `/views/c4` | `level`；`nodes`；边的 `labels` |
+| 实体页：标题、标签、出处（05、06） | `/entity` | `node` 的 `title`、`status`、`attrs.labels`、`origin`；`realizedBy` 中代码元素的 `origin` |
+| 实体页：字段表（05） | `/entity` | `type.members` 的 `type`、`codeType`、`refers`、`status` |
+| 实体页：操作表（05） | `/entity` | `type.ops` 的 `op`、`realizedBy`、`properties` |
+| 实体页：被引用、引用（05、07、08） | `/entity` | `type.referredBy`、`type.refers` |
+| 实体页：参与的流程（05、06、08、10、12） | `/entity` | `flows`，各步骤的 `step` |
+| 实体页：相关性质（06、07、08、09） | `/entity` | `properties`；性质的 `status`，诊断见 `diagnostics` |
+| 实体页：代码（05、06） | `/entity` | `sources` |
+| 实体页：相关视图（全部） | `/entity` | `views` |
+| 实体页：变更、评审（05、06） | `/entity?base=` | `changes` 的 `attrs`、`linesChanged`；`review`（M7） |
+| 操作页：签名、签名中的类型（06） | `/entity` | `node.attrs.signature`；`op.signatureTypes` |
+| 操作页：调用方、被调用方（06） | `/entity` | `op.callers`、`op.callees`，reaches 边的 `attrs.via` |
+| 组件预览：属性、依赖、包含、代码（01） | `/entity` | `node.attrs`；`container.dependsOn`、`container.dependedOnBy`、`container.contents`、`container.files` |
+| 外部系统预览：包含、签名、被依赖、实现（12） | `/entity` | `container.contents` 及其操作的 `attrs.signature`；`container.dependedOnBy`；`realizedBy` |
+| 事件预览：字段、发布、订阅（10） | `/entity` | `type.members`、`type.emittedBy`、`type.subscribers`；`diagnostics` |
+| 步骤预览：发起方与目标、签名、调用方、被调用方、实参（02、09） | `/entity` | `node.step` 的 `sender`、`target`、`receiver`，目标的 `attrs.signature`；`node.attrs.args` |
+| 步骤预览：子步骤、所在调用、处理的错误（02、09） | `/entity` | `step.children`、`step.call`、`node.step.target` |
+| 步骤预览：代码追溯（02、09） | `/entity` | `step.traces`；`step.callSites` 中 calls 边的 `attrs.sites` |
+| 用例预览：取值、来源、历史、覆盖的函数（03） | `/entity` | `node.attrs.values`、`node.attrs.reason`；`evidence.history`、`case.covers`（M6） |
+| 函数预览：实现、位置、签名、调用方、被调用方、细节函数（11） | `/entity` | `node.bindings`、`node.origin`；`code.declaration`、`code.callers`、`code.callees`、`code.details` |
+| reaches 预览：经过的细节函数、终点、相关步骤、展开（04） | `/edge` | `nodes`、`toNode`、`steps`、`views` |
+
 ## 8 命令行
 
 命令行的使用者既是人，也是 agent，约定遵守 cli-design 的规则：标准输出只放数据，诊断和日志写到标准错误；每个命令都支持 `--format text|json`；不读标准输入，不提示确认。
@@ -359,12 +452,14 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 | `unicode impact <id>...` | 影响 | 无 |
 | `unicode view <kind> <id> [--expand ID]...` | 视图的数据 | 无 |
 | `unicode schema` | 输出命令、参数和各命令输出的 JSON Schema | 无 |
+| `unicode serve [--snapshot FILE] [--addr HOST:PORT] [--web DIR]` | 启动查看器：读取快照，回答 §7.5.1 的接口，并提供前端页面 | 无 |
 
 - **全局参数**：`--root DIR` 指定仓库根目录，缺省为向上找到的第一个含 `design/system.uc` 的目录；`--rev REV` 让查询读一个提交的快照，缺省读工作区。
 - **退出码**：0 成功；1 未知错误；2 参数错误；3 标识不存在；5 冲突（`gen` 要写的位置已有不同的内容）；7 环境错误（找不到 `python3` 或 Go 工具链）；10 存在诊断；11 有谓词未通过。
 - **`check`**：建图并检查全部约束；设计有错时，各阶段照样运行，诊断全部报出。JSON 为 `{"diagnostics": [...], "statuses": {...}}`。代码无法抽取时给出 `cli.extract-failed`，位置在系统文件中该语言的块，退出码为 10；找不到语言的工具链时退出码为 7；尚无后端的语言给出 `cli.unsupported-language` 并跳过。
 - **`build`**：建图有诊断时（不含 `check` 的约束）不写快照，退出码为 10；JSON 为 `{"diagnostics": [...], "snapshot": "路径"}`。`--out DIR` 写到 `DIR/graph.json`。搜索索引 `index.json` 等查看器确定格式后再写。
 - **查询**：`node`、`slice`、`impact` 和 `view` 每次都按工作区重新建图；`--rev REV` 只用于这些查询，以 `git archive` 取出该提交的文件到临时目录。查询中的标识（包括 `--expand` 的）不存在时退出码为 3；视图不适用于输入时退出码为 2。`view architecture` 和 `view events` 可以不给标识，表示整个系统。JSON 的字段名是设计中的名称（小驼峰）。
+- **`serve`**：`--snapshot` 缺省为根目录下的 `.unicode/graph.json`，`--addr` 缺省为 `127.0.0.1:8765`。前端由 `web/` 构建到 `web/dist`，构建结果用 Go 的 `embed` 嵌入程序；`serve` 在 `/` 下提供页面，在 `/api` 下提供接口。`--web DIR` 改为提供目录 DIR 中的页面，供开发时使用。开始监听后，标准输出写出页面的地址（JSON 为 `{"url": …}`），每个请求的日志写到标准错误；收到中断信号时退出，退出码为 0。快照不存在或读不出时退出码为 7，提示先运行 `unicode build`；地址无法监听时退出码也为 7。`serve` 不接受 `--rev`，比较的基准由接口的 `base` 参数给出。
 - **`check --design-only`**：解析 `design/` 和 `corpus/` 下的全部文件，报出语法、规范格式和 §5.1 的诊断；JSON 为 `{"diagnostics": [...]}`。M2 之前，不带 `--design-only` 的 `check` 是参数错误。
 - **路径参数**：按工作目录解析，必须是根目录下 `design/` 或 `corpus/` 之内的文件或目录。路径不存在、不在这两个目录之内，或者找不到缺省的根目录，都是参数错误。目录会被遍历。`design/` 或 `corpus/` 中 `KindOf` 拒绝的文件给出诊断 `cli.not-a-design-file`，读不出的文件给出 `cli.unreadable-file`，符号链接给出诊断 `cli.symlink`，既不跟随读取，也不改写。全局参数也可以写在命令之后。
 - **改写与输出**：改写是原子的，并保留文件的权限，失败时不留下临时文件；写入或输出失败时退出码为 1。`cli.not-canonical` 的位置是与规范格式第一处不同的字节。`--help` 写到标准输出，退出码为 0。JSON 缩进两个空格。带 `--format json` 时，诊断是数据，写在标准输出的 JSON 中，标准错误只放日志；文本模式下，诊断写到标准错误，标准输出只列出改写了的或不是规范格式的文件。

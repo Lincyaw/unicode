@@ -1,0 +1,1928 @@
+openapi: 3.0.0
+info:
+  title: unicode viewer API
+  version: 0.1.0
+  description: |-
+    The interface of the unicode viewer (docs/design.md §7.5). `unicode serve` answers it from the snapshot that
+    `unicode build` wrote to .unicode/graph.json, checked on load as `unicode check` checks it. It is read-only: the
+    viewer keeps its selection, tabs, expansions and navigation trail in the page address, not on the server.
+
+    Identities are those of docs/model.md §7. They contain ".", "#", ":" and "/", so every identity travels in a query
+    parameter, never in a path segment. JSON field names are the design's, in lower camel case, as the command line's
+    JSON already writes them.
+
+    Fields marked M6 (evidence: runs, results, coverage) and M7 (review records) are optional: the graph does not hold
+    them yet, and the server leaves them out until it does.
+tags: []
+paths:
+  /code:
+    get:
+      operationId: getCode
+      description: |-
+        Lines of a file: the whole file when no range is given. The path must be a design or corpus file, or a code file of
+        the snapshot; any other path is refused, so the server reads no file outside what the graph describes.
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+          explode: false
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CodeExcerpt'
+        '400':
+          description: |-
+            The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
+            revision that git cannot read (`serve.bad-revision`), or a path outside the repository (`serve.bad-path`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /compare:
+    get:
+      operationId: compare
+      description: |-
+        The comparison the compare button opens. The server builds the base revision's snapshot as a query's `--rev`
+        does, and keeps it while it runs.
+      parameters:
+        - name: base
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comparison'
+        '400':
+          description: |-
+            The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
+            revision that git cannot read (`serve.bad-revision`), or a path outside the repository (`serve.bad-path`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /diagnostics:
+    get:
+      operationId: getDiagnostics
+      description: "The diagnostics of the snapshot, sorted by file, line, column and code, and every status: the header's ⚠ list."
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckReport'
+  /edge:
+    get:
+      operationId: getEdge
+      description: The preview of an edge.
+      parameters:
+        - name: kind
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/EdgeKind'
+          explode: false
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EdgeEntity'
+        '404':
+          description: The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /entity:
+    get:
+      operationId: getEntity
+      description: The page of a node. With `base`, `changes` compares it with that revision.
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+        - name: base
+          in: query
+          required: false
+          schema:
+            type: string
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entity'
+        '400':
+          description: |-
+            The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
+            revision that git cannot read (`serve.bad-revision`), or a path outside the repository (`serve.bad-path`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /impact:
+    get:
+      operationId: getImpact
+      description: The salient nodes a change of the nodes reaches, grouped by kind (`unicode impact`, docs/design.md §7.4).
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Affected'
+        '404':
+          description: The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /node:
+    get:
+      operationId: getNode
+      description: One node with the edges that leave it and reach it, sorted by kind, start and end (`unicode node get`).
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeView'
+        '404':
+          description: The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /nodes:
+    get:
+      operationId: listNodes
+      description: |-
+        Several nodes by identity, in the order asked: the entries of the navigation trail. An identity the snapshot no
+        longer has is left out, so a trail written before a rebuild still loads.
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Node'
+  /revisions:
+    get:
+      operationId: listRevisions
+      description: The latest commits of the checked-out branch, newest first, from which the compare button picks its base.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: At most this many; 20 when not given
+          schema:
+            type: integer
+            format: int32
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Revision'
+  /search:
+    get:
+      operationId: search
+      description: 'The search box: the nodes whose identity or summary contains the text, sorted by identity (`unicode node search`).'
+      parameters:
+        - name: text
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+        - name: kind
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/NodeKind'
+          explode: false
+        - name: limit
+          in: query
+          required: false
+          description: At most this many; 50 when not given
+          schema:
+            type: integer
+            format: int32
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Node'
+  /slice:
+    get:
+      operationId: getSlice
+      description: The slice of the nodes (`unicode slice`).
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: expand
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+        - name: withCode
+          in: query
+          required: false
+          schema:
+            type: boolean
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Slice'
+        '404':
+          description: The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /snapshot:
+    get:
+      operationId: getSnapshot
+      description: The snapshot the server answers from.
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snapshot'
+  /tree:
+    get:
+      operationId: getTree
+      description: |-
+        The design tree: the system, then its containers by focus (core, then support), the external systems, the persons
+        and the utility containers, each group by name; inside a container, what it declares in the order the design file
+        declares it. A type holds its operations. Steps and cases are left out: a flow's steps are on its views and page.
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TreeNode'
+  /views/{kind}:
+    get:
+      operationId: getView
+      description: |-
+        The data of a view (docs/design.md §7.1–§7.2). An identity in `expand` is a container, a salient function, or a
+        reaches edge written `reaches <from> <to>`. The architecture, events, DDD and C4 views take the whole system when
+        `input` is not given.
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/ViewKind'
+        - name: input
+          in: query
+          required: false
+          schema:
+            type: string
+          explode: false
+        - name: expand
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+        - name: layer
+          in: query
+          required: false
+          description: The class view only; design when not given
+          schema:
+            $ref: '#/components/schemas/ClassLayer'
+          explode: false
+        - name: level
+          in: query
+          required: false
+          description: The C4 view only; container when not given
+          schema:
+            $ref: '#/components/schemas/C4Level'
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/View'
+        '400':
+          description: |-
+            The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
+            revision that git cannot read (`serve.bad-revision`), or a path outside the repository (`serve.bad-path`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+components:
+  schemas:
+    Adequacy:
+      type: object
+      properties:
+        code:
+          type: number
+          format: double
+          description: '代码覆盖率: the lines executed among the functions the predicate exercises'
+        branch:
+          type: number
+          format: double
+          description: '分支覆盖率: the steps and branches of the flows reached'
+        error:
+          type: number
+          format: double
+          description: '错误覆盖率: the declared errors actually raised'
+      description: 'M6: 测试充分性, each a ratio from 0 to 1; absent when not measured.'
+    Affected:
+      type: object
+      required:
+        - node
+        - path
+      properties:
+        node:
+          $ref: '#/components/schemas/Node'
+        path:
+          type: array
+          items:
+            $ref: '#/components/schemas/Edge'
+      description: A node a change reaches, with a shortest path of edges from it to a changed node (query.Affected).
+    AttrChange:
+      type: object
+      required:
+        - key
+        - removed
+        - added
+      properties:
+        key:
+          type: string
+        removed:
+          type: array
+          items:
+            type: string
+        added:
+          type: array
+          items:
+            type: string
+      description: The values of one attribute key that a change removed and added.
+    BranchCount:
+      type: object
+      required:
+        - label
+        - cases
+      properties:
+        label:
+          type: string
+          description: The branch label or the error, such as Declined
+        cases:
+          type: integer
+          format: int32
+      description: 'M6: how many of the cases that cover a step or a function took one branch or raised one error.'
+    C4Level:
+      type: string
+      enum:
+        - context
+        - container
+      description: 'The level the C4 view draws: the system with its persons and external systems, or the containers inside it.'
+    CaseDetail:
+      type: object
+      required:
+        - covers
+      properties:
+        covers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: 'M6, 覆盖的函数: its covers edges, each with the function or step it reaches; `attrs.lines` gives the lines'
+      description: The sections of a case's page. Its values are `node.attrs.values`.
+    CaseRow:
+      type: object
+      required:
+        - node
+      properties:
+        node:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: The case; `form` is declared or recorded, `attrs.values` its values, `attrs.reason` why it was recorded
+        evidence:
+          allOf:
+            - $ref: '#/components/schemas/Evidence'
+          description: 'M6: its latest result and its coverage gain'
+      description: One case of a property or a flow, as its table lists it.
+    ChangeKind:
+      type: string
+      enum:
+        - added
+        - removed
+        - modified
+        - unchanged
+      description: 'How an item differs between two snapshots, aligned by identity (docs/model.md §8): 新增、删除、修改、不变.'
+    CheckReport:
+      type: object
+      required:
+        - diagnostics
+        - statuses
+      properties:
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/Diagnostic'
+        statuses:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/Status'
+          description: The status of every declared item, by identity, or by `kind from to` for an edge
+      description: The result of checking the snapshot, as `unicode check --format json` writes it.
+    Checked:
+      type: object
+      required:
+        - generators
+        - cases
+      properties:
+        predicate:
+          allOf:
+            - $ref: '#/components/schemas/Neighbor'
+          description: '谓词: the function with the checks binding, and that edge'
+        generators:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: The generators of its generated symbols, each with its generates edge
+        cases:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseRow'
+          description: '用例: its declared and recorded cases, in the order of the design and then of the corpus'
+      description: What checks a property or a flow.
+    ClassLayer:
+      type: string
+      enum:
+        - design
+        - code
+      description: "The layer the class view draws: the design's types, or the code types that realize them."
+    CodeDetail:
+      type: object
+      required:
+        - contents
+        - callers
+        - callees
+        - details
+      properties:
+        owner:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: 'A file: the design container that owns it'
+        contents:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: 'A file: its types and functions; a type: its methods'
+        callers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: '调用方: the functions that call it, each with the calls or reaches edge'
+        callees:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: '被调用方: the salient functions it calls or reaches, each with the edge'
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: '细节函数: the detail functions it calls directly'
+        declaration:
+          type: string
+          description: 'A type or a function: the first line of its declaration as the source writes it, the signature the page shows'
+      description: The sections of a code element's page. What it realizes or checks is `node.bindings`; where it is, `node.origin`.
+    CodeExcerpt:
+      type: object
+      required:
+        - path
+        - from
+        - to
+        - text
+      properties:
+        path:
+          type: string
+          description: Relative to the repository root
+        from:
+          type: integer
+          format: int32
+          description: The first line, from 1
+        to:
+          type: integer
+          format: int32
+          description: The last line, included
+        text:
+          type: string
+          description: The lines, each ending in a newline
+        language:
+          type: string
+          description: The language of a code file, as the system file names it (go, python); absent for a design or corpus file
+      description: Lines of a file of the repository, as its working tree holds them.
+    Comparison:
+      type: object
+      required:
+        - base
+        - head
+        - nodes
+        - edges
+      properties:
+        base:
+          $ref: '#/components/schemas/Revision'
+        head:
+          allOf:
+            - $ref: '#/components/schemas/WorkingTree'
+          description: The working tree the served snapshot was read from
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeChange'
+          description: The added, removed and modified nodes, sorted by identity
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/EdgeChange'
+          description: The added, removed and modified edges, sorted by kind, start and end
+      description: What differs between the snapshot of a base revision and the served snapshot (`unicode diff <rev>`).
+    ContainerDetail:
+      type: object
+      required:
+        - contents
+        - dependsOn
+        - dependedOnBy
+        - files
+      properties:
+        contents:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: "包含: the nodes it declares (an external system's types and operations)"
+        dependsOn:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: '依赖: its uses and depends edges, each with the node at the other end; a contradicted depends is undeclared'
+        dependedOnBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: '被依赖: the uses and depends edges that reach it'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: '代码: the code files it owns, along owns'
+      description: The sections of a container's or an actor's page.
+    Counts:
+      type: object
+      required:
+        - nodes
+        - edges
+        - diagnostics
+        - statuses
+      properties:
+        nodes:
+          type: integer
+          format: int32
+        edges:
+          type: integer
+          format: int32
+        diagnostics:
+          type: integer
+          format: int32
+          description: The diagnostics of checking the snapshot
+        statuses:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int32
+          description: Declared items and depends edges by status
+      description: How much the snapshot holds.
+    Diagnostic:
+      type: object
+      required:
+        - code
+        - subject
+        - path
+        - line
+        - column
+        - message
+        - fix
+      properties:
+        code:
+          type: string
+          description: A stable code, written `<component>.<kebab-name>`
+        subject:
+          type: string
+          description: The identity of the node, or `kind from to` of the edge, that breaks the constraint; a file's path for syntax
+        path:
+          type: string
+        line:
+          type: integer
+          format: int32
+        column:
+          type: integer
+          format: int32
+        message:
+          type: string
+          description: The cause
+        fix:
+          type: string
+          description: The fix
+      description: One violation of a constraint, as `unicode check --format json` writes it (diag.Diagnostic).
+    Driver:
+      type: object
+      required:
+        - mode
+        - tool
+      properties:
+        mode:
+          $ref: '#/components/schemas/DriverMode'
+        tool:
+          type: string
+          description: The library that drives it, such as rapid,
+        cases:
+          type: integer
+          format: int32
+          description: 'Replay: how many cases it replays'
+      description: 'M4: one generated driver of a predicate, such as 回放 · 4 or 探索 ·'
+    DriverMode:
+      type: string
+      enum:
+        - replay
+        - explore
+        - fuzz
+      description: 'How a check ran: replaying cases, exploring with generators, or fuzzing (docs/design.md §6.2–§6.3).'
+    Edge:
+      type: object
+      required:
+        - kind
+        - from
+        - to
+        - source
+        - origin
+        - attrs
+      properties:
+        kind:
+          $ref: '#/components/schemas/EdgeKind'
+        from:
+          type: string
+        to:
+          type: string
+        source:
+          $ref: '#/components/schemas/Source'
+        origin:
+          $ref: '#/components/schemas/Position'
+        attrs:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: "Its attributes: a calls edge's `sites`, a reaches edge's `via`, a depends edge's `imports` and `calls`"
+        status:
+          allOf:
+            - $ref: '#/components/schemas/Status'
+          description: The status `unicode check` gives it; a contradicted depends is a dependency the design does not allow
+      description: 'One edge of the graph: the edge of the snapshot, and its status when it is a declared item or a depends.'
+    EdgeChange:
+      type: object
+      required:
+        - kind
+        - from
+        - to
+        - change
+      properties:
+        kind:
+          $ref: '#/components/schemas/EdgeKind'
+        from:
+          type: string
+        to:
+          type: string
+        change:
+          $ref: '#/components/schemas/ChangeKind'
+        before:
+          $ref: '#/components/schemas/Edge'
+        after:
+          $ref: '#/components/schemas/Edge'
+      description: The change of one edge; modified means its attributes differ.
+    EdgeEntity:
+      type: object
+      required:
+        - edge
+        - fromNode
+        - toNode
+        - nodes
+        - steps
+        - diagnostics
+        - views
+      properties:
+        edge:
+          allOf:
+            - $ref: '#/components/schemas/Edge'
+          description: The edge, with its status
+        fromNode:
+          $ref: '#/components/schemas/Node'
+        toNode:
+          $ref: '#/components/schemas/Node'
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: |-
+            The nodes its attrs name: the detail functions of a reaches edge's `via` (经过的细节函数), the files and
+            functions of a depends edge's `imports` and `calls`
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: '相关步骤: the steps that trace to its end, each with its StepInfo'
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/Diagnostic'
+          description: The diagnostics whose subject is the edge
+        views:
+          type: array
+          items:
+            $ref: '#/components/schemas/ViewRequest'
+          description: 'The views it opens: the view that expands it, the sequence view of each related step'
+      description: The preview of one edge that a view draws, such as a reaches or a depends edge.
+    EdgeKind:
+      type: string
+      enum:
+        - contains
+        - uses
+        - extends
+        - implements
+        - refers
+        - subscribes
+        - imports
+        - calls
+        - from
+        - emits
+        - handles
+        - about
+        - realizes
+        - checks
+        - generates
+        - owns
+        - depends
+        - traces
+        - exercises
+        - reaches
+        - covers
+      description: The kind of an edge (docs/model.md §4).
+    Entity:
+      type: object
+      required:
+        - node
+        - ancestors
+        - diagnostics
+        - views
+        - realizedBy
+        - properties
+        - flows
+        - sources
+      properties:
+        node:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: The node, with its status
+        ancestors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: The nodes that contain it along contains, the system first; the header's path
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/Diagnostic'
+          description: The diagnostics whose subject is the node, an edge at it, or a node the page lists
+        views:
+          type: array
+          items:
+            $ref: '#/components/schemas/ViewRequest'
+          description: |-
+            相关视图: the views that take the node as input; the class, DDD and architecture views of its container; the
+            sequence and activity views of the flows it takes part in; the calls view of its operations or of the function
+            that realizes it; the property view of its properties.
+        realizedBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: |-
+            实现: the code elements that realize it, each with its realizes edge. For an external system, the clients that
+            realize its types and operations. A code element gives what it realizes in `node.bindings` instead.
+        properties:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: '相关性质: the properties about it, or about one of its operations; for a step, about its flow or what it calls'
+        flows:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: |-
+            参与的流程: the steps it takes part in, each with its StepInfo: the steps that call it or one of its operations,
+            call an operation whose signature refers to it, emit it or handle it, or that it sends as a person.
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/CodeExcerpt'
+          description: "代码: the source of the code elements that realize it; a code element's own source"
+        coveredBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: 'M6: the cases whose covers edges reach it'
+        evidence:
+          allOf:
+            - $ref: '#/components/schemas/Evidence'
+          description: 'M6: its latest results and coverage'
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeChange'
+          description: '变更, when the request gives a base: the change of the node and of the code elements that realize it'
+        review:
+          allOf:
+            - $ref: '#/components/schemas/Review'
+          description: 'M7: 评审'
+        container:
+          allOf:
+            - $ref: '#/components/schemas/ContainerDetail'
+          description: A design container or an actor
+        type:
+          allOf:
+            - $ref: '#/components/schemas/TypeDetail'
+          description: A design type
+        op:
+          allOf:
+            - $ref: '#/components/schemas/OpDetail'
+          description: A design operation
+        flow:
+          allOf:
+            - $ref: '#/components/schemas/FlowDetail'
+          description: A flow
+        property:
+          allOf:
+            - $ref: '#/components/schemas/PropertyDetail'
+          description: A property
+        step:
+          allOf:
+            - $ref: '#/components/schemas/StepDetail'
+          description: A step
+        case:
+          allOf:
+            - $ref: '#/components/schemas/CaseDetail'
+          description: A case
+        code:
+          allOf:
+            - $ref: '#/components/schemas/CodeDetail'
+          description: 'A code element: a package, a file, a type or a function'
+      description: |-
+        The page of one node: a view's right pane previews it, and the canvas shows it in full as the node's entity page.
+        The common sections come first; then exactly one section for the node's kind, present when the kind has one.
+    Evidence:
+      type: object
+      properties:
+        outcome:
+          allOf:
+            - $ref: '#/components/schemas/Outcome'
+          description: 'A case, a property or a flow: its latest outcome'
+        coverageGain:
+          type: integer
+          format: int32
+          description: "A case: 覆盖增量, the lines it adds to what its predicate's other cases cover"
+        adequacy:
+          allOf:
+            - $ref: '#/components/schemas/Adequacy'
+          description: A property or a flow
+        drivers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Driver'
+          description: 'A property or a flow: its generated drivers'
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunResult'
+          description: 'A case: 历史, its results, newest first'
+        branches:
+          type: array
+          items:
+            $ref: '#/components/schemas/BranchCount'
+          description: 'A step or a function: the covering cases by branch'
+      description: 'M6 (drivers M4): what runs have shown about a node. Every field is absent until the graph holds evidence.'
+    FlowDetail:
+      type: object
+      required:
+        - generators
+        - cases
+        - steps
+      properties:
+        predicate:
+          allOf:
+            - $ref: '#/components/schemas/Neighbor'
+          description: '谓词: the function with the checks binding, and that edge'
+        generators:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: The generators of its generated symbols, each with its generates edge
+        cases:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseRow'
+          description: '用例: its declared and recorded cases, in the order of the design and then of the corpus'
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: Its steps in their order, each with its StepInfo
+      description: The sections of a flow's page.
+    Layer:
+      type: string
+      enum:
+        - design
+        - code
+        - evidence
+        - review
+      description: The layer of a node (docs/model.md §1).
+    Member:
+      type: object
+      required:
+        - kind
+        - name
+        - inDesign
+        - inCode
+        - refers
+      properties:
+        kind:
+          $ref: '#/components/schemas/MemberKind'
+        name:
+          type: string
+        type:
+          type: string
+          description: 'A field: its type as the design writes it'
+        codeType:
+          type: string
+          description: "A field: its type in the realizing code type, normalized to the design's notation (docs/design.md §4)"
+        inDesign:
+          type: boolean
+          description: The design declares it
+        inCode:
+          type: boolean
+          description: The realizing code type has it
+        refers:
+          type: array
+          items:
+            type: string
+          description: 'A field: the identities of the declared types its type names, which the page links'
+        status:
+          allOf:
+            - $ref: '#/components/schemas/Status'
+          description: |-
+            verified when the code has it alike; missing when the code lacks it; contradicted when the types differ or an enum
+            value is only in the code. Absent when no code type realizes the type.
+      description: |-
+        A field or an enum value of a design type, compared with the code type that realizes it (docs/model.md §10, rule 18).
+        A field the code has and the design does not is a detail and is not listed; an enum value is listed either way.
+    MemberKind:
+      type: string
+      enum:
+        - field
+        - value
+      description: Whether a member of a type is a field or an enum value.
+    Neighbor:
+      type: object
+      required:
+        - focus
+        - edge
+        - node
+      properties:
+        focus:
+          type: string
+        edge:
+          $ref: '#/components/schemas/Edge'
+        node:
+          $ref: '#/components/schemas/Node'
+      description: A node one edge away from the node `focus`, with that edge (query.Neighbor).
+    Node:
+      type: object
+      required:
+        - id
+        - kind
+        - form
+        - layer
+        - source
+        - origin
+        - summary
+        - salient
+        - digest
+        - attrs
+        - title
+      properties:
+        id:
+          type: string
+          description: The identity (docs/model.md §7)
+        kind:
+          $ref: '#/components/schemas/NodeKind'
+        form:
+          type: string
+          description: The form; its values depend on the kind and the layer (docs/model.md §3)
+        layer:
+          $ref: '#/components/schemas/Layer'
+        source:
+          $ref: '#/components/schemas/Source'
+        origin:
+          allOf:
+            - $ref: '#/components/schemas/Position'
+          description: 'Where it is written: a design, corpus or code file'
+        summary:
+          type: string
+          description: The summary; a property's is its statement
+        salient:
+          type: boolean
+          description: Salient or detail (docs/model.md §9, D6)
+        digest:
+          type: string
+          description: The content hash, SHA-256 in lower-case hex (docs/model.md §6)
+        attrs:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Everything else, as lists of strings in the canonical format; the keys are those of docs/design.md §5.2
+        title:
+          type: string
+          description: |-
+            The name the page shows for it. A design node: the last segment of its identity, a step's index written `#n`. A
+            code element: its name in its language, a method's qualified by its type (`Payments.charge`); a file: its path.
+        status:
+          allOf:
+            - $ref: '#/components/schemas/Status'
+          description: The status `unicode check` gives it; only declared design items have one
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: 'A code element: its bindings, each the realizes, checks or generates edge with the design node it points at'
+        step:
+          allOf:
+            - $ref: '#/components/schemas/StepInfo'
+          description: 'A step: where it stands in its flow'
+      description: |-
+        One node of the graph: the node of the snapshot (graph.Node with its content hash, as `unicode build` writes it),
+        and what the viewer needs to name it, colour its status and link it.
+    NodeChange:
+      type: object
+      required:
+        - id
+        - change
+        - attrs
+      properties:
+        id:
+          type: string
+        change:
+          $ref: '#/components/schemas/ChangeKind'
+        before:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: The node in the base snapshot
+        after:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: The node in the served snapshot
+        attrs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttrChange'
+          description: 'The attribute values it gained and lost, such as an added field `status: OrderStatus`'
+        linesChanged:
+          type: integer
+          format: int32
+          description: 'A code element: how many lines of its source differ between the two revisions'
+      description: The change of one node; modified means its content hash differs.
+    NodeKind:
+      type: string
+      enum:
+        - container
+        - type
+        - op
+        - actor
+        - flow
+        - step
+        - property
+        - case
+        - run
+        - result
+        - review
+      description: The kind of a node (docs/model.md §3).
+    NodeView:
+      type: object
+      required:
+        - node
+        - outgoing
+        - incoming
+      properties:
+        node:
+          $ref: '#/components/schemas/Node'
+        outgoing:
+          type: array
+          items:
+            $ref: '#/components/schemas/Edge'
+        incoming:
+          type: array
+          items:
+            $ref: '#/components/schemas/Edge'
+      description: A node with the edges that leave it and those that reach it (query.NodeView).
+    OpDetail:
+      type: object
+      required:
+        - signatureTypes
+        - callers
+        - callees
+      properties:
+        signatureTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: '签名中的类型: the types its signature refers to, errors included'
+        callers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: '调用方: the functions that call a function realizing it, each with the calls or reaches edge'
+        callees:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: "被调用方: the salient functions a function realizing it calls or reaches, each with the edge; a reaches edge's `via` lists the detail functions between"
+        subscribes:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: The event it subscribes to
+      description: The sections of an operation's page.
+    OpRow:
+      type: object
+      required:
+        - op
+        - realizedBy
+        - properties
+      properties:
+        op:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: The operation; `attrs.signature` is its signature
+        realizedBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: '实现: the functions that realize it'
+        properties:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: '相关性质: the properties about it'
+      description: One operation of a type, as the type's page lists it.
+    Outcome:
+      type: string
+      enum:
+        - passed
+        - failed
+      description: The result of a check on an input.
+    Position:
+      type: object
+      required:
+        - path
+        - line
+        - column
+      properties:
+        path:
+          type: string
+          description: Relative to the repository root, with forward slashes
+        line:
+          type: integer
+          format: int32
+        column:
+          type: integer
+          format: int32
+      description: A place in a file (diag.Position). Line and column start at 1; the column counts bytes.
+    Problem:
+      type: object
+      required:
+        - code
+        - message
+        - fix
+      properties:
+        code:
+          type: string
+          description: A stable code, written `serve.<kebab-name>`
+        message:
+          type: string
+          description: The cause
+        fix:
+          type: string
+          description: How to make the request succeed
+      description: 'The body of every refused request, worded like a diagnostic: a stable code, the cause and the fix.'
+    PropertyDetail:
+      type: object
+      required:
+        - generators
+        - cases
+        - about
+      properties:
+        predicate:
+          allOf:
+            - $ref: '#/components/schemas/Neighbor'
+          description: '谓词: the function with the checks binding, and that edge'
+        generators:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: The generators of its generated symbols, each with its generates edge
+        cases:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseRow'
+          description: '用例: its declared and recorded cases, in the order of the design and then of the corpus'
+        about:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: "约束对象: what it is about; an operation's `attrs.signature` is shown beside it"
+      description: The sections of a property's page. Its inputs (`forall`, `where`) are `attrs.symbols` and `attrs.limits`.
+    Review:
+      type: object
+      required:
+        - state
+      properties:
+        state:
+          $ref: '#/components/schemas/ReviewState'
+        reviewer:
+          type: string
+        at:
+          type: string
+          format: date-time
+        digest:
+          type: string
+          description: The content hash it was reviewed at
+        comment:
+          type: string
+      description: 'M7: the review record of a node.'
+    ReviewState:
+      type: string
+      enum:
+        - pending
+        - reviewed
+      description: 'M7: 评审：未评审、已评审.'
+    Revision:
+      type: object
+      required:
+        - commit
+        - short
+        - subject
+        - time
+      properties:
+        commit:
+          type: string
+          description: The full commit hash
+        short:
+          type: string
+          description: The abbreviated hash, as `git rev-parse --short` gives it
+        branch:
+          type: string
+          description: The branch checked out at it, when there is one
+        subject:
+          type: string
+          description: The first line of its message
+        time:
+          type: string
+          format: date-time
+      description: A commit of the repository.
+    RunResult:
+      type: object
+      required:
+        - commit
+        - at
+        - mode
+        - outcome
+      properties:
+        commit:
+          type: string
+          description: The commit the run checked
+        at:
+          type: string
+          format: date-time
+        mode:
+          $ref: '#/components/schemas/DriverMode'
+        outcome:
+          $ref: '#/components/schemas/Outcome'
+      description: 'M6: one result of a case in one run.'
+    Slice:
+      type: object
+      required:
+        - focus
+        - ancestors
+        - neighbors
+        - extras
+        - details
+        - edges
+      properties:
+        focus:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+        ancestors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+        neighbors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+        extras:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+        details:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int32
+          description: For each focus node, how many detail nodes the slice counts but does not list
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/Edge'
+          description: The contains edges between its nodes, from which the ancestor chains and a flow's step tree are rebuilt
+        code:
+          type: object
+          additionalProperties:
+            type: string
+          description: 'With `withCode`: each code type and function of the slice, by identity, to the source of its declaration'
+      description: |-
+        The slice of a set of nodes, the least context that answers a question about them (docs/design.md §7.3,
+        query.Context), with the source of its code elements when asked for.
+    Snapshot:
+      type: object
+      required:
+        - system
+        - head
+        - path
+        - builtAt
+        - counts
+      properties:
+        system:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: The system container; its attrs give `notations` (which labelled views exist) and `roots`
+        head:
+          allOf:
+            - $ref: '#/components/schemas/WorkingTree'
+          description: The repository's working tree when the snapshot was read
+        path:
+          type: string
+          description: The snapshot file, relative to the repository root
+        builtAt:
+          type: string
+          format: date-time
+          description: When the snapshot file was written
+        counts:
+          $ref: '#/components/schemas/Counts'
+      description: "The snapshot the server answers from: the top bar, the header's diagnostic count and the status bar."
+    Source:
+      type: string
+      enum:
+        - declared
+        - extracted
+        - derived
+        - produced
+      description: Where a node or an edge comes from (docs/model.md §2).
+    Status:
+      type: string
+      enum:
+        - verified
+        - missing
+        - stub
+        - contradicted
+      description: 'How a declared item compares with the code (docs/model.md §6): 已验证、缺失、未实现、不一致.'
+    StepDetail:
+      type: object
+      required:
+        - children
+        - traces
+        - callSites
+      properties:
+        call:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: 'An on step: 所在调用, the call step it follows'
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: '子步骤: its direct sub-steps, each with its StepInfo'
+        traces:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: '代码追溯 · 实现: its traces edges, each with the function that realizes what it calls'
+        callSites:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: |-
+            代码追溯 · 调用位置: the calls edges into a traced function from the code of the enclosing call's operation or of
+            the sender; `attrs.sites` gives where.
+      description: The sections of a step's page. Its own one-line form is `node.step`.
+    StepInfo:
+      type: object
+      required:
+        - flow
+        - children
+      properties:
+        flow:
+          type: string
+          description: The identity of its flow
+        sender:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: The sender, along `from`
+        target:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: What it calls (an operation), emits (an event) or handles (an error)
+        receiver:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: 'The owner of the operation it calls: a type, a container or an external system'
+        parent:
+          type: string
+          description: The identity of the step it is nested in
+        children:
+          type: array
+          items:
+            type: string
+          description: The identities of its direct sub-steps, in their order
+      description: 'Where a step stands in its flow: what a one-line step such as `OrderService → payment.Payments.charge(orderId, amount)` names.'
+    TreeNode:
+      type: object
+      required:
+        - node
+        - children
+      properties:
+        node:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: The design node; `attrs.focus` of a container is its effective focus, and a utility container is drawn dimmed
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/TreeNode'
+      description: A node of the design tree, with the nodes it contains.
+    TypeDetail:
+      type: object
+      required:
+        - members
+        - ops
+        - refers
+        - referredBy
+        - supertypes
+        - subtypes
+        - emittedBy
+        - subscribers
+        - raisedBy
+        - handledBy
+      properties:
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/Member'
+          description: '字段 (or the enum values): compared with the code'
+        ops:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpRow'
+          description: 操作
+        refers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: '引用: the types it and its operations refer to'
+        referredBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: '被引用: the types and operations that refer to it'
+        supertypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: The types it extends or implements, with the edge
+        subtypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: The types that extend or implement it, with the edge
+        emittedBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: 'An event, 发布: the steps that emit it'
+        subscribers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: 'An event, 订阅: the operations that subscribe to it'
+        raisedBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: 'An error: the operations whose signature raises it'
+        handledBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: 'An error: the on steps that handle it'
+      description: The sections of a type's page.
+    View:
+      type: object
+      required:
+        - kind
+        - input
+        - ancestors
+        - expand
+        - nodes
+        - edges
+        - folded
+        - hidden
+        - diagnostics
+      properties:
+        kind:
+          $ref: '#/components/schemas/ViewKind'
+        input:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: 'The input node: the system when the request names none'
+        ancestors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: The nodes that contain the input along contains, the system first
+        expand:
+          type: array
+          items:
+            type: string
+          description: The expansions the view applied, as the request gave them
+        layer:
+          $ref: '#/components/schemas/ClassLayer'
+        level:
+          $ref: '#/components/schemas/C4Level'
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ViewNode'
+          description: "The nodes it draws, in the view's order: a flow's lifelines and steps in their order, else by identity"
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/ViewEdge'
+        folded:
+          type: array
+          items:
+            type: string
+          description: The support containers drawn folded
+        hidden:
+          type: integer
+          format: int32
+          description: How many utility containers it does not draw
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/Diagnostic'
+          description: The diagnostics whose subject is a node or an edge it draws, the nodes in `contents` included
+      description: "The data of one view: what it draws, folded and ordered; the layout is the page's."
+    ViewEdge:
+      type: object
+      required:
+        - kind
+        - from
+        - to
+        - source
+        - origin
+        - attrs
+      properties:
+        kind:
+          $ref: '#/components/schemas/EdgeKind'
+        from:
+          type: string
+        to:
+          type: string
+        source:
+          $ref: '#/components/schemas/Source'
+        origin:
+          $ref: '#/components/schemas/Position'
+        attrs:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: "Its attributes: a calls edge's `sites`, a reaches edge's `via`, a depends edge's `imports` and `calls`"
+        status:
+          allOf:
+            - $ref: '#/components/schemas/Status'
+          description: The status `unicode check` gives it; a contradicted depends is a dependency the design does not allow
+        count:
+          type: integer
+          format: int32
+          description: |-
+            Set when an end is a folded container that stands for the nodes in it: how many edges of the graph this edge
+            stands for. Its `from` or `to` is then the container, so it is not an edge of the graph and has no preview.
+        labels:
+          type: array
+          items:
+            type: string
+          description: |-
+            The operations the edge carries, by design name: for a depends, those its calls realize; for an edge from a
+            person, those the person calls in flows.
+      description: An edge a view draws.
+    ViewKind:
+      type: string
+      enum:
+        - architecture
+        - ddd
+        - class
+        - sequence
+        - activity
+        - events
+        - calls
+        - property
+        - code
+        - c4
+      description: 'The kind of a view (docs/design.md §7.1), one per tab: 架构、领域、类、时序、活动、事件、调用、性质、代码、C4.'
+    ViewNode:
+      type: object
+      required:
+        - id
+        - kind
+        - form
+        - layer
+        - source
+        - origin
+        - summary
+        - salient
+        - digest
+        - attrs
+        - title
+      properties:
+        id:
+          type: string
+          description: The identity (docs/model.md §7)
+        kind:
+          $ref: '#/components/schemas/NodeKind'
+        form:
+          type: string
+          description: The form; its values depend on the kind and the layer (docs/model.md §3)
+        layer:
+          $ref: '#/components/schemas/Layer'
+        source:
+          $ref: '#/components/schemas/Source'
+        origin:
+          allOf:
+            - $ref: '#/components/schemas/Position'
+          description: 'Where it is written: a design, corpus or code file'
+        summary:
+          type: string
+          description: The summary; a property's is its statement
+        salient:
+          type: boolean
+          description: Salient or detail (docs/model.md §9, D6)
+        digest:
+          type: string
+          description: The content hash, SHA-256 in lower-case hex (docs/model.md §6)
+        attrs:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Everything else, as lists of strings in the canonical format; the keys are those of docs/design.md §5.2
+        title:
+          type: string
+          description: |-
+            The name the page shows for it. A design node: the last segment of its identity, a step's index written `#n`. A
+            code element: its name in its language, a method's qualified by its type (`Payments.charge`); a file: its path.
+        status:
+          allOf:
+            - $ref: '#/components/schemas/Status'
+          description: The status `unicode check` gives it; only declared design items have one
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Neighbor'
+          description: 'A code element: its bindings, each the realizes, checks or generates edge with the design node it points at'
+        step:
+          allOf:
+            - $ref: '#/components/schemas/StepInfo'
+          description: 'A step: where it stands in its flow'
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/Member'
+          description: 'A type drawn as a card: its fields and enum values, compared with the code'
+        contents:
+          description: |-
+            A container drawn as a card. Expanded: the types (with their operations), flows, properties and errors it
+            declares. Folded: the types it declares, which the card lists by name.
+          type: array
+          items:
+            $ref: '#/components/schemas/ViewNode'
+        details:
+          type: integer
+          format: int32
+          description: 'A code file or type: how many detail functions it contains that the view does not draw'
+        evidence:
+          allOf:
+            - $ref: '#/components/schemas/Evidence'
+          description: 'M6: the latest results and coverage, for a case, a property, a flow, a step or a function'
+      description: A node a view draws, with what its card shows beyond the node.
+    ViewRequest:
+      type: object
+      required:
+        - kind
+        - input
+        - expand
+      properties:
+        kind:
+          $ref: '#/components/schemas/ViewKind'
+        input:
+          $ref: '#/components/schemas/Node'
+        expand:
+          type: array
+          items:
+            type: string
+        layer:
+          $ref: '#/components/schemas/ClassLayer'
+        level:
+          $ref: '#/components/schemas/C4Level'
+        select:
+          type: string
+          description: The node to select in it, such as the step `order.submit-order#3`
+      description: A view to open from a page, as its address writes it.
+    WorkingTree:
+      type: object
+      required:
+        - commit
+        - short
+        - subject
+        - time
+        - dirty
+      properties:
+        commit:
+          type: string
+          description: The full commit hash
+        short:
+          type: string
+          description: The abbreviated hash, as `git rev-parse --short` gives it
+        branch:
+          type: string
+          description: The branch checked out at it, when there is one
+        subject:
+          type: string
+          description: The first line of its message
+        time:
+          type: string
+          format: date-time
+        dirty:
+          type: boolean
+          description: The working tree differs from the commit
+      description: 'The working tree the snapshot was read from: the commit it is checked out at, and whether it has changes.'
+servers:
+  - url: /api
+    description: Served by unicode serve, beside the viewer's pages
+    variables: {}
