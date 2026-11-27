@@ -72,14 +72,15 @@ func prepareSkeletons(plan lang.GenPlan) (lang.GenPlan, loaded, []lang.Edit, []d
 	if err != nil {
 		return plan, loaded{}, nil, []diag.Diagnostic{runDiagnostic("lang.golang.generate-failed", err.Error(), "make the handwritten packages and planned skeleton declarations load before generation")}
 	}
-	if len(edits) == 0 && len(p.installerTargets()) == 0 {
+	if len(edits) == 0 && len(p.installerTargets()) == 0 && !p.hasInterfaceImplementations() {
 		return plan, l, nil, nil
 	}
 	plan, ds := linkSkeletonGraph(plan, l)
 	if len(ds) > 0 {
 		return plan, loaded{}, nil, ds
 	}
-	installers := p.installerEdits(plan, l)
+	implementations := p.implementationEdits(plan, l)
+	installers := append(implementations, p.installerEdits(plan, l)...)
 	p.checkDestinations(installers)
 	if len(p.diagnostics) > 0 {
 		return plan, loaded{}, nil, p.diagnostics
@@ -94,6 +95,10 @@ func prepareSkeletons(plan lang.GenPlan) (lang.GenPlan, loaded, []lang.Edit, []d
 		if len(ds) > 0 {
 			return plan, loaded{}, nil, ds
 		}
+	}
+	p.checkNativeImplementations(plan, l)
+	if len(p.diagnostics) > 0 {
+		return plan, loaded{}, nil, p.diagnostics
 	}
 	return plan, l, edits, nil
 }
@@ -584,26 +589,21 @@ func (p *skeletonPlanner) operation(n graph.Node, pkg skeletonPackage, imports m
 	if owner.Form == "object" {
 		receiver = "*" + receiver
 	}
-	return "func (receiver " + receiver + ") " + name + sig + " { panic(\"" + unimplemented + "\") }\n"
+	return "func (" + receiver + ") " + name + sig + " { panic(\"" + unimplemented + "\") }\n"
 }
-func (p *skeletonPlanner) methods(id string, seen map[string]bool) []graph.Node {
-	if seen[id] {
-		return nil
-	}
-	seen[id] = true
+
+// declaredMethods excludes promoted concrete methods. Embedding preserves their
+// implementation; interface requirements are filled from native method sets.
+func (p *skeletonPlanner) declaredMethods(id string) []graph.Node {
 	var out []graph.Node
-	for _, n := range p.plan.Graph.Nodes() {
-		if n.Kind == graph.NodeKindOp && p.parents[n.Id] == id {
-			out = append(out, n)
-		}
-	}
-	for _, e := range p.plan.Graph.Edges() {
-		if (e.Kind == graph.EdgeKindImplements || e.Kind == graph.EdgeKindExtends) && e.From == id {
-			out = append(out, p.methods(e.To, seen)...)
+	for _, node := range p.plan.Graph.Nodes() {
+		if node.Kind == graph.NodeKindOp && p.parents[node.Id] == id {
+			out = append(out, node)
 		}
 	}
 	return out
 }
+
 func (p *skeletonPlanner) typeDeclaration(n graph.Node, pkg skeletonPackage, imports map[string]string) string {
 	var body strings.Builder
 	name := lastName(n.Id)
@@ -646,7 +646,7 @@ func (p *skeletonPlanner) typeDeclaration(n graph.Node, pkg skeletonPackage, imp
 		fmt.Fprintf(&body, "func (value %s) Error() string { return %s }\n", name, strconv.Quote(n.Id))
 	}
 	seen := map[string]bool{}
-	for _, op := range p.methods(n.Id, map[string]bool{}) {
+	for _, op := range p.declaredMethods(n.Id) {
 		method := upperFirst(lastName(op.Id))
 		sig := p.signature(op, pkg, imports)
 		if seen[method] {
@@ -657,7 +657,7 @@ func (p *skeletonPlanner) typeDeclaration(n graph.Node, pkg skeletonPackage, imp
 		if n.Form == "object" {
 			receiver = "*" + name
 		}
-		fmt.Fprintf(&body, "func (receiver %s) %s%s { panic(%s) }\n", receiver, method, sig, strconv.Quote(unimplemented))
+		fmt.Fprintf(&body, "func (%s) %s%s { panic(%s) }\n", receiver, method, sig, strconv.Quote(unimplemented))
 	}
 	return body.String()
 }

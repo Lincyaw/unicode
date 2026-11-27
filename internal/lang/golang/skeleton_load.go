@@ -150,22 +150,34 @@ func copySkeletonModule(root, temp string) error {
 // Relative local replacements keep referring to their original directories,
 // including modules outside the repository. The source go.mod is unchanged.
 func rewriteSkeletonModules(root, temp string) error {
-	return filepath.WalkDir(temp, func(name string, entry fs.DirEntry, err error) error {
+	// Replacement directives are effective only in main modules. Unrelated
+	// go.mod assets and replacement dependencies must stay untouched.
+	directories := map[string]bool{".": true}
+	_, workspace, err := skeletonWorkspace(root)
+	if err != nil {
+		return err
+	}
+	if workspace != nil {
+		for _, use := range workspace.file.Use {
+			dir := use.Path
+			if !filepath.IsAbs(dir) {
+				dir = filepath.Join(filepath.Dir(workspace.name), dir)
+			}
+			if relative, ok := skeletonRelative(root, dir); ok {
+				directories[relative] = true
+			}
+		}
+	}
+	for _, rel := range slices.Sorted(maps.Keys(directories)) {
+		name := filepath.Join(temp, rel, "go.mod")
+		if err := validatePlannedGoPaths(temp, []lang.Edit{{Path: filepath.ToSlash(filepath.Join(rel, "go.mod"))}}); err != nil {
+			return err
+		}
+		source, err := os.ReadFile(name)
 		if err != nil {
 			return err
 		}
-		if !entry.Type().IsRegular() || entry.Name() != "go.mod" {
-			return nil
-		}
-		src, err := os.ReadFile(name)
-		if err != nil {
-			return err
-		}
-		file, err := modfile.Parse(name, src, nil)
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(temp, filepath.Dir(name))
+		file, err := modfile.Parse(name, source, nil)
 		if err != nil {
 			return err
 		}
@@ -174,8 +186,7 @@ func rewriteSkeletonModules(root, temp string) error {
 				continue
 			}
 			original := filepath.Clean(filepath.Join(root, rel, replacement.New.Path))
-			// A replacement within the copied repository must include new skeletons.
-			if within, err := filepath.Rel(root, original); err == nil && filepath.IsLocal(within) {
+			if within, ok := skeletonRelative(root, original); ok {
 				original = filepath.Join(temp, within)
 			}
 			if err = file.AddReplace(replacement.Old.Path, replacement.Old.Version, original, ""); err != nil {
@@ -186,9 +197,52 @@ func rewriteSkeletonModules(root, temp string) error {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(name, out, 0o600)
-	})
+		if err = os.WriteFile(name, out, 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
 }
+
+type skeletonWork struct {
+	name string
+	file *modfile.WorkFile
+}
+
+func skeletonWorkspace(root string) (string, *skeletonWork, error) {
+	command := exec.Command("go", "env", "GOWORK")
+	command.Dir = root
+	data, err := command.Output()
+	if err != nil {
+		return "", nil, err
+	}
+	name := strings.TrimSpace(string(data))
+	if name == "" || name == "off" {
+		return name, nil, nil
+	}
+	source, err := os.ReadFile(name)
+	if err != nil {
+		return name, nil, err
+	}
+	file, err := modfile.ParseWork(name, source, nil)
+	if err != nil {
+		return name, nil, err
+	}
+	return name, &skeletonWork{name: name, file: file}, nil
+}
+func skeletonRelative(root, dir string) (string, bool) {
+	// Missing replacement directories are resolved lexically; existing use
+	// modules are resolved through links so no copied directory link is written.
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+	rel, err := filepath.Rel(root, dir)
+	return rel, err == nil && (rel == "." || filepath.IsLocal(rel))
+}
+
 func loadSkeletonMirror(root, temp string, roots []string) (loaded, error) {
 	patterns := []string{}
 	for _, r := range roots {
@@ -208,30 +262,20 @@ func loadSkeletonMirror(root, temp string, roots []string) (loaded, error) {
 	env := os.Environ()
 	// A parent workspace must include the temporary copy instead of the
 	// original module. Preserve its other modules and explicit replacements.
-	work := exec.Command("go", "env", "GOWORK")
-	work.Dir = root
-	workBytes, err := work.Output()
+	_, workspace, err := skeletonWorkspace(root)
 	if err != nil {
 		return loaded{}, err
 	}
-	workspace := strings.TrimSpace(string(workBytes))
 	env = append(env, "GOWORK=off")
-	if workspace != "" && workspace != "off" {
-		source, err := os.ReadFile(workspace)
-		if err != nil {
-			return loaded{}, err
-		}
-		parsed, err := modfile.ParseWork(workspace, source, nil)
-		if err != nil {
-			return loaded{}, err
-		}
+	if workspace != nil {
+		parsed := workspace.file
 		for _, use := range parsed.Use {
 			dir := use.Path
 			if !filepath.IsAbs(dir) {
-				dir = filepath.Join(filepath.Dir(workspace), dir)
+				dir = filepath.Join(filepath.Dir(workspace.name), dir)
 			}
-			if filepath.Clean(dir) == filepath.Clean(root) {
-				dir = temp
+			if relative, ok := skeletonRelative(root, dir); ok {
+				dir = filepath.Join(temp, relative)
 			}
 			if err = parsed.AddUse(dir, ""); err != nil {
 				return loaded{}, err
@@ -244,7 +288,10 @@ func loadSkeletonMirror(root, temp string, roots []string) (loaded, error) {
 		}
 		for _, replacement := range parsed.Replace {
 			if replacement.New.Version == "" && !filepath.IsAbs(replacement.New.Path) {
-				absolute := filepath.Join(filepath.Dir(workspace), replacement.New.Path)
+				absolute := filepath.Join(filepath.Dir(workspace.name), replacement.New.Path)
+				if relative, ok := skeletonRelative(root, absolute); ok {
+					absolute = filepath.Join(temp, relative)
+				}
 				if err = parsed.AddReplace(replacement.Old.Path, replacement.Old.Version, absolute, ""); err != nil {
 					return loaded{}, err
 				}
@@ -260,6 +307,7 @@ func loadSkeletonMirror(root, temp string, roots []string) (loaded, error) {
 		}
 		env = append(env, "GOWORK="+file.Name())
 	}
+
 	cfg := &packages.Config{Mode: loadMode, Dir: temp, Tests: true, Env: env, BuildFlags: []string{"-buildvcs=false", "-mod=readonly"}}
 	cfg.ParseFile = func(set *token.FileSet, name string, source []byte) (*ast.File, error) {
 		rel, err := filepath.Rel(temp, name)
