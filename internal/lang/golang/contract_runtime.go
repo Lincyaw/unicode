@@ -215,7 +215,7 @@ func ucNormalizeAt(v reflect.Value, t string, types map[string]ucType, seen map[
 	case "int":
 		if v.Kind() >= reflect.Int && v.Kind() <= reflect.Int64 {
 			out.Data = big.NewInt(v.Int())
-		} else if v.Kind() >= reflect.Uint && v.Kind() <= reflect.Uint64 {
+		} else if v.Kind() >= reflect.Uint && v.Kind() <= reflect.Uint64 || v.Kind() == reflect.Uintptr {
 			out.Data = new(big.Int).SetUint64(v.Uint())
 		} else {
 			ucFail("lang.golang.observation-failed", "the integer adapter returned a non-integer value", nil)
@@ -871,6 +871,34 @@ func ucCompare(c int, op string) bool {
 	return false
 }
 func ucNative(v ucValue, t reflect.Type) reflect.Value {
+	// Preserve mathematical integers before Go's generic conversion can truncate them.
+	switch t.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		number, isInteger := v.Data.(*big.Int)
+		if isInteger || ucBaseType(v.Type) == "int" {
+			if !isInteger {
+				value := ucMaterialize(v)
+				number, isInteger = value.Data.(*big.Int)
+			}
+			if !isInteger {
+				ucFail("lang.golang.expression-failed", "none was used where an integer argument is required", nil)
+			}
+			out := reflect.New(t).Elem()
+			switch t.Kind() {
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				if !number.IsInt64() || out.OverflowInt(number.Int64()) {
+					ucFail("lang.golang.input-outside-domain", "an integer argument is outside the Go parameter range", nil)
+				}
+				out.SetInt(number.Int64())
+			default:
+				if !number.IsUint64() || out.OverflowUint(number.Uint64()) {
+					ucFail("lang.golang.input-outside-domain", "an integer argument is outside the Go parameter range", nil)
+				}
+				out.SetUint(number.Uint64())
+			}
+			return out
+		}
+	}
 	if v.Native.IsValid() {
 		n := v.Native
 		if n.Type().AssignableTo(t) {
@@ -894,10 +922,7 @@ func ucNative(v ucValue, t reflect.Type) reflect.Value {
 	}
 	switch x := v.Data.(type) {
 	case *big.Int:
-		if !x.IsInt64() || out.OverflowInt(x.Int64()) {
-			ucFail("lang.golang.input-outside-domain", "an integer argument is outside the Go parameter range", nil)
-		}
-		out.SetInt(x.Int64())
+		ucFail("lang.golang.expression-failed", "an integer value requires an integer Go parameter", nil)
 	case float64:
 		out.SetFloat(x)
 	case string:

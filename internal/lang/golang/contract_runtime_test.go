@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"go/types"
 	"maps"
+	"math/big"
 	"reflect"
 	"strconv"
 	"strings"
@@ -98,6 +99,7 @@ func transferInputs(sample ContractSample, bank *contractBank) map[string]reflec
 
 //uc:checks lang.golang.executes-contracts
 func checkExecutesContracts(t rapid.TB, sample ContractSample) {
+	checkIntegerRanges(t, sample)
 	from, hasFrom := sample.Balances[sample.FromId]
 	_, hasTo := sample.Balances[sample.ToId]
 	accepted := sample.FromId != sample.ToId && hasFrom && hasTo && sample.Amount <= from
@@ -236,6 +238,99 @@ func checkExecutesContracts(t rapid.TB, sample ContractSample) {
 	}
 	if !ucTruth(env.eval(runtimeExpr(t, "amount * 999999999999999999999999999999 / 999999999999999999999999999999 == amount")), nil) {
 		t.Fatal("integer expressions overflowed native range")
+	}
+}
+
+// integerBounds is an independent mathematical oracle for each actual Go width.
+func integerBounds(typ reflect.Type) (*big.Int, *big.Int) {
+	bits := uint(typ.Bits())
+	limit := new(big.Int).Lsh(big.NewInt(1), bits)
+	if typ.Kind() >= reflect.Int && typ.Kind() <= reflect.Int64 {
+		half := new(big.Int).Rsh(limit, 1)
+		return new(big.Int).Neg(new(big.Int).Set(half)), new(big.Int).Sub(half, big.NewInt(1))
+	}
+	return new(big.Int), new(big.Int).Sub(limit, big.NewInt(1))
+}
+func integerFits(number *big.Int, typ reflect.Type) bool {
+	minimum, maximum := integerBounds(typ)
+	return number.Cmp(minimum) >= 0 && number.Cmp(maximum) <= 0
+}
+func checkIntegerRanges(t rapid.TB, sample ContractSample) {
+	widths := []reflect.Type{reflect.TypeFor[int](), reflect.TypeFor[int8](), reflect.TypeFor[int16](), reflect.TypeFor[int32](), reflect.TypeFor[int64](), reflect.TypeFor[uint](), reflect.TypeFor[uint8](), reflect.TypeFor[uint16](), reflect.TypeFor[uint32](), reflect.TypeFor[uint64](), reflect.TypeFor[uintptr]()}
+	for _, target := range widths {
+		minimum, maximum := integerBounds(target)
+		offset := big.NewInt(int64(sample.ForeignDelta))
+		large := new(big.Int).Lsh(big.NewInt(int64(sample.Amount)), uint(sample.Amount%80))
+		if sample.RaiseError {
+			large.Neg(large)
+		}
+		values := []*big.Int{new(big.Int).Add(minimum, offset), new(big.Int).Add(maximum, offset), large}
+		for _, number := range values {
+			fits := integerFits(number, target)
+			adapt := func(value ucValue, to reflect.Type) reflect.Value {
+				var got reflect.Value
+				var failure any
+				func() { defer func() { failure = recover() }(); got = ucNative(value, to) }()
+				if !fits {
+					issue, ok := failure.(ucIssue)
+					if !ok || issue.code != "lang.golang.input-outside-domain" {
+						t.Fatalf("integer %s to %s did not reject its native range: %T %v", number, to, failure, failure)
+					}
+					return reflect.Value{}
+				}
+				if failure != nil {
+					t.Fatalf("integer %s in %s's range failed: %T %v", number, to, failure, failure)
+				}
+				actual := ucNormalize(got, "int", nil).Data.(*big.Int)
+				if got.Type() != to || actual.Cmp(number) != 0 {
+					t.Fatalf("integer %s changed when adapted to %s: %s", number, to, actual)
+				}
+				return got
+			}
+			detached := ucValue{Type: "int", Data: new(big.Int).Set(number)}
+			adapt(detached, target)
+			for _, source := range widths {
+				if !integerFits(number, source) {
+					continue
+				}
+				native := reflect.New(source).Elem()
+				if source.Kind() >= reflect.Int && source.Kind() <= reflect.Int64 {
+					native.SetInt(number.Int64())
+				} else {
+					native.SetUint(number.Uint64())
+				}
+				adapt(ucNormalize(native, "int", nil), target)
+			}
+			pointerType := reflect.PointerTo(target)
+			if !fits {
+				adapt(detached, pointerType)
+				continue
+			}
+			pointer := reflect.New(target)
+			pointer.Elem().Set(adapt(detached, target))
+			live := ucNative(ucNormalize(pointer, "optional<int>", nil), pointerType)
+			if live.Pointer() != pointer.Pointer() {
+				t.Fatalf("adapting %s replaced a live pointer", pointerType)
+			}
+			frozen := adapt(ucDetach(ucNormalize(pointer, "optional<int>", nil)), pointerType)
+			if frozen.Pointer() == pointer.Pointer() {
+				t.Fatalf("adapting an old %s reused its live pointer", pointerType)
+			}
+			if target.Kind() >= reflect.Int && target.Kind() <= reflect.Int64 {
+				pointer.Elem().SetInt(0)
+				if number.Sign() == 0 {
+					pointer.Elem().SetInt(1)
+				}
+			} else {
+				pointer.Elem().SetUint(0)
+				if number.Sign() == 0 {
+					pointer.Elem().SetUint(1)
+				}
+			}
+			if ucNormalize(frozen, "int", nil).Data.(*big.Int).Cmp(number) != 0 {
+				t.Fatalf("a live %s write changed its detached integer", pointerType)
+			}
+		}
 	}
 }
 func boolInt(b bool) int {
