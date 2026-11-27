@@ -41,7 +41,7 @@ func genWriteSample() *rapid.Generator[WriteSample] {
 		text := rapid.String().Draw(t, "content")
 		owned := "// " + generatedMarker + "\n" + text
 		s := WriteSample{Files: map[string]string{"owned.go": owned, "user.go": text}, Links: map[string]string{}, Edits: []lang.Edit{{Path: stem + "/new.go", Content: []byte(owned + "\n")}}}
-		switch rapid.IntRange(0, 9).Draw(t, "conflict") {
+		switch rapid.IntRange(0, 12).Draw(t, "conflict") {
 		case 0:
 			s.Edits = append(s.Edits, lang.Edit{Path: "owned.go", Content: []byte(owned + "new")})
 		case 1:
@@ -56,6 +56,12 @@ func genWriteSample() *rapid.Generator[WriteSample] {
 		case 5:
 			s.Links["redirect"] = "../outside"
 			s.Edits = append(s.Edits, lang.Edit{Path: "redirect/user.go", Content: []byte(owned)})
+		case 10:
+			s.Edits[0].CreateOnly = true
+		case 11:
+			s.Edits = append(s.Edits, lang.Edit{Path: "owned.go", Content: []byte(owned), CreateOnly: true})
+		case 12:
+			s.Edits = append(s.Edits, lang.Edit{Path: "user.go", Content: []byte(text), CreateOnly: true})
 		case 8:
 			s.Edits = append(s.Edits, lang.Edit{Path: "", Content: []byte(owned)})
 		case 7:
@@ -111,7 +117,7 @@ func checkWritePreservesUnownedFiles(t rapid.TB, sample WriteSample) {
 				valid = false
 			}
 		}
-		if src, ok := sample.Files[edit.Path]; ok && !strings.HasPrefix(src, "// "+generatedMarker+"\n") {
+		if src, ok := sample.Files[edit.Path]; ok && (edit.CreateOnly || !strings.HasPrefix(src, "// "+generatedMarker+"\n")) {
 			valid = false
 		}
 	}
@@ -155,7 +161,11 @@ func checkWritePreservesUnownedFiles(t rapid.TB, sample WriteSample) {
 		}
 	}
 	first := readTree(t, base)
-	if ds := Write(root, sample.Edits); len(ds) > 0 {
+	if ds := Write(root, sample.Edits); slices.ContainsFunc(sample.Edits, func(edit lang.Edit) bool { return edit.CreateOnly }) {
+		if len(ds) == 0 {
+			t.Fatal("reapplying a create-only plan did not conflict")
+		}
+	} else if len(ds) > 0 {
 		t.Fatalf("reapplying a generated plan failed: %+v", ds)
 	}
 	if after := readTree(t, base); !reflect.DeepEqual(first, after) {
