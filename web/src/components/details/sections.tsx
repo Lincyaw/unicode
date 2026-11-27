@@ -37,8 +37,8 @@ export function Section({ title, about, children, className }: { title: string; 
 export function Facts({ rows }: { rows: { label: string; value: ReactNode }[] }) {
   return (
     <dl className={styles.facts}>
-      {rows.map(row => (
-        <div key={row.label}>
+      {rows.map((row, index) => (
+        <div key={`${index} ${row.label}`}>
           <dt>{row.label}</dt>
           <dd>{row.value}</dd>
         </div>
