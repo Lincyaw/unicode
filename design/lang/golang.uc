@@ -19,6 +19,12 @@ type ContractSample record "黑盒运行时的转账样本，含正常、错误�
   field raiseError: bool
 }
 
+type DriverSample record "驱动编译的样本：稳定的完整性质标识、输入个数及谓词种类" {
+  field name: string
+  field symbols: int
+  field manual: bool
+}
+
 type Module record "一个随机生成的 Go 模块：文件，以及抽取应当得到的节点、边和诊断，供性质使用" {
   field files: map<string, string>
   field nodes: list<string>
@@ -45,6 +51,12 @@ property executes-contracts invariant "前提不成立时不调用被测函数�
   about Backend
   forall sample: ContractSample generated "随机余额、账户标识、金额、外部账户改动和错误结果，含缺失键、重复标识及共享对象"
   manual "需要构造实际函数与观察适配器并记录是否调用，独立谓词逐项核对运行时与生成文件"
+}
+
+property driver-modes-preserve-claims invariant "普通测试回放后完整执行 rapid 次数，只有显式探索截断时间；稳定命名的原生 fuzz 与测试共用有序输入和谓词，保留独立输入及上下文，拒绝不成为伪反例" {
+  about Backend
+  forall sample: DriverSample generated "合法的完整性质标识，零到三个整数符号，以及自动或人工谓词；覆盖名称和符号次序的改变"
+  manual "需要编译驱动并检查测试入口、原生 fuzz、输入调度和运行上下文，模型值的关系不能直接表达 Go 代码生成"
 }
 
 property generation-extraction-is-read-only invariant "普通抽取严格检查生成测试；生成模式仅排除本工具拥有的常规生成测试，手写错误和符号链接不作为可修复输出；两种抽取均不改变磁盘文件" {

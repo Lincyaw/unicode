@@ -289,7 +289,7 @@
 **可执行**
 
 20. 每条 `property` 和每个 `flow` 都恰有一个 `checks` 绑定。绑定的函数称为**谓词**；除语言要求的测试句柄（[design.md](design.md) §4）外，谓词的参数恰为它的符号（可以没有），按名称映射一一对应，类型一致。具名观察在谓词内部取得，不增加参数。带陈述的性质和全部流程，谓词在生成文件中，由 `gen` 产生；人工性质的谓词是手写的。
-21. 生成文件之外的代码中没有测试函数：其中每个代码层 `op` 的 testKind 都是 `none`。
+21. 生成文件之外的代码中没有测试函数：其中每个代码层 `op` 的 testKind 都是 `none`。归属按实际声明文件的生成标记判断。
 22. 【状态】对每个 `call` 和 `send` 步骤 s，存在 traces(s, f)，并且 f 可达：
     1. s 是调用 s₀ 的子步骤时，从落实 s₀ 所调用操作的函数沿 `calls` 能到达 f；
     2. s 在最外层、发起方是类型或容器时，从落实发起方的代码（类型的方法，或容器拥有的函数）中的某个函数能到达 f；
@@ -373,14 +373,14 @@
 | 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value` | `check.rejects-broken-graph` |
 | 19 | `check.missing-implements`、`check.missing-extends` | `check.rejects-broken-graph` |
 | 20 | `check.missing-predicate`、`check.multiple-predicates`、`check.predicate-signature`；带陈述的单次性质由 Go 生成谓词，流程的生成谓词未实现：M4 后续阶段 | `check.rejects-broken-graph`、`lang.golang.executes-contracts` |
-| 21 | 未实现：M4 后续阶段；对应生成驱动保留原有分布之前，继续保留过渡手写驱动 | — |
+| 21 | `check.handwritten-test`；Go 已启用，Python 未实现：M5 | `check.rejects-broken-graph` |
 | 22 | `check.untraced-step`、`check.unreachable-step`、`check.unreferenced-event` | `check.rejects-broken-graph` |
 | 23 | `design.ungenerable-symbol` | `design.rejects-broken-design` |
 | 24 | `design.limited-generated-symbol`、`lang.golang.duplicate-binding`、`check.missing-generator`、`check.multiple-generators`、`check.not-generated-symbol` | `design.rejects-broken-design`、`lang.golang.extracts-generated-module`、`check.rejects-broken-graph` |
 | 25 | `design.invalid-limit-path`、`design.invalid-limit` | `design.rejects-broken-design` |
 | 26 | `design.unknown-symbol`、`design.duplicate-value`、`design.missing-value`、`design.value-type-mismatch`、`design.value-out-of-limit` | `design.rejects-broken-design` |
 | 27 | `design.recorded-case-name` | `design.rejects-broken-design` |
-| 28 | `lang.golang.stale-contracts`；全仓生成文件一致性检查未实现：M4 后续阶段，当前由运行前核对 | `lang.golang.executes-contracts` |
+| 28 | `gen.stale-file`、`lang.golang.stale-contracts` | `gen.check-files-are-current`、`lang.golang.executes-contracts` |
 | 29 | `design.unresolved-reference`、`design.wrong-reference-kind`、`cli.not-canonical` | `design.rejects-broken-design`、`cli.check-design` |
 | 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5；生成器的 map 名称未实现：[design.md](design.md) §4 没有给出生成器的名称映射 | `design.rejects-broken-design` |
 | 31 | `design.expression-type` | `design.rejects-broken-design` |

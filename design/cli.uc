@@ -26,7 +26,7 @@ flow format-files "用户运行 unicode fmt：把给出的路径之下、缺省�
 
 flow check-design "用户运行 unicode check --design-only：解析 design/ 和 corpus/ 下的全部文件，报出语法、规范格式和只需设计就能判断的约束的诊断；不带 --design-only 时，报出的诊断包含 --design-only 的全部诊断，并给出各声明项的状态" {
   forall files: map<string, RepoFile> generated "一个仓库中 design/ 和 corpus/ 下的文件，有的合法，有的带语法错误、不是规范格式或违反约束"
-  forall designOnly: bool
+  forall designOnly: bool generated "沿用原 IntRange(0,4) 大于零的取值方式与边界偏置"
   user -> main(args) {
     cli -> syntax.kindOf(path)
     cli -> syntax.parse(path, kind, src)

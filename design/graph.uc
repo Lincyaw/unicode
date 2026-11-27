@@ -163,7 +163,7 @@ property encode-ignores-order relation "同一组节点和边，以任何次序�
 property decode-inverts-encode relation "解码 encode 写出的快照，再编码，得到逐字节相同的快照；解码任何字节都不会 panic，不是快照的字节得到 NotASnapshot" {
   about decode, Graph.encode
   forall content: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
-  forall noise: bytes
+  forall noise: bytes generated "沿用零至十二段 JSON 附近片段与任意字节的混合生成器"
   manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
 }
 
@@ -175,8 +175,8 @@ property derive-matches-definition relation "推导出的边和显著性，与�
 
 property digest-follows-content invariant "相同的种类、形式、摘要和属性得到相同的内容哈希；标识、层、来源、出处与显著性不参与；内容哈希是 64 位小写十六进制的 SHA-256" {
   about Graph.digest
-  forall first: Node
-  forall second: Node
+  forall first: Node generated "沿用小字母表、短属性、空列表与随机元数据的节点生成器"
+  forall second: Node generated "依赖 first，沿用独立节点、相同内容不同元数据和局部内容改动三个分支"
   manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
 }
 

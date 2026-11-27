@@ -77,11 +77,9 @@ property kind-of-follows-path invariant "design/system.uc 是系统文件；desi
 
 property parse-is-total invariant "解析任何字节都会返回，不会崩溃；每条诊断的位置都在文件之内，写明修正的办法；诊断按行、列、诊断码排序" {
   about parse
-  forall path: string
-  forall kind: FileKind
-  forall src: bytes
-  where path size 1..64
-  where src size 0..4096
+  forall path: string generated "沿用路径生成器，长度一至六十四，保留原测试的字符与边界分布"
+  forall kind: FileKind generated "从三种文件种类中取值"
+  forall src: bytes generated "沿用不超过 4096 字节的原始字节、片段拼接、合法文件编辑和截断混合生成器"
   manual "需要比较完整语法树、路径分段或诊断的源位置与排序；这些结构不由表达式语言直接提供"
 }
 
@@ -95,6 +93,24 @@ property rejects-broken-text invariant "合法的文件做一处违反某条规�
   about parse
   forall broken: Broken generated "一个随机的合法文件，在随机的一处做了违反 language.md 某条规则的改动，附上改动所在的行和应当得到的诊断码"
   manual "需要比较完整语法树、路径分段或诊断的源位置与排序；这些结构不由表达式语言直接提供"
+}
+
+property expression-format-is-stable relation "深度三的表达式在复合项均有括号时解析、规范打印并再次解析，语法树与规范文本均保持稳定" {
+  about parse, File.print
+  forall sample: Sample generated "独立的表达式输入域，覆盖运算符、量词、old 与错误形式，保留每轮完整的测试次数"
+  manual "需要比较忽略位置的完整语法树、布局和规范文本，沿用格式性质的独立判定"
+}
+
+property contract-syntax-rejects-invalid-claims invariant "契约在陈述、调用、前提、观察、变化范围或关键字上有一处非法写法时，在正确位置拒绝" {
+  about parse
+  forall broken: Broken generated "沿用非法契约的十一个变体及其预期诊断和位置"
+  manual "需要构造非法源文本并比较诊断的位置与代码，沿用语法错误性质的独立判定"
+}
+
+property observation-syntax-rejects-malformed-paths invariant "直接观察路径的名称、大小写或分段不合文法时，在正确位置拒绝" {
+  about parse
+  forall broken: Broken generated "一至四条观察路径，每条一至五段，保留非法名称变体和预期位置"
+  manual "需要构造非法源文本并比较诊断的位置与代码，沿用语法错误性质的独立判定"
 }
 
 property parse-result-is-described postcondition "解析成功时返回路径和种类正确的文件；每条诊断有相同路径、正的位置以及原因和修正" {

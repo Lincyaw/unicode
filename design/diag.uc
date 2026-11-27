@@ -19,6 +19,6 @@ type Diagnostic record "违反一条约束的一处：诊断码、对象、位�
 
 property diagnostic-json-is-flat invariant "诊断的 JSON 恰有 code、subject、path、line、column、message、fix 七个字段，位置平铺；序列化后反序列化保留原诊断全部字段" {
   about Diagnostic
-  forall diagnostic: Diagnostic
+  forall diagnostic: Diagnostic generated "沿用 rapid.Make 的完整整数与字符串分布"
   manual "JSON 编码与字段集合不能在当前表达式中直接检查，手写谓词解码后逐字段比较"
 }

@@ -70,6 +70,6 @@ property get-shows-incident-edges invariant "get 给出的出边恰是起点为�
 property search-matches-text invariant "搜索的结果恰是标识或摘要包含这段文字、种类相符的节点" {
   about search
   forall question: Question generated "一张随机的图，以及一段取自其中某个标识或摘要的文字，或者随机的文字"
-  forall kind: optional<graph.NodeKind>
+  forall kind: optional<graph.NodeKind> generated "沿用可空的完整节点种类枚举生成器，保留原始取值与抽样结构"
   manual "需要独立计算图的闭包、最短路径、排序或文本子串，当前表达式没有这些构造"
 }

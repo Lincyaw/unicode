@@ -45,3 +45,21 @@ property load-ignores-file-order relation "文件以任何次序给出，载入�
   where rotation in 0..1000
   manual "需要从源文件建立预期图并比较完整的引用、标识与诊断；表达式没有文件解析和图构造操作"
 }
+
+property contract-graph-is-declared invariant "合法的黑盒契约投影成恰当的节点、边、契约属性和引用边属性，保留前提、观察和允许变化的路径" {
+  about load
+  forall sample: Sample generated "沿用完整契约样本，随机域名和金额上下界，并独立构造完整预期图"
+  manual "需要从源文件建立预期图并比较完整的引用、标识与属性，沿用合法设计的独立判定"
+}
+
+property returned-value-contract-is-declared invariant "返回对象的字段和纯操作可在 result 上访问，投影保留被测调用和完整引用属性" {
+  about load
+  forall sample: Sample generated "随机域名的返回值契约，保留 result.amount() 与 result.value 的完整预期投影"
+  manual "需要从源文件建立预期图并比较完整的引用、标识与属性，沿用合法设计的独立判定"
+}
+
+property contract-rejects-invalid-relations invariant "黑盒契约的引用、类型、前提和状态路径关系有一处非法时，在改动位置拒绝" {
+  about load
+  forall broken: Broken generated "沿用非法契约关系的十三个替换变体及其预期诊断和调用行重定位"
+  manual "需要构造非法设计并核对准确的诊断与源位置，沿用错误设计的独立判定"
+}

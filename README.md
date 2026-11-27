@@ -9,12 +9,13 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图。设
 ```sh
 go run ./cmd/unicode gen --dry-run
 go run ./cmd/unicode gen
+go run ./cmd/unicode gen --check
 go run ./cmd/unicode check
 go run ./cmd/unicode test syntax.kind-of-follows-path syntax.parse-result-is-described syntax.expression-text-is-stable
 make check
 ```
 
-`gen --dry-run` 输出生成计划；`gen` 只写入本工具拥有的生成文件。`test` 回放所选性质的用例，有输入生成器时可用 `--explore 1s` 做限时探索。没有有效执行会报错。详细语义和诊断见下列文档。
+`gen --dry-run` 输出生成计划；`gen` 更新本工具拥有的生成文件；`gen --check` 只读检查生成内容是否陈旧。普通 `go test` 回放用例并完整执行默认 rapid 次数，原生 `FuzzUnicode_…` 入口也由 `gen` 维护。`test` 只回放所选性质的用例，可用 `--explore 1s` 做限时探索。没有有效执行会报错。手写谓词和自定义生成器保留，重复的测试入口由生成驱动接替。详细语义和诊断见下列文档。
 
 | 文档 | 内容 |
 | --- | --- |
