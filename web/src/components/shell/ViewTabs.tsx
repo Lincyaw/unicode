@@ -1,7 +1,7 @@
 import { viewKindValues } from '../../api/schema';
 import type { ViewKind } from '../../api/types';
 import { CONTROLS, VIEW_NAMES } from '../../terms';
-import { SwitchLinks } from './SwitchLinks';
+import { SegmentedLinks } from '../../ui/controls';
 
 /** Where a tab leads, or why it cannot be chosen. */
 export type TabLink = { href: string } | { reason: string };
@@ -11,5 +11,9 @@ export type TabLink = { href: string } | { reason: string };
  * and a view the graph holds no input for stays faint, its reason behind a hint.
  */
 export function ViewTabs({ current, tabs }: { current?: ViewKind; tabs: Record<ViewKind, TabLink> }) {
-  return <SwitchLinks label={CONTROLS.viewSwitch} current={current} items={viewKindValues.map(kind => ({ key: kind, label: VIEW_NAMES[kind], ...tabs[kind] }))} />;
+  const choices = viewKindValues.map(kind => {
+    const tab = tabs[kind];
+    return 'href' in tab ? { value: kind, label: VIEW_NAMES[kind], to: tab.href } : { value: kind, label: VIEW_NAMES[kind], reason: tab.reason };
+  });
+  return <SegmentedLinks label={CONTROLS.viewSwitch} choices={choices} value={current} />;
 }

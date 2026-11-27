@@ -52,8 +52,10 @@
 .segmented { position: relative; display: inline-flex; align-self: center; padding: var(--space-px); border: var(--rule-hairline); border-radius: var(--radius-full); background: var(--bg-muted); transition: var(--control-transition); }
 .thumb { position: absolute; top: var(--space-px); left: 0; height: var(--control-small); border-radius: var(--radius-full); background: var(--bg-page); transition: transform var(--duration-slow) var(--ease-out), width var(--duration-slow) var(--ease-out); }
 /* Positioned after the thumb in source order, the choices paint above it. */
-.segment { position: relative; height: var(--control-small); padding: 0 var(--space-4); border-radius: var(--radius-full); color: var(--text-muted); font: var(--type-micro); line-height: 1; white-space: nowrap; transition: color var(--duration-base); }
-.segment:hover, .segment[aria-pressed="true"] { color: var(--text-main); }
+.segment { position: relative; display: inline-flex; align-items: center; height: var(--control-small); padding: 0 var(--space-4); border-radius: var(--radius-full); color: var(--text-muted); font: var(--type-micro); line-height: 1; white-space: nowrap; transition: color var(--duration-base); }
+.segment:hover, .segment:is([aria-pressed="true"], [aria-current="page"]) { color: var(--text-main); }
+/* A choice that cannot be chosen now stays faint and still. */
+.segment[aria-disabled="true"], .segment[aria-disabled="true"]:hover { color: var(--text-faint); cursor: default; }
 
 /*
  * Captions sit over runs of choices: the track takes its columns from the captions' grid, so a run of choices widens

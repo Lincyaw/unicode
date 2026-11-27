@@ -1,7 +1,7 @@
 import * as RadixSelect from '@radix-ui/react-select';
 import { clsx } from 'clsx';
 import { Maximize, Minus, Plus } from 'lucide-react';
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Link } from 'react-router';
 import styles from './controls.module.css';
 import { Hint, ICON_STROKE, ICON_TINY } from './hint';
@@ -134,6 +134,30 @@ export interface ChoiceCaption {
   span: number;
 }
 
+/** The thumb under the chosen choice of a track, which slides when another is chosen; choices mark themselves `data-value`. */
+function useThumb(track: RefObject<HTMLElement | null>, chosen: string | undefined): { left: number; width: number } | null {
+  const [thumb, setThumb] = useState<{ left: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    const trackElement = track.current;
+    if (!trackElement) {
+      throw new Error('The segmented control renders its track before its layout effect runs');
+    }
+    const choice = chosen === undefined ? null : trackElement.querySelector<HTMLElement>(`[data-value="${CSS.escape(chosen)}"]`);
+    const place = () => setThumb(choice && { left: choice.offsetLeft, width: choice.offsetWidth });
+    place();
+    // Choices change width when fonts or labels arrive.
+    const observer = new ResizeObserver(place);
+    trackElement.querySelectorAll('[data-value]').forEach(each => observer.observe(each));
+    return () => observer.disconnect();
+  }, [track, chosen]);
+  return thumb;
+}
+
+function Thumb({ thumb }: { thumb: { left: number; width: number } | null }) {
+  // The thumb mounts once it has a place, so it appears there instead of sliding in.
+  return thumb && <span className={styles.thumb} style={{ width: thumb.width, transform: `translateX(${thumb.left}px)` }} aria-hidden="true" />;
+}
+
 /**
  * A row of mutually exclusive choices inside one track, which is the control and carries the ∞ edge. A thumb under the
  * chosen choice slides to the next one chosen. Captions, when given, sit over the runs of choices they name.
@@ -142,26 +166,12 @@ export function SegmentedControl<T extends string>({ label, choices, value, onCh
   label: string; choices: readonly Choice<T>[]; value: T; onChange: (value: T) => void; captions?: readonly ChoiceCaption[];
 }) {
   const track = useRef<HTMLDivElement>(null);
-  const [thumb, setThumb] = useState<{ left: number; width: number } | null>(null);
-  useLayoutEffect(() => {
-    const trackElement = track.current;
-    if (!trackElement) {
-      throw new Error('The segmented control renders its track before its layout effect runs');
-    }
-    const chosen = trackElement.querySelector<HTMLElement>(`button[value="${CSS.escape(value)}"]`);
-    const place = () => setThumb(chosen && { left: chosen.offsetLeft, width: chosen.offsetWidth });
-    place();
-    // Choices change width when fonts or labels arrive.
-    const observer = new ResizeObserver(place);
-    trackElement.querySelectorAll('button').forEach(choice => observer.observe(choice));
-    return () => observer.disconnect();
-  }, [value]);
+  const thumb = useThumb(track, value);
   const segmented = (
     <div ref={track} className={clsx(styles.segmented, 'loop-edge')} role="group" aria-label={label}>
-      {/* The thumb mounts once it has a place, so it appears there instead of sliding in. */}
-      {thumb && <span className={styles.thumb} style={{ width: thumb.width, transform: `translateX(${thumb.left}px)` }} aria-hidden="true" />}
+      <Thumb thumb={thumb} />
       {choices.map(choice => (
-        <button key={choice.value} type="button" value={choice.value} className={styles.segment} aria-pressed={choice.value === value} onClick={() => onChange(choice.value)}>{choice.label}</button>
+        <button key={choice.value} type="button" value={choice.value} data-value={choice.value} className={styles.segment} aria-pressed={choice.value === value} onClick={() => onChange(choice.value)}>{choice.label}</button>
       ))}
     </div>
   );
@@ -171,6 +181,30 @@ export function SegmentedControl<T extends string>({ label, choices, value, onCh
       {segmented}
     </div>
   ) : segmented;
+}
+
+/** A choice that is a place: where it leads, or, while it cannot be chosen, why not. */
+export type PlaceChoice<T extends string> = Choice<T> & ({ to: string } | { reason?: string });
+
+/**
+ * The link variant of the segmented control, for choices that are places, such as the views of one subject: each choice
+ * is a link, the current one sits on the thumb, and one that cannot be chosen now stays faint, its reason behind a hint.
+ */
+export function SegmentedLinks<T extends string>({ label, choices, value }: { label: string; choices: readonly PlaceChoice<T>[]; value?: T }) {
+  const track = useRef<HTMLElement>(null);
+  const thumb = useThumb(track, value);
+  return (
+    <nav ref={track} className={clsx(styles.segmented, 'loop-edge')} aria-label={label}>
+      <Thumb thumb={thumb} />
+      {choices.map(choice => {
+        if ('to' in choice) {
+          return <Link key={choice.value} data-value={choice.value} className={styles.segment} to={choice.to} aria-current={choice.value === value ? 'page' : undefined}>{choice.label}</Link>;
+        }
+        const faint = <span key={choice.value} data-value={choice.value} className={styles.segment} aria-disabled="true" tabIndex={choice.reason === undefined ? undefined : 0}>{choice.label}</span>;
+        return choice.reason === undefined ? faint : <Hint key={choice.value} content={choice.reason}>{faint}</Hint>;
+      })}
+    </nav>
+  );
 }
 
 /** A search box; `className` lets the parent place and size it. */

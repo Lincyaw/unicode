@@ -1,6 +1,5 @@
-import { Fragment, type ReactNode } from 'react';
-import { Link } from 'react-router';
-import type { Crumb } from '../../ui/navigation';
+import type { ReactNode } from 'react';
+import { Breadcrumbs, type Crumb } from '../../ui/navigation';
 import styles from './shell.module.css';
 
 /**
@@ -11,14 +10,7 @@ export function PageHeader({ crumbs, title, children }: { crumbs: Crumb[]; title
   return (
     <div className={styles.header}>
       <div className={styles.heading}>
-        <p className="t-micro c-faint">
-          {crumbs.map((crumb, index) => (
-            <Fragment key={`${index} ${crumb.label}`}>
-              {index > 0 && ' / '}
-              {crumb.to === undefined ? crumb.label : <Link className={styles.crumb} to={crumb.to}>{crumb.label}</Link>}
-            </Fragment>
-          ))}
-        </p>
+        <Breadcrumbs crumbs={crumbs} />
         <h1 className={styles.title}>{title}</h1>
       </div>
       {children}

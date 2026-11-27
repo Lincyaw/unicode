@@ -1,7 +1,6 @@
 import { useView } from '../api/client';
 import type { View } from '../api/types';
 import { DrawingKey } from '../components/canvas/panZoom';
-import { SwitchLinks } from '../components/shell/SwitchLinks';
 import { ActivityView } from '../components/views/ActivityView';
 import { ArchitectureView } from '../components/views/ArchitectureView';
 import { C4View } from '../components/views/C4View';
@@ -13,6 +12,7 @@ import { EventsView } from '../components/views/EventsView';
 import { PropertyView } from '../components/views/PropertyView';
 import { SequenceView } from '../components/views/SequenceView';
 import { viewPath, type ViewAddress } from '../routes/address';
+import { SegmentedLinks } from '../ui/controls';
 import { C4_LEVELS, CLASS_LAYERS, CONTROLS } from '../terms';
 
 /**
@@ -37,7 +37,7 @@ function Drawing({ view, address }: { view: View; address: ViewAddress }) {
       return (
         <ClassView
           view={view}
-          toolbar={<SwitchLinks label={CONTROLS.layer} current={view.layer ?? 'design'} items={(['design', 'code'] as const).map(layer => ({ key: layer, label: CLASS_LAYERS[layer], href: viewPath({ ...address, layer, select: undefined }) }))} />}
+          toolbar={<SegmentedLinks label={CONTROLS.layer} value={view.layer ?? 'design'} choices={(['design', 'code'] as const).map(layer => ({ value: layer, label: CLASS_LAYERS[layer], to: viewPath({ ...address, layer, select: undefined }) }))} />}
         />
       );
     case 'sequence':
@@ -56,7 +56,7 @@ function Drawing({ view, address }: { view: View; address: ViewAddress }) {
       return (
         <C4View
           view={view}
-          toolbar={<SwitchLinks label={CONTROLS.level} current={view.level ?? 'container'} items={(['context', 'container'] as const).map(level => ({ key: level, label: C4_LEVELS[level], href: viewPath({ ...address, level, select: undefined }) }))} />}
+          toolbar={<SegmentedLinks label={CONTROLS.level} value={view.level ?? 'container'} choices={(['context', 'container'] as const).map(level => ({ value: level, label: C4_LEVELS[level], to: viewPath({ ...address, level, select: undefined }) }))} />}
         />
       );
   }
