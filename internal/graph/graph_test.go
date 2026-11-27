@@ -119,12 +119,27 @@ func genFragment() *rapid.Generator[Fragment] {
 	})
 }
 
-//uc:generates graph.compare-self-contract.snapshot
 //uc:generates graph.node-sequence-keeps-index.snapshot
 func genComparisonSnapshot() *rapid.Generator[*Graph] {
 	return rapid.Custom(func(t *rapid.T) *Graph {
 		fragment := genFragment().Draw(t, "fragment")
 		snapshot := build(t, fragment.Nodes, fragment.Edges)
+		return &snapshot
+	})
+}
+
+//uc:generates graph.compare-with-itself-is-empty.snapshot
+func genSnapshot(content Fragment) *rapid.Generator[*Graph] {
+	return rapid.Custom(func(t *rapid.T) *Graph {
+		snapshot := build(t, content.Nodes, content.Edges)
+		return &snapshot
+	})
+}
+
+//uc:generates graph.compare-with-itself-is-empty.reordered
+func genReordered(content Fragment, rotation int) *rapid.Generator[*Graph] {
+	return rapid.Custom(func(t *rapid.T) *Graph {
+		snapshot := build(t, rotate(content.Nodes, rotation), rotate(content.Edges, rotation))
 		return &snapshot
 	})
 }

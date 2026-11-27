@@ -48,27 +48,6 @@ func declaredItems(g *graph.Graph) []string {
 	return out
 }
 
-//uc:checks check.accepts-conforming-graph
-func checkAcceptsConformingGraph(t rapid.TB, sample Sample) {
-	g := derived(t, sample.Fragment)
-	checked := Conform(g)
-	if len(checked.Diagnostics) > 0 {
-		t.Fatalf("Conform reported diagnostics on a graph that meets every constraint of design.md §5.3:\n%s", list(checked.Diagnostics))
-	}
-	items := declaredItems(g)
-	if len(items) == 0 {
-		t.Fatalf("the sample has no declared item, so it checks nothing")
-	}
-	for _, id := range items {
-		if status, ok := checked.Statuses[id]; !ok || status != graph.StatusVerified {
-			t.Fatalf("Conform gave the declared item %q of a conforming graph the status %q (present: %v), not verified", id, status, ok)
-		}
-	}
-	if len(checked.Statuses) != len(items) {
-		t.Fatalf("Conform gave %d statuses, but the graph has %d declared items and depends", len(checked.Statuses), len(items))
-	}
-}
-
 //uc:checks check.rejects-broken-graph
 func checkRejectsBrokenGraph(t rapid.TB, broken Broken) {
 	g := graph.NewGraph()

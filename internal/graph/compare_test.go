@@ -366,17 +366,3 @@ func checkCompareReverses(t rapid.TB, base Fragment, head Fragment) {
 		}
 	}
 }
-
-//uc:checks graph.compare-with-itself-is-empty
-func checkCompareWithItselfIsEmpty(t rapid.TB, content Fragment, rotation int) {
-	g := build(t, content.Nodes, content.Edges)
-	rotated := build(t, rotate(content.Nodes, rotation), rotate(content.Edges, rotation))
-	for _, other := range []struct {
-		name  string
-		graph *Graph
-	}{{"itself", &g}, {"the graph of its nodes and edges added in another order", &rotated}} {
-		if c := Compare(&g, other.graph); len(c.Nodes) > 0 || len(c.Edges) > 0 {
-			t.Fatalf("comparing a graph with %s lists the changes %+v", other.name, c)
-		}
-	}
-}
