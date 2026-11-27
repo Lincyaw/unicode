@@ -42,10 +42,15 @@ function firstIn(root: TreeNode, test: (node: Node) => boolean): Node | undefine
 
 /**
  * The places a default input is looked for, nearest first: each source's subtree, then the containers above it, up to
- * the system. A code element stands at the design nodes it realizes.
+ * the system. A code element stands at the design nodes it realizes; a node the tree leaves out, such as a step, at
+ * its nearest ancestor in the tree.
  */
 function scopes(sources: Entity[], root: TreeNode): TreeNode[] {
-  const ids = sources.flatMap(source => [source.node.id, ...(source.node.bindings ?? []).map(binding => binding.node.id)]);
+  const ids = sources.flatMap(source => [
+    source.node.id,
+    ...(source.node.bindings ?? []).map(binding => binding.node.id),
+    ...source.ancestors.map(node => node.id).reverse(),
+  ]);
   const places = new Map(ids.flatMap(id => pathTo(root, id).slice(1).reverse()).map(place => [place.node.id, place]));
   return [...places.values(), root];
 }
