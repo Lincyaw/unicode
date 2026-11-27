@@ -26,9 +26,9 @@ func (l *loader) codecDecl(e, scope *entity, declaration *syntax.Codec) {
 			l.invalidCodec(e, declaration.Pos, "an interface uses response scripts instead of a codec")
 			return
 		}
-		resolve := func(reference syntax.OpRef) *entity {
+		resolve := func(reference syntax.OpRef, instance bool) *entity {
 			operation := l.resolve(scope, reference.Segments)
-			if len(reference.Segments) == 1 && e.children[reference.Segments[0]] != nil {
+			if instance && len(reference.Segments) == 1 && e.children[reference.Segments[0]] != nil {
 				operation = e.children[reference.Segments[0]]
 			}
 			if !operation.is(graph.NodeKindOp) {
@@ -39,7 +39,7 @@ func (l *loader) codecDecl(e, scope *entity, declaration *syntax.Codec) {
 			l.depends(e, []ref{{written: strings.Join(reference.Segments, "."), pos: reference.Pos, target: operation}})
 			return operation
 		}
-		encoder, decoder := resolve(declaration.Encode), resolve(declaration.Decode)
+		encoder, decoder := resolve(declaration.Encode, true), resolve(declaration.Decode, false)
 		if encoder == nil || decoder == nil {
 			return
 		}

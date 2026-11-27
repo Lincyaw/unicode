@@ -23,6 +23,16 @@ type Loaded struct {
 	Diagnostics []diag.Diagnostic
 }
 
+// Explored is the valid design and the stale recording identities omitted
+// while explicitly exploring; ordinary Load never omits recorded errors.
+//
+//uc:realizes design.Explored
+type Explored struct {
+	Loaded    Loaded
+	Discarded []string
+	Orphaned  []string
+}
+
 const systemPath = "design/system.uc"
 
 var recordedName = regexp.MustCompile(`^r-[0-9a-f]{8}$`)
@@ -35,7 +45,19 @@ var recordedName = regexp.MustCompile(`^r-[0-9a-f]{8}$`)
 //
 //uc:realizes design.load
 func Load(files []syntax.File) Loaded {
-	l := &loader{byID: map[string]*entity{}, notations: map[string]bool{}, codes: map[codeKey]codeHolder{}, seen: map[edgeKey]bool{}}
+	return load(files, false).Loaded
+}
+
+// LoadForExploration excludes stale recorded inputs while keeping all other
+// design diagnostics. It describes omissions without changing corpus files.
+//
+//uc:realizes design.loadForExploration
+func LoadForExploration(files []syntax.File) Explored {
+	return load(files, true)
+}
+
+func load(files []syntax.File, exploring bool) Explored {
+	l := &loader{exploring: exploring, byID: map[string]*entity{}, notations: map[string]bool{}, codes: map[codeKey]codeHolder{}, seen: map[edgeKey]bool{}}
 	byKind := map[syntax.FileKind][]*syntax.File{}
 	sorted := slices.Clone(files)
 	slices.SortStableFunc(sorted, func(a, b syntax.File) int { return cmp.Compare(a.Path, b.Path) })
@@ -66,7 +88,9 @@ func Load(files []syntax.File) Loaded {
 		return cmp.Or(cmp.Compare(a.Position.Path, b.Position.Path), cmp.Compare(a.Position.Line, b.Position.Line),
 			cmp.Compare(a.Position.Column, b.Position.Column), cmp.Compare(a.Code, b.Code), cmp.Compare(a.Message, b.Message))
 	})
-	return Loaded{Graph: l.build(), Diagnostics: l.diags}
+	slices.Sort(l.discarded)
+	slices.Sort(l.orphaned)
+	return Explored{Loaded: Loaded{Graph: l.build(), Diagnostics: l.diags}, Discarded: l.discarded, Orphaned: l.orphaned}
 }
 
 // loader holds the nodes and edges declared so far. Declarations are read in
@@ -93,6 +117,9 @@ type loader struct {
 	domains    []func()
 	checks     []func()
 	diags      []diag.Diagnostic
+	exploring  bool
+	discarded  []string
+	orphaned   []string
 }
 
 type edgeKey struct {
@@ -604,6 +631,19 @@ func (l *loader) corpus(f *syntax.File) {
 			break
 		}
 	}
+	if l.exploring {
+		target := l.resolve(nil, decl.Target.Segments)
+		if target == nil || !acceptCorpus.ok(target) {
+			want := corpusPath(strings.Join(decl.Target.Segments, "."))
+			if f.Path != want {
+				l.report(f, decl.Pos, "design.corpus-path-mismatch", f.Path,
+					fmt.Sprintf("the recorded cases of %s belong in %s, not in %s", strings.Join(decl.Target.Segments, "."), want, f.Path), "move the file to "+want)
+			} else {
+				l.orphaned = append(l.orphaned, f.Path)
+			}
+			return
+		}
+	}
 	file := &entity{id: f.Path, file: f}
 	target := l.refer(file, nil, decl.Target.Segments, decl.Target.Pos, acceptCorpus)
 	if target == nil {
@@ -625,6 +665,6 @@ func (l *loader) corpus(f *syntax.File) {
 		}
 		e.setAttr("values", assignments(rc.Lines))
 		e.setAttr("reason", []string{rc.Reason})
-		l.checks = append(l.checks, func() { l.checkCase(e, target, rc.Lines) })
+		l.checks = append(l.checks, func() { l.checkRecordedCase(e, target, rc.Lines) })
 	}
 }

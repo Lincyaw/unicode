@@ -60,6 +60,29 @@ func (l *loader) checkCase(c, owner *entity, lines []syntax.CaseLine) {
 	}
 }
 
+// checkRecordedCase rolls back only input-domain diagnostics of a stale
+// recording. Path, declaration, syntax and unrelated design errors survive.
+func (l *loader) checkRecordedCase(c, owner *entity, lines []syntax.CaseLine) {
+	start := len(l.diags)
+	l.checkCase(c, owner, lines)
+	if !l.exploring || start == len(l.diags) {
+		return
+	}
+	for _, diagnostic := range l.diags[start:] {
+		switch diagnostic.Code {
+		case "design.unknown-symbol", "design.missing-value", "design.duplicate-value", "design.value-type-mismatch", "design.value-out-of-limit":
+		default:
+			return
+		}
+	}
+	l.diags = l.diags[:start]
+	delete(l.byID, c.id)
+	delete(owner.children, c.name)
+	l.entities = slices.DeleteFunc(l.entities, func(e *entity) bool { return e == c })
+	l.edges = slices.DeleteFunc(l.edges, func(e graph.Edge) bool { return e.From == c.id || e.To == c.id })
+	l.discarded = append(l.discarded, c.id)
+}
+
 func valuePos(v syntax.Value) lexer.Position {
 	switch v := v.(type) {
 	case *syntax.NumberValue:
