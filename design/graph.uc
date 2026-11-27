@@ -33,6 +33,7 @@ type NodeKind enum "节点的种类（model.md §3）" {
   value flow
   value step
   value property
+  value observation
   value case
   value run
   value result
@@ -55,6 +56,7 @@ type EdgeKind enum "边的种类（model.md §4）" {
   value realizes
   value checks
   value generates
+  value observes
   value owns
   value depends
   value traces
@@ -97,11 +99,11 @@ type Graph object "一张图：节点按标识索引，边按种类、起点和�
   op addEdge(edge: Edge) raises DuplicateEdge, DanglingEdge "加入一条边；它的起点和终点必须已经在图中"
   op addFragment(fragment: Fragment) raises DuplicateNode, DuplicateEdge, DanglingEdge "加入一组节点和边，先节点后边；终点不在图中的绑定边和方法的候选边先暂存，留给推导"
   op derive() -> list<diag.Diagnostic> "按 model.md §9 推导 owns、方法的 realizes、depends、traces、exercises、显著性和 reaches；暂存的绑定边中终点仍不存在的，报为 graph.unresolved-binding"
-  op node(id: string) -> optional<Node> "按标识取一个节点"
-  op nodes() -> list<Node> "全部节点，按标识排序"
-  op edges() -> list<Edge> "全部边，按种类、起点、终点排序"
-  op digest(id: string) -> string "节点自身内容的 SHA-256：种类、形式、摘要和属性的规范编码，不含子节点"
-  op encode() -> bytes "编码成确定的 JSON 快照（model.md §8）"
+  op node(id: string) -> optional<Node> pure "按标识取一个节点"
+  op nodes() -> list<Node> pure "全部节点，按标识排序"
+  op edges() -> list<Edge> pure "全部边，按种类、起点、终点排序"
+  op digest(id: string) -> string pure "节点自身内容的 SHA-256：种类、形式、摘要和属性的规范编码，不含子节点"
+  op encode() -> bytes pure "编码成确定的 JSON 快照（model.md §8）"
 }
 
 type Fragment record "一组节点和边：一种语言抽取出的代码层，或者性质的输入" {
@@ -146,7 +148,7 @@ type Comparison record "两个快照的差别：新增、删除和修改的节�
 
 op newGraph() -> Graph "一张空图"
 
-op compare(base: Graph, head: Graph) -> Comparison "按标识对齐两张图的节点和边（model.md §8），列出 head 相对 base 新增、删除和修改的项：节点的修改是内容哈希不同，边的修改是属性不同"
+op compare(base: Graph, head: Graph) -> Comparison pure "按标识对齐两张图的节点和边（model.md §8），列出 head 相对 base 新增、删除和修改的项：节点的修改是内容哈希不同，边的修改是属性不同"
 
 op decode(data: bytes) -> Graph raises NotASnapshot "encode 的逆：从快照还原出图"
 
@@ -155,35 +157,41 @@ property encode-ignores-order relation "同一组节点和边，以任何次序�
   forall content: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
   forall rotation: int
   where rotation in 0..1000
+  manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
 }
 
 property decode-inverts-encode relation "解码 encode 写出的快照，再编码，得到逐字节相同的快照；解码任何字节都不会 panic，不是快照的字节得到 NotASnapshot" {
   about decode, Graph.encode
   forall content: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
   forall noise: bytes
+  manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
 }
 
 property derive-matches-definition relation "推导出的边和显著性，与按 model.md §9 的定义逐条直接计算的结果相同" {
   about Graph.derive
   forall fragment: Fragment generated "一张随机的小图：带路径模式的设计层容器、类型、操作、流程和性质，带绑定的代码层文件、类型、函数和调用"
+  manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
 }
 
-property digest-follows-content invariant "两个节点的摘要相同，当且仅当它们的种类、形式、摘要和属性都相同" {
+property digest-follows-content invariant "相同的种类、形式、摘要和属性得到相同的内容哈希；标识、层、来源、出处与显著性不参与；内容哈希是 64 位小写十六进制的 SHA-256" {
   about Graph.digest
   forall first: Node
   forall second: Node
+  manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
 }
 
 property compare-follows-identity relation "比较按标识对齐：只在 head 中的节点为新增，只在 base 中的为删除，两边都有而内容哈希不同的为修改，其余的不列出；边按种类、起点和终点对齐，两边都有而属性不同的为修改；before 和 after 是该项在 base 和 head 中的样子；节点的 attrs 按键排序，恰列出两边的值不同的键，每个键上去掉的值是 base 中的值的子序列，加上的值是 head 中的值的子序列，两者没有相同的值，从两边分别除去它们之后剩下的值相同；节点按标识排序，边按种类、起点、终点排序" {
   about compare
   forall base: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
   forall head: Fragment generated "base 的一份改动：去掉一些节点和边，改动一些节点的内容和一些边的属性，改动一些项的出处、来源、层或显著性而不改内容，再加上一些新的节点和边"
+  manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
 }
 
 property compare-reverses relation "compare(head, base) 是 compare(base, head) 的反面：列出的项和次序相同，新增与删除互换，修改仍是修改，before 与 after 互换，每个属性键上去掉的值与加上的值互换" {
   about compare
   forall base: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
   forall head: Fragment generated "base 的一份改动：去掉一些节点和边，改动一些节点的内容和一些边的属性，改动一些项的出处、来源、层或显著性而不改内容，再加上一些新的节点和边"
+  manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
 }
 
 property compare-with-itself-is-empty invariant "一张图与它自己比较，或者与以另一种次序加入同一组节点和边的图比较，没有新增、删除和修改" {
@@ -191,4 +199,5 @@ property compare-with-itself-is-empty invariant "一张图与它自己比较，�
   forall content: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
   forall rotation: int
   where rotation in 0..1000
+  manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
 }

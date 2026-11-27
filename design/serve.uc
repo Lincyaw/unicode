@@ -41,19 +41,23 @@ flow answer-request "查看器发来一次接口请求：快照文件自上次�
 property answers-follow-contract invariant "每个应答都合乎 api/openapi.yaml：状态码是该接口声明的，正文合乎声明的模式；接口没有声明的拒绝，正文是诊断码为 serve.* 的 {code, message, fix}" {
   about Server.answer
   forall exchange: Exchange generated "一张随机的图，以及对各个接口的请求：标识多取自图中的节点，有时不存在，参数有时不合格式"
+  manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"
 }
 
 property identities-resolve invariant "应答中作为节点标识出现的每个值，经 /api/entity 都能取到实体页" {
   about Server.answer
   forall exchange: Exchange generated "一张随机的图，以及对各个接口的请求，标识多取自图中的节点"
+  manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"
 }
 
 property queries-agree relation "/api/node、/api/search、/api/slice、/api/impact 和 /api/views 的应答，与直接调用 query 和 view 的结果有同样的节点和边，次序相同；标识不存在时为 404 serve.not-found，视图不适用于输入时为 400 serve.not-applicable" {
   about Server.answer, query.get, query.search, query.slice, query.impact, view.select
   forall exchange: Exchange generated "一张随机的图，以及对这五个接口的请求，标识多取自图中的节点，有时不存在"
+  manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"
 }
 
 property answers-are-deterministic invariant "同一个快照上，同一个请求的应答逐字节相同，与它之前回答过哪些请求无关" {
   about Server.answer
   forall exchange: Exchange generated "一张随机的图，以及对各个接口的请求，有的重复出现"
+  manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"
 }

@@ -23,6 +23,13 @@ type Parsed record "解析的结果；有诊断时，语法树可能不完整，
   field diagnostics: list<diag.Diagnostic>
 }
 
+type Expr object "表达式语法树；节点的内部结构由 syntax 管理，供载入与后端生成使用"
+
+type ExprParsed record "单条表达式的解析结果与诊断" {
+  field expr: optional<Expr>
+  field diagnostics: list<diag.Diagnostic>
+}
+
 type Sample record "一个合法文件的种类和文本，供性质使用" {
   field kind: FileKind
   field text: string
@@ -38,11 +45,16 @@ type Broken record "一个合法文件做了一处违反某条规则的改动：
 
 op kindOf(path: string) -> FileKind raises NotADesignFile "由仓库中的相对路径判断文件的种类"
 
-op parse(path: string, kind: FileKind, src: bytes) -> Parsed "按 language.md 的词法和语法解析一个文件"
+op parse(path: string, kind: FileKind, src: bytes) -> Parsed pure "按 language.md 的词法和语法解析一个文件，包括黑盒契约与具名观察"
+
+op parseExpr(path: string, text: string) -> ExprParsed pure "解析单条表达式，位置从给定路径的首行首列起"
+
+op exprText(expr: Expr) -> string pure "表达式的规范文本，保留源中的引用拼写，避免引入符号遮蔽"
 
 property kind-of-follows-path invariant "design/system.uc 是系统文件；design/ 下其余文件名为 <名称>.uc、名称不为空的整洁路径是组件文件；corpus/ 下同样的路径是录制文件；其余路径都被拒绝，包括只叫 .uc 的文件和不整洁的路径（含 .、.. 或连续的 /）" {
   about kindOf
   forall path: string generated "形如 design/…、corpus/… 和其他目录下的相对路径，扩展名有的是 .uc，有的不是，有的文件名只是 .uc，有的路径不整洁"
+  manual "需要比较完整语法树、路径分段或诊断的源位置与排序；这些结构不由表达式语言直接提供"
 }
 
 property parse-is-total invariant "解析任何字节都会返回，不会崩溃；每条诊断的位置都在文件之内，写明修正的办法；诊断按行、列、诊断码排序" {
@@ -52,14 +64,57 @@ property parse-is-total invariant "解析任何字节都会返回，不会崩溃
   forall src: bytes
   where path size 1..64
   where src size 0..4096
+  manual "需要比较完整语法树、路径分段或诊断的源位置与排序；这些结构不由表达式语言直接提供"
 }
 
 property format-is-stable relation "合法的文本 s 解析后打印得到 t：t 是规范格式，t 解析出的语法树与 s 的相同，t 再解析再打印仍是 t" {
   about parse, File.print
   forall sample: Sample generated "一个合法的文件：随机的语法树，以随意而合法的空白和空行写成文本"
+  manual "需要比较完整语法树、路径分段或诊断的源位置与排序；这些结构不由表达式语言直接提供"
 }
 
 property rejects-broken-text invariant "合法的文件做一处违反某条规则的改动之后，解析在改动所在的行和列给出这条规则的诊断，并且不给出语法树" {
   about parse
   forall broken: Broken generated "一个随机的合法文件，在随机的一处做了违反 language.md 某条规则的改动，附上改动所在的行和应当得到的诊断码"
+  manual "需要比较完整语法树、路径分段或诊断的源位置与排序；这些结构不由表达式语言直接提供"
+}
+
+property parse-result-is-described postcondition "解析成功时返回路径和种类正确的文件；每条诊断有相同路径、正的位置以及原因和修正" {
+  about parse
+  forall path: string
+  forall kind: FileKind
+  forall src: bytes
+  where path size 1..64
+  where src size 0..4096
+  call parse(path, kind, src)
+  ensure size(result.diagnostics) == 0 implies result.file != none and result.file.path == path and result.file.kind == kind
+  ensure all(d in result.diagnostics: d.position.path == path and d.position.line >= 1 and d.position.column >= 1 and size(d.message) > 0 and size(d.fix) > 0)
+  case empty-component {
+    path = "design/sample.uc"
+    kind = component
+    src = ""
+  }
+}
+
+property expression-text-is-stable postcondition "表达式解析成功后，规范文本再次解析和打印得到相同文本；错误时有定位诊断" {
+  about parseExpr, exprText
+  forall path: string
+  forall text: string
+  where path size 1..64
+  where text size 0..1024
+  call parseExpr(path, text)
+  ensure size(result.diagnostics) == 0 implies result.expr != none and exprText(parseExpr(path, exprText(result.expr)).expr) == exprText(result.expr)
+  ensure all(d in result.diagnostics: d.position.path == path and d.position.line >= 1 and d.position.column >= 1 and size(d.message) > 0 and size(d.fix) > 0)
+  case precedence {
+    path = "expression.uc"
+    text = "1 + 2 * 3 == 7"
+  }
+  case short-circuit {
+    path = "expression.uc"
+    text = "false implies 1 / 0 == 0"
+  }
+  case quantifier {
+    path = "expression.uc"
+    text = "all(x in items: x.quantity > 0)"
+  }
 }
