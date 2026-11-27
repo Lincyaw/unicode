@@ -153,19 +153,16 @@ func (c *contractCompiler) configureDoubles(unit *contractUnit) bool {
 			}
 		}
 	}
-	if unit.predicate != nil {
-		return valid
-	}
 	// A replacement is required for every external operation reachable from the
-	// tested operation or an explicitly related operation. It is never inferred
-	// from arbitrary functions of the package.
+	// tested operation or a formal expression. Manual predicates still execute
+	// their formal preconditions, so their expression dependencies count too.
 	seeds := map[string]bool{}
 	external := map[string]string{}
 	for _, e := range c.plan.Graph.Edges() {
 		if e.Kind == graph.EdgeKindRealizes && c.nodes[c.parents[e.To]].Form == "external" {
 			external[e.From] = e.To
 		}
-		if e.Kind == graph.EdgeKindAbout && e.From == unit.node.Id {
+		if e.From == unit.node.Id && c.nodes[e.To].Kind == graph.NodeKindOp && (e.Kind == graph.EdgeKindRefers || unit.predicate == nil && e.Kind == graph.EdgeKindAbout) {
 			for _, r := range c.plan.Graph.Edges() {
 				if r.Kind == graph.EdgeKindRealizes && r.To == e.To {
 					seeds[r.From] = true
@@ -212,7 +209,7 @@ func (c *contractCompiler) configureDoubles(unit *contractUnit) bool {
 	}
 	for id := range required {
 		if provided[id] != 1 {
-			c.diagnostic(unit.node, "lang.golang.missing-substitute", "an automatic contract must provide exactly one response script for reachable external operation "+id, "declare one forall answers: replies<"+id+"> and bind its substitute installer")
+			c.diagnostic(unit.node, "lang.golang.missing-substitute", "a contract must provide exactly one response script for external operation reachable from a formal expression or tested call: "+id, "declare one forall answers: replies<"+id+"> and bind its substitute installer")
 			valid = false
 		}
 	}
@@ -290,7 +287,8 @@ func (c *contractCompiler) renderDoubles(file *contractFile) string {
 }
 func (c *contractCompiler) replyErrors(unit *contractUnit, op ucOperation) map[string]string {
 	out := map[string]string{}
-	for id, ty := range unit.spec.Types {
+	for _, id := range slices.Sorted(maps.Keys(unit.spec.Types)) {
+		ty := unit.spec.Types[id]
 		if ty.Form != "error" {
 			continue
 		}
@@ -360,19 +358,17 @@ func (c *contractCompiler) doubleLiteral(value syntax.Value, t string, pkg *pack
 			}
 		}
 	}
-	name := strings.TrimPrefix(t, "*")
-	if original := c.foreignOriginal[name]; original != "" {
-		name = original
+	object := c.literalTypeObject(t, pkg)
+	if object == nil {
+		return "", false, nil
 	}
-	for id, node := range c.nodes {
+	for _, id := range slices.Sorted(maps.Keys(c.nodes)) {
+		node := c.nodes[id]
 		if node.Form != "interface" || node.Kind != graph.NodeKindType {
 			continue
 		}
 		d, ok := c.bound(graph.EdgeKindRealizes, id)
-		if !ok || d.obj.Name() != lastGoName(name) {
-			continue
-		}
-		if !strings.Contains(name, ".") && d.pkg.PkgPath != pkg.PkgPath {
+		if !ok || d.obj.Pkg() == nil || object.Pkg() == nil || d.obj.Pkg().Path() != object.Pkg().Path() || d.obj.Name() != object.Name() {
 			continue
 		}
 		unit := &contractUnit{pkg: pkg, spec: ucContract{Types: map[string]ucType{}, Operations: map[string]ucOperation{}}}
@@ -414,6 +410,40 @@ func (c *contractCompiler) doubleLiteral(value syntax.Value, t string, pkg *pack
 		return "s.Types[" + strconv.Quote(id) + "].Double.New(map[string][]map[string]any{" + strings.Join(entries, ",") + "}).Interface().(" + t + ")", true, nil
 	}
 	return "", false, nil
+}
+
+// The literal's qualifier is an emitted import alias, not a package basename.
+// Resolve that alias before consulting the complete native declaration ID.
+func (c *contractCompiler) literalTypeObject(text string, pkg *packages.Package) *types.TypeName {
+	name := strings.TrimPrefix(text, "*")
+	if original := c.foreignOriginal[name]; original != "" {
+		name = original
+	}
+	path := pkg.PkgPath
+	if alias, member, qualified := strings.Cut(name, "."); qualified {
+		path = ""
+		for imported, current := range c.literalImports {
+			if current == alias {
+				if path != "" {
+					return nil
+				}
+				path = imported
+			}
+		}
+		if path == "" {
+			return nil
+		}
+		name = member
+	}
+	if declaration, ok := c.declarations["go:"+path+"."+name]; ok {
+		object, _ := declaration.obj.(*types.TypeName)
+		return object
+	}
+	if path == pkg.PkgPath && pkg.Types != nil {
+		object, _ := pkg.Types.Scope().Lookup(name).(*types.TypeName)
+		return object
+	}
+	return nil
 }
 func (c *contractCompiler) operationOf(id string) ucOperation {
 	node := c.nodes[id]

@@ -69,6 +69,14 @@ type breakage struct {
 }
 
 var breakages = []breakage{
+	{"check.substitute-outside-container", func(w *world) string {
+		installer, _ := w.substituteSample()
+		other := choose(w, where(w.comps, func(c *comp) bool { return c != w.client }))
+		w.declared(graph.EdgeKindUses, other.id, "x")
+		other.uses = append(other.uses, "x")
+		w.reparent(installer, other.file)
+		return installer
+	}},
 	{"check.multiple-substitutes", func(w *world) string {
 		_, target := w.substituteSample()
 		other := w.function(w.client.file, w.client.pkg+".OtherInstaller", "otherInstaller", "(replacement: func(int) int) -> func()", "func")

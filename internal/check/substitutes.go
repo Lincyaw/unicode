@@ -2,6 +2,7 @@ package check
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/lincyaw/unicode/internal/graph"
 )
@@ -12,6 +13,15 @@ func (c *checker) substituteBinding(e graph.Edge) {
 		return
 	}
 	c.placed(e.To, e.From)
+	if clients := c.realizers(e.To); len(clients) == 1 {
+		clientOwners := c.owners(clients[0])
+		installerOwners := c.owners(e.From)
+		if !slices.ContainsFunc(installerOwners, func(owner string) bool {
+			return slices.Contains(clientOwners, owner) && c.usesFrom(owner, c.parent[e.To])
+		}) {
+			c.fail("check.substitute-outside-container", e.From, graph.StatusContradicted, e.Origin, "the substitute installer and its client are not owned by the same component that uses the external system", "place the installer in a file owned by the client's component")
+		}
+	}
 	if edges := c.out[graph.EdgeKindSubstitutes][e.From]; len(edges) > 1 {
 		c.fail("check.multiple-substitutes", e.From, graph.StatusContradicted, e.Origin, "a substitute installer targets more than one operation", "keep exactly one substitutes binding on each installer")
 	}

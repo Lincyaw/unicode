@@ -728,16 +728,9 @@ func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packa
 			}
 			return t + "{" + strings.Join(items, ",") + "}", nil
 		}
-		name := strings.TrimPrefix(t, "*")
-		if original, ok := c.foreignOriginal[name]; ok {
-			name = original
-		}
 		var named *types.Named
-		for _, d := range c.declarations {
-			if ty, ok := d.obj.(*types.TypeName); ok && ty.Name() == lastGoName(name) && ((!strings.Contains(name, ".") && ty.Pkg().Path() == pkg.PkgPath) || (strings.Contains(name, ".") && c.literalImports[ty.Pkg().Path()] == strings.TrimSuffix(name, "."+ty.Name()))) {
-				named, _ = ty.Type().(*types.Named)
-				break
-			}
+		if object := c.literalTypeObject(t, pkg); object != nil {
+			named, _ = types.Unalias(object.Type()).(*types.Named)
 		}
 		if named == nil {
 			return "", fmt.Errorf("cannot resolve record literal type %s", t)
