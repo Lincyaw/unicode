@@ -625,11 +625,17 @@ func (w world) expected(a asked, expand []string) expectation {
 			}
 		}
 	}
+	// The code view draws a call only into or out of its input.
+	inside := w.below(input)
+	inside[input] = true
+	outside := func(e graph.Edge) bool {
+		return kind == ViewKindCode && (e.Kind == graph.EdgeKindCalls || e.Kind == graph.EdgeKindReaches) && !inside[e.From] && !inside[e.To]
+	}
 	plain := map[edgeKey]bool{}
 	for _, e := range w.edges {
 		k := edgeKey{e.Kind, e.From, e.To}
 		from, to := x.standIn(e.From), x.standIn(e.To)
-		if from == "" || to == "" || !slices.Contains(drawnKinds[kind], e.Kind) && !revealed[k] {
+		if from == "" || to == "" || (!slices.Contains(drawnKinds[kind], e.Kind) || outside(e)) && !revealed[k] {
 			continue
 		}
 		if from == e.From && to == e.To {

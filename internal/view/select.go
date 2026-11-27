@@ -294,11 +294,20 @@ func property(ix index, r request) selection {
 
 // code: the file or type and what it contains, the functions at the other
 // end of the calls and reaches edges of its functions, and the cases that
-// cover any of them.
+// cover any of them. Of the calls and reaches edges it draws only those with
+// an end in the input or in what it contains.
 func code(ix index, r request) selection {
 	input := r.input
-	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindContains, graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindCovers}}
 	contents := append([]string{input}, ix.descendants(input)...)
+	inside := map[string]bool{}
+	for _, id := range contents {
+		inside[id] = true
+	}
+	// The calls and reaches it draws go into or out of the input: an end is in it.
+	keeps := func(e graph.Edge) bool {
+		return e.Kind != graph.EdgeKindCalls && e.Kind != graph.EdgeKindReaches || inside[e.From] || inside[e.To]
+	}
+	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindContains, graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindCovers}, keeps: keeps}
 	s.add(contents...)
 	for _, id := range contents {
 		s.add(ix.neighbors(id, graph.EdgeKindCalls, graph.EdgeKindReaches)...)

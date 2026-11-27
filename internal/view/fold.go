@@ -120,7 +120,8 @@ func (f *folding) edges(sel selection, revealed map[edgeKey]bool) []ViewEdge {
 	groups := map[edgeKey][]graph.Edge{}
 	moved := map[edgeKey]bool{}
 	for _, e := range f.ix.edges {
-		if !slices.Contains(sel.kinds, e.Kind) && !revealed[edgeKey{e.Kind, e.From, e.To}] {
+		picked := slices.Contains(sel.kinds, e.Kind) && (sel.keeps == nil || sel.keeps(e))
+		if !picked && !revealed[edgeKey{e.Kind, e.From, e.To}] {
 			continue
 		}
 		from, to := f.stand(e.From, sel), f.stand(e.To, sel)

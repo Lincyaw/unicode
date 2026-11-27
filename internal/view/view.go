@@ -182,6 +182,9 @@ type selection struct {
 	// for it in the view, which is drawn, folded or left out in its turn; ""
 	// when nothing stands for it.
 	boxOf func(string) string
+	// keeps, when set, tells which edges of the selected kinds the view
+	// draws; an edge an expansion reveals is drawn whatever it says.
+	keeps func(graph.Edge) bool
 }
 
 func (s *selection) add(ids ...string) {

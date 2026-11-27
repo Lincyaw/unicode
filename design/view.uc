@@ -118,7 +118,7 @@ property view-names-input-ancestors invariant "视图适用时，输入是图中
   manual "需要沿 contains 逐层向上找出输入的全部祖先，表达式没有递归，不能沿边追溯任意多层"
 }
 
-property view-cards-show-contents invariant "视图中卡片附带的成员、容器的内容、未画出的细节函数的个数和边上的操作名称，与按 design.md §7.5.1 的定义直接算出的相同" {
+property view-cards-show-contents invariant "视图中卡片附带的成员、容器的内容、未画出的细节函数的个数和边承载的操作（各带标识和写法），与按 design.md §7.5.1 的定义直接算出的相同" {
   about select, check.members
   forall request: Request generated "一张随机的图（各种关注度的容器、带字段或枚举值的类型、成员与之有同有缺有异有多的代码类型、显著和细节的函数、带调用的依赖），以及一次任意种类的视图请求：输入约六分之五是该视图适用的节点，其余是任意节点或空串，零至四个展开的标识约四分之三是视图中能展开的项，其余是图中的容器、函数或不存在的名称"
   manual "需要把字段的文本拆成名称和类型再与代码类型的字段逐项比较，表达式不能切分字符串"
