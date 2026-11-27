@@ -34,7 +34,7 @@ flow format-files "用户运行 unicode fmt：按 design.md §8 把给出的路�
 }
 
 flow check-design "用户运行 unicode check：带 --design-only 时报出语法、规范格式和只需设计就能判断的约束的诊断，不带时报出的诊断包含这些诊断，并给出各声明项的状态" {
-  forall files: map<string, RepoFile> generated "一个仓库中 design/ 和 corpus/ 下的文件：约四分之三是合法的设计再做零至两处改动（语法错误、排版、越界的值、未声明的 uses、移动或删除文件、多余的文件），其余是 format-files 那样的随机文件，有时带符号链接"
+  forall files: map<string, RepoFile> generated "一个仓库中 design/ 和 corpus/ 下的文件：约四分之三是合法的设计再做零至两处改动（语法错误、排版、越界的值、未声明的 uses、移动或删除文件、多余的文件），其余是 format-files 那样的随机文件但都能读出，有时带符号链接"
   forall designOnly: bool generated "约五分之四为真"
   user -> main(args) {
     cli -> syntax.kindOf(path)
@@ -46,7 +46,7 @@ flow check-design "用户运行 unicode check：带 --design-only 时报出语�
 }
 
 flow check-code "用户运行 unicode check：载入设计，抽取每种已配置语言的代码，合并、推导之后检查全部约束，输出诊断" {
-  forall files: map<string, RepoFile> generated "一个小仓库，含设计文件和能编译的 Go 模块，约四分之三在一处违反了某条约束或带编译错误"
+  forall files: map<string, RepoFile> generated "一个小仓库，含设计文件和 Go 模块，约四分之三做了一处改动：违反某条约束，或者让 Go 代码编译不过"
   user -> main(args) {
     cli -> design.load(files)
     cli -> lang.golang.newBackend()

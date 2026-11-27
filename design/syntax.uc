@@ -121,7 +121,7 @@ property expression-format-is-stable relation "ensure 是随机表达式的组�
   manual "需要比较忽略位置的两棵语法树，表达式不能构造或比较语法树；谓词复用 format-is-stable 的手写谓词"
 }
 
-property contract-syntax-rejects-invalid-claims postcondition "黑盒契约或流程的陈述违反 language.md 的 G0、G13 至 G18 中的一条时，解析在出错处的行列给出该规则的诊断" {
+property contract-syntax-rejects-invalid-claims postcondition "黑盒契约或流程有一处违反 language.md 的 G0、G13、G15 至 G18 或 L6 时，解析在出错处的行列给出该规则的诊断" {
   about parse
   forall broken: Broken generated "一条固定的黑盒契约，性质名随机，做十一种改动之一：删去 ensure 或 call，加上 manual、changes none、不是时长的 within 或带运算的 changes，符号改名为 size，== 两边去掉空格，改成以 alt 开头或没有步骤的流程，或改用 observation-syntax-rejects-malformed-paths 的一处改动；附应得的诊断码和行列"
   forall path: string generated "与 broken.kind 相符的一条固定路径"

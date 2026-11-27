@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"time"
 
 	"pgregory.net/rapid"
@@ -87,13 +88,40 @@ func checkSnapshotHeadFollowsRecord(t rapid.TB, exchange Exchange, record *repo.
 	}
 }
 
+// genMalformedRecord draws the text of a build record that is not
+// {"commit": <hash or null>, "dirty": <bool>}: text that is not JSON, a JSON
+// value that is not an object, an object without commit or dirty, one with a
+// third field, or one whose commit or dirty has another type.
+//
+//uc:generates serve.open-refuses-malformed-record.record
+func genMalformedRecord() *rapid.Generator[string] {
+	commit := rapid.SampledFrom([]string{`null`, `"0123456789abcdef0123456789abcdef01234567"`})
+	dirty := rapid.SampledFrom([]string{`true`, `false`})
+	object := func(fields ...string) string { return "{" + strings.Join(fields, ", ") + "}" }
+	return rapid.OneOf(
+		rapid.Map(rapid.String(), func(s string) string { return "x" + s }),
+		rapid.SampledFrom([]string{`[]`, `7`, `"commit"`, `null`, `true`}),
+		rapid.Map(commit, func(c string) string { return object(`"commit": ` + c) }),
+		rapid.Map(dirty, func(d string) string { return object(`"dirty": ` + d) }),
+		rapid.Custom(func(t *rapid.T) string {
+			return object(`"commit": `+commit.Draw(t, "commit"), `"dirty": `+dirty.Draw(t, "dirty"), `"branch": "main"`)
+		}),
+		rapid.Custom(func(t *rapid.T) string {
+			return object(`"commit": `+rapid.SampledFrom([]string{`7`, `true`, `[]`, `{}`}).Draw(t, "commit"), `"dirty": `+dirty.Draw(t, "dirty"))
+		}),
+		rapid.Custom(func(t *rapid.T) string {
+			return object(`"commit": `+commit.Draw(t, "commit"), `"dirty": `+rapid.SampledFrom([]string{`"yes"`, `1`, `[]`}).Draw(t, "dirty"))
+		}),
+	)
+}
+
 //uc:checks serve.open-refuses-malformed-record
-func checkOpenRefusesMalformedRecord(t rapid.TB, exchange Exchange) {
+func checkOpenRefusesMalformedRecord(t rapid.TB, exchange Exchange, record string) {
 	root, _ := written(t, exchange)
 	defer removeAll(t, root)
-	writeFile(t, filepath.Join(root, ".unicode", repo.RecordFile), []byte(`{"commit": 7}`))
+	writeFile(t, filepath.Join(root, ".unicode", repo.RecordFile), []byte(record))
 	if _, err := Open(root, filepath.Join(root, ".unicode", "graph.json"), baseBuilder{}); !errors.As(err, new(Unreadable)) {
-		t.Fatalf("beside a record that is not {commit, dirty}, Open should refuse the snapshot as unreadable, yet it gave %v", err)
+		t.Fatalf("beside the record %q, which is not {commit, dirty}, Open should refuse the snapshot as unreadable, yet it gave %v", record, err)
 	}
 }
 

@@ -189,14 +189,14 @@ property derive-matches-definition relation "推导出的边和显著性，与�
   manual "需要按 model.md §9 的定义另行算出推导的结果再比较，表达式不能遍历图的边"
 }
 
-property digest-follows-content invariant "两个节点的内容哈希相同，当且仅当种类、形式、摘要和属性相同，与标识、层、来源、出处和显著性无关，内容哈希写成 64 位小写十六进制" {
+property digest-follows-content invariant "种类、形式、摘要和属性相同的两个节点得到相同的内容哈希，不论标识、层、来源、出处和显著性是否相同，内容哈希写成 64 位小写十六进制" {
   about Graph.digest
   forall first: Node generated "任意节点：标识、形式、摘要和属性取自 a、b、引号、< 和中文中的零至三个字符，种类是容器、类型或操作，属性可以为空或有空的列表，层、来源和出处随机"
   forall second: Node generated "取决于 first，三种情形各约三分之一：与 first 无关的节点，内容与 first 相同而标识、层、来源或出处不同的节点（空的属性列表有时省去），或在 first 上改了一处种类、形式、摘要或属性的节点"
   manual "需要把两个节点分别放进图中取内容哈希，表达式不能构造图"
 }
 
-property compare-follows-identity relation "compare 按 model.md §8 对齐节点和边，恰列出新增、删除和修改的项并按此排序，before 和 after 是该项在 base 和 head 中的内容" {
+property compare-follows-identity relation "compare 按 model.md §8 对齐节点和边，恰列出新增、删除和修改的项，节点按标识、边按种类、起点和终点排序，before 和 after 是该项在 base 和 head 中的内容" {
   about compare
   forall base: Fragment generated "零至八个标识互不相同的节点，以及零至十二条两端都在其中、彼此不同的边：标识是 a、b、.、#、- 组成的一至四个字符，种类、层和来源任取，形式、摘要和属性取自含引号、< 和中文的短文字，可以有空的属性列表和自环，节点都不显著"
   forall head: Fragment generated "base 的一份改动：每个节点和边约五分之一删去、五分之一改内容或属性、五分之一只改出处、来源、层或显著性，其余不变，再加上零至三个节点和零至四条边，新节点可能用回删去的节点的标识"

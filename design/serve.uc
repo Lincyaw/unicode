@@ -54,7 +54,7 @@ property answers-follow-contract invariant "每个应答都合乎 api/openapi.ya
 property answers-do-not-escape-html invariant "应答的 JSON 与快照的写法一样，不把 <、> 和 & 写成转义序列" {
   about Server.answer
   forall exchange: Exchange generated "一张随机的图，以及对各个接口的请求：标识约七分之一不存在，参数有时不合格式，也有不是接口的路径"
-  manual "需要在临时目录中写出快照再由服务读入，表达式不能读写文件"
+  manual "需要在每个应答的原始正文中查找 <、> 和 & 的转义序列，表达式不能在字节中查找子串"
 }
 
 property identities-resolve invariant "应答中作为节点标识出现的每个值，都能经 /api/entity 取到实体页，只在基准图中的项除外（比较中删除的项，以及各项在基准中的内容）" {
@@ -91,5 +91,6 @@ property snapshot-head-follows-record invariant "/api/snapshot 的 head 按 desi
 property open-refuses-malformed-record invariant "快照旁的 build 记录不是 {commit, dirty} 时，open 报 Unreadable" {
   about open
   forall exchange: Exchange generated "一张随机的图和它的文件"
-  manual "需要在快照旁写出不合格式的 build 记录，表达式不能读写文件"
+  forall record: string generated "不合 {commit, dirty} 的 build 记录文本：不是 JSON 的文本，不是对象的 JSON 值，缺 commit 或 dirty 的对象，多一个字段的对象，或者 commit 或 dirty 的类型不对的对象"
+  manual "需要在快照旁写出 record 作为 build 记录再调用 open，表达式不能读写文件"
 }

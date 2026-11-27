@@ -139,7 +139,7 @@ type RunReport record "一次运行的报告：各性质和流程的结论，不
   field mode: string
 }
 
-type Generator interface "后端可以另外实现的接口，即生成能力；不实现这个接口的后端仍是完整的 Backend" {
+type Generator interface "生成能力：后端可以另外实现的接口，不实现它的后端仍是完整的 Backend" {
   op language() -> string "系统文件中的语言名称"
   op generate(plan: GenPlan) -> Generation "给出这种语言的生成计划：骨架和生成文件；不写仓库，不支持的目标给出诊断"
 }
@@ -149,7 +149,7 @@ type GenerationExtractor interface "计算生成计划时可用的抽取能力�
   op extractForGeneration(root: string, srcRoots: list<string>) -> Extracted raises ExtractFailed "像 extract 一样抽取，但在内存中把带生成标记的测试文件读成只有包声明的文件，不改动磁盘；手写源码的错误照常报出"
 }
 
-type Runner interface "后端可选的运行能力" {
+type Runner interface "运行能力：后端可以另外实现的接口，不实现它的后端仍是完整的 Backend" {
   op language() -> string "系统文件中的语言名称"
   op run(plan: RunPlan) -> RunReport "核对生成文件后回放，或在 explore 时长内探索，返回每条性质和流程的结论"
 }

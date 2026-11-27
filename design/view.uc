@@ -55,7 +55,7 @@ type View record "一个视图的数据：种类、输入节点及其祖先、�
   field hidden: int
 }
 
-type Request record "view 各条性质的输入：一张图和一次视图请求，含视图的种类、输入节点的标识、要展开的标识、类视图的层和 C4 视图的层级" {
+type Request record "view-is-folded-subgraph、sequence-follows-steps、view-names-input-ancestors 和 view-cards-show-contents 的输入：一张图和一次视图请求，含视图的种类、输入节点的标识、要展开的标识、类视图的层和 C4 视图的层级" {
   field fragment: graph.Fragment
   field kind: ViewKind
   field id: string
@@ -80,7 +80,7 @@ property sequence-follows-steps invariant "时序视图和活动视图中的步�
   manual "需要按步骤的序号和生命线首次出现的次序排列，表达式不能排序"
 }
 
-property view-echoes-its-request postcondition "视图给出请求的种类、展开、类视图的层和 C4 视图的层级，请求给出节点时输入就是这个节点，不给时只有架构、事件、DDD 和 C4 视图适用且输入是系统" {
+property view-echoes-its-request postcondition "视图给出请求的种类和展开，类视图另给请求的层，C4 视图另给请求的层级，其余视图两者都不给，请求给出节点时输入就是这个节点，不给时只有架构、事件、DDD 和 C4 视图适用且输入是系统" {
   about select
   forall g: graph.Graph generated "一张随机的图，带各种关注度的容器、类型、操作、流程、性质和代码层"
   forall kind: ViewKind

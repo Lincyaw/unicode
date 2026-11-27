@@ -51,7 +51,7 @@ type ExecutionSample record "executes-sequences-and-flows 的输入：计数器�
   field impure: bool
 }
 
-type DoubleSample record "scripted-doubles-follow-inputs 的输入：应答的项数，以及是否有一半应答是声明的错误" {
+type DoubleSample record "scripted-doubles-follow-inputs 的输入：应答的项数 count，以及第一、三、五项应答是否抛出声明的错误 fail" {
   field count: int
   field fail: bool
 }
@@ -117,7 +117,7 @@ property executes-sequences-and-flows invariant "调用序列先检查初态，�
 
 property scripted-doubles-follow-inputs invariant "接口和外部客户端的替身按输入中的应答脚本依次应答，末项重复，错误应答带上脚本中的字段，被拒绝、失败或 panic 时都执行清理，不调用真实的外部客户端" {
   about Backend
-  forall sample: DoubleSample generated "一至五项应答，fail 为真时偶数项是带字段的声明的错误，其余是返回值"
+  forall sample: DoubleSample generated "一至五项应答，fail 为真时第一、三、五项是带字段的声明的错误，其余是返回值"
   manual "需要经真实的安装器替换客户端，并记录安装、清理和真实客户端的调用，表达式不能调用代码"
 }
 

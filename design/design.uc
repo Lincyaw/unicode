@@ -15,7 +15,7 @@ type Explored record "loadForExploration 的结果：载入的设计层，丢弃
   field orphaned: list<string>
 }
 
-type Sample record "design 中三条接受合法设计的性质的输入：一组合法的设计文件和录制文件，载入后应得的节点标识和边，以及部分节点和边应有的属性；边写成种类、起点和终点以空格相连" {
+type Sample record "accepts-valid-design、contract-graph-is-declared、returned-value-contract-is-declared 和 exploration-prunes-recorded-inputs 的输入：一组合法的设计文件和录制文件，载入后应得的节点标识和边，以及部分节点和边应有的属性；边写成种类、起点和终点以空格相连" {
   field files: map<string, string>
   field nodes: list<string>
   field edges: list<string>
