@@ -173,10 +173,21 @@ type CaseResult struct {
 	Diagnostics  []diag.Diagnostic `json:"diagnostics"`
 }
 
+// CandidateEvaluation distinguishes a real result, budget exhaustion and tool errors.
+//
+//uc:realizes lang.CandidateEvaluation
+type CandidateEvaluation struct {
+	Result      *CaseResult       `json:"result"`
+	Exhausted   bool              `json:"exhausted"`
+	Diagnostics []diag.Diagnostic `json:"diagnostics"`
+}
+
 // CandidateRunner executes one reconstructed input at an isolated boundary.
 //
 //uc:realizes lang.CandidateRunner
-type CandidateRunner interface{ Evaluate(input Input) CaseResult }
+type CandidateRunner interface {
+	Evaluate(input Input) CandidateEvaluation
+}
 
 // RunResult records one check's effective inputs, observations and failures.
 //
