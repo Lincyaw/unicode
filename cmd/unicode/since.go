@@ -15,18 +15,21 @@ import (
 func AffectedChecks(base, head *graph.Graph, selected []string) []string {
 	changes := graph.Compare(base, head)
 	seeds := map[string]bool{}
-	globalFiles := map[string]bool{}
+	packageFiles := map[string]bool{}
 	for _, change := range changes.Nodes {
 		seeds[change.Id] = true
 		if !slices.Equal(sinceGlobals(change.Before), sinceGlobals(change.After)) {
-			globalFiles[change.Id] = true
+			packageFiles[change.Id] = true
 		}
 	}
 	for _, change := range changes.Edges {
-		if sinceCallLocationsOnly(change) {
+		if sinceLocationsOnly(change) {
 			continue
 		}
 		seeds[change.From], seeds[change.To] = true, true
+		if change.Kind == graph.EdgeKindImports {
+			packageFiles[change.From] = true
+		}
 	}
 	affected := map[string]bool{}
 	for _, snapshot := range []*graph.Graph{base, head} {
@@ -39,7 +42,7 @@ func AffectedChecks(base, head *graph.Graph, selected []string) []string {
 			}
 		}
 		presentSeeds := maps.Clone(seeds)
-		for _, id := range sinceGlobalNodes(snapshot, globalFiles) {
+		for _, id := range sincePackageNodes(snapshot, packageFiles) {
 			presentSeeds[id] = true
 		}
 		var present []string
@@ -81,9 +84,9 @@ func sinceCheck(node graph.Node) bool {
 	return node.Layer == graph.LayerDesign && (node.Kind == graph.NodeKindProperty || node.Kind == graph.NodeKindFlow)
 }
 
-// Call-site coordinates locate evidence without changing an existing dependency.
-func sinceCallLocationsOnly(change graph.EdgeChange) bool {
-	if change.Kind != graph.EdgeKindCalls || change.Change != graph.ChangeKindModified || change.Before == nil || change.After == nil {
+// Call and import coordinates locate evidence without changing an existing dependency.
+func sinceLocationsOnly(change graph.EdgeChange) bool {
+	if (change.Kind != graph.EdgeKindCalls && change.Kind != graph.EdgeKindImports) || change.Change != graph.ChangeKindModified || change.Before == nil || change.After == nil {
 		return false
 	}
 	before, after := maps.Clone(change.Before.Attrs), maps.Clone(change.After.Attrs)
@@ -101,9 +104,9 @@ func sinceGlobals(node *graph.Node) []string {
 	return nil
 }
 
-// sinceGlobalNodes expands changed globals to native declarations in their
-// packages and in packages that import them, including transitive importers.
-func sinceGlobalNodes(snapshot *graph.Graph, files map[string]bool) []string {
+// sincePackageNodes expands files with changed globals or imports to native
+// declarations in their packages and transitive importing packages.
+func sincePackageNodes(snapshot *graph.Graph, files map[string]bool) []string {
 	if len(files) == 0 {
 		return nil
 	}
