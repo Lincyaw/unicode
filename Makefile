@@ -1,7 +1,7 @@
-.PHONY: check lint test fmt-check self-check deep
+.PHONY: check lint test fmt-check self-check rule-check deep
 
 # check is what a lane runs before it commits: fast, default rapid settings.
-check: lint test fmt-check self-check
+check: lint test fmt-check self-check rule-check
 
 lint:
 	golangci-lint run
@@ -15,6 +15,11 @@ fmt-check:
 # The toolchain checks itself: its design, its code and the bindings between them.
 self-check:
 	go run ./cmd/unicode check
+
+# Every numbered rule of docs/language.md and docs/model.md names the codes
+# that report it broken, and the tables list exactly the codes of the source.
+rule-check:
+	python3 scripts/rulecodes.py
 
 # deep is the asynchronous stage after a merge (CLAUDE.md principle 9):
 # many rapid checks, a fuzz burst per Fuzz target, and mutation testing.

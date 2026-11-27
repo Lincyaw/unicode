@@ -273,19 +273,25 @@ func (c *checker) matches(id, r string) {
 	}
 }
 
+// relationCodes are the relations that rule 19 checks, each with its code.
+var relationCodes = map[graph.EdgeKind]string{
+	graph.EdgeKindImplements: "check.missing-implements",
+	graph.EdgeKindExtends:    "check.missing-extends",
+}
+
 // relations checks rule 19: an implements or extends between design types
 // holds between the code types that realize them.
 func (c *checker) relations() {
 	for _, e := range c.edges {
-		if e.Kind != graph.EdgeKindImplements && e.Kind != graph.EdgeKindExtends ||
-			!c.is(e.From, graph.LayerDesign, graph.NodeKindType) || !c.is(e.To, graph.LayerDesign, graph.NodeKindType) {
+		code, checked := relationCodes[e.Kind]
+		if !checked || !c.is(e.From, graph.LayerDesign, graph.NodeKindType) || !c.is(e.To, graph.LayerDesign, graph.NodeKindType) {
 			continue
 		}
 		from, to := c.realizers(e.From), c.realizers(e.To)
 		if len(from) != 1 || len(to) != 1 || c.has(e.Kind, from[0], to[0]) {
 			continue
 		}
-		c.fail("check.missing-"+string(e.Kind), edgeID(e), graph.StatusContradicted, c.byID[from[0]].Origin,
+		c.fail(code, edgeID(e), graph.StatusContradicted, c.byID[from[0]].Origin,
 			fmt.Sprintf("%s %s %s in the design, but %s, which realizes %s, does not %s %s, which realizes %s",
 				e.From, e.Kind, e.To, from[0], e.From, strings.TrimSuffix(string(e.Kind), "s"), to[0], e.To),
 			fmt.Sprintf("make %s %s %s in the code, or remove the %s from the design", from[0], strings.TrimSuffix(string(e.Kind), "s"), to[0], e.Kind))

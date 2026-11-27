@@ -64,40 +64,40 @@ func (x *extraction) readBinding(at diag.Position, text, fileID string, owner bo
 	}
 	report := func(code, message, fix string) {
 		x.diagnostics = append(x.diagnostics, diag.Diagnostic{
-			Code: "lang.golang." + code, Subject: subject, Position: at, Message: message, Fix: fix,
+			Code: code, Subject: subject, Position: at, Message: message, Fix: fix,
 		})
 	}
 	verb, target, _ := strings.Cut(strings.TrimPrefix(text, bindingPrefix), " ")
 	kind, known := bindingKinds[verb]
 	switch {
 	case !known:
-		report("unknown-binding-verb", fmt.Sprintf("the binding verb %q is not realizes, checks or generates", verb),
+		report("lang.golang.unknown-binding-verb", fmt.Sprintf("the binding verb %q is not realizes, checks or generates", verb),
 			"write the binding as //uc:realizes, //uc:checks or //uc:generates, one space and a design identity")
 		return
 	case target == "":
-		report("missing-binding-id", fmt.Sprintf("the binding //uc:%s names no design identity", verb),
+		report("lang.golang.missing-binding-id", fmt.Sprintf("the binding //uc:%s names no design identity", verb),
 			fmt.Sprintf("write the identity after one space: //uc:%s <identity>", verb))
 		return
 	case !designRef.MatchString(target):
-		report("invalid-binding-id", fmt.Sprintf("%q is not an identity of the design", target),
+		report("lang.golang.invalid-binding-id", fmt.Sprintf("%q is not an identity of the design", target),
 			"write the identity as names joined by dots, with one space before it and nothing after it")
 		return
 	case kind == graph.EdgeKindGenerates && !symbolSuffix.MatchString(target):
-		report("invalid-binding-id", fmt.Sprintf("%q does not name a symbol of a property or flow", target),
+		report("lang.golang.invalid-binding-id", fmt.Sprintf("%q does not name a symbol of a property or flow", target),
 			"write the symbol's identity: the property's or flow's identity, a dot and the symbol's name")
 		return
 	case !attached:
-		report("misplaced-binding", "the binding is not in the doc comment of a type or a function",
+		report("lang.golang.misplaced-binding", "the binding is not in the doc comment of a type or a function",
 			"move it into the doc comment right above the type or function it binds")
 		return
 	case owner.isType && kind != graph.EdgeKindRealizes:
-		report("misplaced-binding", fmt.Sprintf("a %s binding is on a type, and only a function can carry one", verb),
+		report("lang.golang.misplaced-binding", fmt.Sprintf("a %s binding is on a type, and only a function can carry one", verb),
 			"move it into the doc comment of the function it binds")
 		return
 	}
 	key := bindingKey{owner.id, verb, target}
 	if x.bindings[key] {
-		report("duplicate-binding", fmt.Sprintf("the declaration already has the binding //uc:%s %s", verb, target),
+		report("lang.golang.duplicate-binding", fmt.Sprintf("the declaration already has the binding //uc:%s %s", verb, target),
 			"delete the repeated line")
 		return
 	}
