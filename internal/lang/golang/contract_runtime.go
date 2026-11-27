@@ -31,6 +31,7 @@ type ucType struct {
 	Values []string
 	Parent string
 	Calls  []ucOperation
+	Double *ucDoubleFactory `json:"-"`
 }
 type ucObserver struct {
 	Name, Type string
@@ -62,6 +63,7 @@ type ucContract struct {
 	Operations                 map[string]ucOperation
 	Observers                  []ucObserver
 	ErrorTypes                 map[string]reflect.Type
+	Installers                 map[string]reflect.Value `json:"-"`
 }
 type ucDiagnostic struct {
 	Code, Subject string
@@ -1461,6 +1463,9 @@ func ucPathLabel(path []ucSegment) string {
 // ucDraw uses the same model types as snapshots. Custom generated symbols use
 // their bound generators instead, including dependencies on earlier symbols.
 func ucDraw(t *rapid.T, typ reflect.Type, model string, types map[string]ucType, limits []string, path string, depth int) reflect.Value {
+	if value, ok := ucDrawDouble(t, typ, model, types, limits, path, depth); ok {
+		return value
+	}
 	kind, args := ucSplitType(model)
 	out := reflect.New(typ).Elem()
 	if depth > 8 {
@@ -1781,6 +1786,19 @@ func (env *ucEnvironment) captureCall(op ucOperation, values []reflect.Value, ex
 	}
 }
 func ucExecute(s *ucContract, inputs map[string]reflect.Value, explore bool) (out ucOutcome) {
+	defer func() {
+		if problem := recover(); problem != nil {
+			if issue, ok := problem.(ucIssue); ok {
+				out.Infrastructure = true
+				out.Diagnostics = append(out.Diagnostics, ucDiagnosticOf(s, issue))
+			} else {
+				out.Infrastructure = true
+				out.Diagnostics = append(out.Diagnostics, ucDiagnosticOf(s, ucIssue{"lang.golang.substitute-failed", fmt.Sprintf("the substitute boundary panicked: %v", problem), nil}))
+			}
+		}
+	}()
+	cleanup := ucInstallDoubles(s, inputs)
+	defer cleanup()
 	if s.Sequence == "" {
 		return ucExecuteSingle(s, inputs, explore)
 	}
