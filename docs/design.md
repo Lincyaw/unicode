@@ -513,6 +513,19 @@ M4 分阶段交付：先实现单次黑盒契约与手写谓词的回放、一�
   | `serve.unreadable-snapshot` | 快照文件在运行中读不出，属于环境 |
   | `serve.not-implemented` | 查看器的比较尚未实现，属于工具链的能力 |
   | `serve.internal-error` | 服务端未能回答请求，属于工具链自身 |
+  | `gen.duplicate-backend` | 同一种语言注册了多个生成后端 |
+  | `gen.unsupported-language` | 配置的语言没有可用生成能力 |
+  | `gen.duplicate-path` | 生成计划多次写入同一个路径 |
+  | `gen.invalid-path` | 生成路径不规范、越出仓库或与其他目标存在父子冲突 |
+  | `gen.symlink` | 生成目标或其父路径是符号链接 |
+  | `gen.unowned-file` | 目标已有非工具生成的文件，属于覆盖冲突 |
+  | `gen.write-failed` | 预检或原子写入生成文件失败 |
+  | `run.duplicate-backend` | 同一种语言注册了多个运行后端 |
+  | `run.unsupported-language` | 目标语言没有可用运行能力 |
+  | `run.unknown-check` | 目标不是已绑定到配置语言的性质或流程 |
+  | `run.results-write-failed` | 结果文件不可安全写入 |
+  | `run.invalid-report` | 后端报告缺失、重复、包含未选目标，或无有效执行却报告通过 |
+  | `run.no-checks` | 所选范围没有可执行性质或流程 |
 
 ## 9 计划
 
