@@ -94,17 +94,17 @@ property inheritance-members-are-resolved invariant "继承的字段和操作按
   manual "需要按 sample 拼出设计文件的文本再解析和载入，表达式不能构造或解析文本"
 }
 
-property codecs-are-typed invariant "codec 投影两个绝对操作和引用，encoded 按表示类型检查；错误签名、重复、接口、无声明、表示依赖循环或隐式继承均被拒绝，静态载入不调用解码器" {
+property codecs-are-typed invariant "codec 载入成对编码和解码操作的引用，encoded(v) 按表示类型检查，签名不对、重复、用于接口、没有声明、表示类型循环依赖或靠继承得到 codec 时载入给出诊断，载入时不调用解码操作" {
   about load
   forall value: int
   forall variant: int
   where value in -1000..1000
   where variant in 0..14
-  manual "构造 codec 源程序并核对独立的操作引用、类型、诊断及位置，载入边界不执行原生解码"
+  manual "需要按 value 和 variant 拼出含 codec 的设计文件再载入，表达式不能构造或解析文本"
 }
 
-property exploration-prunes-recorded-inputs invariant "只有显式探索能剔除过期录制输入及无目标的录制文件；合法记录保留，声明错误和非域错误仍阻断，普通载入保持严格" {
+property exploration-prunes-recorded-inputs invariant "loadForExploration 丢弃不再合乎设计的录制用例、忽略目标已不存在的录制文件并保留合法的录制用例，声明的用例和其他设计错误照常给出诊断，而 load 对这些录制用例和文件仍报错" {
   about load, loadForExploration
-  forall sample: Sample generated "合法设计和录制样本，分别加入合法、过期符号或类型、域外、无目标与错误路径的录制变体"
-  manual "在真实设计语法树和独立记录身份上比较两种载入模式，保留全部非录制域错误"
+  forall sample: Sample generated "一组合法的设计文件和录制文件，录制用例有的合法，有的符号或类型已过期、取值在域外、目标已不存在或路径不对"
+  manual "需要把同一组文件分别用 load 和 loadForExploration 载入再比较诊断和丢弃的用例，表达式不能解析文本"
 }

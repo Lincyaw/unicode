@@ -1,42 +1,42 @@
-component evidence "覆盖选择、候选缩减、模型用例录制和运行证据；不调度 agent" {
+component evidence "按覆盖挑选和缩减用例，缩小反例，录制用例，并把运行结果作为证据并入图" {
   focus core
   paths "internal/evidence/**"
   uses graph, lang, syntax, diag
 }
 
-type Reduction record "保持覆盖并集、声明用例和全部反例的确定性缩减结果" {
+type Reduction record "reduce 的结果：缩减后留下的用例，它们保持原有覆盖的并集、全部声明的用例和反例，以及诊断" {
   field cases: list<lang.CaseResult>
   field diagnostics: list<diag.Diagnostic>
 }
 
-type Shrunk record "最终仍能复现的反例及缩减边界的检查错误；预算耗尽保留已知反例" {
+type Shrunk record "shrink 的结果：缩小后仍能复现的反例，以及缩小过程中的检查错误；预算耗尽时是已知最小的反例" {
   field result: lang.CaseResult
   field diagnostics: list<diag.Diagnostic>
 }
 
-type Loaded record "本地不可变运行记录；旧版无输入摘要的结果不作为当前证据" {
+type Loaded record "read 的结果：.unicode/runs 中不可变的运行记录和诊断；没有执行输入哈希的旧结果不作为当前证据" {
   field reports: list<lang.RunReport>
   field diagnostics: list<diag.Diagnostic>
 }
 
-type Attached record "证据层节点、与检查和用例的关系，以及当前有效的 covers 边" {
+type Attached record "attach 的结果：证据层的节点，它们与性质、流程和用例之间的边，当前有效的 covers 边，以及诊断" {
   field fragment: graph.Fragment
   field diagnostics: list<diag.Diagnostic>
 }
 
-type Recording record "录制文件的完整生成计划；不会改写声明用例" {
+type Recording record "recordings 的结果：要写的录制文件、要删除的录制文件和诊断，其中不改写声明的用例" {
   field edits: list<lang.Edit>
   field removals: list<string>
   field diagnostics: list<diag.Diagnostic>
 }
 
-type Sample record "独立给出用例和覆盖集合，包含声明、反例、重复覆盖及超过上限的变体" {
+type Sample record "evidence 各性质的输入：一组用例的结果及其覆盖、录制用例的上限，以及必须留下的用例标识" {
   field cases: list<lang.CaseResult>
   field limit: int
   field required: list<string>
 }
 
-type AttachmentSample record "当前图、真实报告及独立标记的有效输入和业务反例；包含旧摘要、环境错误和同输入别名" {
+type AttachmentSample record "attachment-preserves-input-identity 的输入：一张图、一组运行报告，以及应判为当前的用例数、当前的用例和以反例失败的性质或流程" {
   field graph: graph.Graph
   field reports: list<lang.RunReport>
   field freshCount: int
@@ -44,32 +44,32 @@ type AttachmentSample record "当前图、真实报告及独立标记的有效�
   field failedChecks: list<string>
 }
 
-op reduce(cases: list<lang.CaseResult>, limit: int) -> Reduction pure "保留全部声明与反例，按新增覆盖最多、输入摘要破同分贪心挑选，再删除冗余；超过上限而不能保持保证时给出诊断"
+op reduce(cases: list<lang.CaseResult>, limit: int) -> Reduction pure "保留全部声明的用例和反例，其余按新增覆盖最多、同分时按输入哈希的次序贪心挑选，再删去冗余的用例；录制用例超过 limit 而不能保持覆盖时给出诊断"
 
-op shrink(initial: lang.CaseResult, runner: lang.CandidateRunner, budget: duration) -> Shrunk "只接受仍失败且不是环境错误的更小模型值；保留前提与类型，预算内缩到候选缩减的固定点；返回最终反例，不混入缩减尝试"
+op shrink(initial: lang.CaseResult, runner: lang.CandidateRunner, budget: duration) -> Shrunk "在 budget 内反复把 initial 缩小成仍合乎类型和前提、仍以反例而不是检查错误失败的更小输入，直到不能再缩小，返回最后的反例，不含中途的尝试"
 
-op read(root: string) -> Loaded "读取 .unicode/runs 下的不可变运行记录和兼容的 results.json；损坏与符号链接是错误，失效结果保留为历史"
+op read(root: string) -> Loaded "读取 .unicode/runs 下的不可变运行记录和兼容的 results.json，损坏的文件和符号链接是错误，已失效的结果保留为历史"
 
-op save(root: string, report: lang.RunReport) -> list<diag.Diagnostic> "保存不可变运行记录和最新 results.json；相同记录幂等，定位报告写入错误"
+op save(root: string, report: lang.RunReport) -> list<diag.Diagnostic> "把 report 保存成不可变的运行记录，并写出最新的 results.json，同一份记录再保存不改变文件，写入失败时给出诊断"
 
-op attach(g: graph.Graph, reports: list<lang.RunReport>) -> Attached pure "按执行输入摘要判定当前证据；生成 run/result、about、contains 和 covers，不把旧结果的行号套到新源码"
+op attach(g: graph.Graph, reports: list<lang.RunReport>) -> Attached pure "按执行输入哈希判定哪些结果是当前证据，为它们生成 run 和 result 节点及 about、contains 和 covers 边；旧结果的行号不套用到新的源码上"
 
-op recordings(root: string, g: graph.Graph, cases: list<lang.CaseResult>) -> Recording "以规范格式规划 corpus 文件；录制名是输入摘要前八位，碰撞、不可回放输入或上限冲突均禁止写入"
+op recordings(root: string, g: graph.Graph, cases: list<lang.CaseResult>) -> Recording "按规范格式给出 corpus 下要写的录制文件，用例名是输入哈希的前八位；名称碰撞、输入不能回放或超过上限时不写入"
 
-op applyRecordings(root: string, recording: Recording) -> list<diag.Diagnostic> "先预检全部写入与移除项，只发布本工具拥有的规范 corpus 文件，不跟随符号链接或改写声明用例；每文件安全写入，不承诺跨文件事务"
+op applyRecordings(root: string, recording: Recording) -> list<diag.Diagnostic> "先检查 recording 中全部要写和要删的文件，再逐个文件安全写入，只写规范的录制文件，不跟随符号链接，不改写声明的用例，多个文件之间不保证同时成功"
 
-property reduction-preserves-evidence postcondition "缩减保留声明与反例及全部覆盖，不因重复用例或顺序丢失证据" {
+property reduction-preserves-evidence postcondition "reduce 没有诊断时，留下的用例含全部声明的用例和反例，覆盖原有的全部覆盖点，录制用例不超过 limit" {
   about reduce
-  forall sample: Sample generated "独立覆盖集合与声明、反例、覆盖用例组合；上限有时不足"
+  forall sample: Sample generated "声明的用例、反例和覆盖用例的组合，覆盖点互相重叠，上限有时不足以保持覆盖"
   call reduce(sample.cases, sample.limit)
   ensure size(result.diagnostics) == 0 implies all(original in sample.cases: original.form == "declared" or original.reason == "counterexample" implies any(retained in result.cases: retained.id == original.id))
   ensure size(result.diagnostics) == 0 implies all(original in sample.cases: all(point in original.coverage: any(retained in result.cases: any(covered in retained.coverage: point == covered))))
   ensure size(result.diagnostics) == 0 implies count(retained in result.cases: retained.form != "declared") <= sample.limit
 }
 
-property attachment-preserves-input-identity postcondition "有效性取自实际执行输入与当前摘要；环境错误不伪装为业务失败，覆盖只连接当前同输入用例" {
+property attachment-preserves-input-identity postcondition "attach 只把输入和执行输入哈希都与当前相符的用例判为当前证据，只把以反例失败的性质或流程标为失败（只有检查错误的不算），covers 边只从当前的用例出发" {
   about attach
-  forall sample: AttachmentSample generated "当前与陈旧报告、重命名的同输入用例、未录制业务反例，以及只有环境错误但曾有有效执行的报告"
+  forall sample: AttachmentSample generated "十种情形之一：当前通过的报告，执行输入哈希已过期的报告，改了名而输入相同的用例，录制的反例，观察失败，反例和观察失败并存，没有录制的反例，超出 within，表达式求值错误，以及没有有效执行；有时另有一份当前通过的报告"
   call attach(sample.graph, sample.reports)
   ensure size(result.diagnostics) == 0
   ensure count(node in result.fragment.nodes: node.form == "case" and "true" in node.attrs["fresh"]) == sample.freshCount
@@ -78,8 +78,8 @@ property attachment-preserves-input-identity postcondition "有效性取自实�
   ensure all(edge in result.fragment.edges: edge.kind == graph.EdgeKind.covers implies edge.from in sample.currentCases)
 }
 
-property recordings-are-replayable invariant "录制前冻结模型值，编码往返保持完整状态；规范文件可重新解析并生成同一输入；失败和损坏不写空结果" {
+property recordings-are-replayable invariant "录制的用例回放时得到录制时的同一输入：模型值在调用前冻结，编码往返不丢状态，录制文件重新解析后给出同一输入，失败或损坏时不写出空结果" {
   about recordings, applyRecordings, shrink, save, read, attach
-  forall sample: Sample generated "整数、集合、记录、codec、替身脚本和错误输入，以及当前与陈旧结果"
-  manual "准备模型编解码和真实文件边界，逐字节核对独立输入、失败复现与证据图，不用最终布尔值代替原始数据"
+  forall sample: Sample generated "含整数、集合、记录、经 codec 编码的对象和替身脚本的输入，其中有的输入有错，以及当前的和陈旧的结果"
+  manual "需要在临时目录中写出并读回录制文件和运行记录，表达式不能读写文件"
 }

@@ -43,7 +43,7 @@ type GenPlan record "一种语言的生成输入：仓库根目录、源码根�
   field graph: graph.Graph
 }
 
-type RunPlan record "一种语言的运行输入：仓库根目录、源码根目录、图、要运行的性质和流程（ids 为空时全部）和探索时长（explore 为零时只回放）" {
+type RunPlan record "一种语言的运行输入：仓库根目录、源码根目录、图、要运行的性质和流程（ids 为空时全部）、探索时长（explore 为零时只回放），以及是否写回录制文件 record" {
   field root: string
   field roots: list<string>
   field graph: graph.Graph
@@ -52,7 +52,7 @@ type RunPlan record "一种语言的运行输入：仓库根目录、源码根�
   field record: bool
 }
 
-type Value record "可回放模型值；kind 决定 text、items 或 entries，编码值的 items 恰含其声明表示" {
+type Value record "可回放的模型值：kind 决定取 text、items 还是 entries，经 codec 编码的值的 items 恰是它声明的表示" {
   field kind: string
   field text: string
   field items: list<Value>
@@ -68,7 +68,7 @@ type Input record "调用前冻结的完整输入；对象的私有状态经声�
   field values: map<string, Value>
 }
 
-type Coverage record "一个真实覆盖点：代码块的原始位置，或设计步骤、分支、声明错误" {
+type Coverage record "一个覆盖点：代码块在源码中的位置，或者流程中走到的步骤、分支，或者抛出的声明的错误" {
   field kind: string
   field node: string
   field path: string
@@ -88,7 +88,7 @@ type TraceEvent record "由 Go 运行轨迹得到的函数进入、退出、发�
   field detail: string
 }
 
-type CaseResult record "一次输入的最终结果；缩减尝试不累计成额外业务执行，只有真实结果产生覆盖" {
+type CaseResult record "一个输入的最终结果：所属的性质或流程、用例的形式和录制原因、冻结的输入及其哈希、是否通过或被拒绝、覆盖、轨迹、观察、范围外的差异和诊断；缩小反例时的尝试不算作结果" {
   field id: string
   field check: string
   field form: string
@@ -104,17 +104,17 @@ type CaseResult record "一次输入的最终结果；缩减尝试不累计成�
   field diagnostics: list<diag.Diagnostic>
 }
 
-type CandidateEvaluation record "一次候选请求；预算耗尽没有结果，环境诊断与业务反例分开" {
+type CandidateEvaluation record "一个候选输入的执行结果：预算耗尽时没有结果，检查错误列在 diagnostics 中，与反例分开" {
   field result: optional<CaseResult>
   field exhausted: bool
   field diagnostics: list<diag.Diagnostic>
 }
 
-type CandidateRunner interface "已经编译的语言执行边界，每次重建输入，在独立边界执行一个候选" {
-  op evaluate(input: Input) -> CandidateEvaluation "真实执行并返回覆盖与轨迹，不能以累计覆盖替代当前候选"
+type CandidateRunner interface "编译好的驱动，每次重新构造输入，在单独的进程中执行一个候选输入" {
+  op evaluate(input: Input) -> CandidateEvaluation "执行 input 这一个候选输入，返回它自己的覆盖和轨迹，不含此前的候选累计的覆盖"
 }
 
-type RunResult record "一条性质或一个流程的运行结论：是否通过、有效执行数、拒绝的候选输入数、观察范围、范围外的差异，以及 ensure 不成立或有范围外的差异时的诊断" {
+type RunResult record "一条性质或一个流程的运行结论：是否通过、有效执行数、拒绝的候选输入数、观察范围、范围外的差异、ensure 不成立或有范围外的差异时的诊断、各用例的结果，以及代码、分支和错误覆盖点的总数" {
   field id: string
   field passed: bool
   field accepted: int
@@ -128,7 +128,7 @@ type RunResult record "一条性质或一个流程的运行结论：是否通过
   field errorTotal: int
 }
 
-type RunReport record "一次运行中各性质和流程的结论，以及不属于任何一条结论的诊断：工具失败和检查错误（观察失败、前提求值错误、域外输入、没有有效执行）" {
+type RunReport record "一次运行的报告：各性质和流程的结论，不属于任何一条结论的诊断（工具失败和检查错误），以及格式版本、执行输入哈希、提交、工作区是否有改动、时间和运行方式" {
   field results: list<RunResult>
   field diagnostics: list<diag.Diagnostic>
   field version: int

@@ -149,7 +149,7 @@ type Comparison record "两张图的差别：新增、删除和修改的节点�
   field edges: list<EdgeChange>
 }
 
-type FingerprintSample record "同一输入图、添加运行产物的图、修改源位置的图，以及三条受控变化的边" {
+type FingerprintSample record "fingerprints-separate-inputs-and-artifacts 的输入：一张图，加上运行产物的同一张图，改了源位置的同一张图，以及一条边、只改出处的这条边和改了属性的这条边" {
   field base: Graph
   field artifacts: Graph
   field moved: Graph
@@ -160,9 +160,9 @@ type FingerprintSample record "同一输入图、添加运行产物的图、修�
 
 op newGraph() -> Graph "一张空图"
 
-op edgeDigest(edge: Edge) -> string pure "边的身份与属性的规范 SHA-256，与 compare 判断边修改的含义相同，不含出处"
+op edgeDigest(edge: Edge) -> string pure "边的种类、起点、终点和属性的规范编码的 SHA-256，不含出处，与 compare 判断边是否修改的依据相同"
 
-op inputDigest(g: Graph) -> string pure "执行输入图的 SHA-256，排除 evidence/review、全部 case、本工具生成代码及关联边；保留其余节点和边及其位置，避免把旧覆盖行套到新源码"
+op inputDigest(g: Graph) -> string pure "执行输入哈希：g 中决定执行的部分的 SHA-256，不含证据层、评审层、用例、生成文件中的代码及与它们相连的边，含其余节点和边及其出处，所以源码移动之后旧的覆盖行号不再适用"
 
 op compare(base: Graph, head: Graph) -> Comparison pure "按标识对齐两张图的节点和边（model.md §8），列出 head 相对 base 新增、删除和修改的项：节点的修改是内容哈希不同，边的修改是属性不同"
 
@@ -221,8 +221,8 @@ property compare-with-itself-is-empty postcondition "一张图与它自己比较
   about compare
   forall content: Fragment generated "零至八个标识互不相同的节点，以及零至十二条两端都在其中、彼此不同的边：标识是 a、b、.、#、- 组成的一至四个字符，种类、层和来源任取，形式、摘要和属性取自含引号、< 和中文的短文字，可以有空的属性列表和自环，节点都不显著"
   forall rotation: int
-  forall snapshot: Graph generated "按 content 的原始次序建图，不读取比较结果"
-  forall reordered: Graph generated "按 rotation 轮换相同节点和边的插入次序建图"
+  forall snapshot: Graph generated "按 content 中的次序把节点和边加入一张图"
+  forall reordered: Graph generated "把同一组节点和边按 rotation 轮换次序后加入另一张图"
   where rotation in 0..1000
   call compare(snapshot, reordered)
   ensure size(result.nodes) == 0 and size(result.edges) == 0
@@ -238,9 +238,9 @@ property node-sequence-keeps-index transition "依次调用 addNode 之后，图
   ensure all(n in snapshot.nodes(): snapshot.node(n.id) == n)
 }
 
-property fingerprints-separate-inputs-and-artifacts postcondition "运行产物不改变执行输入摘要，源位置变化改变它；边的出处不参与内容摘要，属性变化参与" {
+property fingerprints-separate-inputs-and-artifacts postcondition "执行输入哈希不随运行产物改变而随源位置改变，edgeDigest 不随出处改变而随属性改变" {
   about inputDigest, edgeDigest
-  forall sample: FingerprintSample generated "独立构造基础图、运行产物、源位置与边属性变化，不调用被测摘要计算预期"
+  forall sample: FingerprintSample generated "一张随机的图，加上证据或评审节点的同一张图，移动了一处源位置的同一张图，以及一条边和它只改出处、只改属性的两个变体"
   call inputDigest(sample.base)
   ensure size(result) == 64
   ensure result == inputDigest(sample.artifacts)

@@ -62,7 +62,7 @@ type BodySample record "implementation-content-is-normalized 的输入：函数�
   field spaced: bool
 }
 
-type MeasurementSample record "可重建临时仓库的模型数据：数值、输入域、codec 状态及同步异步轨迹变体，不保存临时绝对路径" {
+type MeasurementSample record "measured-execution-keeps-real-evidence 的输入：一个数值 value 和一种情形 variant，谓词据此重建临时的 Go 仓库" {
   field value: int
   field variant: int
 }
@@ -89,10 +89,10 @@ property driver-modes-preserve-claims invariant "生成的驱动先回放用例�
   manual "需要生成驱动的 Go 源码，再用 go/types 检查并读取它的语法树，表达式不能处理 Go 源码"
 }
 
-property measured-execution-keeps-real-evidence invariant "通过真实生成和隔离 worker 运行模型输入；探索拒绝继续计数，完整保留有效输入，基本块映射到原始源码；codec 保持表示，别名错误不静默复制；同步与异步轨迹须恰符合流程，额外调用不被忽略" {
+property measured-execution-keeps-real-evidence invariant "Go 后端生成驱动并在隔离的进程中执行模型输入：被拒绝的候选输入照常计数，有效输入完整保留，基本块覆盖映射回原始源码，codec 保持表示，不能保持别名关系的输入报错，同步和异步的轨迹须恰好合乎流程，多出的调用也算不合" {
   about Backend
-  forall sample: MeasurementSample generated "可重建的合法回放、输入域拒绝、codec 私有状态、共享别名，以及同步、发布和额外异步调用的原始变体"
-  manual "从模型数据重建临时 Go 仓库并运行真实编译器和隔离进程，读取原始 profile、轨迹及报告逐项比较；这些环境生命周期尚不在表达式中，不提交手写 Test/Fuzz 或固定例子"
+  forall sample: MeasurementSample generated "value 取 -100 至 100，variant 取 0 至 7，选出八种情形之一：合法的回放、被前提拒绝的输入、codec 编码的私有状态、共享的别名，以及含同步调用、发布或多出的异步调用的流程"
+  manual "需要按 sample 重建临时的 Go 仓库，编译并在隔离的进程中运行，表达式不能读写文件或运行程序"
 }
 
 property generation-extraction-is-read-only invariant "普通抽取遇到旧生成测试中的类型错误照常失败，供生成用的抽取只把源码根目录中带生成标记、不是符号链接的测试文件读成只有包声明的文件，两种抽取都不改动磁盘" {

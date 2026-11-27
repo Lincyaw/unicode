@@ -42,8 +42,8 @@ op members(g: graph.Graph, ids: list<string>) -> map<string, list<Member>> "ids 
 property accepts-conforming-graph postcondition "合乎约束的图推导、检查之后没有诊断，每个声明项和依赖恰有一个 verified 状态" {
   about conform
   forall sample: Sample generated "一张随机的、合乎 design.md §5.3 全部约束的图：二至四个组件，各有类型、操作、性质、具名观察、流程和落实它们的 Go 代码，有时带外部系统、接口的实现和继承"
-  forall snapshot: graph.Graph generated "由 sample.fragment 建图并推导，保留原始输入"
-  forall declaredIds: list<string> generated "从 snapshot 的声明项与依赖提取完整标识集合，不读取检查结果"
+  forall snapshot: graph.Graph generated "把 sample.fragment 加入一张新图并推导"
+  forall declaredIds: list<string> generated "snapshot 中全部声明项和 depends 边的标识，不经 conform 取得"
   call conform(snapshot)
   ensure size(result.diagnostics) == 0
   ensure size(declaredIds) > 0

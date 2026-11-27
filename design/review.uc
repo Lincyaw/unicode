@@ -1,10 +1,10 @@
-component review "评审记录：本地持久化、按内容判断有效性、列出当前及比较中的待审项" {
+component review "评审记录：保存在本地，按内容判断是否有效，列出当前和比较中待审的项" {
   focus core
   paths "internal/review/**"
   uses graph, diag
 }
 
-type Target record "恰指向一个节点或一条边；removed 为比较中已经删除的项" {
+type Target record "评审的目标：恰是一个节点 node 或一条边（edgeKind、from、to），removed 表示它是比较中已经删除的项" {
   field node: string
   field edgeKind: string
   field from: string
@@ -12,7 +12,7 @@ type Target record "恰指向一个节点或一条边；removed 为比较中已�
   field removed: bool
 }
 
-type Record record "不可变的评审记录，id 是除 id 外全部字段规范 JSON 的 SHA-256" {
+type Record record "一条不可变的评审记录：格式版本、评审者、时间、执行输入哈希、提交、工作区是否有改动、目标、内容指纹、结论和意见，id 是其余字段的规范 JSON 的 SHA-256" {
   field version: int
   field id: string
   field reviewer: string
@@ -33,17 +33,17 @@ type Item record "一个目标当前的内容指纹和评审状态；record 是�
   field record: optional<Record>
 }
 
-type Loaded record "读取评审存储的记录和定位诊断" {
+type Loaded record "read 的结果：评审存储中的记录和诊断" {
   field records: list<Record>
   field diagnostics: list<diag.Diagnostic>
 }
 
-type Evaluation record "按目标身份排序的全部候选及诊断；不把评过等同于批准" {
+type Evaluation record "evaluate 的结果：按目标排序的全部候选项及其评审状态，以及诊断；评过不等于批准" {
   field items: list<Item>
   field diagnostics: list<diag.Diagnostic>
 }
 
-type Request record "记录评审的输入；expectedDigest 非空时拒绝已经变化的目标" {
+type Request record "write 的请求：目标、评审者、结论、意见、提交和工作区是否有改动；expectedDigest 不为空而目标的指纹已变时拒绝写入" {
   field target: Target
   field reviewer: string
   field decision: string
@@ -53,17 +53,17 @@ type Request record "记录评审的输入；expectedDigest 非空时拒绝已�
   field dirty: bool
 }
 
-type Written record "写出的记录或定位诊断；有诊断时没有新记录" {
+type Written record "write 的结果：写出的记录或者诊断，有诊断时没有新记录" {
   field record: optional<Record>
   field diagnostics: list<diag.Diagnostic>
 }
 
-type Attached record "评审层节点及其所指目标的 about 边；不改动输入图" {
+type Attached record "attach 的结果：评审层的节点和指向目标的 about 边，输入的图不改动" {
   field fragment: graph.Fragment
   field diagnostics: list<diag.Diagnostic>
 }
 
-type Sample record "独立构造节点、边、修改和记录，并给出完整候选与待审目标" {
+type Sample record "review 各性质的输入：一张图、可选的基准图、一组评审记录，以及应有的全部候选目标和待审目标" {
   field graph: graph.Graph
   field base: optional<graph.Graph>
   field records: list<Record>
@@ -71,17 +71,17 @@ type Sample record "独立构造节点、边、修改和记录，并给出完整
   field pending: list<Target>
 }
 
-op read(root: string) -> Loaded "读取 .unicode/reviews 下不可变 JSON；缺失为空，损坏、非法版本或符号链接为错误"
+op read(root: string) -> Loaded "读取 .unicode/reviews 下的不可变记录，目录不存在时为空，损坏的记录、不认识的版本或符号链接是错误"
 
-op evaluate(g: graph.Graph, base: optional<graph.Graph>, records: list<Record>) -> Evaluation pure "没有基准时列出当前设计和非生成代码的节点及边；有基准时列出新增、修改、删除和因人工谓词或观察适配器变化失效的性质"
+op evaluate(g: graph.Graph, base: optional<graph.Graph>, records: list<Record>) -> Evaluation pure "没有 base 时列出当前设计和生成文件之外的代码的节点和边，有 base 时列出新增、修改和删除的项，以及因手写谓词或观察适配器变化而须重新评审的性质"
 
-op write(root: string, g: graph.Graph, base: optional<graph.Graph>, request: Request) -> Written "校验目标与预期指纹，写入不可变记录；approved 和 changes-requested 都表示该内容已经评过，结论独立保存"
+op write(root: string, g: graph.Graph, base: optional<graph.Graph>, request: Request) -> Written "核对目标和 expectedDigest 后写入一条不可变记录；结论 approved 和 changes-requested 都表示这份内容已经评过"
 
-op attach(g: graph.Graph, records: list<Record>) -> Attached pure "生成 review 层节点；节点目标用 about 指向该节点，边目标用属性保存完整身份并指向仍存在的端点"
+op attach(g: graph.Graph, records: list<Record>) -> Attached pure "为记录生成评审层的节点：目标是节点时用 about 边指向它，目标是边时在属性中保存边的完整标识，并用 about 边指向仍存在的端点"
 
-property evaluation-follows-content postcondition "候选和待审集合与独立构造的内容变化相符；已评项持有相同指纹的有效记录" {
+property evaluation-follows-content postcondition "evaluate 列出的候选和待审项恰是 sample 给出的那些，状态为 reviewed 的项带指纹相同的记录" {
   about evaluate
-  forall sample: Sample generated "节点和边的新增、修改、删除、恢复，人工谓词与观察适配器变化，以及普通无关函数变化；独立保留目标与待审集合"
+  forall sample: Sample generated "一张图和可选的基准图：节点和边有新增、修改、删除和恢复，手写谓词或观察适配器有变化，也有无关函数的变化，附应有的候选和待审目标"
   call evaluate(sample.graph, sample.base, sample.records)
   ensure size(result.diagnostics) == 0
   ensure size(result.items) == size(sample.targets)
@@ -91,8 +91,8 @@ property evaluation-follows-content postcondition "候选和待审集合与独�
   ensure all(item in result.items: item.state == "reviewed" implies item.record != none and item.record.digest == item.digest)
 }
 
-property records-preserve-history invariant "相同记录重复读取不改变内容，不同记录不覆盖；缺失存储为空，损坏记录与符号链接有完整定位诊断" {
+property records-preserve-history invariant "写过的记录再读出时内容不变，不同的记录互不覆盖，存储不存在时读出为空，损坏的记录和符号链接给出诊断" {
   about read, write
-  forall sample: Sample generated "合法评审记录、重复记录及损坏、非法路径、符号链接等文件树变体"
-  manual "准备并读取实际文件树，独立比较全部原始字节和记录，不把文件系统判定包装为布尔操作"
+  forall sample: Sample generated "合法的评审记录和重复的记录，以及含损坏文件、不合规的路径或符号链接的文件树"
+  manual "需要在临时目录中写出并读回文件树，表达式不能读写文件"
 }
