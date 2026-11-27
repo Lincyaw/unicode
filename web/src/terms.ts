@@ -1,4 +1,4 @@
-import type { ChangeKind, ClosedTab, DriverMode, NodeKind, Status, ViewKind } from './api/types';
+import type { ChangeKind, ClosedTab, DriverMode, EdgeKind, NodeKind, Status, ViewKind } from './api/types';
 
 /*
  * Every word the pages show, in formal Chinese, after the term table of docs/design.md §7.5. A concept has one word
@@ -90,6 +90,115 @@ const CODE_FORMS: Record<string, string> = {
   package: '包',
   file: '文件',
 };
+
+/** The forms of a step (docs/model.md §3), which a step's label and its hint name. */
+const STEP_FORMS: Record<string, string> = {
+  call: '调用',
+  send: '发送',
+  emit: '发布',
+  async: '异步',
+  alt: '分支',
+  opt: '可选',
+  loop: '循环',
+  on: '错误处理',
+};
+
+/** The forms of a property (docs/model.md §3.3): where its claim holds. */
+const PROPERTY_FORMS: Record<string, string> = {
+  invariant: '不变式',
+  postcondition: '后置条件',
+  relation: '关系',
+  transition: '状态转移',
+};
+
+/**
+ * The word for a node's form where a reader tells a kind's forms apart, a step's and a property's; undefined for the
+ * other kinds, whose form kindWord already says. A form the term table lacks is an error.
+ */
+export function formWord(kind: NodeKind, form: string): string | undefined {
+  const forms = kind === 'step' ? STEP_FORMS : kind === 'property' ? PROPERTY_FORMS : undefined;
+  if (forms === undefined) {
+    return undefined;
+  }
+  const word = forms[form];
+  if (word === undefined) {
+    throw new Error(`The term table has no word for the ${kind} form ${form} (docs/design.md §7.5)`);
+  }
+  return word;
+}
+
+/** What an edge is called, by its kind (docs/model.md §4). */
+export const EDGE_KINDS: Record<EdgeKind, string> = {
+  contains: '包含',
+  uses: '声明的依赖',
+  extends: '继承',
+  implements: '实现接口',
+  refers: '引用',
+  subscribes: '订阅',
+  imports: '导入',
+  calls: '调用',
+  from: '发起',
+  emits: '发布',
+  handles: '处理',
+  about: '约束',
+  realizes: '实现',
+  checks: '检查',
+  generates: '生成',
+  observes: '观察',
+  substitutes: '替身',
+  owns: '归属',
+  depends: '依赖',
+  traces: '代码追溯',
+  exercises: '可达',
+  reaches: '经由细节函数的调用',
+  covers: '覆盖',
+};
+
+/** The attributes a node's change names (docs/design.md §5.2), by their keys. */
+const ATTRIBUTE_NAMES: Record<string, string> = {
+  focus: '关注级别',
+  labels: '标签',
+  paths: '路径',
+  notations: '记法',
+  roots: '根目录',
+  language: '语言',
+  path: '路径',
+  fields: '字段',
+  values: '取值',
+  signature: '签名',
+  pure: '纯操作',
+  symbols: '符号',
+  limits: '限定',
+  call: '被测调用',
+  within: '时限',
+  ensure: '断言',
+  manual: '人工性质的原因',
+  requires: '前提',
+  observe: '观察范围',
+  changes: '允许变化的范围',
+  type: '快照类型',
+  inputs: '输入',
+  index: '序号',
+  label: '分支标签',
+  args: '实参',
+  reason: '录制原因',
+  name: '名称',
+  declaration: '声明',
+  testKind: '测试类别',
+  stub: '骨架',
+  body: '函数体',
+  generated: '生成',
+  globals: '顶层声明',
+};
+
+/** The word for an attribute's key; a key the term table lacks is an error. */
+export function attributeName(key: string): string {
+  const name = ATTRIBUTE_NAMES[key];
+  if (name === undefined) {
+    throw new Error(`The term table has no word for the attribute ${key} (docs/design.md §5.2, §7.5)`);
+  }
+  return name;
+}
 
 export const SECTIONS = {
   attributes: '属性',
