@@ -92,6 +92,23 @@ func existingCheck(g *graph.Graph, id string) bool {
 	return node != nil && node.Layer == graph.LayerDesign && (node.Kind == graph.NodeKindProperty || node.Kind == graph.NodeKindFlow)
 }
 
+func batchBusinessFailure(result lang.RunResult, environment []diag.Diagnostic) bool {
+	if result.Passed || result.Accepted <= 0 {
+		return false
+	}
+	for _, problem := range result.Diagnostics {
+		associated := slices.ContainsFunc(environment, func(top diag.Diagnostic) bool { return top.Code == problem.Code && top.Subject == problem.Subject })
+		if associated {
+			continue
+		}
+		switch problem.Code {
+		case "lang.golang.ensure-failed", "lang.golang.frame-violation", "lang.golang.purity-violation", "lang.golang.undeclared-error", "lang.golang.predicate-failed", "lang.golang.call-panicked", "lang.golang.within-exceeded":
+			return true
+		}
+	}
+	return false
+}
+
 type coverKey struct{ from, to string }
 
 // Attach projects history and only attributes coverage to current, equal model
@@ -130,7 +147,7 @@ func Attach(g *graph.Graph, reports []lang.RunReport) Attached {
 		for _, result := range report.Results {
 			sourceFresh := fresh && existingCheck(g, result.Id)
 			observed := map[string]bool{}
-			failed := len(result.Diagnostics) > 0 && !result.Passed && result.Accepted > 0
+			failed := batchBusinessFailure(result, report.Diagnostics)
 			for _, candidate := range result.Cases {
 				if !candidate.Rejected {
 					observed[candidate.InputHash] = true
