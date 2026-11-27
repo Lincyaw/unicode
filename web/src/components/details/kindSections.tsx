@@ -3,11 +3,12 @@ import type { Entity, Neighbor, Node, RunResult } from '../../api/types';
 import { ABOUT, CASE_SOURCES, DIAGNOSTIC_WORDS, HISTORY, SECTIONS } from '../../terms';
 import { ICON_SMALL, ICON_STROKE } from '../../ui/hint';
 import { Badge } from '../marks/Badge';
-import { opLine, placeOf, relative, scopeOf, shortPath, stepLine, stepName } from '../marks/format';
+import { fileOf, opLine, placeOf, relative, scopeOf, shortPath, stepLine, stepName, typeParts } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { caseSource } from './nodeWords';
-import { ChipList, CodePanel, DiagnosticTag, Facts, NodeLink, NodeRow, Section, SignaturePanel, ViaBadge } from './sections';
+import { useFolded } from './folded';
+import { ChipList, CodePanel, DiagnosticTag, Facts, MoreBadge, NodeLink, NodeRow, Section, SignaturePanel, SymbolLine, TypeLinks, ViaBadge } from './sections';
 import styles from './details.module.css';
 
 /*
@@ -34,12 +35,12 @@ function place(node: Node): string {
   return placeOf(node.origin);
 }
 
-/** The step indexes of a flow's steps a node takes part in, grouped by flow. */
-function flowsOf(steps: Node[]): { flow: Node; indexes: string[] }[] {
+/** The steps of each flow a node takes part in, grouped by flow. */
+function flowsOf(steps: Node[]): { flow: Node; steps: Node[] }[] {
   const byFlow = Map.groupBy(steps, step => step.step?.flow ?? '');
   return [...byFlow].map(([flow, group]) => ({
     flow: { ...(group[0] as Node), id: flow, title: flow.split('.').at(-1) ?? flow, kind: 'flow', form: 'flow', status: undefined },
-    indexes: group.map(step => step.title),
+    steps: group,
   }));
 }
 
@@ -50,8 +51,8 @@ export function FlowsSection({ entity }: { entity: Entity }) {
   }
   return (
     <Section title={SECTIONS.flows}>
-      {flowsOf(entity.flows).map(({ flow, indexes }) => (
-        <NodeRow key={flow.id} node={flow} icon dot={false} tone="link" trailing={<span className={styles.indexes}>{indexes.join('   ')}</span>} />
+      {flowsOf(entity.flows).map(({ flow, steps }) => (
+        <NodeRow key={flow.id} node={flow} icon dot={false} tone="link" trailing={<span className={styles.indexes}>{steps.map(step => <NodeLink key={step.id} node={step} tone="inherit" />)}</span>} />
       ))}
     </Section>
   );
@@ -106,7 +107,7 @@ export function ContainerSections({ entity }: { entity: Entity }) {
           {undeclared.map(({ edge }) => (
             <div key={`${edge.from} ${edge.to}`} className={styles.row} data-tone="warning">
               <TriangleAlert size={ICON_SMALL} strokeWidth={ICON_STROKE} aria-hidden="true" />
-              <span className={styles.code}>{edge.from} -&gt; {edge.to}</span>
+              <span className={styles.code}><NodeLink node={{ id: edge.from, title: edge.from }} tone="inherit" /> -&gt; <NodeLink node={{ id: edge.to, title: edge.to }} tone="inherit" /></span>
               <span className={styles.trailing}>
                 <Badge tone="warning">{DIAGNOSTIC_WORDS.undeclared} {(edge.attrs.imports?.length ?? 0) + (edge.attrs.calls?.length ?? 0)}</Badge>
               </span>
@@ -115,14 +116,20 @@ export function ContainerSections({ entity }: { entity: Entity }) {
         </Section>
       )}
       {detail && detail.contents.length > 0 && <Section title={SECTIONS.contents}><ChipList nodes={detail.contents} limit={PREVIEW_LIMIT} /></Section>}
-      {files.length > 0 && (
-        <Section title={SECTIONS.code}>
-          {files.slice(0, FILE_LIMIT).map(file => <NodeRow key={file.id} node={file} icon dot={false} tone="muted" label={shortPath(file.title)} />)}
-          {files.length > FILE_LIMIT && <Badge tone="neutral" icon={FileCode}>+{files.length - FILE_LIMIT}</Badge>}
-        </Section>
-      )}
+      {files.length > 0 && <FilesSection files={files} />}
       <FlowsSection entity={entity} />
     </>
+  );
+}
+
+/** A component's code files, past FILE_LIMIT a +n that unfolds the rest. */
+function FilesSection({ files }: { files: Node[] }) {
+  const { shown, more, unfold } = useFolded(files, FILE_LIMIT);
+  return (
+    <Section title={SECTIONS.code}>
+      {shown.map(file => <NodeRow key={file.id} node={file} icon dot={false} tone="muted" label={shortPath(file.title)} />)}
+      {more > 0 && <MoreBadge count={more} icon={FileCode} onClick={unfold} />}
+    </Section>
   );
 }
 
@@ -164,7 +171,7 @@ export function TypeSections({ entity, preview }: { entity: Entity; preview: boo
           {members.map(member => (
             <div key={member.name} className={styles.field} data-warn={member.status === 'contradicted' || member.status === 'missing'}>
               <span>{member.name}</span>
-              <span className={styles.fieldType}>{relative(member.type ?? member.codeType ?? '', scope)}</span>
+              <span className={styles.fieldType}><TypeLinks parts={typeParts(member.type ?? member.codeType ?? '', scope, member.refers)} /></span>
             </div>
           ))}
         </Section>
@@ -243,8 +250,8 @@ export function StepSections({ entity }: { entity: Entity }) {
       {(info?.sender || info?.receiver) && (
         <Section title={SECTIONS.calls}>
           <Facts rows={[
-            ...(info.sender ? [{ label: SECTIONS.caller, value: info.sender.id }] : []),
-            ...(info.receiver ? [{ label: SECTIONS.callee, value: info.receiver.id }] : []),
+            ...(info.sender ? [{ label: SECTIONS.caller, value: <NodeLink node={info.sender} label={info.sender.id} tone="main" /> }] : []),
+            ...(info.receiver ? [{ label: SECTIONS.callee, value: <NodeLink node={info.receiver} label={info.receiver.id} tone="main" /> }] : []),
             ...((node.attrs.args ?? []).length > 0 ? [{ label: SECTIONS.args, value: (node.attrs.args ?? []).join(', ') }] : []),
           ]} />
         </Section>
@@ -333,7 +340,7 @@ export function CaseSections({ entity }: { entity: Entity }) {
 export function CheckedSections({ entity }: { entity: Entity }) {
   const { node } = entity;
   const checked = entity.flow ?? entity.property;
-  const inputs = [...(node.attrs.symbols ?? []).map(symbol => `forall ${symbol}`), ...(node.attrs.limits ?? []).map(limit => `  where ${limit}`)];
+  const inputs = [...(node.attrs.symbols ?? []).map(symbol => <SymbolLine key={symbol} symbol={symbol} />), ...(node.attrs.limits ?? []).map(limit => `  where ${limit}`)];
   return (
     <>
       {entity.property && entity.property.about.length > 0 && <Section title={SECTIONS.about}><ChipList nodes={entity.property.about} /></Section>}
@@ -359,6 +366,7 @@ export function CheckedSections({ entity }: { entity: Entity }) {
 
 /** A code element's sections (Figma 11): what it realizes, where it is, its declaration, callers, callees and details. */
 export function CodeSections({ entity }: { entity: Entity }) {
+  const links = useLinks();
   const { node } = entity;
   const detail = entity.code;
   const bindings = node.bindings ?? [];
@@ -370,7 +378,7 @@ export function CodeSections({ entity }: { entity: Entity }) {
         </Section>
       )}
       <Section title={SECTIONS.location}>
-        <Facts rows={[{ label: SECTIONS.file, value: node.origin.path }, { label: SECTIONS.line, value: String(node.origin.line) }]} />
+        <Facts rows={[{ label: SECTIONS.file, value: <NodeLink node={{ id: fileOf(node.origin.path), title: node.origin.path }} tone="main" /> }, { label: SECTIONS.line, value: String(node.origin.line) }]} />
       </Section>
       {detail?.declaration !== undefined && <Section title={SECTIONS.signature}><CodePanel lines={[detail.declaration]} /></Section>}
       {detail?.owner && <Section title={SECTIONS.owner}><ChipList nodes={[detail.owner]} /></Section>}
@@ -388,7 +396,7 @@ export function CodeSections({ entity }: { entity: Entity }) {
       {detail && detail.details.length > 0 && (
         <Section title={SECTIONS.details} about={ABOUT.details}>
           <div className={styles.chips}>
-            {detail.details.map(fn => <Badge key={fn.id} tone="neutral" mono><KindIcon node={fn} size={12} />{fn.title}</Badge>)}
+            {detail.details.map(fn => <Badge key={fn.id} tone="neutral" mono to={links.entityHref(fn.id)}><KindIcon node={fn} size={12} />{fn.title}</Badge>)}
           </div>
         </Section>
       )}

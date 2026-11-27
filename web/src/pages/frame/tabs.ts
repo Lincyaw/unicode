@@ -1,6 +1,7 @@
 import { useOptionalEntity, useSnapshot, useTree } from '../../api/client';
 import { viewKindValues } from '../../api/schema';
 import type { Entity, Node, TreeNode, ViewKind } from '../../api/types';
+import { fileOf } from '../../components/marks/format';
 import type { TabLink } from '../../components/shell/ViewTabs';
 import { requestedView, type ViewAddress } from '../../routes/address';
 import { TAB_REASONS } from '../../terms';
@@ -64,10 +65,10 @@ function nearest(places: TreeNode[], test: (node: Node) => boolean): Node | unde
 function codeFile(source: Entity): string | undefined {
   const { node } = source;
   if (node.layer === 'code') {
-    return node.form === 'file' ? node.id : node.kind === 'container' ? source.container?.files[0]?.id : `file:${node.origin.path}`;
+    return node.form === 'file' ? node.id : node.kind === 'container' ? source.container?.files[0]?.id : fileOf(node.origin.path);
   }
   const realized = source.realizedBy[0]?.node;
-  return realized ? `file:${realized.origin.path}` : source.container?.files[0]?.id;
+  return realized ? fileOf(realized.origin.path) : source.container?.files[0]?.id;
 }
 
 const isFlow = (node: Node) => node.kind === 'flow';

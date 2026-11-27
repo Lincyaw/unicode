@@ -41,7 +41,9 @@
 .arrow[data-tone="faint"] { stroke: var(--text-faint); }
 .hit { fill: none; stroke: transparent; stroke-width: var(--space-3); pointer-events: stroke; cursor: pointer; }
 
-.marker { position: absolute; display: flex; align-items: center; gap: var(--space-1); transform: translate(-50%, -50%); white-space: nowrap; }
+/* A marker never takes a click meant for the box under it; only the controls it holds, such as a hint, take clicks. */
+.marker { position: absolute; display: flex; align-items: center; gap: var(--space-1); transform: translate(-50%, -50%); white-space: nowrap; pointer-events: none; }
+.marker :is(a, button) { pointer-events: auto; }
 .marker[data-side="right"] { transform: translate(var(--space-2), -50%); }
 .marker[data-side="left"] { transform: translate(calc(-100% - var(--space-2)), -50%); }
 .marker[data-side="above"] { transform: translate(-50%, calc(-100% - var(--space-1))); }

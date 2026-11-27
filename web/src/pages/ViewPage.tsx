@@ -38,7 +38,8 @@ function ViewHeader({ address, links }: { address: ViewAddress; links: NodeLinks
   const input = useOptionalEntity(view.input.id);
   const tabs = tabLinks(useTabTargets([selection, input]), (kind, target) => viewPath(kind === address.kind ? address : { ...target, base: address.base }));
   const onSystem = view.input.form === 'system';
-  const crumbs = onSystem ? [system.title, VIEW_WORD] : [...view.ancestors.map(node => node.title), kindWord(view.input.kind, view.input.form, view.input.layer)];
+  const kind = kindWord(view.input.kind, view.input.form, view.input.layer);
+  const crumbs = [...(onSystem ? [system] : view.ancestors).map(node => ({ label: node.title, to: links.entityHref(node.id) })), { label: onSystem ? VIEW_WORD : kind }];
   return (
     <PageHeader
       crumbs={crumbs}

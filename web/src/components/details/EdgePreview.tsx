@@ -6,7 +6,7 @@ import { messageOf, placeOf, stepName } from '../marks/format';
 import { useLinks } from '../marks/links';
 import { StatusDot } from '../marks/StatusDot';
 import { statusWord } from './nodeWords';
-import { DiagnosticTag, NodeRow, Section } from './sections';
+import { DiagnosticTag, NodeLink, NodeRow, Section } from './sections';
 import styles from './details.module.css';
 import { ICON_SIZE, ICON_STROKE, InfoHint } from '../../ui/hint';
 
@@ -29,7 +29,7 @@ export function EdgePreview({ edge }: { edge: EdgeEntity }) {
           <span className={styles.identity}>{edge.edge.kind}</span>
           <InfoHint label={edge.edge.kind}>{`${edge.edge.origin.path}:${edge.edge.origin.line}`}</InfoHint>
         </div>
-        <p className={styles.codeLine}>{fromNode.title} -&gt; {toNode.title}</p>
+        <p className={styles.codeLine}><NodeLink node={fromNode} tone="inherit" /> -&gt; <NodeLink node={toNode} tone="inherit" /></p>
       </div>
       {edge.nodes.length > 0 && (
         <Section title={edge.edge.kind === 'reaches' ? SECTIONS.via : SECTIONS.imports} about={edge.edge.kind === 'reaches' ? ABOUT.reachesCount : undefined}>

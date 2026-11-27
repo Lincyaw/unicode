@@ -30,10 +30,11 @@ export interface TypePart {
 const REFERENCE = /[A-Za-z_][\w-]*(?:\.[A-Za-z_][\w-]*)+/g;
 
 /**
- * A written type or signature as parts: each reference it makes is a part of its own, written relative to `scope`.
- * With `refs`, only those identities are references (a field's `refers`); otherwise every dotted identity is.
+ * A written type or signature as parts: each reference it makes is a part of its own, written relative to `scope` when
+ * one is given. With `refs`, only those identities are references (a field's `refers`); otherwise every dotted identity is.
  */
-export function typeParts(text: string, scope: string, refs?: readonly string[]): TypePart[] {
+export function typeParts(text: string, scope?: string, refs?: readonly string[]): TypePart[] {
+  const written = (part: string) => (scope === undefined ? part : relative(part, scope));
   const parts: TypePart[] = [];
   let at = 0;
   for (const match of text.matchAll(REFERENCE)) {
@@ -42,13 +43,13 @@ export function typeParts(text: string, scope: string, refs?: readonly string[])
       continue;
     }
     if (match.index > at) {
-      parts.push({ text: relative(text.slice(at, match.index), scope) });
+      parts.push({ text: written(text.slice(at, match.index)) });
     }
-    parts.push({ text: relative(id, scope), id });
+    parts.push({ text: written(id), id });
     at = match.index + id.length;
   }
   if (at < text.length) {
-    parts.push({ text: relative(text.slice(at), scope) });
+    parts.push({ text: written(text.slice(at)) });
   }
   return parts;
 }
@@ -63,10 +64,11 @@ export function opLine(op: Pick<Node, 'id' | 'title' | 'attrs'>): string {
   return `${op.title}${signatureOf(op)}`;
 }
 
-/** The signature split at `raises`, as a signature panel shows it on two lines. */
-export function signatureParts(op: Pick<Node, 'id' | 'title' | 'attrs'>): { call: string; raises?: string } {
-  const [call, raises] = opLine(op).split(' raises ');
-  return { call: call ?? '', raises };
+/** The signature's call and what it raises, as parts whose references are apart, relative to the operation's component. */
+export function signatureTypes(op: Pick<Node, 'id' | 'attrs'>): { call: TypePart[]; raises?: TypePart[] } {
+  const scope = scopeOf(op.id);
+  const [call, raises] = (op.attrs.signature?.[0] ?? '()').split(' raises ');
+  return { call: typeParts(call ?? '', scope), raises: raises === undefined ? undefined : typeParts(raises, scope) };
 }
 
 /** A field written `name: type`, split into its name and its type. */
@@ -110,6 +112,11 @@ export function stepLine(step: Pick<Node, 'id' | 'form' | 'attrs'> & { step?: St
 /** What a step calls or emits, as a message on a lifeline or a box of an activity reads: `reserve(items)`. */
 export function messageOf(step: Pick<Node, 'form' | 'attrs'> & { step?: StepInfo }): string {
   return `${step.step?.target?.title ?? ''}(${argsOf(step)})`;
+}
+
+/** The identity of the code file at a path (docs/model.md §8). */
+export function fileOf(path: string): string {
+  return `file:${path}`;
 }
 
 /** The last segment of a path, or of a code identity's dotted name. */

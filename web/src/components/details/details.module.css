@@ -5,6 +5,8 @@
 .previewTop { display: grid; gap: var(--space-2); min-width: 0; }
 .previewHead { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .identity { flex: 1; min-width: 0; overflow: hidden; font: var(--type-mono-strong); text-overflow: ellipsis; white-space: nowrap; }
+.identityLink { color: var(--text-main); }
+.identityLink:hover { text-decoration: underline; text-underline-offset: var(--space-px); }
 .enter { display: grid; place-items: center; color: var(--accent-brand); transition: transform var(--duration-base) var(--ease-out); }
 .enter:hover { transform: translate(var(--space-px), calc(-1 * var(--space-px))); }
 .summary { color: var(--text-muted); font: var(--type-small); }
@@ -26,11 +28,12 @@
 .nodeLink { min-width: 0; overflow: hidden; color: var(--accent-info); font: var(--type-code); text-overflow: ellipsis; white-space: nowrap; }
 .nodeLink[data-tone="main"] { color: var(--text-main); }
 .nodeLink[data-tone="muted"] { color: var(--text-muted); }
+.nodeLink[data-tone="inherit"] { color: inherit; font: inherit; }
 .nodeLink:hover { text-decoration: underline; text-underline-offset: var(--space-px); }
 .code { font: var(--type-code); }
 .trailing { flex: none; margin-left: auto; color: var(--text-faint); font: var(--type-mono); }
 .row[data-tone] .trailing { color: var(--text-muted); font: var(--type-small); }
-.indexes { white-space: pre; }
+.indexes { display: inline-flex; gap: var(--space-3); }
 .stack { display: grid; gap: var(--space-2); }
 
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }

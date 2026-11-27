@@ -22,8 +22,8 @@
 .badge[data-tone="success"] { background: var(--bg-success-soft); color: var(--accent-success); }
 .badge[data-tone="info"] { background: var(--bg-info-soft); color: var(--accent-info); }
 .badge[data-tone="caution"] { background: var(--bg-warn-soft); color: var(--ink-warn); }
-a.badge { transition: box-shadow var(--duration-fast); }
-a.badge:hover { box-shadow: inset 0 0 0 var(--size-hairline) currentcolor; }
+a.badge, button.badge { transition: box-shadow var(--duration-fast); }
+a.badge:hover, button.badge:hover { box-shadow: inset 0 0 0 var(--size-hairline) currentcolor; }
 .mono { font: var(--type-mono); }
 
 /* A node as a chip (the prototype's node chip): default, selected, detail (dashed) and folded (muted). */

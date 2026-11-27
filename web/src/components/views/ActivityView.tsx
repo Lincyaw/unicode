@@ -203,7 +203,7 @@ export function ActivityView({ view }: { view: View }) {
       {drawn.pieces.filter(piece => piece.kind === 'async' || piece.kind === 'group').map(piece => 'step' in piece && (
         <Placed key={`box ${piece.step.id}`} rect={piece.rect} className={clsx(styles.activityBox, piece.kind === 'async' && styles.asyncBox)}>
           {piece.kind === 'async'
-            ? <span className={styles.asyncHead}><span className={styles.fragmentIndex}>{piece.step.title}</span>{label(piece.step, <><KindIcon node={piece.step} size={ICON_TINY} />async {relative(piece.step.step?.target?.id ?? '', scope)}</>, styles.fragmentTag)}</span>
+            ? <span className={styles.asyncHead}><span className={styles.fragmentIndex}><NodeRef id={piece.step.id}>{piece.step.title}</NodeRef></span>{label(piece.step, <><KindIcon node={piece.step} size={ICON_TINY} />async {relative(piece.step.step?.target?.id ?? '', scope)}</>, styles.fragmentTag)}</span>
             : <span className={styles.groupHead}>{label(piece.step, boxText(piece.step), styles.plainLabel)}</span>}
         </Placed>
       ))}
@@ -226,7 +226,7 @@ export function ActivityView({ view }: { view: View }) {
                 <Placed rect={piece.rect} className={styles.diamondSlot}>
                   <button type="button" className={styles.diamond} aria-pressed={links.selected === piece.step.id} aria-label={piece.step.id} onClick={() => links.select(piece.step.id)} onDoubleClick={() => links.open(piece.step.id)} />
                 </Placed>
-                <Placed rect={{ x: piece.rect.x - 40, y: piece.rect.y, width: 32, height: DIAMOND }} className={styles.decisionIndex}>{piece.step.title}</Placed>
+                <Placed rect={{ x: piece.rect.x - 40, y: piece.rect.y, width: 32, height: DIAMOND }} className={styles.decisionIndex}><NodeRef id={piece.step.id}>{piece.step.title}</NodeRef></Placed>
                 <Placed rect={piece.tag} className={styles.messageSlot}>
                   {label(piece.step, <><KindIcon node={piece.step} size={ICON_TINY} />on {relative(piece.step.step?.target?.id ?? '', scope)}</>, styles.fragmentTag)}
                 </Placed>

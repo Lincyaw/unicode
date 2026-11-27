@@ -36,7 +36,7 @@ function EntityHeader({ address, links }: { address: EntityAddress; links: NodeL
   const tabs = tabLinks(useTabTargets([entity]), (_kind, target) => viewPath({ ...target, base: address.base }));
   const { node } = entity;
   return (
-    <PageHeader crumbs={[...entity.ancestors.map(ancestor => ancestor.title), kindWord(node.kind, node.form, node.layer)]} title={displayName(node)}>
+    <PageHeader crumbs={[...entity.ancestors.map(ancestor => ({ label: ancestor.title, to: links.entityHref(ancestor.id) })), { label: kindWord(node.kind, node.form, node.layer) }]} title={displayName(node)}>
       <ViewTabs tabs={tabs} />
       <HeaderTools
         base={address.base}

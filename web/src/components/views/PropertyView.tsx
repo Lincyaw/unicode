@@ -6,12 +6,14 @@ import { ABOUT, ADEQUACY, CASE_COLUMNS, CONTROLS, DRIVER_MODES, OUTCOMES, SECTIO
 import { ICON_STROKE, ICON_TINY } from '../../ui/hint';
 import table from '../../ui/table.module.css';
 import { caseSource } from '../details/nodeWords';
-import { CodePanel, Section } from '../details/sections';
+import { CodePanel, Section, SymbolLine } from '../details/sections';
 import { Badge } from '../marks/Badge';
-import { placeOf, relative, scopeOf, signatureOf, statusOf } from '../marks/format';
+import { placeOf, relative, scopeOf, signatureTypes, statusOf } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
+import { NodeRef } from '../marks/NodeButton';
 import { NodeChip } from '../marks/NodeChip';
+import { TypeRefs } from '../canvas/cards';
 import { StatusDot } from '../marks/StatusDot';
 import styles from './property.module.css';
 
@@ -20,6 +22,18 @@ const DRIVER_ICONS: Record<DriverMode, LucideIcon> = { replay: Play, explore: Di
 /** The predicate's signature as its row reads: its name and its parameters, relative to the property's component. */
 function predicateLine(predicate: ViewNode, scope: string): string {
   return `${predicate.title}${relative(predicate.attrs.signature?.[0] ?? '()', scope)}`;
+}
+
+/** An operation the property constrains, as its line reads: its name and signature, the operation and each type a reference. */
+function AboutSignature({ op }: { op: ViewNode }) {
+  const { call, raises } = signatureTypes(op);
+  return (
+    <span className={styles.signature}>
+      <NodeRef id={op.id}>{op.title}</NodeRef>
+      <TypeRefs parts={call} />
+      {raises && <> raises <TypeRefs parts={raises} /></>}
+    </span>
+  );
 }
 
 function Adequacy({ label, value }: { label: string; value?: number }) {
@@ -42,7 +56,7 @@ function PropertyBlock({ property, view }: { property: ViewNode; view: View }) {
   const cases = view.edges.filter(edge => edge.kind === 'contains' && edge.from === property.id).flatMap(edge => byId.get(edge.to) ?? []).filter(node => node.kind === 'case');
   const predicate = view.edges.filter(edge => edge.kind === 'checks' && edge.to === property.id).flatMap(edge => byId.get(edge.from) ?? [])[0];
   const evidence = property.evidence;
-  const inputs = [...(property.attrs.symbols ?? []).map(symbol => `forall ${relative(symbol, scope)}`), ...(property.attrs.limits ?? []).map(limit => `  where ${limit}`)];
+  const inputs = [...(property.attrs.symbols ?? []).map(symbol => <SymbolLine key={symbol} symbol={symbol} scope={scope} />), ...(property.attrs.limits ?? []).map(limit => `  where ${limit}`)];
   return (
     <article className={styles.block}>
       <div className={styles.card}>
@@ -57,7 +71,7 @@ function PropertyBlock({ property, view }: { property: ViewNode; view: View }) {
           <div key={node.id} className={styles.about}>
             <span className="t-small c-muted">{SECTIONS.about}</span>
             <NodeChip node={node} label={node.id.split('.').slice(1).join('.')} />
-            {node.kind === 'op' && <span className={styles.signature}>{node.title}{signatureOf(node)}</span>}
+            {node.kind === 'op' && <AboutSignature op={node} />}
           </div>
         ))}
       </div>

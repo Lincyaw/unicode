@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { ArrowUpRight, Ellipsis, TriangleAlert } from 'lucide-react';
+import { ArrowUpRight, Ellipsis, TriangleAlert, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { requestedView } from '../../routes/address';
@@ -7,11 +7,12 @@ import type { CodeExcerpt, Diagnostic, Node, ViewRequest } from '../../api/types
 import { ABOUT, CONTROLS, kindWord, SECTIONS, VIEW_NAMES } from '../../terms';
 import { ICON_SIZE, ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
 import { Badge } from '../marks/Badge';
-import { displayName, signatureParts, statusOf } from '../marks/format';
+import { displayName, signatureTypes, statusOf, typeParts, type TypePart } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
 import { StatusDot } from '../marks/StatusDot';
+import { useFolded } from './folded';
 import styles from './details.module.css';
 
 /*
@@ -46,8 +47,8 @@ export function Facts({ rows }: { rows: { label: string; value: ReactNode }[] })
   );
 }
 
-/** How a link to a node reads: in the text colour, as a link, or muted like a path. */
-export type LinkTone = 'main' | 'link' | 'muted';
+/** How a link to a node reads: in the text colour, as a link, muted like a path, or as the text around it. */
+export type LinkTone = 'main' | 'link' | 'muted' | 'inherit';
 
 /** A link to a node's page, set in the code face. */
 export function NodeLink({ node, label, tone = 'link', className }: { node: Pick<Node, 'id' | 'title'>; label?: ReactNode; tone?: LinkTone; className?: string }) {
@@ -69,13 +70,29 @@ export function NodeRow({ node, label, icon = false, dot = true, tone = 'main', 
   );
 }
 
-/** Nodes as chips that link to their pages, named relative to `scope`; past `limit`, how many more. */
+/** A written type with each node it names as a link to that node's page, in the face of the text around it. */
+export function TypeLinks({ parts }: { parts: TypePart[] }) {
+  return parts.map((part, index) => (part.id === undefined ? part.text : <NodeLink key={index} node={{ id: part.id, title: part.text }} tone="inherit" />));
+}
+
+/** A property's symbol as its inputs read it, `forall name: type`, each type it names a link to its page. */
+export function SymbolLine({ symbol, scope }: { symbol: string; scope?: string }) {
+  const at = symbol.indexOf(':');
+  return at < 0 ? <>forall {symbol}</> : <>forall {symbol.slice(0, at + 1)}<TypeLinks parts={typeParts(symbol.slice(at + 1), scope)} /></>;
+}
+
+/** The +n that unfolds a list in place. */
+export function MoreBadge({ count, icon, onClick }: { count: number; icon?: LucideIcon; onClick: () => void }) {
+  return <Badge tone="neutral" icon={icon} label={CONTROLS.expandRow} onClick={onClick}>+{count}</Badge>;
+}
+
+/** Nodes as chips that link to their pages, named relative to `scope`; past `limit`, a +n that unfolds the rest. */
 export function ChipList({ nodes, limit, scope }: { nodes: Node[]; limit?: number; scope?: string }) {
-  const shown = limit === undefined ? nodes : nodes.slice(0, limit);
+  const { shown, more, unfold } = useFolded(nodes, limit);
   return (
     <div className={styles.chips}>
       {shown.map(node => <NodeChip key={node.id} node={node} label={displayName(node, scope)} status={statusOf(node)} link />)}
-      {shown.length < nodes.length && <Badge tone="neutral">+{nodes.length - shown.length}</Badge>}
+      {more > 0 && <MoreBadge count={more} onClick={unfold} />}
     </div>
   );
 }
@@ -89,10 +106,11 @@ export function CodePanel({ lines, className }: { lines: ReactNode[]; className?
   );
 }
 
-/** An operation's signature as a panel: the call and result, then what it raises. */
+/** An operation's signature as a panel: the call and result, then what it raises; the operation and each type a link to its page. */
 export function SignaturePanel({ op }: { op: Node }) {
-  const { call, raises } = signatureParts(op);
-  return <CodePanel lines={raises === undefined ? [call] : [call, <span key="raises" className="c-muted">raises {raises}</span>]} />;
+  const { call, raises } = signatureTypes(op);
+  const line = <><NodeLink node={op} tone="inherit" /><TypeLinks parts={call} /></>;
+  return <CodePanel lines={raises === undefined ? [line] : [line, <span key="raises" className="c-muted">raises <TypeLinks parts={raises} /></span>]} />;
 }
 
 /** Lines of a file, as the code section shows them. */
@@ -150,7 +168,7 @@ export function PreviewHead({ node, icon, label }: { node: Node; icon?: ReactNod
     <div className={styles.previewHead}>
       <StatusDot status={statusOf(node)} />
       {icon ?? <KindIcon node={node} size={ICON_SIZE} />}
-      <span className={styles.identity}>{label ?? node.id}</span>
+      <Link className={clsx(styles.identity, styles.identityLink)} to={links.entityHref(node.id)}>{label ?? node.id}</Link>
       <InfoHint label={node.id}>{ABOUT.card(kindWord(node.kind, node.form, node.layer), node.form, `${node.origin.path}:${node.origin.line}`)}</InfoHint>
       <Link className={styles.enter} to={links.entityHref(node.id)} aria-label={CONTROLS.open}>
         <ArrowUpRight size={ICON_SIZE} strokeWidth={ICON_STROKE} aria-hidden="true" />

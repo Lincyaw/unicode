@@ -7,9 +7,9 @@ import { ABOUT, kindWord, MEMBER_COLUMNS, OP_COLUMNS, SECTIONS } from '../../ter
 import { ICON_SIZE, ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
 import table from '../../ui/table.module.css';
 import { CaseSections, CheckedSections, CodeSections, ContainerSections, StepSections, TypeSections } from '../details/kindSections';
-import { CodePanel, DiagnosticTag, NodeLink, NodeRow, Section, SourcePanel, ViaBadge } from '../details/sections';
+import { CodePanel, DiagnosticTag, NodeLink, NodeRow, Section, SourcePanel, TypeLinks, ViaBadge } from '../details/sections';
 import { Badge } from '../marks/Badge';
-import { displayName, opLine, placeOf, relative, scopeOf, signatureParts, statusOf, stepLine, stepName } from '../marks/format';
+import { displayName, fileOf, opLine, placeOf, relative, scopeOf, signatureTypes, statusOf, stepLine, stepName } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
@@ -38,7 +38,9 @@ function Head({ entity }: { entity: Entity }) {
       {node.summary !== '' && <h2 className={styles.summary}>{node.summary}</h2>}
       {node.kind === 'op' && node.layer === 'design' && <OpSignature op={node} />}
       <p className={styles.origin}>
-        <span className={styles.place}><FileCode size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{node.origin.path}:{node.origin.line}</span>
+        {node.layer === 'code' && node.form !== 'file'
+          ? <NodeLink node={{ id: fileOf(node.origin.path), title: node.origin.path }} className={styles.place} tone="inherit" label={<><FileCode size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{node.origin.path}:{node.origin.line}</>} />
+          : <span className={styles.place}><FileCode size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{node.origin.path}:{node.origin.line}</span>}
         {realized && (
           <NodeLink node={realized} className={styles.place} label={<><Code size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{realized.origin.path}:{realized.origin.line}</>} />
         )}
@@ -47,10 +49,11 @@ function Head({ entity }: { entity: Entity }) {
   );
 }
 
-/** An operation's signature as its page shows it: the call in the link colour, then what it raises. */
+/** An operation's signature as its page shows it: the call in the link colour, then what it raises; each type a link to its page. */
 function OpSignature({ op }: { op: Node }) {
-  const { call, raises } = signatureParts(op);
-  return <CodePanel lines={raises === undefined ? [<span key="call" className={styles.call}>{call}</span>] : [<span key="call" className={styles.call}>{call}</span>, `raises ${raises}`]} />;
+  const { call, raises } = signatureTypes(op);
+  const line = <span key="call" className={styles.call}>{op.title}<TypeLinks parts={call} /></span>;
+  return <CodePanel lines={raises === undefined ? [line] : [line, <span key="raises">raises <TypeLinks parts={raises} /></span>]} />;
 }
 
 /** The fields: the type's fields or values, the code's counterpart of each, and the status of the comparison. */
