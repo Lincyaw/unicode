@@ -72,9 +72,30 @@ func checkRejectsBrokenGraph(t rapid.TB, broken Broken) {
 	}
 }
 
+// assertConformingGraph validates the baseline of the independent stub predicate.
+func assertConformingGraph(t rapid.TB, sample Sample) {
+	g := derived(t, sample.Fragment)
+	checked := Conform(g)
+	if len(checked.Diagnostics) > 0 {
+		t.Fatalf("Conform reported diagnostics on a graph that meets every constraint of design.md §5.3:\n%s", list(checked.Diagnostics))
+	}
+	items := declaredItems(g)
+	if len(items) == 0 {
+		t.Fatalf("the sample has no declared item, so it checks nothing")
+	}
+	for _, id := range items {
+		if status, ok := checked.Statuses[id]; !ok || status != graph.StatusVerified {
+			t.Fatalf("Conform gave the declared item %q of a conforming graph the status %q (present: %v), not verified", id, status, ok)
+		}
+	}
+	if len(checked.Statuses) != len(items) {
+		t.Fatalf("Conform gave %d statuses, but the graph has %d declared items and depends", len(checked.Statuses), len(items))
+	}
+}
+
 //uc:checks check.stubs-stay-incomplete
 func checkStubsStayIncomplete(t rapid.TB, sample Sample) {
-	checkAcceptsConformingGraph(t, sample)
+	assertConformingGraph(t, sample)
 	base := derived(t, sample.Fragment)
 	// Only actual bindings determine the expected affected checks. Code
 	// declaration names and the implementation's indexing are irrelevant.
