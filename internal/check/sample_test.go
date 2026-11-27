@@ -224,7 +224,14 @@ func genSample() *rapid.Generator[Sample] {
 
 //uc:generates check.accepts-conforming-graph.snapshot
 func genConformingSnapshot(sample Sample) *rapid.Generator[*graph.Graph] {
-	return rapid.Custom(func(t *rapid.T) *graph.Graph { return derived(t, sample.Fragment) })
+	snapshot := graph.NewGraph()
+	if err := snapshot.AddFragment(sample.Fragment); err != nil {
+		panic(fmt.Sprintf("cannot construct a conforming graph sample: %v", err))
+	}
+	if diagnostics := snapshot.Derive(); len(diagnostics) > 0 {
+		panic("cannot derive a conforming graph sample: " + list(diagnostics))
+	}
+	return rapid.Just(&snapshot)
 }
 
 //uc:generates check.accepts-conforming-graph.declaredIds

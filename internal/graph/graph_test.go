@@ -130,18 +130,23 @@ func genComparisonSnapshot() *rapid.Generator[*Graph] {
 
 //uc:generates graph.compare-with-itself-is-empty.snapshot
 func genSnapshot(content Fragment) *rapid.Generator[*Graph] {
-	return rapid.Custom(func(t *rapid.T) *Graph {
-		snapshot := build(t, content.Nodes, content.Edges)
-		return &snapshot
-	})
+	snapshot := NewGraph()
+	for _, node := range content.Nodes {
+		if err := snapshot.AddNode(node); err != nil {
+			panic(err)
+		}
+	}
+	for _, edge := range content.Edges {
+		if err := snapshot.AddEdge(edge); err != nil {
+			panic(err)
+		}
+	}
+	return rapid.Just(&snapshot)
 }
 
 //uc:generates graph.compare-with-itself-is-empty.reordered
 func genReordered(content Fragment, rotation int) *rapid.Generator[*Graph] {
-	return rapid.Custom(func(t *rapid.T) *Graph {
-		snapshot := build(t, rotate(content.Nodes, rotation), rotate(content.Edges, rotation))
-		return &snapshot
-	})
+	return genSnapshot(Fragment{Nodes: rotate(content.Nodes, rotation), Edges: rotate(content.Edges, rotation)})
 }
 
 func rotate[T any](s []T, by int) []T {
