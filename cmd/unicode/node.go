@@ -14,7 +14,7 @@ import (
 
 // nodeKinds are the kinds that node search --kind takes (docs/model.md §3).
 var nodeKinds = []graph.NodeKind{graph.NodeKindContainer, graph.NodeKindType, graph.NodeKindOp, graph.NodeKindActor,
-	graph.NodeKindFlow, graph.NodeKindStep, graph.NodeKindProperty, graph.NodeKindCase, graph.NodeKindRun,
+	graph.NodeKindFlow, graph.NodeKindStep, graph.NodeKindProperty, graph.NodeKindObservation, graph.NodeKindCase, graph.NodeKindRun,
 	graph.NodeKindResult, graph.NodeKindReview}
 
 // nodeCommand is `unicode node get|search|refs`.

@@ -22,7 +22,8 @@ type Checked struct {
 // Conform checks, on a derived graph, the constraints that need the code
 // (docs/design.md §5.3): docs/model.md §10 rules 12, 14 to 20 and 22, and
 // that each generated symbol has exactly one generates binding (rule 24). It
-// gives every declared item its status (§6): missing where the code lacks
+// checks each named observation's adapter (rule 34). It gives every declared
+// item its status (§6): missing where the code lacks
 // it, stub where its function is a skeleton, contradicted where the code
 // disagrees with it, and verified otherwise. Rules 21 and 28 wait for gen.
 //
@@ -36,6 +37,7 @@ func Conform(g *graph.Graph) Checked {
 	c.relations()
 	c.predicates()
 	c.generators()
+	c.observations()
 	c.steps()
 	slices.SortFunc(c.diags, func(a, b diag.Diagnostic) int {
 		return cmp.Or(cmp.Compare(a.Position.Path, b.Position.Path), cmp.Compare(a.Position.Line, b.Position.Line),

@@ -351,7 +351,7 @@
 | D3 | 由性质验证 | `graph.derive-matches-definition` |
 | D4 | 由性质验证 | `graph.derive-matches-definition` |
 | D5 | 由性质验证 | `graph.derive-matches-definition` |
-| D6 | 由性质验证；“生成文件中的元素都是细节”未实现：M4 | `graph.derive-matches-definition` |
+| D6 | 由性质验证 | `graph.derive-matches-definition` |
 | D7 | 由性质验证 | `graph.derive-matches-definition` |
 | 1 | `design.unresolved-reference`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
 | 2 | `design.duplicate-name` | `design.rejects-broken-design` |
@@ -367,7 +367,7 @@
 | 12 | `graph.bad-path-pattern`、`check.unowned-file`、`check.overlapping-paths` | `graph.derive-matches-definition`、`check.rejects-broken-graph` |
 | 13 | `design.undeclared-dependency`、`check.undeclared-dependency` | `design.rejects-broken-design`、`check.rejects-broken-graph` |
 | 14 | `check.undeclared-dependency` | `check.rejects-broken-graph` |
-| 15 | `lang.golang.missing-binding-id`、`lang.golang.invalid-binding-id`、`lang.golang.misplaced-binding`、`lang.golang.duplicate-binding`、`graph.unresolved-binding`、`check.wrong-binding-kind`、`check.multiple-checks`、`check.not-generated-symbol`、`check.method-binding` | `lang.golang.extracts-generated-module`、`graph.derive-matches-definition`、`check.rejects-broken-graph` |
+| 15 | `lang.golang.missing-binding-id`、`lang.golang.invalid-binding-id`、`lang.golang.misplaced-binding`、`lang.golang.duplicate-binding`、`graph.unresolved-binding`、`check.wrong-binding-kind`、`check.multiple-checks`、`check.multiple-observes`、`check.not-generated-symbol`、`check.method-binding` | `lang.golang.extracts-generated-module`、`graph.derive-matches-definition`、`check.rejects-broken-graph` |
 | 16 | `check.unrealized`、`check.multiple-realizations` | `check.rejects-broken-graph` |
 | 17 | `check.realization-outside-container` | `check.rejects-broken-graph` |
 | 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value` | `check.rejects-broken-graph` |
@@ -386,6 +386,6 @@
 | 31 | `design.expression-type` | `design.rejects-broken-design` |
 | 32 | 未实现：M4，驱动核对纯操作 | — |
 | 33 | 未实现：M7，评审 | — |
-| 34 | 未实现：黑盒契约的观察绑定、签名和归属检查 | — |
+| 34 | `check.missing-observer`、`check.multiple-observers`、`check.observer-signature`、`check.observer-outside-container` | `check.rejects-broken-graph` |
 | 35 | `design.invalid-observation`、`design.invalid-change-path`；运行时快照和范围核对未实现：M4 | `design.rejects-broken-design` |
 | 36 | 未实现：M7，观察适配器的评审 | — |

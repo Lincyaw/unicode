@@ -174,7 +174,7 @@ func (st *state) node(id string) Node {
 	out := st.brief(id)
 	if st.nodes[id].Layer == graph.LayerCode {
 		bindings := []Neighbor{}
-		for _, e := range st.outgoing(id, graph.EdgeKindRealizes, graph.EdgeKindChecks, graph.EdgeKindGenerates) {
+		for _, e := range st.outgoing(id, graph.EdgeKindRealizes, graph.EdgeKindChecks, graph.EdgeKindGenerates, graph.EdgeKindObserves) {
 			bindings = append(bindings, Neighbor{Focus: id, Edge: st.edge(e), Node: st.brief(e.To)})
 		}
 		out.Bindings = &bindings

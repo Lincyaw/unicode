@@ -24,7 +24,10 @@ model Slice {
   code?: Record<string>;
 }
 
-/** A node a change reaches, with a shortest path of edges from it to a changed node (query.Affected). */
+/**
+ * A node a change reaches, with a shortest connected path to a changed node (query.Affected).
+ * The path keeps the original edges; an observes edge may be followed in either direction.
+ */
 model Affected {
   node: Node;
   path: Edge[];

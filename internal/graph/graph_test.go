@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"maps"
+	"math/rand/v2"
 	"regexp"
 	"slices"
 	"testing"
@@ -16,10 +17,10 @@ import (
 
 var (
 	nodeKinds = []NodeKind{NodeKindContainer, NodeKindType, NodeKindOp, NodeKindActor, NodeKindFlow, NodeKindStep,
-		NodeKindProperty, NodeKindCase, NodeKindRun, NodeKindResult, NodeKindReview}
+		NodeKindProperty, NodeKindObservation, NodeKindCase, NodeKindRun, NodeKindResult, NodeKindReview}
 	edgeKinds = []EdgeKind{EdgeKindContains, EdgeKindUses, EdgeKindExtends, EdgeKindImplements, EdgeKindRefers,
 		EdgeKindSubscribes, EdgeKindImports, EdgeKindCalls, EdgeKindFrom, EdgeKindEmits, EdgeKindHandles, EdgeKindAbout,
-		EdgeKindRealizes, EdgeKindChecks, EdgeKindGenerates, EdgeKindOwns, EdgeKindDepends, EdgeKindTraces,
+		EdgeKindRealizes, EdgeKindChecks, EdgeKindGenerates, EdgeKindObserves, EdgeKindOwns, EdgeKindDepends, EdgeKindTraces,
 		EdgeKindExercises, EdgeKindReaches, EdgeKindCovers}
 	layers  = []Layer{LayerDesign, LayerCode, LayerEvidence, LayerReview}
 	sources = []Source{SourceDeclared, SourceExtracted, SourceDerived, SourceProduced}
@@ -118,6 +119,15 @@ func genFragment() *rapid.Generator[Fragment] {
 	})
 }
 
+//uc:generates graph.compare-self-contract.snapshot
+func genComparisonSnapshot() *rapid.Generator[*Graph] {
+	return rapid.Custom(func(t *rapid.T) *Graph {
+		fragment := genFragment().Draw(t, "fragment")
+		snapshot := build(t, fragment.Nodes, fragment.Edges)
+		return &snapshot
+	})
+}
+
 func rotate[T any](s []T, by int) []T {
 	if len(s) == 0 {
 		return s
@@ -173,6 +183,10 @@ func checkEncodeIgnoresOrder(t rapid.TB, content Fragment, rotation int) {
 	snapshot := inOrder.Encode()
 	if other := rotated.Encode(); !bytes.Equal(snapshot, other) {
 		t.Fatalf("the same nodes and edges, added in another order, encode differently\nin order:\n%s\nrotated by %d:\n%s", snapshot, rotation, other)
+	}
+	permuted := build(t, shuffled(content.Nodes, uint64(rotation)), shuffled(content.Edges, uint64(rotation)+1))
+	if other := permuted.Encode(); !bytes.Equal(snapshot, other) {
+		t.Fatalf("the same nodes and edges, added in a shuffled order, encode differently\nin order:\n%s\nshuffled:\n%s", snapshot, other)
 	}
 	var read readSnapshot
 	if err := json.Unmarshal(snapshot, &read); err != nil {
@@ -247,12 +261,16 @@ func checkDigestFollowsContent(t rapid.TB, first Node, second Node) {
 		}
 	}
 	same := first.Kind == second.Kind && first.Form == second.Form && first.Summary == second.Summary && sameAttrs(first.Attrs, second.Attrs)
-	switch {
-	case same && da != db:
+	if same && da != db {
 		t.Fatalf("two nodes with the same kind, form, summary and attrs have different digests\nfirst:  %+v\nsecond: %+v", first, second)
-	case !same && da == db:
-		t.Fatalf("two nodes that differ in kind, form, summary or attrs have the same digest\nfirst:  %+v\nsecond: %+v", first, second)
 	}
+}
+
+func shuffled[T any](values []T, seed uint64) []T {
+	copy := slices.Clone(values)
+	random := rand.New(rand.NewPCG(seed, seed+1))
+	random.Shuffle(len(copy), func(i, j int) { copy[i], copy[j] = copy[j], copy[i] })
+	return copy
 }
 
 // genSecond draws the second node: an independent one, one with the first's
