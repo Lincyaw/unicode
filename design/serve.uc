@@ -67,3 +67,10 @@ property answers-are-deterministic invariant "同一个快照上，同一个请�
   forall exchange: Exchange generated "一张随机的图，以及对各个接口的请求，有的重复出现"
   manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"
 }
+
+property snapshot-head-follows-record invariant "/api/snapshot 的 head 取自快照旁的 build.json：提交和是否有改动与记录相同，git 读得出这个提交时另带它的缩写、说明、时间和检出在它上面的分支；记录的提交为空时其余各项为空；没有记录时取自读入快照时 git 给出的工作区；记录不是 {commit, dirty} 时快照读不出" {
+  about Server.answer
+  forall exchange: Exchange generated "一张随机的图和它的文件"
+  forall record: optional<repo.Head> generated "没有记录；没有提交的记录；或者记有一个随机的提交哈希和是否有改动的记录"
+  manual "需要写出仓库、提交和记录文件，再经 HTTP 读出快照的元数据，表达式没有这些环境操作"
+}

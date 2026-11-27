@@ -520,6 +520,7 @@ func genExchangeOf(paths []string) *rapid.Generator[Exchange] {
 //uc:generates serve.answers-follow-contract.exchange
 //uc:generates serve.identities-resolve.exchange
 //uc:generates serve.answers-are-deterministic.exchange
+//uc:generates serve.snapshot-head-follows-record.exchange
 func genExchange() *rapid.Generator[Exchange] {
 	return genExchangeOf(slices.Sorted(maps.Keys(endpoints)))
 }
@@ -536,6 +537,18 @@ func genQueryExchange() *rapid.Generator[Exchange] {
 // .unicode/graph.json, and opens a server on it whose base commits all have
 // the graph baseOf gives.
 func served(t rapid.TB, x Exchange) (*Server, string, graph.Graph) {
+	root, g := written(t, x)
+	s, err := Open(root, filepath.Join(root, ".unicode", "graph.json"), baseBuilder{graphOf(t, baseOf(x.Fragment))})
+	if err != nil {
+		t.Fatalf("Open refused the snapshot that Encode wrote of a graph with a system container: %v", err)
+	}
+	return s, root, g
+}
+
+// written writes an exchange's repository to a new directory, commits its
+// files when a request reads a revision, and writes its snapshot at
+// .unicode/graph.json.
+func written(t rapid.TB, x Exchange) (string, graph.Graph) {
 	root, err := os.MkdirTemp("", "unicode-serve-")
 	if err != nil {
 		t.Fatalf("setup failed: cannot make a directory for the repository: %v", err)
@@ -551,11 +564,7 @@ func served(t rapid.TB, x Exchange) (*Server, string, graph.Graph) {
 	}
 	g := graphOf(t, x.Fragment)
 	writeFile(t, filepath.Join(root, ".unicode", "graph.json"), g.Encode())
-	s, err := Open(root, filepath.Join(root, ".unicode", "graph.json"), baseBuilder{graphOf(t, baseOf(x.Fragment))})
-	if err != nil {
-		t.Fatalf("Open refused the snapshot that Encode wrote of a graph with a system container: %v", err)
-	}
-	return s, root, g
+	return root, g
 }
 
 // readsRevision tells whether a request reads a commit of the repository.

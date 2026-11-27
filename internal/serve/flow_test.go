@@ -2,7 +2,6 @@ package serve
 
 import (
 	"bytes"
-	"encoding/json"
 	"net/http"
 	"path/filepath"
 	"time"
@@ -36,15 +35,7 @@ func shrunk(f graph.Fragment) graph.Fragment {
 }
 
 func snapshotNodes(t rapid.TB, s *Server, when string) int32 {
-	resp := s.Answer(Request{Path: "/api/snapshot"})
-	if resp.Status != http.StatusOK {
-		t.Fatalf("%s, /api/snapshot got %d\n%s", when, resp.Status, resp.Body)
-	}
-	var snap Snapshot
-	if err := json.Unmarshal(resp.Body, &snap); err != nil {
-		t.Fatalf("%s, /api/snapshot does not decode: %v\n%s", when, err, resp.Body)
-	}
-	return snap.Counts.Nodes
+	return snapshotOf(t, s, when).Counts.Nodes
 }
 
 //uc:checks serve.answer-request

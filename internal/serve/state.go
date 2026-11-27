@@ -3,6 +3,7 @@ package serve
 import (
 	"cmp"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -56,7 +57,9 @@ func load(root, path string, builtAt time.Time) (*state, error) {
 	}
 	st.path, st.builtAt = path, builtAt.UTC()
 	st.checked = check.Conform(&g)
-	st.head = readHead(root, filepath.Dir(path))
+	if st.head, err = readHead(root, filepath.Dir(path)); err != nil {
+		return nil, Unreadable{Path: path, Cause: err}
+	}
 	return st, nil
 }
 
@@ -80,13 +83,34 @@ func indexed(root string, g graph.Graph) *state {
 	return st
 }
 
-// readHead reads the working tree of the repository at root, whose build
-// writes to the directory out; without git or a commit it is empty.
-func readHead(root, out string) WorkingTree {
-	w, err := repo.ReadWorkingTree(root, out)
-	if err != nil {
-		return WorkingTree{}
+// readHead reads the working tree the snapshot was built from: from the
+// record build wrote beside it in dir, the commit with what git tells of it
+// and whether the working tree had changes; without a record, from git now,
+// empty without git or a commit. A record that is not {commit, dirty} is an error.
+func readHead(root, dir string) (WorkingTree, error) {
+	record, err := repo.ReadRecord(dir)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		w, err := repo.ReadWorkingTree(root, dir)
+		if err != nil {
+			return WorkingTree{}, nil
+		}
+		return workingTree(w), nil
+	case err != nil:
+		return WorkingTree{}, err
 	}
+	head := WorkingTree{Dirty: record.Dirty}
+	if record.Commit == nil {
+		return head, nil
+	}
+	head.Commit = *record.Commit
+	if r, err := repo.ReadRevision(root, *record.Commit); err == nil && r.Commit == *record.Commit {
+		head = workingTree(r.At(record.Dirty))
+	}
+	return head, nil
+}
+
+func workingTree(w repo.WorkingTree) WorkingTree {
 	return WorkingTree{Commit: w.Commit, Short: w.Short, Branch: optional(w.Branch), Subject: w.Subject, Time: w.Time, Dirty: w.Dirty}
 }
 
