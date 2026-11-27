@@ -23,7 +23,7 @@ func recordPath(id string) string {
 }
 
 func recordId(record Record) string {
-	return digest(map[string]any{"version": record.Version, "reviewer": record.Reviewer, "at": record.At, "snapshot": record.Snapshot, "commit": record.Commit, "dirty": record.Dirty, "target": record.Target, "digest": record.Digest, "decision": record.Decision, "comment": record.Comment})
+	return digest(map[string]any{"version": record.Version, "reviewer": record.Reviewer, "at": record.At, "snapshot": record.Snapshot, "commit": record.Commit, "dirty": record.Dirty, "target": map[string]any{"node": record.Target.Node, "edgeKind": record.Target.EdgeKind, "from": record.Target.From, "to": record.Target.To, "removed": record.Target.Removed}, "digest": record.Digest, "decision": record.Decision, "comment": record.Comment})
 }
 
 func hexString(text string, size int) bool {
@@ -106,6 +106,42 @@ func requiredFields(data []byte, keys []string) error {
 	return nil
 }
 
+func uniqueKeys(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delimiter, composite := token.(json.Delim)
+	if !composite {
+		return nil
+	}
+	if delimiter == '{' {
+		seen := map[string]bool{}
+		for decoder.More() {
+			key, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			name := key.(string)
+			if seen[name] {
+				return fmt.Errorf("the JSON object repeats field %s", name)
+			}
+			seen[name] = true
+			if err := uniqueKeys(decoder); err != nil {
+				return err
+			}
+		}
+	} else {
+		for decoder.More() {
+			if err := uniqueKeys(decoder); err != nil {
+				return err
+			}
+		}
+	}
+	_, err = decoder.Token()
+	return err
+}
+
 func decodeRecord(data []byte) (Record, error) {
 	var record Record
 	if !utf8.Valid(data) {
@@ -118,6 +154,9 @@ func decodeRecord(data []byte) (Record, error) {
 	}
 	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
 		return record, errors.New("more data follows the review record")
+	}
+	if err := uniqueKeys(json.NewDecoder(bytes.NewReader(data))); err != nil {
+		return record, err
 	}
 	if err := requiredFields(data, []string{"version", "id", "reviewer", "at", "snapshot", "commit", "dirty", "target", "digest", "decision", "comment"}); err != nil {
 		return record, err
@@ -148,6 +187,7 @@ func storage(root string, create bool) (string, *diag.Diagnostic) {
 		return "", &d
 	}
 	paths := []string{absolute, filepath.Join(absolute, ".unicode"), filepath.Join(absolute, ".unicode", "reviews")}
+	positions := []string{"design/system.uc", ".unicode", ".unicode/reviews"}
 	for index, path := range paths {
 		info, err := os.Lstat(path)
 		if errors.Is(err, fs.ErrNotExist) && index > 0 {
@@ -163,15 +203,15 @@ func storage(root string, create bool) (string, *diag.Diagnostic) {
 			if create {
 				code = "review.write-failed"
 			}
-			d := issue(code, path, "", err.Error(), "restore a readable regular review-store directory inside the repository")
+			d := issue(code, positions[index], "", err.Error(), "restore a readable regular review-store directory inside the repository")
 			return "", &d
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			d := issue("review.symlink", path, "", "the review-store path is a symbolic link", "replace the symbolic link with a regular directory inside the repository")
+			d := issue("review.symlink", positions[index], "", "the review-store path is a symbolic link", "replace the symbolic link with a regular directory inside the repository")
 			return "", &d
 		}
 		if !info.IsDir() {
-			d := issue("review.unreadable-store", path, "", "the review-store path is not a directory", "replace it with a directory or choose the intended repository root")
+			d := issue("review.unreadable-store", positions[index], "", "the review-store path is not a directory", "replace it with a directory or choose the intended repository root")
 			return "", &d
 		}
 	}
@@ -193,28 +233,29 @@ func Read(root string) Loaded {
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		out.Diagnostics = append(out.Diagnostics, issue("review.unreadable-store", dir, "", err.Error(), "restore read access to the review store"))
+		out.Diagnostics = append(out.Diagnostics, issue("review.unreadable-store", ".unicode/reviews", "", err.Error(), "restore read access to the review store"))
 		return out
 	}
 	for _, entry := range entries {
 		path := filepath.Join(dir, entry.Name())
+		position := ".unicode/reviews/" + entry.Name()
 		info, err := os.Lstat(path)
 		if err != nil {
-			out.Diagnostics = append(out.Diagnostics, issue("review.unreadable-store", path, "", err.Error(), "restore read access to this review record"))
+			out.Diagnostics = append(out.Diagnostics, issue("review.unreadable-store", position, "", err.Error(), "restore read access to this review record"))
 			continue
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			out.Diagnostics = append(out.Diagnostics, issue("review.symlink", path, "", "a review record is a symbolic link", "replace it with the immutable regular JSON record"))
+			out.Diagnostics = append(out.Diagnostics, issue("review.symlink", position, "", "a review record is a symbolic link", "replace it with the immutable regular JSON record"))
 			continue
 		}
 		id, suffix := strings.CutSuffix(entry.Name(), ".json")
 		if !suffix || !hexString(id, 64) || !info.Mode().IsRegular() {
-			out.Diagnostics = append(out.Diagnostics, issue("review.invalid-record", path, "", "the store entry is not a regular lowercase-digest.json record", "restore the correctly named immutable review record or remove this entry"))
+			out.Diagnostics = append(out.Diagnostics, issue("review.invalid-record", position, "", "the store entry is not a regular lowercase-digest.json record", "restore the correctly named immutable review record or remove this entry"))
 			continue
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			out.Diagnostics = append(out.Diagnostics, issue("review.unreadable-store", path, id, err.Error(), "restore read access to this review record"))
+			out.Diagnostics = append(out.Diagnostics, issue("review.unreadable-store", position, id, err.Error(), "restore read access to this review record"))
 			continue
 		}
 		record, err := decodeRecord(data)
@@ -222,7 +263,7 @@ func Read(root string) Loaded {
 			err = errors.New("the filename does not match the record identity")
 		}
 		if err != nil {
-			out.Diagnostics = append(out.Diagnostics, issue("review.invalid-record", path, id, err.Error(), "restore the immutable review record with its matching filename and canonical content"))
+			out.Diagnostics = append(out.Diagnostics, issue("review.invalid-record", position, id, err.Error(), "restore the immutable review record with its matching filename and canonical content"))
 			continue
 		}
 		out.Records = append(out.Records, record)
@@ -257,7 +298,27 @@ func knownTarget(g, base *graph.Graph, target Target) bool {
 func Write(root string, g *graph.Graph, base *graph.Graph, request Request) Written {
 	out := Written{Diagnostics: []diag.Diagnostic{}}
 	fail := func(code, cause, fix string) Written {
-		out.Diagnostics = append(out.Diagnostics, issue(code, "design/system.uc", targetKey(request.Target), cause, fix))
+		problem := issue(code, "design/system.uc", targetSubject(request.Target), cause, fix)
+		for _, source := range []*graph.Graph{g, base} {
+			if source == nil {
+				continue
+			}
+			if node := source.Node(request.Target.Node); node != nil && node.Origin.Path != "" {
+				problem.Position = node.Origin
+				break
+			}
+			if edge, found := edgeOf(source, request.Target); found && edge.Origin.Path != "" {
+				problem.Position = edge.Origin
+				break
+			}
+		}
+		if problem.Position.Line < 1 {
+			problem.Position.Line = 1
+		}
+		if problem.Position.Column < 1 {
+			problem.Position.Column = 1
+		}
+		out.Diagnostics = append(out.Diagnostics, problem)
 		return out
 	}
 	if why := targetReason(request.Target); why != "" {
@@ -268,6 +329,9 @@ func Write(root string, g *graph.Graph, base *graph.Graph, request Request) Writ
 	}
 	if request.Decision != "approved" && request.Decision != "changes-requested" {
 		return fail("review.invalid-decision", "the decision is neither approved nor changes-requested", "choose approved or changes-requested")
+	}
+	if request.ExpectedDigest != "" && !hexString(request.ExpectedDigest, 64) {
+		return fail("review.invalid-record", "the expected digest is not a lowercase SHA-256 digest", "give the 64-character digest listed for the target")
 	}
 	if !knownTarget(g, base, request.Target) {
 		return fail("review.unknown-target", "the graph or comparison has no such reviewable target", "select a current target or a deletion from a comparison with its base")

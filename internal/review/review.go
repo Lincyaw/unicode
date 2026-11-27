@@ -98,9 +98,15 @@ type Attached struct {
 }
 
 func digest(value any) string {
-	data, _ := json.Marshal(value)
-	sum := sha256.Sum256(data)
+	sum := sha256.Sum256(mustJSON(value))
 	return hex.EncodeToString(sum[:])
+}
+
+func targetSubject(target Target) string {
+	if target.Node != "" {
+		return target.Node
+	}
+	return target.EdgeKind + " " + target.From + " " + target.To
 }
 
 func targetKey(target Target) string {
@@ -108,7 +114,10 @@ func targetKey(target Target) string {
 }
 
 func mustJSON(value any) []byte {
-	data, _ := json.Marshal(value)
+	data, err := json.Marshal(value)
+	if err != nil {
+		panic("review: cannot encode internal review data: " + err.Error())
+	}
 	return data
 }
 

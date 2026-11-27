@@ -11,12 +11,15 @@ import (
 //
 //uc:realizes graph.edgeDigest
 func EdgeDigest(edge Edge) string {
-	data, _ := json.Marshal(struct {
+	data, err := json.Marshal(struct {
 		Kind  EdgeKind            `json:"kind"`
 		From  string              `json:"from"`
 		To    string              `json:"to"`
 		Attrs map[string][]string `json:"attrs"`
 	}{edge.Kind, edge.From, edge.To, presentAttrs(edge.Attrs)})
+	if err != nil {
+		panic("graph: cannot encode edge content: " + err.Error())
+	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
@@ -41,6 +44,7 @@ func InputDigest(g *Graph) string {
 			}
 		}
 	}
+	// Filtering preserves the original unique identities and existing endpoints.
 	input := NewGraph()
 	for _, node := range g.Nodes() {
 		if !omit[node.Id] {
