@@ -95,6 +95,8 @@ const readsRev = "reads-rev"
 
 func rootCommand(stdout, stderr io.Writer) *cobra.Command {
 	g := &globalOptions{}
+	// --version is ours rather than cobra's, which prints before --format is read.
+	showVersion := false
 	root := &cobra.Command{
 		Use:               "unicode",
 		Short:             "unicode builds one graph of a repository's design intent, code and evidence",
@@ -110,7 +112,13 @@ func rootCommand(stdout, stderr io.Writer) *cobra.Command {
 			}
 			return nil
 		},
-		RunE: func(*cobra.Command, []string) error { return usageError("missing command") },
+		RunE: func(*cobra.Command, []string) error {
+			if showVersion {
+				v := versionOf()
+				return writeResult(g.format, versionReport{Version: v}, fmt.Appendf(nil, "unicode %s\n", v), stdout)
+			}
+			return usageError("missing command")
+		},
 	}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
@@ -119,6 +127,7 @@ func rootCommand(stdout, stderr io.Writer) *cobra.Command {
 		codes[i] = fmt.Sprintf("%d %s", e.code, e.meaning)
 	}
 	root.SetUsageTemplate(root.UsageTemplate() + "\nExit codes: " + strings.Join(codes, ", ") + ".\n")
+	root.Flags().BoolVar(&showVersion, "version", false, "print the version of unicode")
 	flags := root.PersistentFlags()
 	flags.StringVar(&g.root, "root", "", "repository root (default: the nearest ancestor of the working directory that contains design/system.uc)")
 	flags.StringVar(&g.format, "format", "text", "output format: text or json")

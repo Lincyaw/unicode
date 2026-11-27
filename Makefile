@@ -1,8 +1,18 @@
-.PHONY: check lint test fmt-check gen-check self-check rule-check api api-check serve-gen serve-gen-check web-check deep
+.PHONY: check build lint test fmt-check gen-check self-check rule-check api api-check serve-gen serve-gen-check web-check deep
 
 # check is what a lane runs before it commits: fast, default rapid settings.
 check: lint fmt-check gen-check self-check rule-check api-check serve-gen-check web-check
 	$(MAKE) test
+
+# build makes bin/unicode with the viewer's pages in it (docs/design.md §8): the
+# frontend's build writes them to internal/serve/ui/dist, which go:embed takes in.
+# unicode --version prints VERSION, by default what git describe gives.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null)
+
+build:
+	pnpm --dir web install --frozen-lockfile
+	pnpm --dir web build
+	go build -ldflags "-X main.version=$(VERSION)" -o bin/unicode ./cmd/unicode
 
 lint:
 	golangci-lint run
