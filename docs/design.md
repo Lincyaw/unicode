@@ -367,7 +367,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 | 系统、组件、外部系统、参与者 | `network`、`box`、`cloud`、`user` |
 | 类型（object、record）、枚举、接口、错误、事件 | `braces`、`list`、`puzzle`、`octagon-x`、`zap` |
 | 操作、细节函数 | `square-function`、`code` |
-| 流程、步骤、性质、用例 | `workflow`、`corner-down-right`、`shield-check`、`flask-conical` |
+| 流程、步骤、性质、用例、观察 | `workflow`、`corner-down-right`、`shield-check`、`flask-conical`、`eye` |
 | 进入实体页、展开、比较、诊断 | `arrow-up-right`、`chevron-right`、`git-compare-arrows`、`triangle-alert` |
 | 回放、探索、模糊测试、分支、异步 | `play`、`dices`、`repeat`、`split`、`radio` |
 | 提交、文件、隐藏的节点、说明 | `git-commit-horizontal`、`file-code`、`eye-off`、`info` |
