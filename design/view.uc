@@ -66,7 +66,7 @@ type Request record "view 各条性质的输入：一张图和一次视图请求
 
 op select(g: graph.Graph, kind: ViewKind, id: string, expand: list<string>, layer: ClassLayer, level: C4Level) -> View raises NotApplicable "按视图的种类选取子图并折叠；层只用于类视图，层级只用于 C4 视图"
 
-op inputs(g: graph.Graph, kind: ViewKind) -> list<string> "一种视图接受的全部输入：以它为输入时 select 不抛出 NotApplicable 的节点，按标识排序"
+op inputs(g: graph.Graph, kind: ViewKind) -> list<string> "kind 这种视图接受的全部输入：作为输入时 select 不抛出 NotApplicable 的节点，按标识排序"
 
 property view-is-folded-subgraph invariant "视图的节点、边、合并的边数以及折叠和隐藏的节点，与按 design.md §7.1、§7.2 的规则直接算出的相同" {
   about select
@@ -100,7 +100,7 @@ property view-echoes-its-request postcondition "视图给出请求的种类、�
   ensure raised(NotApplicable) or id != "" or result.input.form == "system" and (kind == ViewKind.architecture or kind == ViewKind.events or kind == ViewKind.ddd or kind == ViewKind.c4)
 }
 
-property inputs-are-what-select-takes relation "inputs 给出的标识按标识排序，恰好是以它为输入、不带展开时 select 不抛出 NotApplicable 的那些节点" {
+property inputs-are-what-select-takes relation "inputs(g, kind) 恰是图中作为输入、不带展开时 select 不抛出 NotApplicable 的节点，按标识排序" {
   about inputs, select
   forall g: graph.Graph generated "一张随机的图，带各种关注度的容器、类型、操作、流程、性质和代码层"
   forall kind: ViewKind

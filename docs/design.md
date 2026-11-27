@@ -229,7 +229,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 
 骨架只在缺少时生成一次，之后归人或 agent 所有。`gen` 只新增，从不改写已有的代码元素。生成计划中 `Edit.createOnly` 为真的文件，即使目标带生成标记也不改写：先检查全部目标，再只在目标不存在时创建。骨架不带生成标记。重新建图再运行 `gen` 时，已有绑定的节点不再产生骨架；再次写入旧生成计划中 `createOnly` 的文件，因目标已存在而报冲突。新声明以稳定的逐节点文件写出，已有类型缺少的方法写进新文件，不改用户文件。空组件使用其路径模式中唯一确定的目录，已有包沿用包名，新包按目录和 module 确定；不能唯一确定时诊断，不猜路径。计算生成计划时，先在内存中加入骨架（不写磁盘）并解析它们的绑定，所以一份生成计划同时包含骨架和引用它们的驱动；目录尚不存在时也能算出生成计划，普通抽取仍然严格。`--dry-run` 和 `--check` 均不写骨架。它为以下各项生成骨架：
 
-- 每个没有落实的类型：带 `realizes` 绑定的类型，字段和操作按名称映射，方法体是未实现标记。继承字段按已解析的声明类型定位实际 Go 嵌入路径，生成、字面量与读取共用该来源，不采用可能歧义的全局字段提升查找。继承操作的纯性同时核对实际声明类型的接收者视图，子类型遮蔽字段不能隐藏父状态的修改。具体基类已经提供的继承方法保留，不生成同名覆盖骨架；接口要求的方法也先检查嵌入基类是否已经提供。未实现标记在 Go 中是 `panic("unicode: unimplemented")`，在 Python 中是 `raise NotImplementedError("unicode: unimplemented")`，函数体恰好是这一句时就是骨架。
+- 每个没有落实的类型：带 `realizes` 绑定的类型，字段和操作按名称映射，方法体是未实现标记。继承字段按已解析的声明类型定位实际 Go 嵌入路径，生成、字面量与读取共用该来源，不采用可能歧义的全局字段提升查找。继承操作的纯性同时核对实际声明类型的接收者视图，子类型遮蔽字段不能隐藏父状态的修改。具体基类已经提供的继承方法保留，不为它生成同名的骨架；接口要求的方法也先检查嵌入基类是否已经提供。未实现标记在 Go 中是 `panic("unicode: unimplemented")`，在 Python 中是 `raise NotImplementedError("unicode: unimplemented")`，函数体恰好是这一句时就是骨架。
 - 每个没有落实的、容器或外部系统直接提供的操作：带 `realizes` 绑定的自由函数。外部系统的操作，生成在 `uses` 它的容器中，作为客户端。
 - 每条没有谓词的人工性质或人工流程：带 `checks` 绑定的谓词，参数是它的符号。
 - `replies` 输入需要但缺少的外部安装器：带 `substitutes` 绑定的自由函数骨架。先加载真实客户端与客户端骨架，再用其精确原生签名生成安装参数，返回 `func()` 清理函数；默认名称为 `install` 加外部系统和操作名称的大驼峰形式，再加 `Double`。函数体仍是未实现标记，依赖安装器的目标保持 `stub`。
@@ -666,7 +666,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 
 ## 10 工具链对自己的验证
 
-- **静态检查**：`gofmt`、`go vet`、`golangci-lint`，以及 `unicode fmt --check` 和 `unicode check`。`make rule-check`（`scripts/rulecodes.py`）检查每条规则在 [language.md](language.md) 或 [model.md](model.md) 的附录 B 中有一行，这两张表与 §8 的表合起来恰好列出代码中的全部诊断码。M2 之前，组件之间的导入边界由 golangci-lint 的 depguard 检查；M2 起改由 `unicode check` 按设计中的 `uses` 检查。
+- **静态检查**：`gofmt`、`go vet`、`golangci-lint`，以及 `unicode fmt --check` 和 `unicode check`。`make rule-check`（`scripts/rulecodes.py`）检查每条规则在 [language.md](language.md) 或 [model.md](model.md) 的附录 B 中有一行，这两张表与 §8 的表合起来恰好列出代码中的全部诊断码。M2 之前，组件之间的导入由 golangci-lint 的 depguard 检查；M2 起改由 `unicode check` 按设计中的 `uses` 检查。
 - **性质**（M1 时写成带符号的 `property`，M4 起由工具链自己生成驱动）：
   1. `fmt` 幂等。
   2. 规范格式打印之后再解析，得到同一棵语法树。
