@@ -1,7 +1,8 @@
-.PHONY: check lint test fmt-check self-check rule-check api api-check serve-gen serve-gen-check deep
+.PHONY: check lint test fmt-check gen-check self-check rule-check api api-check serve-gen serve-gen-check deep
 
 # check is what a lane runs before it commits: fast, default rapid settings.
-check: lint test fmt-check self-check rule-check api-check serve-gen-check
+check: lint fmt-check gen-check self-check rule-check api-check serve-gen-check
+	$(MAKE) test
 
 lint:
 	golangci-lint run
@@ -11,6 +12,10 @@ test:
 
 fmt-check:
 	go run ./cmd/unicode fmt --check
+
+# Generated tests must be current before any expensive property execution.
+gen-check:
+	go run ./cmd/unicode gen --check
 
 # The toolchain checks itself: its design, its code and the bindings between them.
 self-check:
@@ -46,9 +51,10 @@ serve-gen-check:
 # many rapid checks, a fuzz burst per Fuzz target, and mutation testing.
 RAPID_CHECKS ?= 5000
 FUZZ_TIME ?= 30s
+DEEP_TIMEOUT ?= 0
 
 deep:
-	go test ./... -count=1 -rapid.checks=$(RAPID_CHECKS)
+	go test ./... -timeout=$(DEEP_TIMEOUT) -count=1 -rapid.checks=$(RAPID_CHECKS)
 	./scripts/fuzz-all.sh $(FUZZ_TIME)
 	# gremlins takes a directory, not a package pattern; run it from the root,
 	# uncached, with a timeout that covers recompiling a mutant.
