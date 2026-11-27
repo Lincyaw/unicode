@@ -39,6 +39,7 @@ func checkRecordingsAreReplayable(t rapid.TB, sample Sample) {
 	before := fileTree(t, root)
 	cases := sample.Cases
 	unsupported := []string{}
+	unsupportedCases := []int{}
 	var printable func(lang.Value, string) lang.Value
 	printable = func(value lang.Value, path string) lang.Value {
 		switch value.Kind {
@@ -70,12 +71,16 @@ func checkRecordingsAreReplayable(t rapid.TB, sample Sample) {
 	}
 	companions := slices.Clone(cases)
 	for i, source := range cases {
+		beforeUnsupported := len(unsupported)
 		input, err := NormalizeInput(source.Input)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for name, value := range input.Values {
 			input.Values[name] = printable(value, name)
+		}
+		if len(unsupported) > beforeUnsupported {
+			unsupportedCases = append(unsupportedCases, i)
 		}
 		companions[i].Input, err = NormalizeInput(input)
 		if err != nil {
@@ -87,21 +92,35 @@ func checkRecordingsAreReplayable(t rapid.TB, sample Sample) {
 		}
 	}
 	plan := Recordings(root, g, cases)
-	if len(unsupported) > 0 {
-		requireProblems(t, plan.Diagnostics)
-		if len(plan.Edits) != 0 || len(plan.Removals) != 0 {
-			t.Fatal("unrepresentable bytes produced a writable plan")
-		}
-		for _, problem := range plan.Diagnostics {
-			if problem.Code != "evidence.unreplayable-input" {
-				t.Fatalf("unexpected recording classification: %+v", problem)
+	if len(unsupportedCases) > 0 {
+		// Declared and redundant coverage cases need not be written. Make one
+		// raw input a mandatory counterexample independently of selection, so
+		// the encoding boundary is exercised even when the original is omitted.
+		required := cases[unsupportedCases[0]]
+		required.Form, required.Reason, required.Passed = "recorded", "counterexample", false
+		required.Id = required.Check + ".r-" + required.InputHash[:8]
+		mandatory := Recordings(root, g, []lang.CaseResult{required})
+		requireProblems(t, mandatory.Diagnostics)
+		for _, rejected := range []Recording{mandatory, plan} {
+			if len(rejected.Diagnostics) == 0 {
+				continue
+			}
+			if len(rejected.Edits) != 0 || len(rejected.Removals) != 0 {
+				t.Fatal("unrepresentable bytes produced a writable plan")
+			}
+			for _, problem := range rejected.Diagnostics {
+				if problem.Code != "evidence.unreplayable-input" {
+					t.Fatalf("unexpected recording classification: %+v", problem)
+				}
 			}
 		}
 		if !reflect.DeepEqual(before, fileTree(t, root)) {
 			t.Fatal("unrepresentable input changed files")
 		}
-		cases = companions
-		plan = Recordings(root, g, cases)
+		if len(plan.Diagnostics) > 0 {
+			cases = companions
+			plan = Recordings(root, g, cases)
+		}
 	}
 	if len(plan.Diagnostics) != 0 {
 		t.Fatalf("recording rejected complete model inputs: %+v", plan.Diagnostics)
