@@ -131,6 +131,9 @@ func (c *contractCompiler) configureDoubles(unit *contractUnit) bool {
 			unit.spec.Types[model] = ucType{Form: "replies"}
 		}
 		complete := true
+		if unit.spec.Types[model].Form == "interface" {
+			complete = false
+		}
 		if d, ok := c.bound(graph.EdgeKindRealizes, model); ok {
 			if iface, ok := d.obj.Type().Underlying().(*types.Interface); ok {
 				complete = iface.Complete().NumMethods() == len(ops)
