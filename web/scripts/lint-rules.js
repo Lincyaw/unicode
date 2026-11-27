@@ -46,6 +46,18 @@ export default {
         };
       },
     },
+    'icons-from-the-table': {
+      meta: { type: 'problem', docs: { description: 'Every Lucide glyph a page draws is named in components/marks/icons, after the icon table of docs/design.md §7.5.' } },
+      create(context) {
+        return {
+          ImportDeclaration(node) {
+            if (node.source.value === 'lucide-react') {
+              context.report({ node, message: 'Import Lucide glyphs from components/marks/icons, which names each glyph the viewer draws after docs/design.md §7.5\'s icon table; add a glyph there, and to the table, when a new meaning needs one.' });
+            }
+          },
+        };
+      },
+    },
     'paths-from-routes': {
       meta: { type: 'problem', docs: { description: 'Every page path is built by src/routes, so a page or a component never spells one.' } },
       create(context) {

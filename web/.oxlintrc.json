@@ -40,7 +40,14 @@
     },
     {
       "files": ["src/components/**", "src/pages/**"],
-      "rules": { "viewer/paths-from-routes": "error" }
+      "rules": {
+        "viewer/paths-from-routes": "error",
+        "viewer/icons-from-the-table": "error"
+      }
+    },
+    {
+      "files": ["src/components/marks/icons.tsx"],
+      "rules": { "viewer/icons-from-the-table": "off" }
     },
     {
       "files": ["src/api/**"],
@@ -68,11 +75,22 @@
       }
     },
     {
+      "files": ["src/pages/**"],
+      "rules": {
+        "no-restricted-imports": ["error", {
+          "patterns": [
+            { "group": ["**/mocks/*"], "message": "The viewer reaches data only through the API client; the mock server answers its requests." },
+            { "group": ["**/components/**/*.css"], "message": "A page lays itself out with the design kit's styles; a component's styles stay with the component, which takes what it shows as props." }
+          ]
+        }]
+      }
+    },
+    {
       "files": ["src/components/**"],
       "rules": {
         "no-restricted-imports": ["error", {
           "paths": [
-            { "name": "react-router", "importNames": ["useLocation", "useMatches", "useParams", "useSearchParams", "useNavigate"], "message": "A component does not read or change the address: the page reads it and passes down what the component shows and where its links lead." }
+            { "name": "react-router", "importNames": ["useLocation", "useMatches", "useParams", "useSearchParams", "useNavigate", "Navigate"], "message": "A component does not read or change the address: the page reads it and passes down what the component shows and where its links lead." }
           ],
           "patterns": [
             { "group": ["**/mocks/*"], "message": "The viewer reaches data only through the API client; the mock server answers its requests." },
