@@ -9,7 +9,6 @@ import { route, type Rect, type Route } from '../canvas/layout';
 import { monoWidth } from '../canvas/measure';
 import { messageOf, relative, scopeOf } from '../marks/format';
 import { KindIcon } from '../marks/icons';
-import { useNodeActions } from '../marks/links';
 import { NodeRef } from '../marks/NodeRef';
 import { StepLabel } from './StepLabel';
 import { diagnosticsAbout, stepTree, type StepTree } from './stepTree';
@@ -136,11 +135,6 @@ function triggerOf(view: View, step: ViewNode): { event: string; emitter?: ViewN
   return { event, emitter: view.nodes.find(node => node.form === 'emit' && node.step?.target?.id === event) };
 }
 
-/** An on fragment's decision: the diamond previews its step. */
-function Diamond({ step }: { step: ViewNode }) {
-  return <button type="button" className={clsx(styles.diamond, 'loop-edge')} aria-label={step.id} {...useNodeActions(step.id)} />;
-}
-
 /**
  * The activity view (Figma 09): the same flow by its control structure. The main line runs from the start through the
  * trigger's steps; a call with sub-steps is a box around them; an on fragment is a decision whose branch rejoins at the
@@ -207,7 +201,7 @@ export function ActivityView({ view }: { view: View }) {
       {drawn.pieces.filter(piece => piece.kind === 'async' || piece.kind === 'group').map(piece => 'step' in piece && (
         <Placed key={`box ${piece.step.id}`} rect={piece.rect} className={clsx(styles.activityBox, piece.kind === 'async' && styles.asyncBox)}>
           {piece.kind === 'async'
-            ? <span className={styles.asyncHead}><span className={styles.fragmentIndex}><NodeRef id={piece.step.id}>{piece.step.title}</NodeRef></span>{label(piece.step, <><KindIcon node={piece.step} size={ICON_TINY} />async {relative(piece.step.step?.target?.id ?? '', scope)}</>, styles.fragmentTag)}</span>
+            ? <span className={styles.asyncHead}><span className={styles.fragmentIndex} aria-hidden="true">{piece.step.title}</span>{label(piece.step, <><KindIcon node={piece.step} size={ICON_TINY} />async {relative(piece.step.step?.target?.id ?? '', scope)}</>, styles.fragmentTag)}</span>
             : <span className={styles.groupHead}>{label(piece.step, boxText(piece.step), styles.plainLabel)}</span>}
         </Placed>
       ))}
@@ -228,9 +222,9 @@ export function ActivityView({ view }: { view: View }) {
             return (
               <div key={piece.step.id}>
                 <Placed rect={piece.rect} className={styles.diamondSlot}>
-                  <Diamond step={piece.step} />
+                  <span className={styles.diamond} aria-hidden="true" />
                 </Placed>
-                <Placed rect={{ x: piece.rect.x - 40, y: piece.rect.y, width: 32, height: DIAMOND }} className={styles.decisionIndex}><NodeRef id={piece.step.id}>{piece.step.title}</NodeRef></Placed>
+                <Placed rect={{ x: piece.rect.x - 40, y: piece.rect.y, width: 32, height: DIAMOND }} className={styles.decisionIndex}><span aria-hidden="true">{piece.step.title}</span></Placed>
                 <Placed rect={piece.tag} className={styles.messageSlot}>
                   {label(piece.step, <><KindIcon node={piece.step} size={ICON_TINY} />on {relative(piece.step.step?.target?.id ?? '', scope)}</>, styles.fragmentTag)}
                 </Placed>

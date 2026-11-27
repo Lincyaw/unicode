@@ -174,7 +174,7 @@ export function SequenceView({ view }: { view: View }) {
     <Canvas about={ABOUT.sequence} label={VIEW_NAMES.sequence} width={width} height={height} margin={MARGIN} aboutBelow>
       {fragments.map(mark => (
         <Placed key={mark.step.id} rect={{ x: mark.left, y: mark.top, width: mark.right - mark.left, height: mark.bottom - mark.top }} className={styles.fragment}>
-          <span className={styles.fragmentIndex}><NodeRef id={mark.step.id}>{mark.step.title}</NodeRef></span>
+          <span className={styles.fragmentIndex} aria-hidden="true">{mark.step.title}</span>
         </Placed>
       ))}
       <Lines width={width} height={height} lines={lines} />
