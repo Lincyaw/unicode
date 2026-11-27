@@ -19,7 +19,7 @@ var (
 		NodeKindProperty, NodeKindObservation, NodeKindCase, NodeKindRun, NodeKindResult, NodeKindReview}
 	edgeKinds = []EdgeKind{EdgeKindContains, EdgeKindUses, EdgeKindExtends, EdgeKindImplements, EdgeKindRefers,
 		EdgeKindSubscribes, EdgeKindImports, EdgeKindCalls, EdgeKindFrom, EdgeKindEmits, EdgeKindHandles, EdgeKindAbout,
-		EdgeKindRealizes, EdgeKindChecks, EdgeKindGenerates, EdgeKindObserves, EdgeKindSubstitutes, EdgeKindOwns, EdgeKindDepends, EdgeKindTraces,
+		EdgeKindRealizes, EdgeKindChecks, EdgeKindGenerates, EdgeKindObserves, EdgeKindSubstitutes, EdgeKindPublishes, EdgeKindOwns, EdgeKindDepends, EdgeKindTraces,
 		EdgeKindExercises, EdgeKindReaches, EdgeKindCovers}
 	layers  = []Layer{LayerDesign, LayerCode, LayerEvidence, LayerReview}
 	sources = []Source{SourceDeclared, SourceExtracted, SourceDerived, SourceProduced}

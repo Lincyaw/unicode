@@ -22,7 +22,7 @@ var impactKinds = map[graph.EdgeKind]bool{
 	graph.EdgeKindCalls: true, graph.EdgeKindReaches: true, graph.EdgeKindRefers: true,
 	graph.EdgeKindSubscribes: true, graph.EdgeKindEmits: true, graph.EdgeKindRealizes: true,
 	graph.EdgeKindTraces: true, graph.EdgeKindExercises: true, graph.EdgeKindDepends: true,
-	graph.EdgeKindAbout: true, graph.EdgeKindChecks: true, graph.EdgeKindObserves: true, graph.EdgeKindSubstitutes: true,
+	graph.EdgeKindAbout: true, graph.EdgeKindChecks: true, graph.EdgeKindObserves: true, graph.EdgeKindSubstitutes: true, graph.EdgeKindPublishes: true,
 }
 
 // Impact returns the salient nodes affected by changes of ids: backwards
@@ -84,7 +84,7 @@ func observationOwner(g *graph.Graph, edge graph.Edge) bool {
 // Forward bindings connect an implementation change to the design node it supports.
 func forwardBinding(kind graph.EdgeKind) bool {
 	switch kind {
-	case graph.EdgeKindRealizes, graph.EdgeKindChecks, graph.EdgeKindGenerates, graph.EdgeKindObserves, graph.EdgeKindSubstitutes:
+	case graph.EdgeKindRealizes, graph.EdgeKindChecks, graph.EdgeKindGenerates, graph.EdgeKindObserves, graph.EdgeKindSubstitutes, graph.EdgeKindPublishes:
 		return true
 	}
 	return false

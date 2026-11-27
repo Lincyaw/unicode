@@ -68,6 +68,8 @@ func valuePos(v syntax.Value) lexer.Position {
 		return v.Pos
 	case *syntax.CallValue:
 		return v.Pos
+	case *syntax.EncodedValue:
+		return v.Pos
 	case *syntax.BoolValue:
 		return v.Pos
 	case *syntax.NoneValue:
@@ -91,6 +93,13 @@ func (l *loader) conform(c *entity, v syntax.Value, t *typ) bool {
 			fmt.Sprintf("%s is not a value of %s: %s", syntax.ValueText(at), t.text(), why),
 			"write a value of "+t.text()+" by docs/language.md §3.1")
 		return false
+	}
+	if encoded, ok := v.(*syntax.EncodedValue); ok && t.kind != "optional" {
+		n := t.named()
+		if n == nil || n.codecEncoder == nil || n.codecDecoder == nil || n.codecEncoder.result == nil {
+			return wrong(v, "encoded values require a declared valid codec")
+		}
+		return l.conform(c, encoded.Value, n.codecEncoder.result)
 	}
 	if _, none := v.(*syntax.NoneValue); none && t.kind != "optional" {
 		return wrong(v, "only an optional may be none")
@@ -307,6 +316,9 @@ func (l *loader) conformCall(c *entity, v syntax.Value, t *typ, wrong func(synta
 // within checks the parts of v, a value of t, that a limit's remaining path
 // segs leads to (docs/model.md §10 rule 26); v is known to conform to t.
 func (l *loader) within(c *entity, v syntax.Value, t *typ, segs []string, lim *limit) {
+	if _, encoded := v.(*syntax.EncodedValue); encoded {
+		return // Decoded limits are checked by the runtime, never by executing a codec here.
+	}
 	if len(segs) == 0 && t == lim.at {
 		if why := outside(v, t, lim); why != "" {
 			l.report(c.file, valuePos(v), "design.value-out-of-limit", c.id,

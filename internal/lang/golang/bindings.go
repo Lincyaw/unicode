@@ -24,6 +24,7 @@ var bindingKinds = map[string]graph.EdgeKind{
 	"generates":   graph.EdgeKindGenerates,
 	"observes":    graph.EdgeKindObserves,
 	"substitutes": graph.EdgeKindSubstitutes,
+	"publishes":   graph.EdgeKindPublishes,
 }
 
 // namePattern is a name of the design: kebab, upper or lower camel
@@ -87,8 +88,8 @@ func (x *extraction) readBinding(at diag.Position, text, fileID string, owner bo
 	kind, known := bindingKinds[verb]
 	switch {
 	case !known:
-		report("lang.golang.unknown-binding-verb", fmt.Sprintf("the binding verb %q is not realizes, checks, generates, observes or substitutes", verb),
-			"write the binding as //uc:realizes, //uc:checks, //uc:generates, //uc:observes or //uc:substitutes, one space and a design identity")
+		report("lang.golang.unknown-binding-verb", fmt.Sprintf("the binding verb %q is not realizes, checks, generates, observes, substitutes or publishes", verb),
+			"write the binding as //uc:realizes, //uc:checks, //uc:generates, //uc:observes, //uc:substitutes or //uc:publishes, one space and a design identity")
 		return
 	case target == "":
 		report("lang.golang.missing-binding-id", fmt.Sprintf("the binding //uc:%s names no design identity", verb),

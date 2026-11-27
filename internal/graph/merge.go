@@ -62,7 +62,7 @@ func (g *Graph) AddFragment(fragment Fragment) error {
 }
 
 func isBinding(kind EdgeKind) bool {
-	return kind == EdgeKindRealizes || kind == EdgeKindChecks || kind == EdgeKindGenerates || kind == EdgeKindObserves || kind == EdgeKindSubstitutes
+	return kind == EdgeKindRealizes || kind == EdgeKindChecks || kind == EdgeKindGenerates || kind == EdgeKindObserves || kind == EdgeKindSubstitutes || kind == EdgeKindPublishes
 }
 
 // isCandidate tells whether e is a backend's candidate for a method's realizes.

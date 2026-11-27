@@ -237,7 +237,7 @@ func (d *derivation) salience() {
 		case n.Layer == LayerDesign:
 			salient[id] = true
 		case n.Layer == LayerCode && !d.inGeneratedFile(id) && (n.Kind == NodeKindType || n.Kind == NodeKindOp) &&
-			len(d.out[EdgeKindRealizes][id])+len(d.out[EdgeKindChecks][id])+len(d.out[EdgeKindGenerates][id])+len(d.out[EdgeKindObserves][id])+len(d.out[EdgeKindSubstitutes][id]) > 0:
+			len(d.out[EdgeKindRealizes][id])+len(d.out[EdgeKindChecks][id])+len(d.out[EdgeKindGenerates][id])+len(d.out[EdgeKindObserves][id])+len(d.out[EdgeKindSubstitutes][id])+len(d.out[EdgeKindPublishes][id]) > 0:
 			salient[id] = true
 			for _, a := range append(d.ancestors(id), d.definingFile(id)) {
 				if d.is(a, LayerCode, NodeKindContainer) && (!d.isFile(a) || !d.inGeneratedFile(a)) {

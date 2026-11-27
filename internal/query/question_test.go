@@ -39,7 +39,7 @@ var children = map[graph.NodeKind][]graph.NodeKind{
 var edgeKinds = []graph.EdgeKind{graph.EdgeKindContains, graph.EdgeKindUses, graph.EdgeKindExtends,
 	graph.EdgeKindImplements, graph.EdgeKindRefers, graph.EdgeKindSubscribes, graph.EdgeKindImports, graph.EdgeKindCalls,
 	graph.EdgeKindFrom, graph.EdgeKindEmits, graph.EdgeKindHandles, graph.EdgeKindAbout, graph.EdgeKindRealizes,
-	graph.EdgeKindChecks, graph.EdgeKindGenerates, graph.EdgeKindObserves, graph.EdgeKindSubstitutes, graph.EdgeKindOwns, graph.EdgeKindDepends, graph.EdgeKindTraces,
+	graph.EdgeKindChecks, graph.EdgeKindGenerates, graph.EdgeKindObserves, graph.EdgeKindSubstitutes, graph.EdgeKindPublishes, graph.EdgeKindOwns, graph.EdgeKindDepends, graph.EdgeKindTraces,
 	graph.EdgeKindExercises, graph.EdgeKindReaches, graph.EdgeKindCovers}
 
 // shapes are the edge kinds that docs/model.md §4 draws from a node of one
@@ -52,7 +52,7 @@ var shapes = map[[2]graph.NodeKind][]graph.EdgeKind{
 	{graph.NodeKindContainer, graph.NodeKindProperty}:   {graph.EdgeKindContains},
 	{graph.NodeKindType, graph.NodeKindOp}:              {graph.EdgeKindContains},
 	{graph.NodeKindType, graph.NodeKindType}:            {graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements},
-	{graph.NodeKindOp, graph.NodeKindType}:              {graph.EdgeKindRefers, graph.EdgeKindSubscribes},
+	{graph.NodeKindOp, graph.NodeKindType}:              {graph.EdgeKindRefers, graph.EdgeKindSubscribes, graph.EdgeKindPublishes},
 	{graph.NodeKindOp, graph.NodeKindOp}:                {graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindRealizes, graph.EdgeKindSubstitutes},
 	{graph.NodeKindOp, graph.NodeKindProperty}:          {graph.EdgeKindChecks, graph.EdgeKindGenerates},
 	{graph.NodeKindOp, graph.NodeKindObservation}:       {graph.EdgeKindObserves},

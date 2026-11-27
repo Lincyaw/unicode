@@ -27,6 +27,8 @@ func (c *checker) bindings() {
 			checks[e.From] = append(checks[e.From], e)
 		case graph.EdgeKindGenerates:
 			c.generatesBinding(e)
+		case graph.EdgeKindPublishes:
+			c.publisherBinding(e)
 		case graph.EdgeKindSubstitutes:
 			c.substituteBinding(e)
 		case graph.EdgeKindObserves:

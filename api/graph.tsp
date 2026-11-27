@@ -68,6 +68,7 @@ enum EdgeKind {
   generates,
   observes,
   substitutes,
+  publishes,
   owns,
   depends,
   traces,

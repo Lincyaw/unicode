@@ -41,6 +41,9 @@ type entity struct {
 	limits       []*limit  // a flow's or a property's limits
 	observations []*entity // named snapshot observations of a property
 	snapshot     *typ      // an observation's declared snapshot type
+	codec        *syntax.Codec
+	codecEncoder *entity
+	codecDecoder *entity
 }
 
 // member is a field of a type or a parameter of an operation.

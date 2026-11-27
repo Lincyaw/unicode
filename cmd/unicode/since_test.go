@@ -519,7 +519,7 @@ func checkChangedChecksAreSelected(t rapid.TB, sample SinceSample) {
 			for _, edge := range edges {
 				reverse := false
 				switch string(edge.Kind) {
-				case "calls", "reaches", "refers", "subscribes", "emits", "realizes", "traces", "exercises", "depends", "about", "checks", "observes", "substitutes":
+				case "calls", "reaches", "refers", "subscribes", "emits", "realizes", "traces", "exercises", "depends", "about", "checks", "observes", "substitutes", "publishes":
 					reverse = true
 				}
 				owner := edge.Kind == graph.EdgeKindContains && nodes[edge.From].Kind == graph.NodeKindProperty && nodes[edge.To].Kind == graph.NodeKindObservation
@@ -529,7 +529,7 @@ func checkChangedChecksAreSelected(t rapid.TB, sample SinceSample) {
 				}
 				binding := false
 				switch string(edge.Kind) {
-				case "realizes", "checks", "generates", "observes", "substitutes":
+				case "realizes", "checks", "generates", "observes", "substitutes", "publishes":
 					binding = true
 				}
 				if binding && reached[edge.From] && !reached[edge.To] {

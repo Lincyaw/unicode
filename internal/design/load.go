@@ -50,11 +50,18 @@ func Load(files []syntax.File) Loaded {
 		l.corpus(f)
 	}
 	// Each stage may queue work for the next ones.
-	for _, queue := range []*[]func(){&l.uses, &l.supertypes, &l.signatures, &l.domains, &l.checks} {
+	for _, queue := range []*[]func(){&l.uses, &l.supertypes, &l.signatures, &l.codecs} {
 		for i := 0; i < len(*queue); i++ {
 			(*queue)[i]()
 		}
 	}
+	l.codecRepresentations()
+	for _, queue := range []*[]func(){&l.domains, &l.checks} {
+		for i := 0; i < len(*queue); i++ {
+			(*queue)[i]()
+		}
+	}
+
 	slices.SortFunc(l.diags, func(a, b diag.Diagnostic) int {
 		return cmp.Or(cmp.Compare(a.Position.Path, b.Position.Path), cmp.Compare(a.Position.Line, b.Position.Line),
 			cmp.Compare(a.Position.Column, b.Position.Column), cmp.Compare(a.Code, b.Code), cmp.Compare(a.Message, b.Message))
@@ -82,6 +89,7 @@ type loader struct {
 	uses       []func()
 	supertypes []func()
 	signatures []func()
+	codecs     []func()
 	domains    []func()
 	checks     []func()
 	diags      []diag.Diagnostic
@@ -364,6 +372,8 @@ func (l *loader) typeDecl(f *syntax.File, parent, scope *entity, d *syntax.TypeD
 		case *syntax.Label:
 			labels = append(labels, string(line.Name))
 			l.label(e, line)
+		case *syntax.Codec:
+			l.codecDecl(e, scope, line)
 		case *syntax.EnumValue:
 			e.values = append(e.values, string(line.Name))
 			l.unique(e, taken, string(line.Name), line.Pos)

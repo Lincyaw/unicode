@@ -435,7 +435,7 @@ func (x *expectation) salience() {
 			binds = binds || k.from == n.Id
 		}
 		for k := range x.kept {
-			binds = binds || (k.kind == EdgeKindChecks || k.kind == EdgeKindGenerates || k.kind == EdgeKindObserves || k.kind == EdgeKindSubstitutes) && k.from == n.Id
+			binds = binds || (k.kind == EdgeKindChecks || k.kind == EdgeKindGenerates || k.kind == EdgeKindObserves || k.kind == EdgeKindSubstitutes || k.kind == EdgeKindPublishes) && k.from == n.Id
 		}
 		switch {
 		case n.Layer == LayerDesign:
