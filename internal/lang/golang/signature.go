@@ -122,6 +122,7 @@ func (x *extraction) signature(sig *types.Signature) string {
 // unexported name maps back to no design name; and a string type's enum values.
 func (x *extraction) addShapes() {
 	for _, d := range x.declared {
+		x.addContent(d)
 		n := x.nodes[d.id]
 		switch {
 		case d.fn != nil:
