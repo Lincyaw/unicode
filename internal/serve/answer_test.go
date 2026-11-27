@@ -371,6 +371,12 @@ func sameView(t rapid.TB, s *Server, req Request, resp Response, g *graph.Graph)
 		refusal(t, req, resp, http.StatusBadRequest, "serve.bad-parameter")
 		return ""
 	}
+	// A layer or a level goes only with the view that reads it, and names one of its values.
+	if q.Has("layer") && (kind != "class" || !ClassLayer(q.Get("layer")).Valid()) ||
+		q.Has("level") && (kind != "c4" || !C4Level(q.Get("level")).Valid()) {
+		refusal(t, req, resp, http.StatusBadRequest, "serve.bad-parameter")
+		return ""
+	}
 	for _, id := range viewIdentities(q.Get("input"), q["expand"]) {
 		if g.Node(id) == nil {
 			refusal(t, req, resp, http.StatusNotFound, "serve.not-found")

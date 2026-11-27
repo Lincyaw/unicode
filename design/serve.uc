@@ -56,7 +56,7 @@ property identities-resolve invariant "应答中作为节点标识出现的每�
   manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"
 }
 
-property queries-agree relation "/api/node、/api/search、/api/slice、/api/impact、/api/views 和 /api/compare 的应答，与直接调用 query、view 和 graph.compare 的结果有同样的节点和边，次序相同；标识不存在时为 404 serve.not-found，视图不适用于输入时为 400 serve.not-applicable，基准不是提交时为 400 serve.bad-revision" {
+property queries-agree relation "/api/node、/api/search、/api/slice、/api/impact、/api/views 和 /api/compare 的应答，与直接调用 query、view 和 graph.compare 的结果有同样的节点和边，次序相同；标识不存在时为 404 serve.not-found，视图不适用于输入时为 400 serve.not-applicable，基准不是提交时为 400 serve.bad-revision，layer 给了类视图之外的视图、level 给了 C4 视图之外的视图，或者不是它们的取值时，为 400 serve.bad-parameter" {
   about Server.answer, query.get, query.search, query.slice, query.impact, view.select, graph.compare
   forall exchange: Exchange generated "一张随机的图，以及对这六个接口的请求，标识多取自图中的节点，有时不存在；比较的基准是另一张图，它的提交有时读不出"
   manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"

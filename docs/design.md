@@ -402,7 +402,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 - 节点和边是快照中的节点和边（§5.2、[model.md](model.md) §8），节点带内容哈希 `digest`。节点另有 `title`（页面上的名称）、`status`（`check` 给出的状态）、代码元素的 `bindings`（绑定边及其指向的设计节点）、步骤的 `step`（所在流程、序号、发起方、目标、接收方、外层步骤和子步骤）；边另有 `status`。
 - 诊断与 `unicode check --format json` 的相同。一条边加另一端的节点沿用 `query.Neighbor`，切片沿用 `query.Context`，影响沿用 `query.Affected`，单个节点沿用 `query.NodeView`。
 - 视图沿用 `view.View`（`kind`、`input`、`ancestors`、`expand`、`layer`、`level`、`nodes`、`edges`、`folded`、`hidden`），加上视图中各项的诊断。类型卡片带 `members`，即字段和枚举值与代码的逐项比较；容器卡片带 `contents`，展开时是其中的类型、操作、流程、性质和错误，折叠时是其中类型的名称；代码文件和代码类型带 `details`，即未画出的细节函数的个数。边的一端是折叠的容器时，`count` 是它代表的边数；`labels` 是边承载的操作。
-- 拒绝的请求返回 `{code, message, fix}`：标识、边、文件或接口不存在为 404 `serve.not-found`；视图不适用于输入为 400 `serve.not-applicable`，提交读不出为 400 `serve.bad-revision`，路径不是设计文件、录制文件或快照中的代码文件为 400 `serve.bad-path`，参数缺失或不合类型（包括不存在的视图、节点或边的种类）为 400 `serve.bad-parameter`。快照文件在运行中变得读不出时，请求得到 503 `serve.unreadable-snapshot`，文件恢复后照常回答；基准提交建不出图，或者服务端自身失败，为 500 `serve.internal-error`。
+- 拒绝的请求返回 `{code, message, fix}`：标识、边、文件或接口不存在为 404 `serve.not-found`；视图不适用于输入为 400 `serve.not-applicable`，提交读不出为 400 `serve.bad-revision`，路径不是设计文件、录制文件或快照中的代码文件为 400 `serve.bad-path`，参数缺失或不合类型（包括不存在的视图、节点或边的种类），以及 `layer` 给了类视图之外的视图、`level` 给了 C4 视图之外的视图（同 `unicode view` 的 `--layer` 和 `--level`），为 400 `serve.bad-parameter`。快照文件在运行中变得读不出时，请求得到 503 `serve.unreadable-snapshot`，文件恢复后照常回答；基准提交建不出图，或者服务端自身失败，为 500 `serve.internal-error`。
 
 **接口。** 路径都在 `/api` 之下：
 

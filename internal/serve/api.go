@@ -46,9 +46,15 @@ func (answers) GetView(ctx context.Context, request GetViewRequestObject) (GetVi
 	}
 	layer, level := view.ClassLayerDesign, view.C4LevelContainer
 	if l := request.Params.Layer; l != nil {
+		if err := viewOption("layer", request.Kind, ViewKindClass, *l, l.Valid(), "design or code"); err != nil {
+			return nil, err
+		}
 		layer = view.ClassLayer(*l)
 	}
 	if l := request.Params.Level; l != nil {
+		if err := viewOption("level", request.Kind, ViewKindC4, *l, l.Valid(), "context or container"); err != nil {
+			return nil, err
+		}
 		level = view.C4Level(*l)
 	}
 	v, err := stateOf(ctx).view(view.ViewKind(request.Kind), value(request.Params.Input), value(request.Params.Expand), layer, level)
@@ -329,6 +335,19 @@ func optional[T comparable](v T) *T {
 		return nil
 	}
 	return &v
+}
+
+// viewOption refuses a view's layer or level, as unicode view refuses
+// --layer and --level: given to another view than the one that reads it, or
+// naming none of its values.
+func viewOption[T ~string](name string, kind, reads ViewKind, value T, valid bool, values string) error {
+	switch {
+	case kind != reads:
+		return refuse(http.StatusBadRequest, "serve.bad-parameter", "leave "+name+" out", "%s picks the %s of the %s view, not of the %s view", name, name, reads, kind)
+	case !valid:
+		return refuse(http.StatusBadRequest, "serve.bad-parameter", "give "+values, "%q is not a %s", value, name)
+	}
+	return nil
 }
 
 // viewIdentities are the node identities a view request names: its input,

@@ -474,7 +474,8 @@ func (r *requests) code() url.Values {
 }
 
 // view draws a view kind, now and then one that does not exist, and its
-// input, expansions, layer and level.
+// input and expansions; now and then a layer or a level, given to any view
+// and now and then naming no value.
 func (r *requests) view() url.Values {
 	kind := rapid.SampledFrom([]string{"architecture", "ddd", "class", "sequence", "activity", "events", "calls", "property", "code", "c4", "bogus"}).Draw(r.t, "view")
 	r.path = "/api/views/" + kind
@@ -489,8 +490,11 @@ func (r *requests) view() url.Values {
 		}
 		q["expand"] = append(q["expand"], x)
 	}
-	if rapid.IntRange(0, 4).Draw(r.t, "layer?") == 0 {
-		q["layer"] = []string{rapid.SampledFrom([]string{"design", "code"}).Draw(r.t, "layer")}
+	if rapid.IntRange(0, 3).Draw(r.t, "layer?") == 0 {
+		q["layer"] = []string{rapid.SampledFrom([]string{"design", "code", "code", "bogus"}).Draw(r.t, "layer")}
+	}
+	if rapid.IntRange(0, 3).Draw(r.t, "level?") == 0 {
+		q["level"] = []string{rapid.SampledFrom([]string{"context", "context", "container", "bogus"}).Draw(r.t, "level")}
 	}
 	return q
 }
