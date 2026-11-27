@@ -169,7 +169,7 @@ type Runner interface {
 | 种类 | 属性的键 |
 | --- | --- |
 | container | `focus`（取实际生效的关注度，子组件继承父组件的）、`labels`、`paths`（设计层）；`notations`、`roots`（只有 `system` 才有，`roots` 每项写作 `语言: 目录`）；`language`、`path`（代码层） |
-| type | `labels`、`fields`（每项 `名称: 类型`）、`values` |
+| type | `labels`、`fields`（每项 `名称: 类型`）、`values`、`codec`（编码与解码操作的绝对标识）、`codecType`（成功校验后的有限表示类型） |
 | op | `signature`（`(参数: 类型, …) -> 类型 raises 错误, …`）、`pure`（纯操作为 `true`，其余不写出） |
 | flow、property | `symbols`（每项 `名称: 类型`，生成的符号另加 ` generated`）、`limits`（每项是一条限定的规范写法）、`call`（`call` 子句的规范写法）、`within`（时长）、`ensure`（每项一条表达式的规范写法，按书写次序）、`manual`（人工性质的原因） |
 | property 的黑盒契约 | `requires`（按次序的前提表达式）、`observe`（直接观察路径、具名观察声明或 `none`）、`changes`（允许变化的路径或 `none`）；`call` 只保存调用表达式，不带关键字 |
@@ -608,6 +608,26 @@ Go 先以只读源码覆盖插入 `runtime/trace.Log`，编译一次带 `atomic`
   | `gen.read-failed` | 只读核对无法读取生成路径，属于环境，退出码为 7 |
   | `lang.golang.skeleton-failed` | 骨架的位置、名称或已有类型不能安全补充，属于生成规划 |
   | `lang.golang.driver-name-collision` | 生成的声明与手写代码或另一项生成声明重名 |
+  | `review.invalid-decision` | 评审结论不属于 approved 或 changes-requested |
+  | `review.invalid-record` | 不可变评审记录的版本、结构、内容摘要或文件名不符 |
+  | `review.invalid-reviewer` | 评审人为空或不合法 |
+  | `review.invalid-target` | 评审目标的节点、边或删除标志组合不合法 |
+  | `review.stale-target` | 目标内容已不符合请求的预期指纹 |
+  | `review.symlink` | 评审存储或记录是符号链接 |
+  | `review.unknown-target` | 目标不在当前评审候选集合中 |
+  | `review.unreadable-store` | 评审存储无法读取 |
+  | `review.write-failed` | 不可变评审记录无法安全发布 |
+  | `evidence.invalid-input` | 模型输入、摘要或选中检查的实际执行结果不完整 |
+  | `evidence.coverage-limit` | 录制上限不足以保留全部声明、反例和覆盖并集 |
+  | `evidence.shrink-failed` | 反例缩减的候选执行出现环境错误 |
+  | `evidence.unreadable-report` | 运行记录无法读取 |
+  | `evidence.invalid-report` | 运行报告结构、元数据或覆盖映射无效 |
+  | `evidence.write-failed` | 运行记录或 corpus 更新无法安全发布 |
+  | `evidence.symlink` | 运行存储或 corpus 路径是符号链接 |
+  | `evidence.invalid-corpus` | corpus 的路径、规范头、格式或文件类型不符 |
+  | `evidence.input-hash-collision` | 不同输入共用八位录制名称 |
+  | `evidence.unreplayable-input` | 模型输入不能保持完整类型和 codec 表示往返 |
+  | `run.metadata-failed` | 执行时仓库提交和工作区状态无法读取 |
   | `run.duplicate-backend` | 同一种语言注册了多个运行后端 |
   | `run.unsupported-language` | 目标语言没有可用运行能力 |
   | `run.unknown-check` | 目标不是已绑定到配置语言的性质或流程 |

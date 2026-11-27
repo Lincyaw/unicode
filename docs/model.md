@@ -376,7 +376,7 @@
 | 12 | `graph.bad-path-pattern`、`check.unowned-file`、`check.overlapping-paths` | `graph.derive-matches-definition`、`check.rejects-broken-graph` |
 | 13 | `design.undeclared-dependency`、`check.undeclared-dependency` | `design.rejects-broken-design`、`check.rejects-broken-graph` |
 | 14 | `check.undeclared-dependency` | `check.rejects-broken-graph` |
-| 15 | `lang.golang.missing-binding-id`、`lang.golang.invalid-binding-id`、`lang.golang.misplaced-binding`、`lang.golang.duplicate-binding`、`graph.unresolved-binding`、`check.wrong-binding-kind`、`check.multiple-checks`、`check.multiple-observes`、`check.multiple-substitutes`、`check.substitute-signature`、`check.substitute-outside-container`、`check.not-generated-symbol`、`check.method-binding` | `lang.golang.extracts-generated-module`、`graph.derive-matches-definition`、`check.rejects-broken-graph` |
+| 15 | `lang.golang.missing-binding-id`、`lang.golang.invalid-binding-id`、`lang.golang.misplaced-binding`、`lang.golang.duplicate-binding`、`graph.unresolved-binding`、`check.wrong-binding-kind`、`check.multiple-checks`、`check.multiple-observes`、`check.multiple-substitutes`、`check.substitute-signature`、`check.substitute-outside-container`、`check.not-generated-symbol`、`check.method-binding`、`check.multiple-publications`、`check.publisher-signature`、`check.publisher-outside-container` | `lang.golang.extracts-generated-module`、`graph.derive-matches-definition`、`check.rejects-broken-graph` |
 | 16 | `check.unrealized`、`check.multiple-realizations` | `check.rejects-broken-graph` |
 | 17 | `check.realization-outside-container` | `check.rejects-broken-graph` |
 | 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value` | `check.rejects-broken-graph` |
@@ -394,10 +394,9 @@
 | 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5；自定义生成器按绑定命名，骨架默认命名与撞名检查见 [design.md](design.md) §6.1 | `design.rejects-broken-design` |
 | 31 | `design.expression-type` | `design.rejects-broken-design` |
 | 32 | `lang.golang.purity-violation`，核对表达式和被测调用的纯性；证据并图后的状态传播属于 M6 | `lang.golang.executes-contracts` |
-| 33 | 由评审指纹决定待审状态 | `review.evaluation-follows-content` |
+| 33 | 由性质验证：评审指纹决定待审状态 | `review.evaluation-follows-content` |
 | 34 | `check.missing-observer`、`check.multiple-observers`、`check.observer-signature`、`check.observer-outside-container` | `check.rejects-broken-graph` |
 | 35 | `design.invalid-observation`、`design.invalid-change-path`、`lang.golang.expression-failed`、`lang.golang.frame-violation`、`lang.golang.observation-failed` | `design.rejects-broken-design`、`lang.golang.executes-contracts` |
-| 36 | 由评审指纹决定观察适配器变化后的待审状态 | `review.evaluation-follows-content` |
-
+| 36 | 由性质验证：评审指纹决定观察适配器变化后的待审状态 | `review.evaluation-follows-content` |
 | 37 | `check.runtime-counterexample`、`check.runtime-purity-violation` | `evidence.recordings-are-replayable` |
-| 38 | `design.invalid-codec`、`design.value-type-mismatch` | `design.rejects-broken-design`、`evidence.recordings-are-replayable` |
+| 38 | `design.invalid-codec`、`design.value-type-mismatch` | `design.codecs-are-typed`、`evidence.recordings-are-replayable` |
