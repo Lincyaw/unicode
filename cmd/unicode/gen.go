@@ -58,7 +58,7 @@ type generationJSON struct {
 
 // runGen plans before writing, so a diagnostic prevents applying any edit.
 func runGen(root, format string, dryRun bool, stdout, stderr io.Writer) error {
-	g, diags, err := buildGraph(root)
+	g, diags, err := buildGraphForGeneration(root)
 	if err != nil {
 		return err
 	}
