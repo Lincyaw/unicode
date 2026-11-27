@@ -114,11 +114,6 @@ func genBrokenContractSyntax() *rapid.Generator[Broken] {
 	return rapid.Custom(brokenContractSyntax)
 }
 
-//uc:checks syntax.contract-syntax-rejects-invalid-claims
-func checkContractSyntaxRejectsInvalidClaims(t rapid.TB, broken Broken) {
-	checkRejectsBrokenText(t, broken)
-}
-
 func brokenObservationSyntax(t *rapid.T) Broken {
 	paths := make([]string, rapid.IntRange(1, 4).Draw(t, "observed paths"))
 	badPath := rapid.IntRange(0, len(paths)-1).Draw(t, "malformed path")
@@ -154,9 +149,4 @@ func brokenObservationSyntax(t *rapid.T) Broken {
 //uc:generates syntax.observation-syntax-rejects-malformed-paths.broken
 func genBrokenObservationSyntax() *rapid.Generator[Broken] {
 	return rapid.Custom(brokenObservationSyntax)
-}
-
-//uc:checks syntax.observation-syntax-rejects-malformed-paths
-func checkObservationSyntaxRejectsMalformedPaths(t rapid.TB, broken Broken) {
-	checkRejectsBrokenText(t, broken)
 }

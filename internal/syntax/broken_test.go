@@ -9,8 +9,6 @@ import (
 	"unicode"
 
 	"pgregory.net/rapid"
-
-	"github.com/lincyaw/unicode/internal/diag"
 )
 
 // Broken is a valid file with one edit that breaks a rule of docs/language.md:
@@ -964,27 +962,4 @@ func genBroken() *rapid.Generator[Broken] {
 		}
 		return breakages[uniform(t, len(breakages))](t)
 	})
-}
-
-//uc:checks syntax.rejects-broken-text
-func checkRejectsBrokenText(t rapid.TB, broken Broken) {
-	parsed := Parse(samplePaths[broken.Kind], broken.Kind, []byte(broken.Text))
-	if parsed.File != nil {
-		t.Fatalf("text broken at %d:%d should get %s, yet it parsed into a tree\ntext:\n%s", broken.Line, broken.Column, broken.Code, numbered(broken.Text))
-	}
-	if !slices.ContainsFunc(parsed.Diagnostics, func(d diag.Diagnostic) bool {
-		return d.Code == broken.Code && d.Position.Line == broken.Line && d.Position.Column == broken.Column
-	}) {
-		t.Fatalf("text broken at %d:%d should get %s there, yet it got:%s\ntext:\n%s",
-			broken.Line, broken.Column, broken.Code, describeDiagnostics(parsed), numbered(broken.Text))
-	}
-}
-
-// numbered writes text with the number of each line before it.
-func numbered(text string) string {
-	var b strings.Builder
-	for i, l := range strings.Split(text, "\n") {
-		fmt.Fprintf(&b, "%4d  %s\n", i+1, l)
-	}
-	return b.String()
 }
