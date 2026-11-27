@@ -2,3 +2,6 @@
 /bin/
 **/testdata/rapid/
 /api/node_modules/
+
+# Local package-manager download cache.
+/.pnpm-store/

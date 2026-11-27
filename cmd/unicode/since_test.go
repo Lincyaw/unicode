@@ -326,11 +326,12 @@ func sinceGlobalSample(t *rapid.T) SinceSample {
 	case 13:
 		setAttr("globals.design-file", "globals", []string{"new"})
 	}
-	if mode == 14 {
+	switch mode {
+	case 14:
 		edges = slices.DeleteFunc(edges, func(edge graph.Edge) bool {
 			return edge.Kind == graph.EdgeKindImports && edge.From == code(2, "body.go") && edge.To == code(1, "package")
 		})
-	} else if mode == 15 {
+	case 15:
 		addEdge(graph.EdgeKindImports, code(2, "body.go"), code(1, "package"))
 	}
 	head := sinceGraph(t, nodes, edges)

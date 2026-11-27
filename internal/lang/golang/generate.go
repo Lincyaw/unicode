@@ -1097,10 +1097,3 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 	}
 	return formatted.Bytes()
 }
-
-func lastGoName(name string) string {
-	if i := strings.LastIndexByte(name, '.'); i >= 0 {
-		return name[i+1:]
-	}
-	return name
-}

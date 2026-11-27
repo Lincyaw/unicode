@@ -100,12 +100,6 @@ flow diff-snapshots "用户运行 unicode diff <rev>：像查询的 --rev 一样
   manual "需要准备实际文件系统、命令或 HTTP 环境并核对独立预期值，由手写谓词实现边界"
 }
 
-property changed-checks-are-selected invariant "增量检查包含新改性质、调用者、已删除依赖的使用者及变化用例的父检查；显式标识缩小选择；全局声明变化影响同包和导入方检查，排版变化不误选全部" {
-  about affectedChecks
-  forall sample: SinceSample generated "带调用、检查、用例与操作内容变化的两张小图，以及可选的显式检查标识"
-  manual "需要沿两端图的边独立求闭包并核对删除和变更的归属，表达式没有图遍历"
-}
-
 flow serve-viewer "用户运行 unicode serve：已经运行过 unicode build 时，读入并检查快照，开始监听后在标准输出写出页面的地址；GET /api/snapshot 得到快照的节点数，不是 GET 的请求得到 405，每个请求的日志写到标准错误；收到中断信号后退出，退出码为 0；还没有快照时，退出码为 7，标准错误提示先运行 unicode build" {
   forall files: map<string, RepoFile> generated "一个合法的小仓库：设计文件、录制文件和 Go 源码"
   forall built: bool
@@ -113,4 +107,11 @@ flow serve-viewer "用户运行 unicode serve：已经运行过 unicode build �
     cli -> serve.open(root, snapshot, builder)
     cli -> serve.Server.answer(request)
   }
+  manual "需要准备快照、启动 HTTP 服务并发送中断信号，由手写谓词核对实际进程边界"
+}
+
+property changed-checks-are-selected invariant "增量检查包含新改性质、调用者、已删除依赖的使用者及变化用例的父检查；显式标识缩小选择；全局声明变化影响同包和导入方检查，排版变化不误选全部" {
+  about affectedChecks
+  forall sample: SinceSample generated "带调用、检查、用例与操作内容变化的两张小图，以及可选的显式检查标识"
+  manual "需要沿两端图的边独立求闭包并核对删除和变更的归属，表达式没有图遍历"
 }
