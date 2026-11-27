@@ -41,7 +41,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | `internal/query` | 节点、引用、搜索、切片和影响 | graph |
 | `internal/view` | 视图的选取与折叠；类型卡片的成员沿用 `check` 对字段和枚举值的逐项比较 | graph、check |
 | `internal/repo` | 仓库：经 git 读出提交、工作区和提交中的文件，以及 `build` 写在快照旁边的记录 | — |
-| `internal/serve` | 查看器的后端：读取快照，载入时按 `check` 的约束检查，回答 §7.5.1 的接口；比较的基准由命令行建图；前端页面嵌入其中 | graph、diag、check、query、view、lang.golang、repo、review、evidence |
+| `internal/serve` | 查看器的后端：读取快照，载入时按 `check` 的约束检查，回答 §7.5.1 的接口；比较的基准由命令行建图；前端页面嵌入其中 | graph、diag、check、query、view、lang、lang.golang、repo、review、evidence |
 | `internal/gen` | 生成计划：缺少的骨架，以及应有的生成文件 | graph、lang、diag |
 | `internal/evidence` | 覆盖选择、模型值缩减、规范录制文件及当前与历史证据 | graph、lang、syntax、diag |
 | `internal/review` | 不可变评审记录、内容指纹、待审候选和评审层片段 | graph、diag |
@@ -424,6 +424,7 @@ Go 先以只读源码覆盖插入 `runtime/trace.Log`，编译一次带 `atomic`
 | 以节点为 `about` 的性质；性质的 `about` | 相关性质；约束对象 |
 | 性质的 `forall` 与 `where` | 输入 |
 | 用例的来源 | 声明、录制、反例 |
+| 评审结论 `approved`、`changes-requested` | 批准、要求修改 |
 | 覆盖的三种度量；三者合称 | 代码覆盖率、分支覆盖率、错误覆盖率；测试充分性 |
 | 一个用例新增的覆盖 | 覆盖增量 |
 | 步骤落到的代码 | 代码追溯：实现、调用位置 |
@@ -591,6 +592,7 @@ Go 先以只读源码覆盖插入 `runtime/trace.Log`，编译一次带 `atomic`
   | `cli.symlink` | 符号链接既不跟随读取，也不改写，属于文件系统 |
   | `cli.extract-failed` | 代码无法加载，或源码根目录不存在，属于环境 |
   | `cli.unsupported-language` | 系统文件配置的语言尚无后端，属于工具链的能力 |
+  | `cli.record-generation-failed` | 录制后重新建图或生成失败，须重试 unicode gen 恢复当前驱动 |
   | `serve.not-found` | 查看器请求的标识、边、文件或接口不存在，属于请求 |
   | `serve.not-applicable` | 视图不适用于请求的输入，属于请求 |
   | `serve.bad-revision` | 请求的基准提交读不出，属于请求 |
