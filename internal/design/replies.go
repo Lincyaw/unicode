@@ -137,3 +137,15 @@ func (l *loader) conformInterface(c *entity, v syntax.Value, n *entity, wrong fu
 	}
 	return all
 }
+
+func containsReplies(t *typ) bool {
+	if t.kind == "replies" {
+		return true
+	}
+	for _, e := range t.elems {
+		if containsReplies(e) {
+			return true
+		}
+	}
+	return false
+}

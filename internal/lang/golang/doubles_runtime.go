@@ -48,7 +48,7 @@ func ucDrawReplies(t *rapid.T, op ucReplyOperation, types map[string]ucType, lim
 	}
 	n := rapid.IntRange(minSize, maxSize).Draw(t, path+".size")
 	script := make([]map[string]any, n)
-	ids := slices.Sorted(slices.Values(mapKeysReply(op.Errors)))
+	ids := slices.Sorted(slices.Values(ucMapKeysReply(op.Errors)))
 	for i := range script {
 		choice := rapid.IntRange(0, len(ids)).Draw(t, path+".response")
 		if choice == 0 {
@@ -64,7 +64,7 @@ func ucDrawReplies(t *rapid.T, op ucReplyOperation, types map[string]ucType, lim
 	}
 	return script
 }
-func mapKeysReply(m map[string]reflect.Type) []string {
+func ucMapKeysReply(m map[string]reflect.Type) []string {
 	var keys []string
 	for k := range m {
 		keys = append(keys, k)
@@ -89,7 +89,7 @@ func ucDrawDouble(t *rapid.T, typ reflect.Type, model string, types map[string]u
 		return out, true
 	}
 	scripts := map[string][]map[string]any{}
-	for _, key := range slices.Sorted(slices.Values(mapKeysReplyOperations(factory.Operations))) {
+	for _, key := range slices.Sorted(slices.Values(ucMapKeysReplyOperations(factory.Operations))) {
 		scripts[key] = ucDrawReplies(t, factory.Operations[key], types, nil, path+"."+key, depth)
 	}
 	value := factory.New(scripts)
@@ -97,7 +97,7 @@ func ucDrawDouble(t *rapid.T, typ reflect.Type, model string, types map[string]u
 	out.Set(value)
 	return out, true
 }
-func mapKeysReplyOperations(m map[string]ucReplyOperation) []string {
+func ucMapKeysReplyOperations(m map[string]ucReplyOperation) []string {
 	var keys []string
 	for k := range m {
 		keys = append(keys, k)
@@ -140,7 +140,9 @@ func ucReplyValues(op ucReplyOperation, reply map[string]any, types map[string]u
 		ucFail("lang.golang.input-outside-domain", "this operation cannot return an error", nil)
 	}
 	value := ucNative(ucDetach(ucNormalize(reflect.ValueOf(reply["fields"]), id, types)), native)
-	results[len(results)-1] = value
+	target := reflect.New(op.Signature.Out(len(results) - 1)).Elem()
+	target.Set(value)
+	results[len(results)-1] = target
 	return results
 }
 

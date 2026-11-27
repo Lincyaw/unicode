@@ -57,7 +57,7 @@ func Impact(g *graph.Graph, ids []string) ([]Affected, error) {
 			}
 		}
 		for _, e := range ix.out[id] {
-			if e.Kind == graph.EdgeKindObserves {
+			if forwardBinding(e.Kind) {
 				visit(e.To, e)
 			}
 		}
@@ -79,4 +79,13 @@ func Impact(g *graph.Graph, ids []string) ([]Affected, error) {
 func observationOwner(g *graph.Graph, edge graph.Edge) bool {
 	return edge.Kind == graph.EdgeKindContains && g.Node(edge.From).Kind == graph.NodeKindProperty &&
 		g.Node(edge.To).Kind == graph.NodeKindObservation
+}
+
+// Forward bindings connect an implementation change to the design node it supports.
+func forwardBinding(kind graph.EdgeKind) bool {
+	switch kind {
+	case graph.EdgeKindRealizes, graph.EdgeKindChecks, graph.EdgeKindGenerates, graph.EdgeKindObserves, graph.EdgeKindSubstitutes:
+		return true
+	}
+	return false
 }
