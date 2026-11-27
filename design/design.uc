@@ -29,6 +29,11 @@ type ReplySample record "应答脚本类型检查的样本：脚本长度及合�
   field variant: int
 }
 
+type InheritanceSample record "继承成员解析的样本：父字段值与子类型是否显式遮蔽字段" {
+  field value: int
+  field overridden: bool
+}
+
 op load(files: list<syntax.File>) -> Loaded "解析引用，建出设计层的节点和边，检查只需设计就能判断的约束"
 
 property accepts-valid-design invariant "合法的设计载入之后没有诊断，图中恰有它声明的节点和边，标识按 model.md §7 写出；attrs 和 edgeAttrs 中列出的节点与边，属性恰是列出的那些；边的键为种类、起点、终点以空格连接" {
@@ -73,4 +78,10 @@ property reply-scripts-are-typed invariant "成功与声明错误的应答、接
   about load
   forall sample: ReplySample generated "一至五个应答，以及合法脚本或只改一处类型、目标、字段、基数与归属的变体"
   manual "需要生成完整设计程序并比较载入诊断与位置，表达式没有源文本构造与编译操作"
+}
+
+property inheritance-members-are-resolved invariant "继承字段及操作在表达式、限定、用例及调用序列中一致可见；子成员优先；调用序列以被引用的具体类型为接收者，记录用例不能遗漏继承字段" {
+  about load
+  forall sample: InheritanceSample generated "有符号整数字段及有无子字段遮蔽的父子对象，含继承操作的序列、路径限定和声明用例"
+  manual "需要建立实际设计程序并核对成员引用、限定、用例及诊断，而非比较对象的单次取值"
 }
