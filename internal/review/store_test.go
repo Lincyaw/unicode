@@ -106,6 +106,51 @@ func checkRecordsPreserveHistory(t rapid.TB, sample Sample) {
 	checkDiagnostic(t, Write(root, sample.Graph, sample.Base, request).Diagnostics, "review.unknown-target")
 	request.Target = Target{Node: "domain", EdgeKind: "calls", From: "domain", To: "domain"}
 	checkDiagnostic(t, Write(root, sample.Graph, sample.Base, request).Diagnostics, "review.invalid-target")
+	historyRoot := filepath.Join(root, "alternating")
+	if err := os.Mkdir(historyRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	comment := "review of " + targetSubject(target)
+	history := []Record{}
+	for _, step := range []struct{ decision, comment string }{
+		{"approved", comment},
+		{"changes-requested", comment},
+		{"approved", comment},
+		{"approved", comment + " changed"},
+		{"approved", comment},
+	} {
+		nextRequest := Request{Target: target, Reviewer: "reviewer", Decision: step.decision, Comment: step.comment}
+		next := Write(historyRoot, sample.Graph, sample.Base, nextRequest)
+		if next.Record == nil || len(next.Diagnostics) != 0 {
+			t.Fatalf("alternating review failed: %+v", next)
+		}
+		if slices.ContainsFunc(history, func(record Record) bool { return record.Id == next.Record.Id }) {
+			t.Fatalf("a changed review reused old history: %+v", next)
+		}
+		if len(history) > 0 && next.Record.At == history[len(history)-1].At {
+			t.Fatal("a changed review reused the previous event time")
+		}
+		history = append(history, *next.Record)
+		repeated := Write(historyRoot, sample.Graph, sample.Base, nextRequest)
+		if repeated.Record == nil || *repeated.Record != *next.Record || len(repeated.Diagnostics) != 0 {
+			t.Fatalf("the latest identical review was not idempotent: %+v", repeated)
+		}
+		historyRead := Read(historyRoot)
+		if len(historyRead.Diagnostics) != 0 || len(historyRead.Records) != len(history) {
+			t.Fatalf("alternating review lost history: %+v", historyRead)
+		}
+		for _, recorded := range history {
+			if !slices.Contains(historyRead.Records, recorded) {
+				t.Fatalf("a historical record changed: %+v", recorded)
+			}
+		}
+		historyEvaluation := Evaluate(sample.Graph, sample.Base, historyRead.Records)
+		if len(historyEvaluation.Diagnostics) != 0 || !slices.ContainsFunc(historyEvaluation.Items, func(item Item) bool {
+			return item.Target == target && item.Record != nil && *item.Record == *next.Record
+		}) {
+			t.Fatalf("the restored decision or comment did not become current: %+v", historyEvaluation)
+		}
+	}
 	parallelRoot := filepath.Join(root, "parallel")
 	if err := os.Mkdir(parallelRoot, 0o755); err != nil {
 		t.Fatal(err)

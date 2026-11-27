@@ -354,11 +354,11 @@ func Write(root string, g *graph.Graph, base *graph.Graph, request Request) Writ
 	if why := validateRecord(record); why != "" {
 		return fail("review.invalid-record", why, "give valid UTF-8 review metadata and a complete commit hash when supplied")
 	}
-	for _, existing := range loaded.Records {
+	if existing := item(view, request.Target, loaded.Records).Record; existing != nil {
 		copy := record
 		copy.At, copy.Id = existing.At, existing.Id
-		if copy == existing {
-			out.Record = &existing
+		if copy == *existing {
+			out.Record = existing
 			return out
 		}
 	}

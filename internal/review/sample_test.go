@@ -29,7 +29,8 @@ type sampleRecord struct {
 	source *graph.Graph
 }
 
-//uc:generates review.evaluation-follows-content.sample review.records-preserve-history.sample
+//uc:generates review.evaluation-follows-content.sample
+//uc:generates review.records-preserve-history.sample
 func genSample() *rapid.Generator[Sample] {
 	return rapid.Custom(func(t *rapid.T) Sample {
 		value := rapid.IntRange(-20, 20).Draw(t, "value")
