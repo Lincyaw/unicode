@@ -85,6 +85,12 @@ func checkSnapshotHeadFollowsRecord(t rapid.TB, exchange Exchange, record *repo.
 			t.Fatalf("with a record of the commit checked out, /api/snapshot gives the head %+v, not %+v as git gives the commit", got, want)
 		}
 	}
+}
+
+//uc:checks serve.open-refuses-malformed-record
+func checkOpenRefusesMalformedRecord(t rapid.TB, exchange Exchange) {
+	root, _ := written(t, exchange)
+	defer removeAll(t, root)
 	writeFile(t, filepath.Join(root, ".unicode", repo.RecordFile), []byte(`{"commit": 7}`))
 	if _, err := Open(root, filepath.Join(root, ".unicode", "graph.json"), baseBuilder{}); !errors.As(err, new(Unreadable)) {
 		t.Fatalf("beside a record that is not {commit, dirty}, Open should refuse the snapshot as unreadable, yet it gave %v", err)

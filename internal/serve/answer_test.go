@@ -113,11 +113,20 @@ func checkAnswersFollowContract(t rapid.TB, exchange Exchange) {
 		if err != nil {
 			t.Fatalf("the answer %d to %s does not match its schema in api/openapi.yaml: %v\n%s", resp.Status, req, err, resp.Body)
 		}
-		if escape := htmlEscape(resp.Body); escape != "" {
-			t.Fatalf("the answer to %s writes %s, an HTML escape that the snapshot's JSON does not write\n%s", req, escape, resp.Body)
-		}
 		if _, why := problemOf(resp.Body); resp.Status >= 400 && why != "" {
 			t.Fatalf("%s was refused with %d, but the body is not a serve.* refusal: %s\n%s", req, resp.Status, why, resp.Body)
+		}
+	}
+}
+
+//uc:checks serve.answers-do-not-escape-html
+func checkAnswersDoNotEscapeHtml(t rapid.TB, exchange Exchange) {
+	s, root, _ := served(t, exchange)
+	defer removeAll(t, root)
+	for _, req := range exchange.Requests {
+		resp := s.Answer(req)
+		if escape := htmlEscape(resp.Body); escape != "" {
+			t.Fatalf("the answer to %s writes %s, an HTML escape that the snapshot's JSON does not write\n%s", req, escape, resp.Body)
 		}
 	}
 }

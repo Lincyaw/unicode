@@ -45,10 +45,16 @@ flow answer-request "查看器发来一次接口请求：快照文件自上次�
   manual "需要准备实际文件系统、命令或 HTTP 环境并核对独立预期值，由手写谓词实现边界"
 }
 
-property answers-follow-contract invariant "每个应答都合乎 api/openapi.yaml：状态码是该接口声明的，正文合乎声明的模式；拒绝的正文是诊断码为 serve.* 的 {code, message, fix}；不是接口的路径得到 404；JSON 与快照的写法一样，不把 <、> 和 & 转义" {
+property answers-follow-contract invariant "每个应答都合乎 api/openapi.yaml：状态码是该接口声明的，正文合乎声明的模式，拒绝的正文是诊断码为 serve.* 的 {code, message, fix}，不是接口的路径得到 404" {
   about Server.answer
   forall exchange: Exchange generated "一张随机的图，以及对各个接口的请求：标识多取自图中的节点，有时不存在，参数有时不合格式"
   manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"
+}
+
+property answers-do-not-escape-html invariant "应答的 JSON 与快照的写法一样，不把 <、> 和 & 写成转义序列" {
+  about Server.answer
+  forall exchange: Exchange generated "一张随机的图，以及对各个接口的请求：标识约七分之一不存在，参数有时不合格式，也有不是接口的路径"
+  manual "需要在临时目录中写出快照再由服务读入，表达式不能读写文件"
 }
 
 property identities-resolve invariant "应答中作为节点标识出现的每个值，经 /api/entity 都能取到实体页；比较中各项在基准中的样子和删除的项不在快照中，除外" {
@@ -75,9 +81,15 @@ property answers-are-deterministic invariant "同一个快照上，同一个请�
   manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"
 }
 
-property snapshot-head-follows-record invariant "/api/snapshot 的 head 取自快照旁的 build.json：提交和是否有改动与记录相同，git 读得出这个提交时另带它的缩写、说明、时间和检出在它上面的分支；记录的提交为空时其余各项为空；没有记录时取自读入快照时 git 给出的工作区；记录不是 {commit, dirty} 时快照读不出" {
+property snapshot-head-follows-record invariant "/api/snapshot 的 head 按 design.md §7.5.1 取自 build 记录，git 读得出记录的提交时另带缩写、说明、时间和分支，没有 build 记录时取自 git 给出的工作区" {
   about Server.answer
   forall exchange: Exchange generated "一张随机的图和它的文件"
   forall record: optional<repo.Head> generated "没有记录；没有提交的记录；或者记有一个随机的提交哈希和是否有改动的记录"
   manual "需要写出仓库、提交和记录文件，再经 HTTP 读出快照的元数据，表达式没有这些环境操作"
+}
+
+property open-refuses-malformed-record invariant "快照旁的 build 记录不是 {commit, dirty} 时，open 报 Unreadable" {
+  about open
+  forall exchange: Exchange generated "一张随机的图和它的文件"
+  manual "需要在快照旁写出不合格式的 build 记录，表达式不能读写文件"
 }

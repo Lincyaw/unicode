@@ -522,9 +522,11 @@ func genExchangeOf(paths []string) *rapid.Generator[Exchange] {
 //
 //uc:generates serve.answer-request.exchange
 //uc:generates serve.answers-follow-contract.exchange
+//uc:generates serve.answers-do-not-escape-html.exchange
 //uc:generates serve.identities-resolve.exchange
 //uc:generates serve.answers-are-deterministic.exchange
 //uc:generates serve.snapshot-head-follows-record.exchange
+//uc:generates serve.open-refuses-malformed-record.exchange
 func genExchange() *rapid.Generator[Exchange] {
 	return genExchangeOf(slices.Sorted(maps.Keys(endpoints)))
 }
