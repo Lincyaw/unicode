@@ -178,6 +178,7 @@ func repoFiles(texts map[string]string) map[string]RepoFile {
 //uc:generates cli.query-graph.files
 //uc:generates cli.diff-snapshots.base
 //uc:generates cli.diff-snapshots.head
+//uc:generates cli.serve-viewer.files
 func genRepo() *rapid.Generator[map[string]RepoFile] {
 	return rapid.Custom(func(t *rapid.T) map[string]RepoFile {
 		return repoFiles(drawRepo(t).texts(t))

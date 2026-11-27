@@ -85,3 +85,12 @@ flow diff-snapshots "用户运行 unicode diff <rev>：像查询的 --rev 一样
     cli -> graph.compare(base, head)
   }
 }
+
+flow serve-viewer "用户运行 unicode serve：已经运行过 unicode build 时，读入并检查快照，开始监听后在标准输出写出页面的地址；GET /api/snapshot 得到快照的节点数，不是 GET 的请求得到 405，每个请求的日志写到标准错误；收到中断信号后退出，退出码为 0；还没有快照时，退出码为 7，标准错误提示先运行 unicode build" {
+  forall files: map<string, RepoFile> generated "一个合法的小仓库：设计文件、录制文件和 Go 源码"
+  forall built: bool
+  user -> main(args) {
+    cli -> serve.open(root, snapshot, builder)
+    cli -> serve.Server.answer(request)
+  }
+}

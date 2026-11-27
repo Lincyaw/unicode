@@ -97,6 +97,9 @@ func runServe(root, snapshot, addr string, web pageDir, format string, stdout, s
 	if err != nil {
 		return &exitError{code: exitEnvironment, err: fmt.Errorf("cannot listen on %s: %w", addr, err)}
 	}
+	// The interrupt is caught before the address is out, so that whoever reads the address can stop serve.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	url := "http://" + ln.Addr().String() + "/"
 	if _, err := io.WriteString(stderr, note); err != nil {
 		_ = ln.Close()
@@ -106,8 +109,6 @@ func runServe(root, snapshot, addr string, web pageDir, format string, stdout, s
 		_ = ln.Close()
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	server := &http.Server{Handler: logRequests(s.Handler(pages), stderr), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
