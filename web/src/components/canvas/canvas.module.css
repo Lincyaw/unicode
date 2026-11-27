@@ -1,6 +1,6 @@
 .canvas { position: absolute; inset: 0; }
 /* The viewport takes the reader's gestures itself (panZoom.ts), so the browser neither scrolls nor zooms it. */
-.viewport { position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none; }
+.viewport { position: absolute; inset: 0; overflow: clip; cursor: grab; touch-action: none; }
 .viewport:active { cursor: grabbing; }
 .sheet { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 .drawing { position: absolute; }

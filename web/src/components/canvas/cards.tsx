@@ -1,6 +1,6 @@
 import { clsx } from 'clsx';
-import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react';
-import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Node, ViewNode } from '../../api/types';
 import { ABOUT, CONTROLS, kindWord } from '../../terms';
@@ -13,6 +13,7 @@ import { Above } from '../marks/Above';
 import { CoverButton } from '../marks/CoverButton';
 import { NodeRef } from '../marks/NodeRef';
 import { StatusDot } from '../marks/StatusDot';
+import { useReveal } from './panZoom';
 import type { CardRow } from './sizes';
 import styles from './cards.module.css';
 
@@ -40,7 +41,7 @@ export function TypeRefs({ parts }: { parts: TypePart[] }) {
   return parts.map((part, index) => (part.id === undefined ? part.text : <NodeRef key={index} id={part.id}>{part.text}</NodeRef>));
 }
 
-function Rows({ rows, onToggle }: { rows: CardRow[]; onToggle?: () => void }) {
+function Rows({ rows, onUnfold }: { rows: CardRow[]; onUnfold?: () => void }) {
   return rows.map((row, index) => {
     switch (row.kind) {
       case 'field':
@@ -55,38 +56,25 @@ function Rows({ rows, onToggle }: { rows: CardRow[]; onToggle?: () => void }) {
       case 'op':
         return <NodeRef key={index} id={row.op.id} className={styles.op}>{row.text}</NodeRef>;
       case 'more':
-        return <button key={index} type="button" className={clsx(styles.field, styles.more)} aria-expanded="false" onClick={onToggle}>+{row.count}</button>;
-      case 'less':
-        return (
-          <button key={index} type="button" className={clsx(styles.field, styles.more)} aria-expanded="true" aria-label={CONTROLS.collapseRow} onClick={onToggle}>
-            <ChevronUp size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />
-          </button>
-        );
+        return <button key={index} type="button" className={clsx(styles.field, styles.more)} aria-expanded="false" onClick={onUnfold}>+{row.count}</button>;
     }
   });
 }
 
 /**
  * A design type drawn as a card: its fields or values and its operations; a contradicted type has a red edge. Its +n
- * unfolds the card to all its fields in place, `onToggle` telling the drawing to make room; the card then stays in
- * sight wherever the drawing moves it.
+ * unfolds the card to all its fields in place (`onUnfold`), and the canvas keeps the card in sight as the drawing
+ * makes room.
  */
-export function TypeCard({ node, rows, onToggle, style }: { node: ViewNode; rows: CardRow[]; onToggle?: () => void; style?: CSSProperties }) {
+export function TypeCard({ node, rows, onUnfold, style }: { node: ViewNode; rows: CardRow[]; onUnfold?: () => void; style?: CSSProperties }) {
   const box = useSelectedBox(node.id);
-  const card = useRef<HTMLDivElement>(null);
-  const toggled = useRef(false);
-  useLayoutEffect(() => {
-    if (toggled.current) {
-      toggled.current = false;
-      card.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    }
-  });
-  const toggle = onToggle && (() => {
-    toggled.current = true;
-    onToggle();
+  const reveal = useReveal();
+  const unfold = onUnfold && (() => {
+    onUnfold();
+    reveal(node.id);
   });
   return (
-    <div ref={card} className={clsx(styles.card, box.selected && 'loop-edge-still')} data-status={node.status} style={style} {...box.props}>
+    <div className={clsx(styles.card, box.selected && 'loop-edge-still')} data-status={node.status} style={style} {...box.props}>
       <span className={styles.head}>
         <CoverButton id={node.id}>
           <StatusDot status={node.status} />
@@ -95,7 +83,7 @@ export function TypeCard({ node, rows, onToggle, style }: { node: ViewNode; rows
         </CoverButton>
         <NodeHint node={node} />
       </span>
-      <Rows rows={rows} onToggle={toggle} />
+      <Rows rows={rows} onUnfold={unfold} />
     </div>
   );
 }

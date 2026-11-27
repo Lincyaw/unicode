@@ -22,7 +22,7 @@ import { C4_LEVELS, CLASS_LAYERS, CONTROLS } from '../terms';
  */
 export function ViewDrawing({ address }: { address: ViewAddress }) {
   const view = useView(address);
-  const key = [view.kind, view.input.id, view.layer, view.level].join(' ');
+  const key = [view.kind, view.input.id, view.layer, view.level].filter(part => part !== undefined).join(' ');
   return <DrawingKey key={key} value={key}><Drawing view={view} address={address} /></DrawingKey>;
 }
 
