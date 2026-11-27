@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,6 +50,18 @@ func (b *Backend) Run(plan lang.RunPlan) lang.RunReport {
 	}
 	defer os.RemoveAll(temp)
 	for index, edit := range generation.Edits {
+		if len(plan.Ids) > 0 {
+			needed := false
+			for _, id := range plan.Ids {
+				if bytes.Contains(edit.Content, []byte(strconv.Quote(id))) {
+					needed = true
+					break
+				}
+			}
+			if !needed {
+				continue
+			}
+		}
 		resultFile := filepath.Join(temp, fmt.Sprintf("%d.json", index))
 		dir := filepath.Dir(edit.Path)
 		target := "./" + filepath.ToSlash(dir)
@@ -129,6 +142,13 @@ func safeContractPath(root, relative string) error {
 		return fmt.Errorf("generated path leaves the repository")
 	}
 	path := root
+	info, err := os.Lstat(root)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("the repository root is a symbolic link")
+	}
 	for _, part := range strings.Split(filepath.Clean(relative), string(filepath.Separator)) {
 		path = filepath.Join(path, part)
 		info, err := os.Lstat(path)

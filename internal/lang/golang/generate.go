@@ -30,26 +30,32 @@ import (
 var contractRuntime string
 
 var _ lang.Generator = (*Backend)(nil)
+var _ = ucCheck
+var _ = ucDraw
+var _ = ucParseTime
+var _ = ucParseDuration
 
 type nativeDeclaration struct {
 	obj types.Object
 	pkg *packages.Package
 }
 type contractCompiler struct {
-	plan         lang.GenPlan
-	loaded       loaded
-	declarations map[string]nativeDeclaration
-	bindings     map[graph.EdgeKind]map[string][]string
-	nodes        map[string]graph.Node
-	parents      map[string]string
-	diagnostics  []diag.Diagnostic
+	plan            lang.GenPlan
+	loaded          loaded
+	declarations    map[string]nativeDeclaration
+	bindings        map[graph.EdgeKind]map[string][]string
+	nodes           map[string]graph.Node
+	parents         map[string]string
+	diagnostics     []diag.Diagnostic
+	literalImports  map[string]string
+	foreignNames    map[string]string
+	foreignOriginal map[string]string
 }
 type contractUnit struct {
 	node          graph.Node
 	pkg           *packages.Package
 	spec          ucContract
 	predicate     *types.Func
-	inputs        []string
 	cases         [][]string
 	generators    map[string]*types.Func
 	generatorArgs map[string][]string
@@ -64,7 +70,7 @@ type contractFile struct {
 
 // Generate builds standalone Go test files without changing the repository.
 func (b *Backend) Generate(plan lang.GenPlan) lang.Generation {
-	c := contractCompiler{plan: plan, declarations: map[string]nativeDeclaration{}, bindings: map[graph.EdgeKind]map[string][]string{}, nodes: map[string]graph.Node{}, parents: map[string]string{}}
+	c := contractCompiler{foreignNames: map[string]string{}, foreignOriginal: map[string]string{}, plan: plan, declarations: map[string]nativeDeclaration{}, bindings: map[graph.EdgeKind]map[string][]string{}, nodes: map[string]graph.Node{}, parents: map[string]string{}}
 	if plan.Graph == nil {
 		return lang.Generation{Diagnostics: []diag.Diagnostic{{Code: "lang.golang.invalid-plan", Position: diag.Position{Path: "design/system.uc", Line: 1, Column: 1}, Message: "the generation plan has no graph", Fix: "build and link the graph before generating Go contracts"}}}
 	}
@@ -185,7 +191,7 @@ func (c *contractCompiler) packageFor(n graph.Node, call *ucExpr, symbols []ucSy
 	}
 	return nil
 }
-func (c *contractCompiler) expression(n graph.Node, text string) *ucExpr {
+func (c *contractCompiler) expression(n graph.Node, text, clause string, ordinal int) *ucExpr {
 	parsed := syntax.ParseExpr(n.Origin.Path, text)
 	if len(parsed.Diagnostics) > 0 {
 		c.diagnostics = append(c.diagnostics, parsed.Diagnostics...)
@@ -193,11 +199,43 @@ func (c *contractCompiler) expression(n graph.Node, text string) *ucExpr {
 	}
 	line, column := n.Origin.Line, n.Origin.Column
 	if data, err := os.ReadFile(filepath.Join(c.plan.Root, n.Origin.Path)); err == nil {
-		lines := strings.Split(string(data), "\n")
-		for i := n.Origin.Line - 1; i < len(lines); i++ {
-			if j := strings.Index(lines[i], text); j >= 0 {
-				line, column = i+1, j+1
-				break
+		source := syntax.Parse(n.Origin.Path, syntax.FileKindComponent, data)
+		if source.File != nil {
+			for _, decl := range source.File.Decls {
+				property, ok := decl.(*syntax.PropertyDecl)
+				if !ok || string(property.Name) != lastName(n.Id) {
+					continue
+				}
+				index := 0
+				for _, member := range property.Lines {
+					var original *syntax.Expr
+					switch member := member.(type) {
+					case *syntax.Act:
+						if clause == "call" {
+							original = member.Expression.Expr()
+						}
+					case *syntax.Requires:
+						if clause == "requires" {
+							original = member.Expression.Expr()
+						}
+					case *syntax.Ensure:
+						if clause == "ensure" {
+							original = member.Expression.Expr()
+						}
+					case *syntax.Changes:
+						if clause == "changes" && ordinal < len(member.Paths) {
+							original = member.Paths[ordinal].Expr()
+							index = ordinal
+						}
+					}
+					if original != nil {
+						if index == ordinal {
+							line, column = original.Pos.Line, original.Pos.Column
+							break
+						}
+						index++
+					}
+				}
 			}
 		}
 	}
@@ -218,7 +256,16 @@ func (c *contractCompiler) expression(n graph.Node, text string) *ucExpr {
 		}
 		out := &ucExpr{Kind: e.Kind, Text: e.Text, Line: line + e.Pos.Line - 1, Column: column + e.Pos.Column - 1}
 		if e.Kind == "all" || e.Kind == "any" || e.Kind == "count" || e.Kind == "sum" {
+			out.Children = append(out.Children, convert(e.Children[0]))
+			previous, present := known[e.Text]
 			known[e.Text] = true
+			out.Children = append(out.Children, convert(e.Children[1]))
+			if present {
+				known[e.Text] = previous
+			} else {
+				delete(known, e.Text)
+			}
+			return out
 		}
 		for _, child := range e.Children {
 			out.Children = append(out.Children, convert(child))
@@ -307,22 +354,22 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 		unit.spec.Symbols = append(unit.spec.Symbols, ucSymbol{name, t})
 	}
 	if len(n.Attrs["call"]) > 0 {
-		unit.spec.Call = c.expression(n, n.Attrs["call"][0])
+		unit.spec.Call = c.expression(n, n.Attrs["call"][0], "call", 0)
 	}
-	for _, e := range n.Attrs["requires"] {
-		unit.spec.Requires = append(unit.spec.Requires, c.expression(n, e))
+	for i, e := range n.Attrs["requires"] {
+		unit.spec.Requires = append(unit.spec.Requires, c.expression(n, e, "requires", i))
 	}
-	for _, e := range n.Attrs["ensure"] {
-		unit.spec.Ensures = append(unit.spec.Ensures, c.expression(n, e))
+	for i, e := range n.Attrs["ensure"] {
+		unit.spec.Ensures = append(unit.spec.Ensures, c.expression(n, e, "ensure", i))
 	}
 	for _, observation := range n.Attrs["observe"] {
 		if !strings.Contains(observation, ":") {
 			unit.spec.Observe = append(unit.spec.Observe, observation)
 		}
 	}
-	for _, text := range n.Attrs["changes"] {
+	for i, text := range n.Attrs["changes"] {
 		if text != "none" {
-			unit.spec.Changes = append(unit.spec.Changes, c.expression(n, text))
+			unit.spec.Changes = append(unit.spec.Changes, c.expression(n, text, "changes", i))
 		}
 	}
 	if len(n.Attrs["within"]) > 0 {
@@ -415,6 +462,10 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 			}
 			unit.generators[symbol.Name] = fn
 		}
+		if strings.HasSuffix(n.Attrs["symbols"][len(earlier)], " generated") && unit.generators[symbol.Name] == nil {
+			c.diagnostic(n, "lang.golang.missing-generator", "generated symbol "+symbol.Name+" has no unique bound Go generator", "bind exactly one generator with //uc:generates before executing this property")
+			return nil
+		}
 		earlier[symbol.Name] = symbol.Type
 	}
 	for _, node := range c.plan.Graph.Nodes() {
@@ -427,13 +478,8 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 			values[name] = text
 		}
 		var expressions []string
-		for i, symbol := range unit.spec.Symbols {
-			literal, err := c.literal(values[symbol.Name], unit.types[i], unit.pkg)
-			if err != nil {
-				c.diagnostic(node, "lang.golang.unsupported-case", err.Error(), "write a finite declared case supported by the Go backend")
-				return nil
-			}
-			expressions = append(expressions, literal)
+		for _, symbol := range unit.spec.Symbols {
+			expressions = append(expressions, values[symbol.Name])
 		}
 		unit.cases = append(unit.cases, expressions)
 	}
@@ -448,6 +494,20 @@ func first(xs []string) string {
 func lastName(id string) string { _, name, _ := cutLast(id, "."); return name }
 func (c *contractCompiler) qualify(obj types.Object, pkg *packages.Package, imports map[string]string) string {
 	if obj.Pkg() == nil || obj.Pkg().Path() == pkg.PkgPath {
+		if strings.HasPrefix(obj.Name(), "uc") {
+			if c.foreignNames == nil {
+				c.foreignNames = map[string]string{}
+				c.foreignOriginal = map[string]string{}
+			}
+			key := pkg.PkgPath + "." + obj.Name()
+			if alias, ok := c.foreignNames[key]; ok {
+				return alias
+			}
+			alias := "unicodeContractForeign" + strconv.Itoa(len(c.foreignNames))
+			c.foreignNames[key] = alias
+			c.foreignOriginal[alias] = obj.Name()
+			return alias
+		}
 		return obj.Name()
 	}
 	if !obj.Exported() {
@@ -526,6 +586,17 @@ func (c *contractCompiler) literal(text, goType string, pkg *packages.Package) (
 	return c.valueLiteral(value, goType, pkg)
 }
 func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packages.Package) (string, error) {
+	if strings.HasPrefix(t, "*") {
+		_, none := value.(*syntax.NoneValue)
+		_, record := value.(*syntax.BraceValue)
+		if !none && (!record || strings.HasPrefix(t, "*map[")) {
+			inner, err := c.valueLiteral(value, t[1:], pkg)
+			if err != nil {
+				return "", err
+			}
+			return "func() " + t + " { value := " + inner + "; return &value }()", nil
+		}
+	}
 	switch v := value.(type) {
 	case *syntax.NumberValue:
 		return t + "(" + string(v.Text) + ")", nil
@@ -543,12 +614,25 @@ func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packa
 	case *syntax.BoolValue:
 		return strconv.FormatBool(bool(v.Value)), nil
 	case *syntax.NoneValue:
-		return "nil", nil
+		return "(" + t + ")(nil)", nil
 	case *syntax.NameValue:
 		return t + "(" + strconv.Quote(string(v.Name)) + ")", nil
 	case *syntax.ListValue:
 		if !strings.HasPrefix(t, "[]") {
-			return "", fmt.Errorf("set case literals are not supported yet")
+			if strings.HasPrefix(t, "map[") && strings.HasSuffix(t, "]struct{}") {
+				i := strings.IndexByte(t, ']')
+				keyType := t[4:i]
+				var items []string
+				for _, item := range v.Items {
+					x, err := c.valueLiteral(item, keyType, pkg)
+					if err != nil {
+						return "", err
+					}
+					items = append(items, x+":{}")
+				}
+				return t + "{" + strings.Join(items, ",") + "}", nil
+			}
+			return "", fmt.Errorf("a list case needs a Go slice or set")
 		}
 		var items []string
 		for _, item := range v.Items {
@@ -582,9 +666,12 @@ func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packa
 			return t + "{" + strings.Join(items, ",") + "}", nil
 		}
 		name := strings.TrimPrefix(t, "*")
+		if original, ok := c.foreignOriginal[name]; ok {
+			name = original
+		}
 		var named *types.Named
 		for _, d := range c.declarations {
-			if ty, ok := d.obj.(*types.TypeName); ok && c.qualify(ty, pkg, map[string]string{}) == name {
+			if ty, ok := d.obj.(*types.TypeName); ok && ty.Name() == lastGoName(name) && ((!strings.Contains(name, ".") && ty.Pkg().Path() == pkg.PkgPath) || (strings.Contains(name, ".") && c.literalImports[ty.Pkg().Path()] == strings.TrimSuffix(name, "."+ty.Name()))) {
 				named, _ = ty.Type().(*types.Named)
 				break
 			}
@@ -612,7 +699,12 @@ func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packa
 				if p.Path() == pkg.PkgPath {
 					return ""
 				}
-				return p.Name()
+				if alias, ok := c.literalImports[p.Path()]; ok {
+					return alias
+				}
+				alias := "ucpkg" + strconv.Itoa(len(c.literalImports))
+				c.literalImports[p.Path()] = alias
+				return alias
 			})
 			x, err := c.valueLiteral(entry.Value, typeText, pkg)
 			if err != nil {
@@ -629,6 +721,7 @@ func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packa
 	return "", fmt.Errorf("the case value has an unsupported form")
 }
 func (c *contractCompiler) render(file *contractFile) []byte {
+	c.literalImports = file.imports
 	var body strings.Builder
 	for index, unit := range file.units {
 		id := strconv.Itoa(index)
@@ -642,7 +735,22 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		for _, expr := range expressions {
 			ucWalk(expr, func(e *ucExpr) {
 				if e.Kind == "call" {
-					usedOps[ucName(e.Children[0])] = true
+					name := ucName(e.Children[0])
+					if _, ok := unit.spec.Operations[name]; !ok && e.Children[0].Kind == "field" {
+						env := ucEnvironment{spec: &unit.spec, values: map[string]ucValue{}}
+						for _, symbol := range unit.spec.Symbols {
+							env.values[symbol.Name] = ucValue{Type: symbol.Type}
+						}
+						for _, observer := range unit.spec.Observers {
+							env.values[observer.Name] = ucValue{Type: observer.Type}
+						}
+						receiverType := env.typeOf(e.Children[0].Children[0], nil)
+						if kind, args := ucSplitType(receiverType); kind == "optional" {
+							receiverType = args[0]
+						}
+						name = receiverType + "." + e.Children[0].Text
+					}
+					usedOps[name] = true
 				}
 				if e.Kind == "raised" || e.Kind == "failure" {
 					usedErrors[e.Text] = true
@@ -652,6 +760,17 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		for op := range usedOps {
 			for _, errType := range unit.spec.Operations[op].Raises {
 				usedErrors[errType] = true
+			}
+		}
+		for id, ty := range unit.spec.Types {
+			if ty.Form != "error" {
+				continue
+			}
+			for parent := ty.Parent; parent != ""; parent = unit.spec.Types[parent].Parent {
+				if usedErrors[parent] {
+					usedErrors[id] = true
+					break
+				}
 			}
 		}
 		for _, key := range slices.Sorted(maps.Keys(unit.spec.Operations)) {
@@ -736,7 +855,12 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		body.WriteString(")};")
 		for _, ca := range unit.cases {
 			var vals []string
-			for i, x := range ca {
+			for i, text := range ca {
+				x, err := c.literal(text, c.goType(unit.spec.Symbols[i].Type, file.pkg, file.imports), file.pkg)
+				if err != nil {
+					c.diagnostic(unit.node, "lang.golang.unsupported-case", err.Error(), "use a finite replay value supported by the Go backend")
+					return nil
+				}
 				vals = append(vals, strconv.Quote(unit.spec.Symbols[i].Name)+":reflect.ValueOf("+x+")")
 			}
 			fmt.Fprintf(&body, "if !explore {invoke(t,map[string]reflect.Value{%s})};", strings.Join(vals, ","))
@@ -803,9 +927,45 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		c.diagnostic(file.units[0].node, "lang.golang.generate-failed", err.Error(), "correct unsupported Go bindings before generation")
 		return nil
 	}
+	owned := map[string]bool{}
+	for _, decl := range runtimeFile.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if strings.HasPrefix(d.Name.Name, "uc") {
+				owned[d.Name.Name] = true
+			}
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				switch spec := spec.(type) {
+				case *ast.TypeSpec:
+					if strings.HasPrefix(spec.Name.Name, "uc") {
+						owned[spec.Name.Name] = true
+					}
+				case *ast.ValueSpec:
+					for _, name := range spec.Names {
+						if strings.HasPrefix(name.Name, "uc") {
+							owned[name.Name] = true
+						}
+					}
+				}
+			}
+		}
+	}
+	for i := range file.units {
+		owned["ucSpec"+strconv.Itoa(i)] = true
+		owned["ucDrive"+strconv.Itoa(i)] = true
+	}
 	ast.Inspect(tree, func(node ast.Node) bool {
-		if id, ok := node.(*ast.Ident); ok && strings.HasPrefix(id.Name, "uc") {
+		if id, ok := node.(*ast.Ident); ok && owned[id.Name] {
 			id.Name = "unicodeGenerated" + strings.TrimPrefix(id.Name, "uc")
+		}
+		return true
+	})
+	ast.Inspect(tree, func(node ast.Node) bool {
+		if id, ok := node.(*ast.Ident); ok {
+			if original, ok := c.foreignOriginal[id.Name]; ok {
+				id.Name = original
+			}
 		}
 		return true
 	})
@@ -815,4 +975,11 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		return nil
 	}
 	return formatted.Bytes()
+}
+
+func lastGoName(name string) string {
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		return name[i+1:]
+	}
+	return name
 }

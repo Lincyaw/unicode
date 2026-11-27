@@ -2,9 +2,16 @@ package golang
 
 import (
 	"errors"
+	"go/ast"
+	goParser "go/parser"
+	"go/token"
+	"go/types"
 	"maps"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"pgregory.net/rapid"
 
@@ -28,7 +35,14 @@ func genContractSample() *rapid.Generator[ContractSample] {
 				balances[id] = rapid.IntRange(0, 200).Draw(t, "balance."+id)
 			}
 		}
-		return ContractSample{balances, rapid.SampledFrom([]string{"a", "b", "missing"}).Draw(t, "from"), rapid.SampledFrom([]string{"a", "b", "missing"}).Draw(t, "to"), rapid.IntRange(1, 100).Draw(t, "amount"), rapid.IntRange(-2, 2).Draw(t, "foreign"), rapid.Bool().Draw(t, "error")}
+		sample := ContractSample{balances, rapid.SampledFrom([]string{"a", "b", "missing"}).Draw(t, "from"), rapid.SampledFrom([]string{"a", "b", "missing"}).Draw(t, "to"), rapid.IntRange(1, 100).Draw(t, "amount"), rapid.IntRange(-2, 2).Draw(t, "foreign"), rapid.Bool().Draw(t, "error")}
+		if rapid.Bool().Draw(t, "valid-domain") {
+			sample.FromId = "a"
+			sample.ToId = "b"
+			sample.Balances["a"] = sample.Amount + rapid.IntRange(0, 100).Draw(t, "remaining")
+			sample.Balances["b"] = rapid.IntRange(0, 100).Draw(t, "target")
+		}
+		return sample
 	})
 }
 
@@ -38,6 +52,7 @@ type contractBank struct {
 	Port     any
 }
 type contractReceipt struct{ Amount int }
+type contractStage string
 type contractFundsError struct{ AccountId string }
 
 func (e contractFundsError) Error() string { return "insufficient funds: " + e.AccountId }
@@ -86,7 +101,8 @@ func checkExecutesContracts(t rapid.TB, sample ContractSample) {
 	bank := &contractBank{Balances: maps.Clone(sample.Balances)}
 	called := 0
 	spec := transferSpec(t, sample, &called, bank)
-	spec.Ensures = append(spec.Ensures, runtimeExpr(t, "not raised(Funds) implies bank.balances != old(bank).balances"))
+	spec.Ensures = append(spec.Ensures, runtimeExpr(t, "not raised(Funds) implies bank.balances != old(bank).balances"), runtimeExpr(t, "balanceOf(old(bank.balances), fromId) == old(bank.balances[fromId])"))
+	spec.Operations["balanceOf"] = ucOperation{Name: "balanceOf", Result: "int", Params: []string{"map<string, int>", "string"}, Pure: true, Function: reflect.ValueOf(func(values map[string]int, id string) int { return values[id] })}
 	out := ucExecute(spec, transferInputs(sample, bank), true)
 	if out.Rejected == accepted || called != boolInt(accepted) {
 		t.Fatalf("precondition/dispatch mismatch: sample=%+v outcome=%+v called=%d", sample, out, called)
@@ -142,8 +158,47 @@ func checkExecutesContracts(t rapid.TB, sample ContractSample) {
 	if !failed.Infrastructure || len(failed.Diagnostics) == 0 || opaqueCalls != 1 {
 		t.Fatalf("an unavailable observer was replaced with a default snapshot: %+v", failed)
 	}
+	// Domain generators retain every declared enum member and use codepoint sizes.
+	if rt, ok := t.(*rapid.T); ok {
+		enumTypes := map[string]ucType{"Stage": {Form: "enum", Values: []string{"draft", "paid", "sent"}}}
+		value := ucDraw(rt, reflect.TypeFor[contractStage](), "Stage", enumTypes, []string{"phase in {draft, paid}"}, "phase", 0).String()
+		if value != "draft" && value != "paid" {
+			t.Fatalf("the subset generator escaped its declared enum: %q", value)
+		}
+	}
+	compiler := contractCompiler{}
+	optional, err := compiler.valueLiteral(&syntax.NumberValue{Text: syntax.Number(strconv.Itoa(sample.Amount))}, "*int", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := compiler.valueLiteral(&syntax.ListValue{Items: []syntax.Value{&syntax.NumberValue{Text: syntax.Number(strconv.Itoa(sample.Amount))}, &syntax.NumberValue{Text: syntax.Number(strconv.Itoa(sample.Amount + 1))}}}, "map[int]struct{}", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs := token.NewFileSet()
+	file, err := goParser.ParseFile(fs, "replay.go", "package replay\nvar optional *int = "+optional+"\nvar members map[int]struct{} = "+set, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := types.Config{}
+	if _, err := conf.Check("replay", fs, []*ast.File{file}, nil); err != nil {
+		t.Fatalf("a generated replay literal does not type-check: %v", err)
+	}
 	// Arbitrary precision evaluates a relation beyond native integer range.
+	numbers := []float64{}
+	if sample.ForeignDelta != 0 {
+		numbers = []float64{float64(sample.Amount), -float64(sample.Amount)}
+	}
 	env := ucEnvironment{spec: spec, values: map[string]ucValue{"amount": ucNormalize(reflect.ValueOf(sample.Amount), "int", spec.Types)}}
+	text := strings.Repeat("中éx", sample.Amount%5)
+	env.values["text"] = ucNormalize(reflect.ValueOf(text), "string", spec.Types)
+	if !ucTruth(env.eval(runtimeExpr(t, "size(text) == "+strconv.Itoa(utf8.RuneCountInString(text)))), nil) {
+		t.Fatal("string size counted encoding bytes instead of codepoints")
+	}
+	env.values["numbers"] = ucNormalize(reflect.ValueOf(numbers), "list<float>", spec.Types)
+	if !ucTruth(env.eval(runtimeExpr(t, "sum(value in numbers: value) == 0.0")), nil) {
+		t.Fatal("empty or cancelling float sum changed its numeric type or exact value")
+	}
 	if !ucTruth(env.eval(runtimeExpr(t, "amount * 999999999999999999999999999999 / 999999999999999999999999999999 == amount")), nil) {
 		t.Fatal("integer expressions overflowed native range")
 	}

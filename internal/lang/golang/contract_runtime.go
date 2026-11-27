@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"pgregory.net/rapid"
 )
@@ -83,6 +84,8 @@ type ucValue struct {
 	Type   string
 	Data   any
 	Native reflect.Value
+	Shape  reflect.Type
+	Schema map[string]ucType
 }
 type ucEntry struct{ Key, Value ucValue }
 type ucMap []ucEntry
@@ -167,7 +170,10 @@ func ucNormalizeAt(v reflect.Value, t string, types map[string]ucType, seen map[
 	if depth > 128 {
 		ucFail("lang.golang.observation-failed", "the model value exceeds the finite snapshot depth", nil)
 	}
-	out := ucValue{Type: t, Native: v}
+	out := ucValue{Type: t, Native: v, Schema: types}
+	if v.IsValid() {
+		out.Shape = v.Type()
+	}
 	kind, args := ucSplitType(t)
 	if kind == "optional" {
 		if !v.IsValid() || ((v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface) && v.IsNil()) {
@@ -271,7 +277,11 @@ func ucNormalizeAt(v reflect.Value, t string, types map[string]ucType, seen map[
 type ucLazy struct{ types map[string]ucType }
 
 func ucLazyValue(v reflect.Value, t string, types map[string]ucType) ucValue {
-	return ucValue{Type: t, Native: v, Data: ucLazy{types}}
+	value := ucValue{Type: t, Native: v, Data: ucLazy{types}, Schema: types}
+	if v.IsValid() {
+		value.Shape = v.Type()
+	}
+	return value
 }
 func ucDetach(v ucValue) ucValue {
 	v = ucMaterialize(v)
@@ -363,6 +373,29 @@ func ucKey(v ucValue) string {
 		return "t:" + x.UTC().Format(time.RFC3339Nano)
 	case time.Duration:
 		return "d:" + x.String()
+	case []ucValue:
+		items := make([]string, len(x))
+		for i, item := range x {
+			items[i] = ucKey(item)
+		}
+		return "[" + strings.Join(items, ", ") + "]"
+	case ucMap:
+		items := make([]string, len(x))
+		for i, item := range x {
+			items[i] = ucKey(item.Key) + ": " + ucKey(item.Value)
+		}
+		return "{" + strings.Join(items, ", ") + "}"
+	case map[string]ucValue:
+		keys := make([]string, 0, len(x))
+		for key := range x {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		items := make([]string, 0, len(keys))
+		for _, key := range keys {
+			items = append(items, key+": "+ucKey(x[key]))
+		}
+		return "{" + strings.Join(items, ", ") + "}"
 	}
 	return fmt.Sprint(v.Data)
 }
@@ -520,7 +553,11 @@ func (env *ucEnvironment) eval(e *ucExpr) ucValue {
 			n := 0
 			switch x := v.Data.(type) {
 			case string:
-				n = len(x)
+				if v.Type == "bytes" {
+					n = len(x)
+				} else {
+					n = utf8.RuneCountInString(x)
+				}
 			case []ucValue:
 				n = len(x)
 			case ucMap:
@@ -650,7 +687,13 @@ func (env *ucEnvironment) eval(e *ucExpr) ucValue {
 		all, any := true, false
 		integer := new(big.Int)
 		rational := new(big.Rat)
-		floating := false
+		collectionKind, collectionArgs := ucSplitType(collection.Type)
+		_ = collectionKind
+		locals := map[string]string{}
+		if len(collectionArgs) > 0 {
+			locals[e.Text] = collectionArgs[0]
+		}
+		floating := env.typeOf(e.Children[1], locals) == "float"
 		for _, item := range items {
 			env.values[e.Text] = item
 			value := env.eval(e.Children[1])
@@ -694,6 +737,91 @@ func (env *ucEnvironment) eval(e *ucExpr) ucValue {
 	ucFail("lang.golang.unsupported-contract", "the runtime cannot evaluate expression kind "+e.Kind, e)
 	return ucValue{}
 }
+func (env *ucEnvironment) typeOf(e *ucExpr, locals map[string]string) string {
+	switch e.Kind {
+	case "number":
+		if strings.Contains(e.Text, ".") {
+			return "float"
+		}
+		return "int"
+	case "string":
+		return "string"
+	case "bool", "unary", "raised":
+		return "bool"
+	case "name":
+		if t, ok := locals[e.Text]; ok {
+			return t
+		}
+		if v, ok := env.values[e.Text]; ok {
+			return v.Type
+		}
+		if e.Text == "result" {
+			return env.result.Type
+		}
+		if i := strings.LastIndexByte(e.Text, '.'); i > 0 {
+			if ty, ok := env.spec.Types[e.Text[:i]]; ok && ty.Form == "enum" {
+				return e.Text[:i]
+			}
+		}
+	case "old":
+		return env.typeOf(e.Children[0], locals)
+	case "failure":
+		return e.Text
+	case "field":
+		model := env.typeOf(e.Children[0], locals)
+		if kind, args := ucSplitType(model); kind == "optional" {
+			model = args[0]
+		}
+		for _, f := range ucFields(env.spec.Types, model) {
+			if f.Name == e.Text {
+				return f.Type
+			}
+		}
+	case "index":
+		_, args := ucSplitType(env.typeOf(e.Children[0], locals))
+		if len(args) > 1 {
+			return args[1]
+		}
+	case "call":
+		name := ucName(e.Children[0])
+		if name == "size" {
+			return "int"
+		}
+		if op, ok := env.spec.Operations[name]; ok {
+			return op.Result
+		}
+		callee := e.Children[0]
+		if callee.Kind == "field" {
+			model := env.typeOf(callee.Children[0], locals)
+			if kind, args := ucSplitType(model); kind == "optional" {
+				model = args[0]
+			}
+			return env.spec.Operations[model+"."+callee.Text].Result
+		}
+	case "binary":
+		switch e.Text {
+		case "+", "-", "*", "/":
+			return env.typeOf(e.Children[0], locals)
+		default:
+			return "bool"
+		}
+	case "all", "any":
+		return "bool"
+	case "count":
+		return "int"
+	case "sum":
+		_, args := ucSplitType(env.typeOf(e.Children[0], locals))
+		copy := map[string]string{}
+		for k, v := range locals {
+			copy[k] = v
+		}
+		if len(args) > 0 {
+			copy[e.Text] = args[0]
+		}
+		return env.typeOf(e.Children[1], copy)
+	}
+	return ""
+}
 func ucOrdered[T ~int64 | ~float64](a, b T) int {
 	if a < b {
 		return -1
@@ -731,6 +859,11 @@ func ucNative(v ucValue, t reflect.Type) reflect.Value {
 		return reflect.Zero(t)
 	}
 	out := reflect.New(t).Elem()
+	if t.Kind() == reflect.Pointer {
+		out.Set(reflect.New(t.Elem()))
+		out.Elem().Set(ucNative(v, t.Elem()))
+		return out
+	}
 	switch x := v.Data.(type) {
 	case *big.Int:
 		if !x.IsInt64() || out.OverflowInt(x.Int64()) {
@@ -751,8 +884,49 @@ func ucNative(v ucValue, t reflect.Type) reflect.Value {
 		out.Set(reflect.ValueOf(x))
 	case time.Duration:
 		out.SetInt(int64(x))
+	case []ucValue:
+		if t.Kind() != reflect.Slice {
+			ucFail("lang.golang.unsupported-contract", "the detached list has no supported Go slice shape", nil)
+		}
+		out.Set(reflect.MakeSlice(t, len(x), len(x)))
+		for i, item := range x {
+			out.Index(i).Set(ucNative(item, t.Elem()))
+		}
+	case ucMap:
+		if t.Kind() != reflect.Map {
+			ucFail("lang.golang.unsupported-contract", "the detached collection has no supported Go map shape", nil)
+		}
+		out.Set(reflect.MakeMap(t))
+		for _, item := range x {
+			out.SetMapIndex(ucNative(item.Key, t.Key()), ucNative(item.Value, t.Elem()))
+		}
+	case map[string]ucValue:
+		if t.Kind() != reflect.Struct {
+			ucFail("lang.golang.unsupported-contract", "the detached object has no supported Go record shape", nil)
+		}
+		model := v.Type
+		if kind, args := ucSplitType(model); kind == "optional" {
+			model = args[0]
+		}
+		fields := ucFields(v.Schema, model)
+		known := map[string]bool{}
+		for _, field := range fields {
+			known[field.GoName] = true
+		}
+		for i := 0; i < t.NumField(); i++ {
+			if !known[t.Field(i).Name] {
+				ucFail("lang.golang.unsupported-contract", "a pure operation needs hidden Go state that cannot be reconstructed from the old model value: "+t.Field(i).Name, nil)
+			}
+		}
+		for _, field := range fields {
+			target := out.FieldByName(field.GoName)
+			if !target.IsValid() || !target.CanSet() {
+				ucFail("lang.golang.unsupported-contract", "a detached model field cannot be reconstructed: "+field.Name, nil)
+			}
+			target.Set(ucNative(x[field.Name], target.Type()))
+		}
 	default:
-		ucFail("lang.golang.expression-failed", "a detached composite old value cannot be passed to a Go operation; place the pure operation inside old(...) instead", nil)
+		ucFail("lang.golang.unsupported-contract", "the detached model value cannot be adapted to the Go operation", nil)
 	}
 	return out
 }
@@ -763,6 +937,9 @@ func (env *ucEnvironment) prepare(e *ucExpr) (ucOperation, reflect.Value, []refl
 	fn := op.Function
 	if !ok && callee.Kind == "field" {
 		receiver := env.eval(callee.Children[0])
+		if !receiver.Native.IsValid() && receiver.Shape != nil {
+			receiver.Native = ucNative(receiver, receiver.Shape)
+		}
 		base, _ := ucSplitType(receiver.Type)
 		if base == "optional" {
 			_, a := ucSplitType(receiver.Type)
@@ -1176,6 +1353,7 @@ func ucDraw(t *rapid.T, typ reflect.Type, model string, types map[string]ucType,
 		ucFail("lang.golang.unsupported-contract", "the generated input exceeds the recursive value budget", nil)
 	}
 	low, high := int64(-100), int64(100)
+	floatLow, floatHigh := -100.0, 100.0
 	minSize, maxSize := 0, 5
 	var subset []string
 	for _, limit := range limits {
@@ -1184,13 +1362,25 @@ func ucDraw(t *rapid.T, typ reflect.Type, model string, types map[string]ucType,
 			continue
 		}
 		if parts[2][0] == '{' {
-			for _, v := range strings.Split(strings.Trim(parts[2], "{}"), ",") {
+			for _, v := range strings.Split(strings.Trim(strings.Join(parts[2:], " "), "{}"), ",") {
 				subset = append(subset, strings.TrimSpace(v))
 			}
 			continue
 		}
 		a, b, ok := strings.Cut(parts[2], "..")
 		if !ok {
+			continue
+		}
+		if kind == "float" && parts[1] == "in" {
+			var err error
+			floatLow, err = strconv.ParseFloat(a, 64)
+			if err != nil {
+				ucFail("lang.golang.input-outside-domain", "a float sampling bound is invalid", nil)
+			}
+			floatHigh, err = strconv.ParseFloat(b, 64)
+			if err != nil {
+				ucFail("lang.golang.input-outside-domain", "a float sampling bound is invalid", nil)
+			}
 			continue
 		}
 		x, ex := strconv.ParseInt(a, 10, 64)
@@ -1223,7 +1413,7 @@ func ucDraw(t *rapid.T, typ reflect.Type, model string, types map[string]ucType,
 	case "int":
 		out.SetInt(rapid.Int64Range(low, high).Draw(t, path))
 	case "float":
-		out.SetFloat(rapid.Float64Range(float64(low), float64(high)).Draw(t, path))
+		out.SetFloat(rapid.Float64Range(floatLow, floatHigh).Draw(t, path))
 	case "string":
 		out.SetString(rapid.StringN(minSize, maxSize, maxSize*4).Draw(t, path))
 	case "bytes":
