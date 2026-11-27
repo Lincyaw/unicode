@@ -403,13 +403,26 @@ func (c *contractCompiler) doubleLiteral(value syntax.Value, t string, pkg *pack
 	if object == nil {
 		return "", false, nil
 	}
+	named, ok := types.Unalias(object.Type()).(*types.Named)
+	if !ok {
+		return "", false, nil
+	}
+	object = named.Origin().Obj()
 	for _, id := range slices.Sorted(maps.Keys(c.nodes)) {
 		node := c.nodes[id]
 		if node.Form != "interface" || node.Kind != graph.NodeKindType {
 			continue
 		}
 		d, ok := c.bound(graph.EdgeKindRealizes, id)
-		if !ok || d.obj.Pkg() == nil || object.Pkg() == nil || d.obj.Pkg().Path() != object.Pkg().Path() || d.obj.Name() != object.Name() {
+		if !ok {
+			continue
+		}
+		boundNamed, ok := types.Unalias(d.obj.Type()).(*types.Named)
+		if !ok {
+			continue
+		}
+		boundObject := boundNamed.Origin().Obj()
+		if boundObject.Pkg() == nil || object.Pkg() == nil || boundObject.Pkg().Path() != object.Pkg().Path() || boundObject.Name() != object.Name() {
 			continue
 		}
 		unit := &contractUnit{pkg: pkg, spec: ucContract{Types: map[string]ucType{}, Operations: map[string]ucOperation{}}}
