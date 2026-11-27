@@ -185,7 +185,7 @@ func Attach(g *graph.Graph, reports []lang.RunReport) Attached {
 				out.Fragment.Nodes = append(out.Fragment.Nodes, graph.Node{Id: caseID, Kind: graph.NodeKindResult, Form: "case", Layer: graph.LayerEvidence, Source: graph.SourceProduced, Origin: at, Attrs: detail})
 				out.Fragment.Edges = append(out.Fragment.Edges, graph.Edge{Kind: graph.EdgeKindContains, From: runID, To: caseID, Source: graph.SourceProduced, Origin: at})
 				addAbout(caseID, candidate.Check, at)
-				if caseFresh {
+				if len(matched) > 0 {
 					for _, matchedID := range matched {
 						addAbout(caseID, matchedID, at)
 					}
