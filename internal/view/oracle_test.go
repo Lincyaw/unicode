@@ -152,9 +152,9 @@ var drawnKinds = map[ViewKind][]graph.EdgeKind{
 	ViewKindArchitecture: {graph.EdgeKindUses, graph.EdgeKindDepends, graph.EdgeKindContains},
 	ViewKindClass:        {graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements, graph.EdgeKindContains},
 	ViewKindSequence: {graph.EdgeKindContains, graph.EdgeKindFrom, graph.EdgeKindCalls, graph.EdgeKindEmits,
-		graph.EdgeKindHandles, graph.EdgeKindTraces, graph.EdgeKindCovers},
+		graph.EdgeKindHandles, graph.EdgeKindSubscribes, graph.EdgeKindTraces, graph.EdgeKindCovers},
 	ViewKindActivity: {graph.EdgeKindContains, graph.EdgeKindFrom, graph.EdgeKindCalls, graph.EdgeKindEmits,
-		graph.EdgeKindHandles, graph.EdgeKindTraces, graph.EdgeKindCovers},
+		graph.EdgeKindHandles, graph.EdgeKindSubscribes, graph.EdgeKindTraces, graph.EdgeKindCovers},
 	ViewKindEvents:   {graph.EdgeKindEmits, graph.EdgeKindSubscribes, graph.EdgeKindHandles},
 	ViewKindCalls:    {graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindRealizes},
 	ViewKindProperty: {graph.EdgeKindAbout, graph.EdgeKindContains, graph.EdgeKindChecks},
@@ -307,6 +307,11 @@ func (w world) candidates(a asked) map[string]bool {
 		for _, s := range w.stepsOf(input) {
 			add(s)
 			add(w.to(s, graph.EdgeKindCalls)...)
+			for _, op := range w.to(s, graph.EdgeKindCalls) {
+				if w.nodes[s].Form == "async" {
+					add(w.to(op, graph.EdgeKindSubscribes)...)
+				}
+			}
 			add(w.to(s, graph.EdgeKindHandles)...)
 			add(w.to(s, graph.EdgeKindTraces)...)
 			add(w.from(s, graph.EdgeKindCovers)...)

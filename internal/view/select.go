@@ -167,12 +167,13 @@ func lifelines(ix index, steps []string) []string {
 
 // flow, for the sequence and activity views: the flow, its lifelines in the
 // order they first appear, its steps in their order, then the operations
-// the steps call, the events and errors they emit and handle, the functions
-// they trace to and the cases that cover them.
+// the steps call, the events and errors they emit and handle, the events
+// that the operations of async steps subscribe to, the functions they
+// trace to and the cases that cover them.
 func flow(ix index, r request) selection {
 	input := r.input
 	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindContains, graph.EdgeKindFrom, graph.EdgeKindCalls,
-		graph.EdgeKindEmits, graph.EdgeKindHandles, graph.EdgeKindTraces, graph.EdgeKindCovers}}
+		graph.EdgeKindEmits, graph.EdgeKindHandles, graph.EdgeKindSubscribes, graph.EdgeKindTraces, graph.EdgeKindCovers}}
 	s.add(input)
 	ordered := steps(ix, input)
 	s.add(lifelines(ix, ordered)...)
@@ -181,6 +182,11 @@ func flow(ix index, r request) selection {
 	for _, st := range ordered {
 		for _, k := range []graph.EdgeKind{graph.EdgeKindCalls, graph.EdgeKindHandles, graph.EdgeKindTraces} {
 			rest = append(rest, ix.targets(st, k)...)
+		}
+		if ix.nodes[st].Form == "async" {
+			for _, op := range ix.targets(st, graph.EdgeKindCalls) {
+				rest = append(rest, ix.targets(op, graph.EdgeKindSubscribes)...)
+			}
 		}
 		rest = append(rest, ix.sources(st, graph.EdgeKindCovers)...)
 	}
