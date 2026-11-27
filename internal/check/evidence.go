@@ -7,7 +7,12 @@ import "github.com/lincyaw/unicode/internal/graph"
 func (c *checker) runtimeEvidence() {
 	reported := map[string]bool{}
 	for _, result := range c.nodes {
-		if result.Layer != graph.LayerEvidence || result.Kind != graph.NodeKindResult || result.Form != "case" || c.attr(result.Id, "fresh") != "true" || c.attr(result.Id, "rejected") == "true" || c.attr(result.Id, "passed") != "false" {
+		if result.Layer != graph.LayerEvidence || result.Kind != graph.NodeKindResult || c.attr(result.Id, "fresh") != "true" {
+			continue
+		}
+		failedCase := result.Form == "case" && c.attr(result.Id, "rejected") != "true" && c.attr(result.Id, "passed") == "false"
+		failedBatch := result.Form == "check" && c.attr(result.Id, "businessFailed") == "true"
+		if !failedCase && !failedBatch {
 			continue
 		}
 		checkID := c.attr(result.Id, "check")

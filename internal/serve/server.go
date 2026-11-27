@@ -139,7 +139,10 @@ func (s *Server) current() (*state, error) {
 			s.read = st
 		}
 	}
-	return s.read, s.broken
+	if s.broken != nil {
+		return s.read, s.broken
+	}
+	return liveArtifacts(s.read)
 }
 
 type stateKey struct{}

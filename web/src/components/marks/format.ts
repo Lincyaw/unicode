@@ -1,4 +1,5 @@
-import type { Entity, Node, StepInfo } from '../../api/types';
+import { REVIEW_DECISIONS } from '../../terms';
+import type { Entity, Node, Review, StepInfo } from '../../api/types';
 
 /*
  * How identities and signatures read on a page. The graph writes every reference from the root (docs/design.md §5.2);
@@ -161,4 +162,9 @@ export function displayName(node: Pick<Node, 'id' | 'title' | 'kind' | 'layer'>,
     return node.kind === 'op' ? relativeId : node.title;
   }
   return relative(node.id, scope);
+}
+
+/** Review metadata stays in the existing review hint. */
+export function reviewDescription(review: Review): string {
+  return [review.decision && REVIEW_DECISIONS[review.decision], review.reviewer, review.at, review.comment, review.digest].filter(Boolean).join(' · ');
 }

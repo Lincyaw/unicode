@@ -4,7 +4,7 @@ import { Tag } from '../../ui/content';
 import { ButtonLink } from '../../ui/controls';
 import { InfoHint } from '../../ui/hint';
 import { Icon } from '../../ui/icons';
-import { messageOf, placeOf, stepName } from '../marks/format';
+import { messageOf, placeOf, reviewDescription, stepName } from '../marks/format';
 import { ArrowRight, ArrowUpRight, ChevronRight, CornerDownRight } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { StatusDot } from '../marks/StatusDot';
@@ -31,7 +31,7 @@ export function EdgePreview({ edge }: { edge: EdgeEntity }) {
           <StatusDot status={edge.edge.status} />
           <Icon glyph={CornerDownRight} />
           <span className={styles.identity}>{EDGE_KINDS[edge.edge.kind]}</span>
-          <InfoHint subject={EDGE_KINDS[edge.edge.kind]}>{`${edge.edge.origin.path}:${edge.edge.origin.line}`}</InfoHint>
+          <InfoHint subject={EDGE_KINDS[edge.edge.kind]}>{[`${edge.edge.origin.path}:${edge.edge.origin.line}`, edge.review && reviewDescription(edge.review)].filter(Boolean).join(' · ')}</InfoHint>
         </div>
         <p className={styles.ends}>
           <NodeLink node={fromNode} tone="inherit" />

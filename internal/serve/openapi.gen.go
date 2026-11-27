@@ -134,6 +134,7 @@ const (
 	EdgeKindImports     EdgeKind = "imports"
 	EdgeKindObserves    EdgeKind = "observes"
 	EdgeKindOwns        EdgeKind = "owns"
+	EdgeKindPublishes   EdgeKind = "publishes"
 	EdgeKindReaches     EdgeKind = "reaches"
 	EdgeKindRealizes    EdgeKind = "realizes"
 	EdgeKindRefers      EdgeKind = "refers"
@@ -177,6 +178,8 @@ func (e EdgeKind) Valid() bool {
 	case EdgeKindObserves:
 		return true
 	case EdgeKindOwns:
+		return true
+	case EdgeKindPublishes:
 		return true
 	case EdgeKindReaches:
 		return true
@@ -299,6 +302,42 @@ func (e Outcome) Valid() bool {
 	case OutcomeFailed:
 		return true
 	case OutcomePassed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReviewDecision.
+const (
+	ReviewDecisionApproved         ReviewDecision = "approved"
+	ReviewDecisionChangesRequested ReviewDecision = "changes-requested"
+)
+
+// Valid indicates whether the value is a known member of the ReviewDecision enum.
+func (e ReviewDecision) Valid() bool {
+	switch e {
+	case ReviewDecisionApproved:
+		return true
+	case ReviewDecisionChangesRequested:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReviewRecordDecision.
+const (
+	ReviewRecordDecisionApproved         ReviewRecordDecision = "approved"
+	ReviewRecordDecisionChangesRequested ReviewRecordDecision = "changes-requested"
+)
+
+// Valid indicates whether the value is a known member of the ReviewRecordDecision enum.
+func (e ReviewRecordDecision) Valid() bool {
+	switch e {
+	case ReviewRecordDecisionApproved:
+		return true
+	case ReviewRecordDecisionChangesRequested:
 		return true
 	default:
 		return false
@@ -651,6 +690,9 @@ type EdgeEntity struct {
 	// functions of a depends edge's `imports` and `calls`
 	Nodes []Node `json:"nodes"`
 
+	// Review The edge review, evaluated against its identity and content.
+	Review *Review `json:"review,omitempty"`
+
 	// Steps 相关步骤: the steps that trace to its end, each with its StepInfo
 	Steps []Node `json:"steps"`
 
@@ -978,19 +1020,77 @@ type PropertyDetail struct {
 
 // Review M7: the review record of a node.
 type Review struct {
-	At      *time.Time `json:"at,omitempty"`
-	Comment *string    `json:"comment,omitempty"`
+	At       *time.Time      `json:"at,omitempty"`
+	Comment  *string         `json:"comment,omitempty"`
+	Decision *ReviewDecision `json:"decision,omitempty"`
 
 	// Digest The content hash it was reviewed at
 	Digest   *string `json:"digest,omitempty"`
+	RecordId *string `json:"recordId,omitempty"`
 	Reviewer *string `json:"reviewer,omitempty"`
+	Snapshot *string `json:"snapshot,omitempty"`
 
 	// State M7: 评审：未评审、已评审.
 	State ReviewState `json:"state"`
+
+	// Target Exactly one node or one edge; removed identifies a deletion relative to base.
+	Target *ReviewTarget `json:"target,omitempty"`
 }
+
+// ReviewDecision defines model for Review.Decision.
+type ReviewDecision string
+
+// ReviewCollection defines model for ReviewCollection.
+type ReviewCollection struct {
+	Items []ReviewItem `json:"items"`
+}
+
+// ReviewItem The current fingerprint and latest matching record, independently of approval.
+type ReviewItem struct {
+	Digest string `json:"digest"`
+
+	// Record One immutable review record from .unicode/reviews.
+	Record *ReviewRecord `json:"record,omitempty"`
+
+	// State M7: 评审：未评审、已评审.
+	State ReviewState `json:"state"`
+
+	// Target Exactly one node or one edge; removed identifies a deletion relative to base.
+	Target ReviewTarget `json:"target"`
+}
+
+// ReviewRecord One immutable review record from .unicode/reviews.
+type ReviewRecord struct {
+	At       time.Time            `json:"at"`
+	Comment  string               `json:"comment"`
+	Commit   string               `json:"commit"`
+	Decision ReviewRecordDecision `json:"decision"`
+	Digest   string               `json:"digest"`
+	Dirty    bool                 `json:"dirty"`
+	Id       string               `json:"id"`
+	Reviewer string               `json:"reviewer"`
+	Snapshot string               `json:"snapshot"`
+
+	// Target Exactly one node or one edge; removed identifies a deletion relative to base.
+	Target  ReviewTarget `json:"target"`
+	Version int32        `json:"version"`
+}
+
+// ReviewRecordDecision defines model for ReviewRecord.Decision.
+type ReviewRecordDecision string
 
 // ReviewState M7: 评审：未评审、已评审.
 type ReviewState string
+
+// ReviewTarget Exactly one node or one edge; removed identifies a deletion relative to base.
+type ReviewTarget struct {
+	// EdgeKind The kind of an edge (docs/model.md §4).
+	EdgeKind *EdgeKind `json:"edgeKind,omitempty"`
+	From     *string   `json:"from,omitempty"`
+	Node     *string   `json:"node,omitempty"`
+	Removed  bool      `json:"removed"`
+	To       *string   `json:"to,omitempty"`
+}
 
 // Revision A commit of the repository.
 type Revision struct {
@@ -1368,6 +1468,13 @@ type ListNodesParams struct {
 	Id []string `form:"id" json:"id"`
 }
 
+// ListReviewsParams defines parameters for ListReviews.
+type ListReviewsParams struct {
+	Pending *bool     `form:"pending,omitempty" json:"pending,omitempty"`
+	Base    *string   `form:"base,omitempty" json:"base,omitempty"`
+	Id      *[]string `form:"id,omitempty" json:"id,omitempty"`
+}
+
 // ListRevisionsParams defines parameters for ListRevisions.
 type ListRevisionsParams struct {
 	// Limit At most this many; 20 when not given
@@ -1428,6 +1535,9 @@ type ServerInterface interface {
 
 	// (GET /nodes)
 	ListNodes(w http.ResponseWriter, r *http.Request, params ListNodesParams)
+
+	// (GET /reviews)
+	ListReviews(w http.ResponseWriter, r *http.Request, params ListReviewsParams)
 
 	// (GET /revisions)
 	ListRevisions(w http.ResponseWriter, r *http.Request, params ListRevisionsParams)
@@ -1758,6 +1868,65 @@ func (siw *ServerInterfaceWrapper) ListNodes(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListNodes(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListReviews operation middleware
+func (siw *ServerInterfaceWrapper) ListReviews(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListReviewsParams
+
+	// ------------- Optional query parameter "pending" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", false, false, "pending", r.URL.Query(), &params.Pending, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "pending"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "pending", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "base" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", false, false, "base", r.URL.Query(), &params.Base, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "base"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "base", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "id", r.URL.Query(), &params.Id, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListReviews(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2155,6 +2324,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/impact", wrapper.GetImpact)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/node", wrapper.GetNode)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/nodes", wrapper.ListNodes)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/reviews", wrapper.ListReviews)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/revisions", wrapper.ListRevisions)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/search", wrapper.Search)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/slice", wrapper.GetSlice)
@@ -2844,6 +3014,84 @@ func (response ListNodes503JSONResponse) VisitListNodesResponse(w http.ResponseW
 	return err
 }
 
+type ListReviewsRequestObject struct {
+	Params ListReviewsParams
+}
+
+type ListReviewsResponseObject interface {
+	VisitListReviewsResponse(w http.ResponseWriter) error
+}
+
+type ListReviews200JSONResponse ReviewCollection
+
+func (response ListReviews200JSONResponse) VisitListReviewsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListReviews400JSONResponse Problem
+
+func (response ListReviews400JSONResponse) VisitListReviewsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListReviews405JSONResponse Problem
+
+func (response ListReviews405JSONResponse) VisitListReviewsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(405)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListReviews500JSONResponse Problem
+
+func (response ListReviews500JSONResponse) VisitListReviewsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListReviews503JSONResponse Problem
+
+func (response ListReviews503JSONResponse) VisitListReviewsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListRevisionsRequestObject struct {
 	Params ListRevisionsParams
 }
@@ -3338,6 +3586,9 @@ type StrictServerInterface interface {
 	// (GET /nodes)
 	ListNodes(ctx context.Context, request ListNodesRequestObject) (ListNodesResponseObject, error)
 
+	// (GET /reviews)
+	ListReviews(ctx context.Context, request ListReviewsRequestObject) (ListReviewsResponseObject, error)
+
 	// (GET /revisions)
 	ListRevisions(ctx context.Context, request ListRevisionsRequestObject) (ListRevisionsResponseObject, error)
 
@@ -3595,6 +3846,32 @@ func (sh *strictHandler) ListNodes(w http.ResponseWriter, r *http.Request, param
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListNodesResponseObject); ok {
 		if err := validResponse.VisitListNodesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListReviews operation middleware
+func (sh *strictHandler) ListReviews(w http.ResponseWriter, r *http.Request, params ListReviewsParams) {
+	var request ListReviewsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListReviews(ctx, request.(ListReviewsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListReviews")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListReviewsResponseObject); ok {
+		if err := validResponse.VisitListReviewsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

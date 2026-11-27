@@ -190,7 +190,7 @@ func checkExecuteFollowsLanguageRoots(t rapid.TB, sample ExecuteSample) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantJSON, err := json.MarshalIndent(got, "", "  ")
+	wantJSON, err := json.Marshal(got)
 	if err != nil {
 		t.Fatal(err)
 	}

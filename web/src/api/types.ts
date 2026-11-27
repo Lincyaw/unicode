@@ -25,6 +25,7 @@ export type C4Level = Schemas['C4Level'];
 export type Diagnostic = Schemas['Diagnostic'];
 export type CheckReport = Schemas['CheckReport'];
 export type Evidence = Schemas['Evidence'];
+export type Review = Schemas['Review'];
 export type DriverMode = Schemas['DriverMode'];
 export type RunResult = Schemas['RunResult'];
 export type Entity = Schemas['Entity'];

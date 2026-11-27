@@ -9,6 +9,7 @@ import (
 
 	"github.com/lincyaw/unicode/internal/check"
 	"github.com/lincyaw/unicode/internal/graph"
+	"github.com/lincyaw/unicode/internal/review"
 	"github.com/lincyaw/unicode/internal/view"
 )
 
@@ -75,6 +76,12 @@ func (st *state) entity(id string) (Entity, error) {
 		Properties: p.nodes(st.relatedProperties(id)),
 		Flows:      p.flowSteps(st.participations(id)),
 		Sources:    st.sourcesOf(id),
+		Evidence:   st.evidenceOf(id), Review: st.reviewOf(review.Target{Node: id}),
+	}
+	covered := st.sources(id, graph.EdgeKindCovers)
+	if len(covered) > 0 {
+		nodes := p.nodes(sorted(covered))
+		e.CoveredBy = &nodes
 	}
 	switch {
 	case n.Layer == graph.LayerCode:
@@ -316,7 +323,7 @@ func (p *page) typeDetail(id string) *TypeDetail {
 	}
 	for _, op := range ops {
 		rows = append(rows, OpRow{Op: p.node(op), RealizedBy: p.neighbors(op, st.incoming(op, graph.EdgeKindRealizes)),
-			Properties: p.nodes(sorted(st.sources(op, graph.EdgeKindAbout)))})
+			Properties: p.nodes(st.relatedProperties(op))})
 		for _, t := range st.targets(op, graph.EdgeKindRefers) {
 			refers[t] = true
 		}
@@ -424,7 +431,7 @@ func (p *page) checked(id string) (*Neighbor, []Neighbor, []CaseRow) {
 	slices.SortStableFunc(cases, func(a, b string) int { return cmp.Compare(recorded(a), recorded(b)) })
 	rows := []CaseRow{}
 	for _, c := range cases {
-		rows = append(rows, CaseRow{Node: p.node(c)})
+		rows = append(rows, CaseRow{Node: p.node(c), Evidence: st.evidenceOf(c)})
 	}
 	return predicate, p.neighbors(id, st.incoming(id, graph.EdgeKindGenerates)), rows
 }
@@ -567,7 +574,7 @@ func (st *state) edgeEntity(kind graph.EdgeKind, from, to string) (EdgeEntity, e
 		}
 	}
 	return EdgeEntity{Edge: st.edge(e), FromNode: st.node(from), ToNode: st.node(to), Nodes: st.nodeList(named), Steps: st.nodeList(steps),
-		Diagnostics: st.diagnostics(func(subject string) bool { return subject == id }), Views: views}, nil
+		Diagnostics: st.diagnostics(func(subject string) bool { return subject == id }), Views: views, Review: st.reviewOf(review.Target{EdgeKind: string(kind), From: from, To: to})}, nil
 }
 
 func sorted(ids []string) []string {

@@ -5,6 +5,7 @@ import { Tag } from '../../ui/content';
 import { Icon } from '../../ui/icons';
 import { Section, ViewLinks } from '../details/sections';
 import { GitCompareArrows, KindIcon, View } from '../marks/icons';
+import { reviewDescription } from '../marks/format';
 import { changeWords } from './changeWords';
 import styles from './entity.module.css';
 
@@ -40,7 +41,7 @@ export function EntityPane({ entity, trail, base }: { entity: Entity; trail: Tra
         </Section>
       )}
       {entity.review && (
-        <Section title={SECTIONS.review}>
+        <Section title={SECTIONS.review} about={reviewDescription(entity.review)}>
           <Tag>{entity.review.state === 'reviewed' ? REVIEW.reviewed : REVIEW.pending}</Tag>
         </Section>
       )}

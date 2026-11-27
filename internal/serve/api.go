@@ -299,7 +299,7 @@ func (st *state) viewNode(n view.ViewNode, drawn map[string]bool) ViewNode {
 	d := st.node(n.Id)
 	out := ViewNode{Id: d.Id, Kind: d.Kind, Form: d.Form, Layer: d.Layer, Source: d.Source, Origin: d.Origin, Summary: d.Summary,
 		Salient: d.Salient, Digest: d.Digest, Attrs: d.Attrs, Title: d.Title, Status: d.Status, Refers: d.Refers, Bindings: d.Bindings, Step: d.Step,
-		Details: optional(int32(n.Details))}
+		Details: optional(int32(n.Details)), Evidence: st.evidenceOf(n.Id)}
 	if len(n.Members) > 0 {
 		members := make([]Member, 0, len(n.Members))
 		for _, m := range n.Members {

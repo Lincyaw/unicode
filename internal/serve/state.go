@@ -16,6 +16,7 @@ import (
 	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/repo"
+	"github.com/lincyaw/unicode/internal/review"
 	"github.com/lincyaw/unicode/internal/view"
 )
 
@@ -23,17 +24,19 @@ import (
 // indexed by end, the result of checking it, and the working tree it was
 // read from. It does not change once loaded.
 type state struct {
-	root    string
-	path    string
-	builtAt time.Time
-	g       graph.Graph
-	nodes   map[string]graph.Node
-	out, in map[string][]graph.Edge
-	edges   map[string]graph.Edge
-	system  string
-	files   map[string]string
-	checked check.Checked
-	head    WorkingTree
+	root              string
+	path              string
+	builtAt           time.Time
+	g                 graph.Graph
+	nodes             map[string]graph.Node
+	out, in           map[string][]graph.Edge
+	edges             map[string]graph.Edge
+	system            string
+	files             map[string]string
+	checked           check.Checked
+	head              WorkingTree
+	reviews           []review.Record
+	reviewDiagnostics []diag.Diagnostic
 	// inputs memoizes the inputs each view kind takes, as a set;
 	// comparisons the comparison with each base commit.
 	inputs      sync.Map
@@ -48,6 +51,10 @@ func load(root, path string, builtAt time.Time) (*state, error) {
 		return nil, Unreadable{Path: path, Cause: err}
 	}
 	g, err := graph.Decode(data)
+	if err != nil {
+		return nil, Unreadable{Path: path, Cause: err}
+	}
+	g, err = inputGraph(&g)
 	if err != nil {
 		return nil, Unreadable{Path: path, Cause: err}
 	}

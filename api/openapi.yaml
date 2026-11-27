@@ -1309,6 +1309,7 @@ components:
         - generates
         - observes
         - substitutes
+        - publishes
         - owns
         - depends
         - traces
