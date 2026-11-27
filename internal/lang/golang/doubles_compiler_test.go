@@ -132,11 +132,19 @@ func checkDoubleLiteralIdentities(t rapid.TB, count int) {
 		c.nodes[model] = graph.Node{Id: model, Kind: graph.NodeKindType, Form: "interface", Layer: graph.LayerDesign}
 		c.bindings[graph.EdgeKindRealizes][model] = []string{id}
 		c.declarations[id] = nativeDeclaration{obj: object, pkg: native}
+		gatewayAlias := types.NewTypeName(token.NoPos, nativePkg, "GatewayAlias", nil)
+		types.NewAlias(gatewayAlias, object.Type())
+		nativePkg.Scope().Insert(gatewayAlias)
+		c.declarations[typeID(gatewayAlias)] = nativeDeclaration{obj: gatewayAlias, pkg: native}
 		field := types.NewVar(token.NoPos, nativePkg, "Value"+strconv.Itoa(i), types.Typ[types.Int])
 		record := types.NewTypeName(token.NoPos, nativePkg, "Payload", nil)
 		types.NewNamed(record, types.NewStruct([]*types.Var{field}, nil), nil)
 		nativePkg.Scope().Insert(record)
 		c.declarations[typeID(record)] = nativeDeclaration{obj: record, pkg: native}
+		recordAlias := types.NewTypeName(token.NoPos, nativePkg, "PayloadAlias", nil)
+		types.NewAlias(recordAlias, record.Type())
+		nativePkg.Scope().Insert(recordAlias)
+		c.declarations[typeID(recordAlias)] = nativeDeclaration{obj: recordAlias, pkg: native}
 	}
 	for i, side := range []string{"left", "right"} {
 		alias := "ucpkg" + strconv.Itoa(i)
@@ -144,11 +152,19 @@ func checkDoubleLiteralIdentities(t rapid.TB, count int) {
 		if !ok || err != nil || !strings.Contains(text, strconv.Quote(side+".Gateway")) {
 			t.Fatalf("qualified interface %s resolved incorrectly: %s %v", side, text, err)
 		}
+		text, ok, err = c.doubleLiteral(&syntax.BraceValue{}, alias+".GatewayAlias", current)
+		if !ok || err != nil || !strings.Contains(text, strconv.Quote(side+".Gateway")) {
+			t.Fatalf("qualified interface alias %s resolved incorrectly: %s %v", side, text, err)
+		}
 		key := syntax.Lower("value" + strconv.Itoa(i))
 		value := &syntax.BraceValue{Entries: []syntax.Entry{{Key: syntax.Key{Name: &key}, Value: &syntax.NumberValue{Text: syntax.Number(strconv.Itoa(count))}}}}
 		text, err = c.valueLiteral(value, alias+".Payload", current)
 		if err != nil || !strings.Contains(text, alias+".Payload") || !strings.Contains(text, "Value"+strconv.Itoa(i)) {
 			t.Fatalf("qualified record %s resolved incorrectly: %s %v", side, text, err)
+		}
+		text, err = c.valueLiteral(value, alias+".PayloadAlias", current)
+		if err != nil || !strings.Contains(text, alias+".PayloadAlias") || !strings.Contains(text, "Value"+strconv.Itoa(i)) {
+			t.Fatalf("qualified record alias %s resolved incorrectly: %s %v", side, text, err)
 		}
 	}
 }
