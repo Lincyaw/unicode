@@ -54,6 +54,9 @@ func (b *Backend) Run(plan lang.RunPlan) (report lang.RunReport) {
 		}
 	}()
 	for index, edit := range generation.Edits {
+		if !bytes.Contains(edit.Content, []byte("func TestUnicodeContracts(")) {
+			continue // Retired owned tests have no executable contract entry.
+		}
 		if len(plan.Ids) > 0 {
 			needed := false
 			for _, id := range plan.Ids {
@@ -87,6 +90,8 @@ func (b *Backend) Run(plan lang.RunPlan) (report lang.RunReport) {
 		cmd.Env = append(cmd.Env, "UNICODE_CONTRACT_RESULTS="+resultFile, "UNICODE_CONTRACT_IDS="+string(ids))
 		if plan.Explore > 0 {
 			cmd.Env = append(cmd.Env, "UNICODE_CONTRACT_EXPLORE="+plan.Explore.String())
+		} else {
+			cmd.Env = append(cmd.Env, "UNICODE_CONTRACT_EXPLORE=")
 		}
 		output, runErr := cmd.CombinedOutput()
 		data, readErr := os.ReadFile(resultFile)

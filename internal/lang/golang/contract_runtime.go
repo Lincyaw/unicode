@@ -1551,6 +1551,13 @@ func ucDraw(t *rapid.T, typ reflect.Type, model string, types map[string]ucType,
 var ucCurrent *ucRunResult
 var ucExploring bool
 
+// ucContext scopes driver state even when a predicate skips, fails, or panics.
+func ucContext(result *ucRunResult, exploring bool) func() {
+	previous, wasExploring := ucCurrent, ucExploring
+	ucCurrent, ucExploring = result, exploring
+	return func() { ucCurrent, ucExploring = previous, wasExploring }
+}
+
 func ucCheck(t rapid.TB, s *ucContract, inputs map[string]reflect.Value) {
 	out := ucExecute(s, inputs, ucExploring)
 	if ucCurrent != nil {
