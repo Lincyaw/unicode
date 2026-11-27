@@ -693,7 +693,7 @@ type binding struct {
 func (w *world) drawBinding(label, on string) binding {
 	verb := "realizes"
 	if on != "type" {
-		verb = rapid.SampledFrom([]string{"realizes", "checks", "generates", "observes"}).Draw(w.t, label+"Verb")
+		verb = rapid.SampledFrom([]string{"realizes", "checks", "generates", "observes", "publishes"}).Draw(w.t, label+"Verb")
 	}
 	component := rapid.StringMatching(`[a-z]{1,3}(-[a-z]{1,2})?(\.[a-z]{1,3})?`).Draw(w.t, label+"Component")
 	var id string
@@ -702,6 +702,8 @@ func (w *world) drawBinding(label, on string) binding {
 		id = component + "." + rapid.StringMatching(`[A-Z][a-zA-Z]{0,3}`).Draw(w.t, label+"Type")
 	case verb == "realizes":
 		id = component + "." + rapid.StringMatching(`[a-z][a-zA-Z]{0,3}`).Draw(w.t, label+"Op")
+	case verb == "publishes":
+		id = component + "." + rapid.StringMatching(`[A-Z][a-zA-Z]{0,3}`).Draw(w.t, label+"Event")
 	case verb == "checks":
 		id = component + "." + rapid.StringMatching(`[a-z]{1,3}(-[a-z]{1,3}){0,2}`).Draw(w.t, label+"Property")
 	default:

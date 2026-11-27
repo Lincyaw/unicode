@@ -174,7 +174,7 @@ func genTypeExpr(t *rapid.T, depth int) TypeExpr {
 }
 
 func genValue(t *rapid.T, depth int) Value {
-	kind := rapid.IntRange(0, 7).Draw(t, "value")
+	kind := rapid.IntRange(0, 8).Draw(t, "value")
 	if depth <= 0 {
 		kind %= 5
 	}
@@ -197,6 +197,8 @@ func genValue(t *rapid.T, depth int) Value {
 		return &CallValue{Op: genLower(t, "op"), Args: some(t, 3, func() Arg {
 			return Arg{Name: genLower(t, "param"), Value: genValue(t, depth-1)}
 		})}
+	case 8:
+		return &EncodedValue{Value: genValue(t, depth-1)}
 	case 6:
 		return &ListValue{Items: some(t, 6, func() Value { return genValue(t, depth-1) })}
 	}
@@ -246,6 +248,7 @@ func genType(t *rapid.T) *TypeDecl {
 	ls := genLabels[Member](t)
 	ls = append(ls, some(t, 1, func() Member { return &Extends{Type: genTypeRef(t)} })...)
 	ls = append(ls, some(t, 1, func() Member { return &Implements{Type: genTypeRef(t)} })...)
+	ls = append(ls, some(t, 1, func() Member { return &Codec{Encode: genOpRef(t), Decode: genOpRef(t)} })...)
 	switch d.Form {
 	case "enum":
 		ls = append(ls, some(t, 3, func() Member { return &EnumValue{Name: genLower(t, "value")} })...)
@@ -649,6 +652,11 @@ func (w *writer) node(n any) {
 	case *Implements:
 		w.tok("implements")
 		w.ref(n.Type.Segments)
+	case *Codec:
+		w.tok("codec")
+		w.ref(n.Encode.Segments)
+		w.tok(",")
+		w.ref(n.Decode.Segments)
 	case *Field:
 		w.tok("field")
 		w.word(&n.Name, string(n.Name))

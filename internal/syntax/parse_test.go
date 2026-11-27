@@ -84,7 +84,7 @@ var fragments = []string{
 	"system", "notation", "language", "root", "actor", "person", "external", "component", "label", "focus",
 	"paths", "uses", "type", "extends", "implements", "field", "value", "op", "raises", "handles", "flow",
 	"on", "async", "alt", "else", "opt", "loop", "emits", "property", "about", "forall", "generated",
-	"where", "in", "size", "case", "corpus", "coverage", "record", "enum", "list", "map", "call", "int",
+	"where", "in", "size", "codec", "encoded", "case", "corpus", "coverage", "record", "enum", "list", "map", "call", "int",
 	"true", "none", "core", "ddd", "go", "Order", "order", "a-b", "x", "A.b", "a.B.c", "-1", "1.5", "0",
 	"{", "}", "(", ")", "[", "]", "<", ">", ",", ":", ".", "..", "=", "->", "->>", "\"s\"", "\"\"",
 	"\"a\\nb\"", "\"\\q\"", "\"", "\\", " ", "  ", "\n", "\n", "\n", "//c\n", "// x", "\t", "\r\n",

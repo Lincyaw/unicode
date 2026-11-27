@@ -443,7 +443,7 @@ func (x *expectation) bindings(id string, doc []binding, isType bool, method ...
 			e.Attrs["symbols"] = append(e.Attrs["symbols"], symbol)
 			x.edges[key] = e
 		default:
-			x.edge(map[string]graph.EdgeKind{"realizes": graph.EdgeKindRealizes, "checks": graph.EdgeKindChecks, "observes": graph.EdgeKindObserves}[b.verb],
+			x.edge(map[string]graph.EdgeKind{"realizes": graph.EdgeKindRealizes, "checks": graph.EdgeKindChecks, "observes": graph.EdgeKindObserves, "publishes": graph.EdgeKindPublishes}[b.verb],
 				id, b.target, graph.SourceDeclared)
 		}
 	}

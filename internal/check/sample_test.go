@@ -37,6 +37,7 @@ type world struct {
 	checkables   []*checkable
 	steps        []*step
 	observations []*observation
+	publications []*publication
 	drivers      []string // handwritten candidates, including methods whose receiver is generated
 	external     bool
 	client       *comp // the component that holds the external system's client
@@ -244,6 +245,7 @@ func newWorld(t *rapid.T) *world {
 	for _, c := range w.comps {
 		w.checkables_(c)
 	}
+	w.publicationSample()
 	return w
 }
 

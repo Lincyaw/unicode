@@ -69,6 +69,28 @@ type breakage struct {
 }
 
 var breakages = []breakage{
+	{"check.publisher-signature", func(w *world) string {
+		publication := w.publicationSample()
+		w.setAttr(publication.function, "signature", []string{"(event: int) -> bool"})
+		return "publishes " + publication.function + " " + publication.event
+	}},
+	{"check.multiple-publications", func(w *world) string {
+		publication := w.publicationSample()
+		other := w.designType(publication.home, publication.home.id+".OtherPublished", "event", publication.home.pkg+".OtherPublished", publication.home.file, nil)
+		w.declared(graph.EdgeKindPublishes, publication.function, other.id)
+		return publication.function
+	}},
+	{"check.publisher-outside-container", func(w *world) string {
+		publication := w.publicationSample()
+		w.reparent(publication.function, w.comps[0].file)
+		return "publishes " + publication.function + " " + publication.event
+	}},
+	{"check.wrong-binding-kind", func(w *world) string {
+		publication := w.publicationSample()
+		target := objectOf(publication.home)
+		w.retarget(graph.EdgeKindPublishes, publication.function, publication.event, target)
+		return "publishes " + publication.function + " " + target
+	}},
 	{"check.substitute-outside-container", func(w *world) string {
 		installer, _ := w.substituteSample()
 		other := choose(w, where(w.comps, func(c *comp) bool { return c != w.client }))

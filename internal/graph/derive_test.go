@@ -218,7 +218,7 @@ func (s *sampler) code(d sampleDesign) {
 			map[string][]string{"name": {rapid.SampledFrom([]string{"run", "load", "check"}).Draw(s.t, "funcName")}})
 		s.contains("file:"+f, id)
 		functions = append(functions, id)
-		switch rapid.IntRange(0, 4).Draw(s.t, "funcBinding") {
+		switch rapid.IntRange(0, 5).Draw(s.t, "funcBinding") {
 		case 0:
 			s.edge(EdgeKindRealizes, id, s.pick("funcTarget", slices.Concat(d.ops, d.ops, d.types, missing)), SourceDeclared, nil)
 		case 1:
@@ -227,6 +227,8 @@ func (s *sampler) code(d sampleDesign) {
 			s.edge(EdgeKindGenerates, id, s.pick("generatesTarget", slices.Concat(d.properties, missing)), SourceDeclared, map[string][]string{"symbols": {"v"}})
 		case 3:
 			s.edge(EdgeKindObserves, id, s.pick("observesTarget", slices.Concat(d.observations, missing)), SourceDeclared, nil)
+		case 4:
+			s.edge(EdgeKindPublishes, id, s.pick("publishesTarget", slices.Concat(d.types, missing)), SourceDeclared, nil)
 		}
 	}
 	for range rapid.IntRange(0, 16).Draw(s.t, "calls") {

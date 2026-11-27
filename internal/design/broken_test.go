@@ -33,6 +33,18 @@ type Broken struct {
 type breakage func(d *designer) (string, any)
 
 var breakages = map[string]breakage{
+	"design.invalid-codec": func(d *designer) (string, any) {
+		record := d.skel.record
+		codec := &syntax.Codec{Encode: syntax.OpRef{Segments: []string{d.lower("missingEncoder")}}, Decode: syntax.OpRef{Segments: []string{d.lower("missingDecoder")}}}
+		insertLine(&record.typeDecl.Lines, syntax.Member(codec), func(member syntax.Member) bool {
+			switch member.(type) {
+			case *syntax.Label, *syntax.Extends, *syntax.Implements:
+				return true
+			}
+			return false
+		})
+		return record.file, codec
+	},
 	"design.missing-system-file": func(d *designer) (string, any) {
 		delete(d.files, systemPath)
 		return systemPath, nil
