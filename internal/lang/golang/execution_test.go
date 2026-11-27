@@ -13,6 +13,7 @@ import (
 	"golang.org/x/tools/go/packages"
 	"pgregory.net/rapid"
 
+	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/lang"
 	"github.com/lincyaw/unicode/internal/syntax"
@@ -157,6 +158,7 @@ func checkExecutesSequencesAndFlows(t rapid.TB, sample ExecutionSample) {
 	checkExecutionPurity(t, sample, initial)
 	checkExecutionPromotedLiteral(t, sample)
 	checkExecutionInheritedMembers(t, sample, initial)
+	checkExecutionOwnerPaths(t, sample, initial)
 	if rt, ok := t.(*rapid.T); ok {
 		hierarchy := map[string]ucType{"Parent": {Form: "record", Fields: []ucField{{"value", "Value", "int"}}}, "Child": {Form: "record", Parent: "Parent", Fields: []ucField{{"delta", "Delta", "int"}}}}
 		generated := ucDraw(rt, reflect.TypeFor[executionDerived](), "Child", hierarchy, []string{"item.value in 1..3", "item.delta in -5..5"}, "item", 0).Interface().(executionDerived)
@@ -282,6 +284,9 @@ func checkExecutionPromotedLiteral(t rapid.TB, sample ExecutionSample) {
 	parent := types.NewNamed(parentObject, types.NewStruct([]*types.Var{types.NewField(token.NoPos, native, "Value", types.Typ[types.Int], false)}, nil), nil)
 	childObject := types.NewTypeName(token.NoPos, native, "Child", nil)
 	types.NewNamed(childObject, types.NewStruct([]*types.Var{types.NewField(token.NoPos, native, "Parent", types.NewPointer(parent), true), types.NewField(token.NoPos, native, "Delta", types.Typ[types.Int], false)}, nil), nil)
+	for _, name := range []*types.TypeName{parentObject, childObject} {
+		native.Scope().Insert(name)
+	}
 	pkg := &packages.Package{PkgPath: native.Path(), Name: native.Name(), Types: native}
 	compiler := contractCompiler{declarations: map[string]nativeDeclaration{"Parent": {obj: parentObject, pkg: pkg}, "Child": {obj: childObject, pkg: pkg}}, literalImports: map[string]string{}}
 	literal, err := compiler.literal(fmt.Sprintf("{value: %d, delta: %d}", sample.Initial, len(sample.Deltas)), "Child", pkg)
@@ -326,5 +331,106 @@ func checkExecutionInheritedMembers(t rapid.TB, sample ExecutionSample, initial 
 	projected := ucExecute(errors, nil, false)
 	if projected.Infrastructure || len(projected.Diagnostics) > 0 {
 		t.Fatalf("an inherited error view read a shadowing child field: %+v", projected)
+	}
+}
+
+type ExecutionMutatingParent struct{ Value int }
+
+func (parent *ExecutionMutatingParent) Read() int { parent.Value++; return 0 }
+
+type executionHiddenChild struct {
+	ExecutionMutatingParent
+	Value bool
+}
+type ExecutionFirst struct{ Value int }
+type ExecutionSecond struct{ Value bool }
+type ExecutionFlag struct{ Flag bool }
+type executionOrderedChild struct {
+	ExecutionSecond
+	ExecutionFirst
+}
+type executionCompleteChild struct {
+	ExecutionFlag
+	ExecutionFirst
+}
+
+// checkExecutionOwnerPaths verifies state and values independently of field
+// promotion: the native embedding order deliberately differs from the design.
+func checkExecutionOwnerPaths(t rapid.TB, sample ExecutionSample, initial int) {
+	nativePkg := reflect.TypeFor[ExecutionFirst]().PkgPath()
+	hidden := &executionHiddenChild{ExecutionMutatingParent: ExecutionMutatingParent{Value: initial}, Value: sample.Impure}
+	spec := &ucContract{ID: "execution.shadow-purity", Path: "design/execution.uc", Symbols: []ucSymbol{{"child", "Child"}}, Types: map[string]ucType{"Parent": {Form: "object", NativeName: "ExecutionMutatingParent", NativePkg: nativePkg, Fields: []ucField{{"value", "Value", "int"}}}, "Child": {Form: "object", Parent: "Parent", NativeName: "executionHiddenChild", NativePkg: nativePkg, Fields: []ucField{{"value", "Value", "bool"}}}}, Operations: map[string]ucOperation{"Parent.read": {Name: "Parent.read", Owner: "Parent", GoName: "Read", Result: "int", Pure: true}}, Call: runtimeExpr(t, "child.read()"), Ensures: []*ucExpr{runtimeExpr(t, "result == 0")}}
+	outcome := ucExecute(spec, map[string]reflect.Value{"child": reflect.ValueOf(hidden)}, false)
+	if outcome.Infrastructure || len(outcome.Diagnostics) != 1 || outcome.Diagnostics[0].Code != "lang.golang.purity-violation" || hidden.ExecutionMutatingParent.Value != initial+2 || hidden.Value != sample.Impure {
+		t.Fatalf("a shadowed parent receiver mutation falsely passed purity: hidden=%+v outcome=%+v", hidden, outcome)
+	}
+	hidden.ExecutionMutatingParent.Value = initial
+	expression := *spec
+	expression.Call = nil
+	expression.Ensures = []*ucExpr{runtimeExpr(t, "child.read() == 0")}
+	pureExpression := ucExecute(&expression, map[string]reflect.Value{"child": reflect.ValueOf(hidden)}, false)
+	if pureExpression.Infrastructure || len(pureExpression.Diagnostics) != 1 || pureExpression.Diagnostics[0].Code != "lang.golang.purity-violation" {
+		t.Fatalf("an expression call ignored its declaring parent state: %+v", pureExpression)
+	}
+	ordered := map[string]ucType{"First": {Form: "record", NativeName: "ExecutionFirst", NativePkg: nativePkg, Fields: []ucField{{"value", "Value", "int"}}}, "Second": {Form: "record", NativeName: "ExecutionSecond", NativePkg: nativePkg, Fields: []ucField{{"value", "Value", "bool"}}}, "Child": {Form: "record", Parents: []string{"First", "Second"}, NativeName: "executionOrderedChild", NativePkg: nativePkg}}
+	value := executionOrderedChild{ExecutionFirst: ExecutionFirst{Value: initial}, ExecutionSecond: ExecutionSecond{Value: sample.Impure}}
+	normalized := ucNormalize(reflect.ValueOf(value), "Child", ordered)
+	if ucKey(ucFieldValue(normalized, "value")) != "i:"+strconv.Itoa(initial) || ucKey(ucFieldValue(ucLazyValue(reflect.ValueOf(value), "Child", ordered), "value")) != "i:"+strconv.Itoa(initial) {
+		t.Fatal("visible field lookup followed Go promotion instead of the first declared parent")
+	}
+	if rt, ok := t.(*rapid.T); ok {
+		drawn := ucDraw(rt, reflect.TypeFor[executionOrderedChild](), "Child", ordered, []string{"child.value in 1..3"}, "child", 0).Interface().(executionOrderedChild)
+		if drawn.ExecutionFirst.Value < 1 || drawn.ExecutionFirst.Value > 3 || drawn.ExecutionSecond.Value {
+			t.Fatalf("input generation changed the hidden parent or missed the selected owner: %+v", drawn)
+		}
+	}
+	complete := map[string]ucType{"First": ordered["First"], "Flag": {Form: "record", NativeName: "ExecutionFlag", NativePkg: nativePkg, Fields: []ucField{{"flag", "Flag", "bool"}}}, "Child": {Form: "record", Parents: []string{"First", "Flag"}, NativeName: "executionCompleteChild", NativePkg: nativePkg}}
+	original := executionCompleteChild{ExecutionFirst: ExecutionFirst{Value: initial}, ExecutionFlag: ExecutionFlag{Flag: sample.Impure}}
+	detached := ucDetach(ucNormalize(reflect.ValueOf(original), "Child", complete))
+	reconstructed := ucNative(detached, reflect.TypeFor[executionCompleteChild]()).Interface().(executionCompleteChild)
+	if reconstructed.ExecutionFirst.Value != initial || reconstructed.ExecutionFlag.Flag != sample.Impure {
+		t.Fatalf("native reconstruction used different owner paths: %+v", reconstructed)
+	}
+	checkExecutionOrderedLiteral(t, sample)
+}
+func checkExecutionOrderedLiteral(t rapid.TB, sample ExecutionSample) {
+	native := types.NewPackage("orderedliteral", "orderedliteral")
+	firstObject := types.NewTypeName(token.NoPos, native, "First", nil)
+	first := types.NewNamed(firstObject, types.NewStruct([]*types.Var{types.NewField(token.NoPos, native, "Value", types.Typ[types.Int], false)}, nil), nil)
+	secondObject := types.NewTypeName(token.NoPos, native, "Second", nil)
+	second := types.NewNamed(secondObject, types.NewStruct([]*types.Var{types.NewField(token.NoPos, native, "Value", types.Typ[types.Bool], false)}, nil), nil)
+	childObject := types.NewTypeName(token.NoPos, native, "Child", nil)
+	types.NewNamed(childObject, types.NewStruct([]*types.Var{types.NewField(token.NoPos, native, "Second", second, true), types.NewField(token.NoPos, native, "First", first, true)}, nil), nil)
+	for _, name := range []*types.TypeName{firstObject, secondObject, childObject} {
+		native.Scope().Insert(name)
+	}
+	pkg := &packages.Package{PkgPath: native.Path(), Name: native.Name(), Types: native}
+	nodes := map[string]graph.Node{"First": {Id: "First", Kind: graph.NodeKindType, Attrs: map[string][]string{"fields": {"value: int"}}}, "Second": {Id: "Second", Kind: graph.NodeKindType, Attrs: map[string][]string{"fields": {"value: bool"}}}, "Child": {Id: "Child", Kind: graph.NodeKindType}}
+	g := graph.NewGraph()
+	for _, node := range nodes {
+		if err := g.AddNode(node); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := g.AddEdge(graph.Edge{Kind: graph.EdgeKindExtends, From: "Child", To: "First", Origin: diag.Position{Line: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.AddEdge(graph.Edge{Kind: graph.EdgeKindExtends, From: "Child", To: "Second", Origin: diag.Position{Line: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	compiler := contractCompiler{plan: lang.GenPlan{Graph: &g}, nodes: nodes, declarations: map[string]nativeDeclaration{"first": {obj: firstObject, pkg: pkg}, "second": {obj: secondObject, pkg: pkg}, "child": {obj: childObject, pkg: pkg}}, bindings: map[graph.EdgeKind]map[string][]string{graph.EdgeKindRealizes: {"First": {"first"}, "Second": {"second"}, "Child": {"child"}}}, literalImports: map[string]string{}}
+	literal, err := compiler.literal(fmt.Sprintf("{value: %d}", sample.Initial), "Child", pkg)
+	if err != nil {
+		t.Fatalf("a declared first-parent case was rejected as Go ambiguity: %v", err)
+	}
+	source := "package orderedliteral\ntype First struct{Value int}\ntype Second struct{Value bool}\ntype Child struct{Second;First}\nvar supplied=" + literal
+	set := token.NewFileSet()
+	file, err := parser.ParseFile(set, "literal.go", source, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := types.Config{}
+	if _, err := configuration.Check("orderedliteral", set, []*ast.File{file}, nil); err != nil {
+		t.Fatalf("a declared first-parent case failed to compile: %v", err)
 	}
 }
