@@ -1,6 +1,6 @@
 import { clsx } from 'clsx';
 import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react';
-import type { CSSProperties, ReactNode } from 'react';
+import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Node, ViewNode } from '../../api/types';
 import { ABOUT, CONTROLS, kindWord } from '../../terms';
@@ -66,12 +66,25 @@ function Rows({ rows, onToggle }: { rows: CardRow[]; onToggle?: () => void }) {
 
 /**
  * A design type drawn as a card: its fields or values and its operations; a contradicted type has a red edge. Its +n
- * unfolds the card to all its fields in place, `onToggle` telling the drawing to make room.
+ * unfolds the card to all its fields in place, `onToggle` telling the drawing to make room; the card then stays in
+ * sight wherever the drawing moves it.
  */
 export function TypeCard({ node, rows, onToggle, style }: { node: ViewNode; rows: CardRow[]; onToggle?: () => void; style?: CSSProperties }) {
   const links = useLinks();
+  const card = useRef<HTMLDivElement>(null);
+  const toggled = useRef(false);
+  useLayoutEffect(() => {
+    if (toggled.current) {
+      toggled.current = false;
+      card.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  });
+  const toggle = onToggle && (() => {
+    toggled.current = true;
+    onToggle();
+  });
   return (
-    <div className={styles.card} data-status={node.status} data-selected={links.selected === node.id} style={style}>
+    <div ref={card} className={styles.card} data-status={node.status} data-selected={links.selected === node.id} style={style}>
       <span className={styles.head}>
         <CoverButton id={node.id}>
           <StatusDot status={node.status} />
@@ -80,7 +93,7 @@ export function TypeCard({ node, rows, onToggle, style }: { node: ViewNode; rows
         </CoverButton>
         <NodeHint node={node} />
       </span>
-      <Rows rows={rows} onToggle={onToggle} />
+      <Rows rows={rows} onToggle={toggle} />
     </div>
   );
 }
