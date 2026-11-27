@@ -10,9 +10,11 @@ import (
 
 	"github.com/lincyaw/unicode/internal/design"
 	"github.com/lincyaw/unicode/internal/diag"
+	"github.com/lincyaw/unicode/internal/evidence"
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/lang"
 	"github.com/lincyaw/unicode/internal/lang/golang"
+	"github.com/lincyaw/unicode/internal/review"
 	"github.com/lincyaw/unicode/internal/syntax"
 )
 
@@ -59,26 +61,53 @@ func readDesign(root string) ([]syntax.File, []diag.Diagnostic, error) {
 // fragment and derives. The diagnostics are those of reading the files,
 // loading the design, extracting the code and deriving, unsorted.
 func buildGraph(root string) (graph.Graph, []diag.Diagnostic, error) {
-	return buildGraphWithExtractor(root, lang.Backend.Extract)
+	g, diagnostics, err := buildInputGraph(root)
+	if err != nil {
+		return g, diagnostics, err
+	}
+	runs := evidence.Read(root)
+	reviews := review.Read(root)
+	diagnostics = append(diagnostics, runs.Diagnostics...)
+	diagnostics = append(diagnostics, reviews.Diagnostics...)
+	measured := evidence.Attach(&g, runs.Reports)
+	reviewed := review.Attach(&g, reviews.Records)
+	diagnostics = append(diagnostics, measured.Diagnostics...)
+	diagnostics = append(diagnostics, reviewed.Diagnostics...)
+	for _, fragment := range []graph.Fragment{measured.Fragment, reviewed.Fragment} {
+		if err := g.AddFragment(fragment); err != nil {
+			return g, diagnostics, &exitError{code: exitUnexpected, err: err}
+		}
+	}
+	return g, diagnostics, nil
+}
+
+func buildInputGraph(root string) (graph.Graph, []diag.Diagnostic, error) {
+	return buildGraphWithExtractor(root, lang.Backend.Extract, design.Load)
 }
 
 // buildGraphForGeneration lets a backend repair stale generated output while
 // keeping the ordinary extraction path strict.
 func buildGraphForGeneration(root string) (graph.Graph, []diag.Diagnostic, error) {
-	return buildGraphWithExtractor(root, func(b lang.Backend, root string, roots []string) (lang.Extracted, error) {
-		if extractor, ok := b.(lang.GenerationExtractor); ok {
-			return extractor.ExtractForGeneration(root, roots)
-		}
-		return b.Extract(root, roots)
-	})
+	return buildGraphWithExtractor(root, generationExtract, design.Load)
 }
 
-func buildGraphWithExtractor(root string, extract func(lang.Backend, string, []string) (lang.Extracted, error)) (graph.Graph, []diag.Diagnostic, error) {
+func buildGraphForExploration(root string) (graph.Graph, []diag.Diagnostic, error) {
+	return buildGraphWithExtractor(root, generationExtract, func(files []syntax.File) design.Loaded { return design.LoadForExploration(files).Loaded })
+}
+
+func generationExtract(b lang.Backend, root string, roots []string) (lang.Extracted, error) {
+	if extractor, ok := b.(lang.GenerationExtractor); ok {
+		return extractor.ExtractForGeneration(root, roots)
+	}
+	return b.Extract(root, roots)
+}
+
+func buildGraphWithExtractor(root string, extract func(lang.Backend, string, []string) (lang.Extracted, error), load func([]syntax.File) design.Loaded) (graph.Graph, []diag.Diagnostic, error) {
 	files, diags, err := readDesign(root)
 	if err != nil {
 		return graph.Graph{}, nil, err
 	}
-	loaded := design.Load(files)
+	loaded := load(files)
 	g := loaded.Graph
 	diags = append(diags, loaded.Diagnostics...)
 	available := backends()

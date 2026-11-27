@@ -36,7 +36,11 @@ func withGraph(g *globalOptions, read func(root string, gr *graph.Graph) error) 
 		defer func() { _ = os.RemoveAll(dir) }()
 		root = dir
 	}
-	gr, _, err := buildGraph(root)
+	builder := buildGraph
+	if g.rev != "" {
+		builder = buildInputGraph
+	}
+	gr, _, err := builder(root)
 	if err != nil {
 		return err
 	}

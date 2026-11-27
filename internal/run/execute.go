@@ -2,28 +2,37 @@ package run
 
 import (
 	"cmp"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/google/renameio/v2/maybe"
-
 	"github.com/lincyaw/unicode/internal/diag"
+	"github.com/lincyaw/unicode/internal/evidence"
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/lang"
+	"github.com/lincyaw/unicode/internal/repo"
 )
 
 // Execute dispatches the selected checks to their language runners and saves
 // the complete report, including diagnostics, to .unicode/results.json.
 //
 //uc:realizes run.execute
-func Execute(root string, g *graph.Graph, backends []lang.Backend, ids []string, explore time.Duration) lang.RunReport {
-	out := lang.RunReport{Results: []lang.RunResult{}, Diagnostics: []diag.Diagnostic{}}
+func Execute(root string, g *graph.Graph, backends []lang.Backend, ids []string, explore time.Duration, record bool) lang.RunReport {
+	out := lang.RunReport{Results: []lang.RunResult{}, Diagnostics: []diag.Diagnostic{}, Version: 1,
+		Snapshot: graph.InputDigest(g), At: time.Now().UTC().Format(time.RFC3339Nano), Mode: "replay"}
+	if explore > 0 {
+		out.Mode = "explore"
+	}
+	head, err := repo.ReadHead(root, filepath.Join(root, ".unicode"))
+	if err != nil {
+		out.Diagnostics = append(out.Diagnostics, diagnostic("run.metadata-failed", "design/system.uc", err.Error(), "restore access to the repository metadata before running checks"))
+	} else {
+		out.Dirty = head.Dirty
+		if head.Commit != nil {
+			out.Commit = *head.Commit
+		}
+	}
 	available := map[string]lang.Backend{}
 	for _, b := range backends {
 		name := b.Language()
@@ -82,7 +91,7 @@ func Execute(root string, g *graph.Graph, backends []lang.Backend, ids []string,
 			}
 			b := available[config.name].(lang.Runner)
 			slices.Sort(selected[config.name])
-			report := b.Run(lang.RunPlan{Root: root, Roots: slices.Clone(config.roots), Graph: g, Ids: slices.Clone(selected[config.name]), Explore: explore})
+			report := b.Run(lang.RunPlan{Root: root, Roots: slices.Clone(config.roots), Graph: g, Ids: slices.Clone(selected[config.name]), Explore: explore, Record: record})
 			expected := map[string]bool{}
 			for _, id := range selected[config.name] {
 				expected[id] = false
@@ -107,6 +116,9 @@ func Execute(root string, g *graph.Graph, backends []lang.Backend, ids []string,
 				if result.Diagnostics == nil {
 					result.Diagnostics = []diag.Diagnostic{}
 				}
+				if result.Cases == nil {
+					result.Cases = []lang.CaseResult{}
+				}
 				out.Results = append(out.Results, result)
 			}
 			for _, id := range selected[config.name] {
@@ -119,10 +131,8 @@ func Execute(root string, g *graph.Graph, backends []lang.Backend, ids []string,
 	}
 	slices.SortFunc(out.Results, func(a, b lang.RunResult) int { return strings.Compare(a.Id, b.Id) })
 	sortDiagnostics(out.Diagnostics)
-	if d := save(root, out); d != nil {
-		out.Diagnostics = append(out.Diagnostics, *d)
-		sortDiagnostics(out.Diagnostics)
-	}
+	out.Diagnostics = append(out.Diagnostics, evidence.Save(root, out)...)
+	sortDiagnostics(out.Diagnostics)
 	return out
 }
 
@@ -142,6 +152,63 @@ func checkLanguage(g *graph.Graph, id, name string) bool {
 		}
 	}
 	seen := map[string]bool{}
+	for len(pending) > 0 {
+		current := pending[0]
+		pending = pending[1:]
+		if seen[current] {
+			continue
+		}
+		seen[current] = true
+		n := g.Node(current)
+		if n == nil || n.Layer != graph.LayerCode {
+			continue
+		}
+		if n.Kind == graph.NodeKindContainer && n.Form == "file" && slices.Contains(n.Attrs["language"], name) {
+			return true
+		}
+		pending = append(pending, parents[current]...)
+	}
+	check := g.Node(id)
+	if check == nil || len(check.Attrs["manual"]) > 0 {
+		return false
+	}
+	targets := map[string]bool{}
+	for _, edge := range g.Edges() {
+		if edge.From == id && edge.Kind == graph.EdgeKindAbout {
+			targets[edge.To] = true
+		}
+	}
+	for _, edge := range g.Edges() {
+		if edge.Kind == graph.EdgeKindRealizes && targets[edge.To] && codeLanguage(g, edge.From, name, parents) {
+			return true
+		}
+	}
+	owners := map[string]bool{}
+	pending = []string{id}
+	seen = map[string]bool{}
+	for len(pending) > 0 {
+		current := pending[0]
+		pending = pending[1:]
+		if seen[current] {
+			continue
+		}
+		seen[current] = true
+		if node := g.Node(current); node != nil && node.Layer == graph.LayerDesign && node.Kind == graph.NodeKindContainer {
+			owners[current] = true
+			break
+		}
+		pending = append(pending, parents[current]...)
+	}
+	for _, edge := range g.Edges() {
+		if edge.Kind == graph.EdgeKindOwns && owners[edge.From] && codeLanguage(g, edge.To, name, parents) {
+			return true
+		}
+	}
+	return false
+}
+
+func codeLanguage(g *graph.Graph, id, name string, parents map[string][]string) bool {
+	pending, seen := []string{id}, map[string]bool{}
 	for len(pending) > 0 {
 		current := pending[0]
 		pending = pending[1:]
@@ -197,35 +264,4 @@ func sortDiagnostics(ds []diag.Diagnostic) {
 	slices.SortFunc(ds, func(a, b diag.Diagnostic) int {
 		return cmp.Or(strings.Compare(a.Position.Path, b.Position.Path), cmp.Compare(a.Position.Line, b.Position.Line), cmp.Compare(a.Position.Column, b.Position.Column), strings.Compare(a.Code, b.Code), strings.Compare(a.Subject, b.Subject))
 	})
-}
-
-func save(root string, report lang.RunReport) *diag.Diagnostic {
-	fail := func(err error) *diag.Diagnostic {
-		d := diagnostic("run.results-write-failed", ".unicode/results.json", fmt.Sprintf("cannot save the execution report: %v", err), "make .unicode a writable directory without symbolic links")
-		return &d
-	}
-	dir := filepath.Join(root, ".unicode")
-	for _, p := range []string{root, dir, filepath.Join(dir, "results.json")} {
-		info, err := os.Lstat(p)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return fail(err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return fail(fmt.Errorf("%s is a symbolic link", p))
-		}
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fail(err)
-	}
-	content, err := json.MarshalIndent(report, "", "  ")
-	if err != nil {
-		return fail(err)
-	}
-	if err := maybe.WriteFile(filepath.Join(dir, "results.json"), append(content, '\n'), 0o644); err != nil {
-		return fail(err)
-	}
-	return nil
 }

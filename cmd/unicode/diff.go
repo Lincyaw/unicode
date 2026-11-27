@@ -84,7 +84,7 @@ func revisionGraph(root, rev string) (graph.Graph, repo.Revision, error) {
 		return graph.Graph{}, repo.Revision{}, err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	g, _, err := buildGraph(dir)
+	g, _, err := buildInputGraph(dir)
 	return g, r, err
 }
 

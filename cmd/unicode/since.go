@@ -13,6 +13,8 @@ import (
 //
 //uc:realizes cli.affectedChecks
 func AffectedChecks(base, head *graph.Graph, selected []string) []string {
+	baseInput, headInput := sinceInputs(base), sinceInputs(head)
+	base, head = &baseInput, &headInput
 	changes := graph.Compare(base, head)
 	seeds := map[string]bool{}
 	packageFiles := map[string]bool{}
@@ -161,6 +163,28 @@ func sincePackageNodes(snapshot *graph.Graph, files map[string]bool) []string {
 				out = append(out, child)
 			}
 			pending = append(pending, children[child]...)
+		}
+	}
+	return out
+}
+
+// sinceInputs removes only runtime artifacts; declared and recorded cases remain inputs.
+func sinceInputs(g *graph.Graph) graph.Graph {
+	out := graph.NewGraph()
+	for _, node := range g.Nodes() {
+		if node.Layer == graph.LayerEvidence || node.Layer == graph.LayerReview {
+			continue
+		}
+		if err := out.AddNode(node); err != nil {
+			panic(err)
+		}
+	}
+	for _, edge := range g.Edges() {
+		if edge.Kind == graph.EdgeKindCovers || out.Node(edge.From) == nil || out.Node(edge.To) == nil {
+			continue
+		}
+		if err := out.AddEdge(edge); err != nil {
+			panic(err)
 		}
 	}
 	return out

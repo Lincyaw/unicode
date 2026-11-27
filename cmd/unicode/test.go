@@ -8,21 +8,25 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/lincyaw/unicode/internal/diag"
+	"github.com/lincyaw/unicode/internal/evidence"
+	"github.com/lincyaw/unicode/internal/gen"
 	"github.com/lincyaw/unicode/internal/lang"
 	"github.com/lincyaw/unicode/internal/run"
 )
 
-// testCommand is `unicode test [id...] [--since REV] [--explore DURATION]`.
+// testCommand is `unicode test [id...] [--since REV] [--explore DURATION] [--record]`.
 func testCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
 	var explore time.Duration
 	var since string
+	var record bool
 	c := &cobra.Command{
 		Use:   "test [id...]",
 		Short: "Replay the declared and recorded cases of properties and flows",
 		Long: "test builds the graph and runs the generated drivers for the selected properties and flows,\n" +
 			"or all executable properties when no identities are given. It records the results in\n" +
 			".unicode/results.json. Without --explore it only replays declared and recorded cases;\n" +
-			"--explore gives a positive time budget for generating candidate inputs. With --since REV,\n" +
+			"--explore gives a positive time budget for generating candidate inputs; --record saves the selected\n" +
+			"replayable inputs and refreshes their generated drivers. With --since REV,\n" +
 			"only checks affected since that commit are selected; no affected checks leaves prior results intact.",
 		RunE: func(c *cobra.Command, ids []string) error {
 			if c.Flags().Changed("since") && since == "" {
@@ -31,36 +35,29 @@ func testCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
 			if c.Flags().Changed("explore") && explore <= 0 {
 				return usageError("--explore must be a positive duration")
 			}
+			if record && explore <= 0 {
+				return usageError("--record requires a positive --explore duration")
+			}
 			root, err := findRoot(g.root)
 			if err != nil {
 				return err
 			}
-			return runTest(root, g.format, ids, explore, since, stdout, stderr)
+			return runTest(root, g.format, ids, explore, since, record, stdout, stderr)
 		},
 	}
 	c.Flags().StringVar(&since, "since", "", "run only checks affected by changes since this commit")
 	c.Flags().DurationVar(&explore, "explore", 0, "generate candidate inputs within this time budget instead of only replaying cases")
+	c.Flags().BoolVar(&record, "record", false, "save selected replayable inputs and refresh generated drivers (requires --explore)")
 	return c
 }
 
-type runResultJSON struct {
-	ID           string            `json:"id"`
-	Passed       bool              `json:"passed"`
-	Accepted     int               `json:"accepted"`
-	Rejected     int               `json:"rejected"`
-	Observations []string          `json:"observations"`
-	Differences  []string          `json:"differences"`
-	Diagnostics  []diag.Diagnostic `json:"diagnostics"`
-}
-
-type runReportJSON struct {
-	Results     []runResultJSON   `json:"results"`
-	Diagnostics []diag.Diagnostic `json:"diagnostics"`
-}
-
 // runTest keeps predicate failures separate from toolchain diagnostics.
-func runTest(root, format string, ids []string, explore time.Duration, since string, stdout, stderr io.Writer) error {
-	g, diags, err := buildGraph(root)
+func runTest(root, format string, ids []string, explore time.Duration, since string, record bool, stdout, stderr io.Writer) error {
+	builder := buildInputGraph
+	if explore > 0 {
+		builder = buildGraphForExploration
+	}
+	g, diags, err := builder(root)
 	if err != nil {
 		return err
 	}
@@ -73,13 +70,30 @@ func runTest(root, format string, ids []string, explore time.Duration, since str
 		}
 		diags = append(diags, selectionDiagnostics...)
 	}
-	report := lang.RunReport{}
+	report := lang.RunReport{Results: []lang.RunResult{}, Diagnostics: []diag.Diagnostic{}}
 	if len(diags) == 0 && (since == "" || len(selected) > 0) {
-		report = run.Execute(root, &g, availableBackends(), selected, explore)
+		report = run.Execute(root, &g, availableBackends(), selected, explore, record)
+		if record && len(report.Diagnostics) == 0 {
+			var cases []lang.CaseResult
+			for _, result := range report.Results {
+				cases = append(cases, result.Cases...)
+			}
+			recording := evidence.Recordings(root, &g, cases)
+			report.Diagnostics = append(report.Diagnostics, recording.Diagnostics...)
+			if len(report.Diagnostics) == 0 {
+				report.Diagnostics = append(report.Diagnostics, evidence.ApplyRecordings(root, recording)...)
+			}
+			if len(report.Diagnostics) == 0 {
+				report.Diagnostics = append(report.Diagnostics, refreshRecordedDrivers(root)...)
+			}
+			if len(report.Diagnostics) > 0 {
+				report.Diagnostics = append(report.Diagnostics, evidence.Save(root, report)...)
+			}
+		}
 		diags = append(diags, report.Diagnostics...)
 	}
 	sortDiagnostics(diags)
-	out := runReportJSON{Results: []runResultJSON{}, Diagnostics: append([]diag.Diagnostic{}, diags...)}
+	report.Diagnostics = append([]diag.Diagnostic{}, diags...)
 	failed := false
 	var text []byte
 	var failures []diag.Diagnostic
@@ -96,15 +110,10 @@ func runTest(root, format string, ids []string, explore time.Duration, since str
 			text = fmt.Appendf(text, "  difference: %s\n", difference)
 		}
 		failures = append(failures, result.Diagnostics...)
-		out.Results = append(out.Results, runResultJSON{
-			ID: result.Id, Passed: result.Passed, Accepted: result.Accepted, Rejected: result.Rejected,
-			Observations: nonNilStrings(result.Observations), Differences: nonNilStrings(result.Differences),
-			Diagnostics: append([]diag.Diagnostic{}, result.Diagnostics...),
-		})
 	}
 	allDiagnostics := append(failures, diags...)
 	sortDiagnostics(allDiagnostics)
-	if err := writeResult(format, out, text, stdout); err != nil {
+	if err := writeResult(format, report, text, stdout); err != nil {
 		return err
 	}
 	if format != "json" {
@@ -121,9 +130,18 @@ func runTest(root, format string, ids []string, explore time.Duration, since str
 	return nil
 }
 
-func nonNilStrings(values []string) []string {
-	if values == nil {
-		return []string{}
+// refreshRecordedDrivers uses the ordinary generation safety checks after corpus publication.
+func refreshRecordedDrivers(root string) []diag.Diagnostic {
+	g, diagnostics, err := buildGraphForGeneration(root)
+	if err != nil {
+		return append(diagnostics, diag.Diagnostic{Code: "cli.record-generation-failed", Subject: "design/system.uc", Position: diag.Position{Path: "design/system.uc", Line: 1, Column: 1}, Message: err.Error(), Fix: "repair the generation environment and run unicode gen before replaying the recorded inputs"})
 	}
-	return values
+	if len(diagnostics) > 0 {
+		return diagnostics
+	}
+	plan := gen.Plan(root, &g, availableBackends())
+	if len(plan.Diagnostics) > 0 {
+		return plan.Diagnostics
+	}
+	return gen.Write(root, plan.Edits)
 }

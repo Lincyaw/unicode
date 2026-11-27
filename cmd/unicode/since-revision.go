@@ -26,7 +26,7 @@ func sinceRevisionGraph(root, rev string) (g graph.Graph, diagnostics []diag.Dia
 			err = &exitError{code: exitUnexpected, err: fmt.Errorf("cannot remove the temporary checkout of %s: %w", rev, errors.Join(err, cleanup))}
 		}
 	}()
-	return buildGraph(dir)
+	return buildInputGraph(dir)
 }
 
 // checksSince validates explicit targets before intersecting them with the

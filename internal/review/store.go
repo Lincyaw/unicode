@@ -48,7 +48,7 @@ func targetReason(target Target) string {
 	if strings.TrimSpace(target.From) == "" || strings.TrimSpace(target.To) == "" {
 		return "an edge target gives its kind and two nonempty endpoint identities"
 	}
-	kinds := []graph.EdgeKind{graph.EdgeKindContains, graph.EdgeKindUses, graph.EdgeKindExtends, graph.EdgeKindImplements, graph.EdgeKindRefers, graph.EdgeKindSubscribes, graph.EdgeKindImports, graph.EdgeKindCalls, graph.EdgeKindFrom, graph.EdgeKindEmits, graph.EdgeKindHandles, graph.EdgeKindAbout, graph.EdgeKindRealizes, graph.EdgeKindChecks, graph.EdgeKindGenerates, graph.EdgeKindObserves, graph.EdgeKindSubstitutes, graph.EdgeKindOwns, graph.EdgeKindDepends, graph.EdgeKindTraces, graph.EdgeKindExercises, graph.EdgeKindReaches, graph.EdgeKindCovers}
+	kinds := []graph.EdgeKind{graph.EdgeKindContains, graph.EdgeKindUses, graph.EdgeKindExtends, graph.EdgeKindImplements, graph.EdgeKindRefers, graph.EdgeKindSubscribes, graph.EdgeKindImports, graph.EdgeKindCalls, graph.EdgeKindFrom, graph.EdgeKindEmits, graph.EdgeKindHandles, graph.EdgeKindAbout, graph.EdgeKindRealizes, graph.EdgeKindChecks, graph.EdgeKindGenerates, graph.EdgeKindObserves, graph.EdgeKindSubstitutes, graph.EdgeKindPublishes, graph.EdgeKindOwns, graph.EdgeKindDepends, graph.EdgeKindTraces, graph.EdgeKindExercises, graph.EdgeKindReaches, graph.EdgeKindCovers}
 	if !slices.Contains(kinds, graph.EdgeKind(target.EdgeKind)) {
 		return "the edge target has an unknown edge kind"
 	}

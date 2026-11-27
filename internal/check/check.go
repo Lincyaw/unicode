@@ -41,6 +41,7 @@ func Conform(g *graph.Graph) Checked {
 	c.observations()
 	c.drivers()
 	c.steps()
+	c.runtimeEvidence()
 	slices.SortFunc(c.diags, func(a, b diag.Diagnostic) int {
 		return cmp.Or(cmp.Compare(a.Position.Path, b.Position.Path), cmp.Compare(a.Position.Line, b.Position.Line),
 			cmp.Compare(a.Position.Column, b.Position.Column), cmp.Compare(a.Code, b.Code),
