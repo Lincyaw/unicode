@@ -516,18 +516,7 @@ func lastName(id string) string { _, name, _ := cutLast(id, "."); return name }
 func (c *contractCompiler) qualify(obj types.Object, pkg *packages.Package, imports map[string]string) string {
 	if obj.Pkg() == nil || obj.Pkg().Path() == pkg.PkgPath {
 		if strings.HasPrefix(obj.Name(), "uc") {
-			if c.foreignNames == nil {
-				c.foreignNames = map[string]string{}
-				c.foreignOriginal = map[string]string{}
-			}
-			key := pkg.PkgPath + "." + obj.Name()
-			if alias, ok := c.foreignNames[key]; ok {
-				return alias
-			}
-			alias := "unicodeContractForeign" + strconv.Itoa(len(c.foreignNames))
-			c.foreignNames[key] = alias
-			c.foreignOriginal[alias] = obj.Name()
-			return alias
+			return c.protectName(obj.Name(), pkg, pkg.PkgPath+"."+obj.Name())
 		}
 		return obj.Name()
 	}
@@ -542,6 +531,22 @@ func (c *contractCompiler) qualify(obj types.Object, pkg *packages.Package, impo
 		imports[path] = alias
 	}
 	return alias + "." + obj.Name()
+}
+func (c *contractCompiler) protectName(name string, pkg *packages.Package, key string) string {
+	if c.foreignNames == nil {
+		c.foreignNames = map[string]string{}
+		c.foreignOriginal = map[string]string{}
+	}
+	if alias, ok := c.foreignNames[key]; ok {
+		return alias
+	}
+	alias := "unicodeContractForeign" + strconv.Itoa(len(c.foreignOriginal))
+	for c.foreignOriginal[alias] != "" || pkg.Types.Scope().Lookup(alias) != nil {
+		alias += "_"
+	}
+	c.foreignNames[key] = alias
+	c.foreignOriginal[alias] = name
+	return alias
 }
 func (c *contractCompiler) goType(text string, pkg *packages.Package, imports map[string]string) string {
 	kind, args := ucSplitType(text)
@@ -744,6 +749,7 @@ func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packa
 func (c *contractCompiler) render(file *contractFile) []byte {
 	c.literalImports = file.imports
 	var body strings.Builder
+	var bridges []string
 	for index, unit := range file.units {
 		id := strconv.Itoa(index)
 		specName := "ucSpec" + id
@@ -842,21 +848,46 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 			fmt.Fprintf(&body, "s.Observers[%d].Read=reflect.ValueOf(%s);", i, c.qualify(d.obj, file.pkg, file.imports))
 		}
 		body.WriteString("return &s }\n")
-		var params, values []string
-		for i, s := range unit.spec.Symbols {
-			t := c.goType(s.Type, file.pkg, file.imports)
-			name := "value" + strconv.Itoa(i)
-			params = append(params, name+" "+t)
-			values = append(values, strconv.Quote(s.Name)+":reflect.ValueOf(&"+name+").Elem()")
-		}
 		predicate := ""
 		if unit.predicate != nil {
 			predicate = c.qualify(unit.predicate, file.pkg, file.imports)
 		} else {
 			predicate = (&Backend{}).MapName(lang.NameRolePredicate, lastName(unit.node.Id))
-			fmt.Fprintf(&body, "//uc:checks %s\nfunc %s(t rapid.TB", unit.node.Id, predicate)
+			bridge := "ucPredicate" + id + "_"
+			handle := "t"
+			symbolNames := map[string]bool{}
+			for _, symbol := range unit.spec.Symbols {
+				symbolNames[symbol.Name] = true
+			}
+			for symbolNames[handle] {
+				handle += "_"
+			}
+			for symbolNames["unicodeGenerated"+strings.TrimPrefix(bridge, "uc")] {
+				bridge += "_"
+			}
+			bridges = append(bridges, bridge)
+			var params, args, bridgeParams, values []string
+			for i, symbol := range unit.spec.Symbols {
+				t := c.goType(symbol.Type, file.pkg, file.imports)
+				name := c.protectName(symbol.Name, file.pkg, unit.node.Id+"#symbol#"+symbol.Name)
+				params = append(params, name+" "+t)
+				args = append(args, name)
+				local := "value" + strconv.Itoa(i)
+				bridgeParams = append(bridgeParams, local+" "+t)
+				values = append(values, strconv.Quote(symbol.Name)+":reflect.ValueOf(&"+local+").Elem()")
+			}
+			fmt.Fprintf(&body, "//uc:checks %s\nfunc %s(%s rapid.TB", unit.node.Id, predicate, handle)
 			if len(params) > 0 {
 				body.WriteString("," + strings.Join(params, ","))
+			}
+			fmt.Fprintf(&body, "){ %s(%s", bridge, handle)
+			if len(args) > 0 {
+				body.WriteString("," + strings.Join(args, ","))
+			}
+			body.WriteString(") }\n")
+			fmt.Fprintf(&body, "func %s(t rapid.TB", bridge)
+			if len(bridgeParams) > 0 {
+				body.WriteString("," + strings.Join(bridgeParams, ","))
 			}
 			fmt.Fprintf(&body, "){ ucCheck(t,%s(),map[string]reflect.Value{%s}) }\n", specName, strings.Join(values, ","))
 		}
@@ -981,6 +1012,9 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		owned["ucInputs"+strconv.Itoa(i)] = true
 		owned["ucInvoke"+strconv.Itoa(i)] = true
 		owned["ucRandom"+strconv.Itoa(i)] = true
+	}
+	for _, name := range bridges {
+		owned[name] = true
 	}
 	ast.Inspect(tree, func(node ast.Node) bool {
 		if id, ok := node.(*ast.Ident); ok && owned[id.Name] {
