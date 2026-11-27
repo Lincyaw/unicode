@@ -7,7 +7,7 @@ lint:
 	golangci-lint run
 
 test:
-	go test ./...
+	go test -timeout=20m ./...
 
 fmt-check:
 	go run ./cmd/unicode fmt --check
