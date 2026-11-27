@@ -23,6 +23,9 @@ type SinceSample struct {
 //uc:generates cli.changed-checks-are-selected.sample
 func genSinceSample() *rapid.Generator[SinceSample] {
 	return rapid.Custom(func(t *rapid.T) SinceSample {
+		if rapid.Bool().Draw(t, "package globals topology") {
+			return sinceGlobalSample(t)
+		}
 		var nodes []graph.Node
 		var edges []graph.Edge
 		addNode := func(id string, kind graph.NodeKind, layer graph.Layer, attrs map[string][]string) {
@@ -200,6 +203,148 @@ func genSinceSample() *rapid.Generator[SinceSample] {
 	})
 }
 
+// sinceGlobalSample keeps global declarations separate from the operations
+// they affect, with two transitive importers and an unrelated dependency.
+func sinceGlobalSample(t *rapid.T) SinceSample {
+	var nodes []graph.Node
+	var edges []graph.Edge
+	addNode := func(id string, kind graph.NodeKind, layer graph.Layer, form string, attrs map[string][]string) {
+		nodes = append(nodes, graph.Node{Id: id, Kind: kind, Layer: layer, Form: form, Source: graph.SourceDeclared, Salient: layer == graph.LayerDesign, Attrs: attrs})
+	}
+	addEdge := func(kind graph.EdgeKind, from, to string) {
+		edges = append(edges, graph.Edge{Kind: kind, From: from, To: to, Source: graph.SourceDeclared})
+	}
+	code := func(i int, role string) string { return fmt.Sprintf("go:globals%d.%s", i, role) }
+	mode := rapid.IntRange(0, 15).Draw(t, "global mutation")
+	target := rapid.IntRange(0, 2).Draw(t, "global package")
+	addNode("globals", graph.NodeKindContainer, graph.LayerDesign, "component", nil)
+	for i := range 4 {
+		pkg, file, body, ty := code(i, "package"), code(i, "globals.go"), code(i, "body.go"), code(i, "Type")
+		addNode(pkg, graph.NodeKindContainer, graph.LayerCode, "package", nil)
+		attrs := map[string][]string{"globals": {"old"}}
+		if i == target && (mode == 2 || mode == 12) {
+			delete(attrs, "globals")
+		}
+		addNode(file, graph.NodeKindContainer, graph.LayerCode, "file", attrs)
+		addNode(body, graph.NodeKindContainer, graph.LayerCode, "file", nil)
+		addNode(ty, graph.NodeKindType, graph.LayerCode, "struct", nil)
+		addEdge(graph.EdgeKindContains, pkg, file)
+		addEdge(graph.EdgeKindContains, pkg, body)
+		addEdge(graph.EdgeKindContains, body, ty)
+		for _, role := range []string{"native", "predicate", "generator", "method", "type"} {
+			check := fmt.Sprintf("globals.check-%d-%s", i, role)
+			addNode(check, graph.NodeKindProperty, graph.LayerDesign, "invariant", nil)
+			addEdge(graph.EdgeKindContains, "globals", check)
+			id := code(i, role)
+			if role == "type" {
+				designType := fmt.Sprintf("globals.Type%d", i)
+				addNode(designType, graph.NodeKindType, graph.LayerDesign, "record", nil)
+				addEdge(graph.EdgeKindContains, "globals", designType)
+				addEdge(graph.EdgeKindRealizes, ty, designType)
+				addEdge(graph.EdgeKindRefers, check, designType)
+				continue
+			}
+			addNode(id, graph.NodeKindOp, graph.LayerCode, "func", nil)
+			owner := body
+			if role == "method" {
+				owner, nodes[len(nodes)-1].Form = ty, "method"
+			}
+			addEdge(graph.EdgeKindContains, owner, id)
+			switch role {
+			case "predicate":
+				addEdge(graph.EdgeKindChecks, id, check)
+			case "generator":
+				addEdge(graph.EdgeKindGenerates, id, check)
+			default:
+				op := fmt.Sprintf("globals.op-%d-%s", i, role)
+				addNode(op, graph.NodeKindOp, graph.LayerDesign, "op", nil)
+				addEdge(graph.EdgeKindContains, "globals", op)
+				addEdge(graph.EdgeKindRealizes, id, op)
+				addEdge(graph.EdgeKindAbout, check, op)
+			}
+		}
+	}
+	addEdge(graph.EdgeKindImports, code(0, "body.go"), code(3, "package"))
+	addEdge(graph.EdgeKindImports, code(1, "body.go"), code(0, "package"))
+	if rapid.Bool().Draw(t, "import cycle") {
+		addEdge(graph.EdgeKindImports, code(0, "body.go"), code(2, "package"))
+	}
+	if mode != 15 {
+		addEdge(graph.EdgeKindImports, code(2, "body.go"), code(1, "package"))
+	}
+	if mode == 8 {
+		addNode(code(target, "empty.go"), graph.NodeKindContainer, graph.LayerCode, "file", nil)
+		addEdge(graph.EdgeKindContains, code(target, "package"), code(target, "empty.go"))
+	}
+	addNode("globals.design-file", graph.NodeKindContainer, graph.LayerDesign, "file", map[string][]string{"globals": {"old"}})
+	addEdge(graph.EdgeKindContains, "globals", "globals.design-file")
+	base := sinceGraph(t, nodes, edges)
+	setAttr := func(id, key string, values []string) {
+		for i := range nodes {
+			if nodes[i].Id == id {
+				if nodes[i].Attrs == nil {
+					nodes[i].Attrs = map[string][]string{}
+				}
+				nodes[i].Attrs[key] = values
+			}
+		}
+	}
+	file, pkg := code(target, "globals.go"), code(target, "package")
+	switch mode {
+	case 0, 2, 14, 15:
+		setAttr(file, "globals", []string{"new"})
+	case 1:
+		for i := range nodes {
+			if nodes[i].Id == file {
+				delete(nodes[i].Attrs, "globals")
+			}
+		}
+	case 3:
+		addNode(code(target, "added.go"), graph.NodeKindContainer, graph.LayerCode, "file", map[string][]string{"globals": {"new"}})
+		addEdge(graph.EdgeKindContains, pkg, code(target, "added.go"))
+	case 4:
+		nodes, edges = sinceRemove(nodes, edges, map[string]bool{file: true})
+	case 5:
+		setAttr(file, "generated", []string{"true"})
+	case 6:
+		setAttr(file, "path", []string{"renamed.go"})
+	case 7:
+		addNode(code(target, "added.go"), graph.NodeKindContainer, graph.LayerCode, "file", nil)
+		addEdge(graph.EdgeKindContains, pkg, code(target, "added.go"))
+	case 8:
+		nodes, edges = sinceRemove(nodes, edges, map[string]bool{code(target, "empty.go"): true})
+	case 9:
+		for i := range nodes {
+			if nodes[i].Id == file {
+				nodes[i].Origin = diag.Position{Path: "shifted.go", Line: 9, Column: 7}
+			}
+		}
+	case 11:
+		setAttr(pkg, "globals", []string{"new"})
+	case 12:
+		setAttr(file, "globals", []string{})
+	case 13:
+		setAttr("globals.design-file", "globals", []string{"new"})
+	}
+	if mode == 14 {
+		edges = slices.DeleteFunc(edges, func(edge graph.Edge) bool {
+			return edge.Kind == graph.EdgeKindImports && edge.From == code(2, "body.go") && edge.To == code(1, "package")
+		})
+	} else if mode == 15 {
+		addEdge(graph.EdgeKindImports, code(2, "body.go"), code(1, "package"))
+	}
+	head := sinceGraph(t, nodes, edges)
+	selected := []string{}
+	if rapid.Bool().Draw(t, "explicit global selection") {
+		for _, node := range head.Nodes() {
+			if node.Kind == graph.NodeKindProperty && rapid.Bool().Draw(t, "select "+node.Id) {
+				selected = append(selected, node.Id)
+			}
+		}
+	}
+	return SinceSample{Base: base, Head: head, Selected: selected}
+}
+
 func sinceCode(group int, role string) string { return fmt.Sprintf("go:sample.%s%d", role, group) }
 
 func sinceGraph(t rapid.TB, nodes []graph.Node, edges []graph.Edge) *graph.Graph {
@@ -249,6 +394,19 @@ func checkChangedChecksAreSelected(t rapid.TB, sample SinceSample) {
 			changed[id] = true
 		}
 	}
+	globalChanges := map[string]bool{}
+	for id := range changed {
+		var before, after []string
+		if node := baseNodes[id]; node.Layer == graph.LayerCode && node.Kind == graph.NodeKindContainer && node.Form == "file" {
+			before = node.Attrs["globals"]
+		}
+		if node := headNodes[id]; node.Layer == graph.LayerCode && node.Kind == graph.NodeKindContainer && node.Form == "file" {
+			after = node.Attrs["globals"]
+		}
+		if !slices.Equal(before, after) {
+			globalChanges[id] = true
+		}
+	}
 	for key, before := range baseEdges {
 		after, exists := headEdges[key]
 		equal := exists
@@ -289,6 +447,43 @@ func checkChangedChecksAreSelected(t rapid.TB, sample SinceSample) {
 		reached := map[string]bool{}
 		for id := range changed {
 			if _, exists := nodes[id]; exists {
+				reached[id] = true
+			}
+		}
+		globalPackages := map[string]bool{}
+		for _, edge := range edges {
+			parent, child := nodes[edge.From], nodes[edge.To]
+			if edge.Kind == graph.EdgeKindContains && globalChanges[edge.To] && parent.Layer == graph.LayerCode && parent.Kind == graph.NodeKindContainer && parent.Form == "package" && child.Layer == graph.LayerCode && child.Kind == graph.NodeKindContainer && child.Form == "file" {
+				globalPackages[edge.From] = true
+			}
+		}
+		for more := true; more; {
+			more = false
+			for _, dependency := range edges {
+				if dependency.Kind != graph.EdgeKindImports || !globalPackages[dependency.To] {
+					continue
+				}
+				for _, ownership := range edges {
+					parent, child := nodes[ownership.From], nodes[ownership.To]
+					if ownership.Kind == graph.EdgeKindContains && ownership.To == dependency.From && parent.Layer == graph.LayerCode && parent.Kind == graph.NodeKindContainer && parent.Form == "package" && child.Layer == graph.LayerCode && child.Kind == graph.NodeKindContainer && child.Form == "file" && !globalPackages[parent.Id] {
+						globalPackages[parent.Id] = true
+						more = true
+					}
+				}
+			}
+		}
+		members := maps.Clone(globalPackages)
+		for more := true; more; {
+			more = false
+			for _, edge := range edges {
+				if edge.Kind == graph.EdgeKindContains && members[edge.From] && nodes[edge.To].Layer == graph.LayerCode && !members[edge.To] {
+					members[edge.To] = true
+					more = true
+				}
+			}
+		}
+		for id := range members {
+			if node := nodes[id]; node.Kind == graph.NodeKindOp || node.Kind == graph.NodeKindType {
 				reached[id] = true
 			}
 		}

@@ -15,8 +15,12 @@ import (
 func AffectedChecks(base, head *graph.Graph, selected []string) []string {
 	changes := graph.Compare(base, head)
 	seeds := map[string]bool{}
+	globalFiles := map[string]bool{}
 	for _, change := range changes.Nodes {
 		seeds[change.Id] = true
+		if !slices.Equal(sinceGlobals(change.Before), sinceGlobals(change.After)) {
+			globalFiles[change.Id] = true
+		}
 	}
 	for _, change := range changes.Edges {
 		if sinceCallLocationsOnly(change) {
@@ -34,8 +38,12 @@ func AffectedChecks(base, head *graph.Graph, selected []string) []string {
 				}
 			}
 		}
+		presentSeeds := maps.Clone(seeds)
+		for _, id := range sinceGlobalNodes(snapshot, globalFiles) {
+			presentSeeds[id] = true
+		}
 		var present []string
-		for id := range seeds {
+		for id := range presentSeeds {
 			if node := snapshot.Node(id); node != nil {
 				present = append(present, id)
 				if sinceCheck(*node) {
@@ -82,4 +90,75 @@ func sinceCallLocationsOnly(change graph.EdgeChange) bool {
 	delete(before, "sites")
 	delete(after, "sites")
 	return maps.EqualFunc(before, after, slices.Equal[[]string])
+}
+
+// sinceGlobals is only a code file's non-node declarations. Other metadata
+// must not broaden incremental replay to an entire package.
+func sinceGlobals(node *graph.Node) []string {
+	if node != nil && node.Layer == graph.LayerCode && node.Kind == graph.NodeKindContainer && node.Form == "file" {
+		return node.Attrs["globals"]
+	}
+	return nil
+}
+
+// sinceGlobalNodes expands changed globals to native declarations in their
+// packages and in packages that import them, including transitive importers.
+func sinceGlobalNodes(snapshot *graph.Graph, files map[string]bool) []string {
+	if len(files) == 0 {
+		return nil
+	}
+	nodes := map[string]graph.Node{}
+	for _, node := range snapshot.Nodes() {
+		nodes[node.Id] = node
+	}
+	children := map[string][]string{}
+	owners := map[string]string{}
+	edges := snapshot.Edges()
+	for _, edge := range edges {
+		parent, child := nodes[edge.From], nodes[edge.To]
+		if edge.Kind != graph.EdgeKindContains || parent.Layer != graph.LayerCode || child.Layer != graph.LayerCode {
+			continue
+		}
+		children[edge.From] = append(children[edge.From], edge.To)
+		if parent.Kind == graph.NodeKindContainer && parent.Form == "package" && child.Kind == graph.NodeKindContainer && child.Form == "file" {
+			owners[child.Id] = parent.Id
+		}
+	}
+	importers := map[string][]string{}
+	for _, edge := range edges {
+		if owner := owners[edge.From]; edge.Kind == graph.EdgeKindImports && owner != "" {
+			importers[edge.To] = append(importers[edge.To], owner)
+		}
+	}
+	var packages []string
+	for id := range files {
+		if owner := owners[id]; owner != "" {
+			packages = append(packages, owner)
+		}
+	}
+	seenPackages, seenNodes := map[string]bool{}, map[string]bool{}
+	var out []string
+	for len(packages) > 0 {
+		id := packages[0]
+		packages = packages[1:]
+		if seenPackages[id] {
+			continue
+		}
+		seenPackages[id] = true
+		packages = append(packages, importers[id]...)
+		pending := []string{id}
+		for len(pending) > 0 {
+			child := pending[0]
+			pending = pending[1:]
+			if seenNodes[child] {
+				continue
+			}
+			seenNodes[child] = true
+			if node := nodes[child]; node.Kind == graph.NodeKindOp || node.Kind == graph.NodeKindType {
+				out = append(out, child)
+			}
+			pending = append(pending, children[child]...)
+		}
+	}
+	return out
 }
