@@ -5,8 +5,6 @@
 .previewTop { display: grid; gap: var(--space-2); min-width: 0; }
 .previewHead { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .identity { flex: 1; min-width: 0; overflow: hidden; font: var(--type-mono-strong); text-overflow: ellipsis; white-space: nowrap; }
-.identityLink { color: var(--text-main); }
-.identityLink:hover { text-decoration: underline; text-underline-offset: var(--space-px); }
 .enter { display: grid; place-items: center; color: var(--accent-brand); transition: transform var(--duration-base) var(--ease-out); }
 .enter:hover { transform: translate(var(--space-px), calc(-1 * var(--space-px))); }
 .summary { color: var(--text-muted); font: var(--type-small); }

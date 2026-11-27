@@ -154,7 +154,7 @@ export function PreviewHead({ node, icon, label }: { node: Node; icon?: ReactNod
     <div className={styles.previewHead}>
       <StatusDot status={statusOf(node)} />
       {icon ?? <KindIcon node={node} size={ICON_SIZE} />}
-      <Link className={clsx(styles.identity, styles.identityLink)} to={links.entityHref(node.id)}>{label ?? node.id}</Link>
+      <span className={styles.identity}>{label ?? node.id}</span>
       <InfoHint label={node.id}>{ABOUT.card(kindWord(node.kind, node.form, node.layer), node.form, `${node.origin.path}:${node.origin.line}`)}</InfoHint>
       <Link className={styles.enter} to={links.entityHref(node.id)} aria-label={CONTROLS.open}>
         <ArrowUpRight size={ICON_SIZE} strokeWidth={ICON_STROKE} aria-hidden="true" />
