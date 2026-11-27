@@ -26,7 +26,7 @@ model Driver {
 
 /** M6: 测试充分性, each a ratio from 0 to 1; absent when not measured. */
 model Adequacy {
-  /** 代码覆盖率: the lines executed among the functions the predicate exercises */
+  /** 代码覆盖率: the Go basic blocks executed among the functions the predicate exercises */
   code?: float64;
 
   /** 分支覆盖率: the steps and branches of the flows reached */
@@ -59,7 +59,7 @@ model Evidence {
   /** A case, a property or a flow: its latest outcome */
   outcome?: Outcome;
 
-  /** A case: 覆盖增量, the lines it adds to what its predicate's other cases cover */
+  /** A case: 覆盖增量, the measured coverage points it adds beyond its predicate's other cases */
   coverageGain?: int32;
 
   /** A property or a flow */
