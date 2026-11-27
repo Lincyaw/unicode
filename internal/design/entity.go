@@ -28,6 +28,7 @@ type entity struct {
 
 	uses         []*entity // a component's uses
 	focus        string    // a component's focus, inherited when it has none
+	bases        []*entity // declared extends, in source order
 	fields       []member  // a type's fields
 	values       []string  // an enum's values
 	ops          []*entity // a type's operations, in the order written
@@ -112,7 +113,11 @@ func (l *loader) resolve(scope *entity, segs []string) *entity {
 		if e == nil {
 			return nil
 		}
-		e = e.children[s]
+		next := e.children[s]
+		if next == nil && e.kind == graph.NodeKindType {
+			next = findEntity(visibleOperations(e), s)
+		}
+		e = next
 	}
 	return e
 }

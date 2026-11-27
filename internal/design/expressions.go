@@ -137,7 +137,7 @@ func (c *expressionCheck) infer(e *syntax.Expr) *typ {
 			return builtin("invalid")
 		}
 		if n := t.named(); n != nil {
-			if f := findMember(n.fields, e.Text); f != nil {
+			if f := findMember(visibleFields(n), e.Text); f != nil {
 				c.reference(n, e)
 				return f.typ
 			}
@@ -252,7 +252,7 @@ func (c *expressionCheck) invoke(e *syntax.Expr, tested bool) *typ {
 	} else if callee.Kind == "field" {
 		receiver := unwrap(c.infer(callee.Children[0]))
 		if n := receiver.named(); n != nil {
-			op = findEntity(n.ops, callee.Text)
+			op = findEntity(visibleOperations(n), callee.Text)
 		}
 		if tested {
 			parts, ok := pathNames(callee.Children[0])
@@ -382,14 +382,12 @@ func (l *loader) checkPropertyExpressions(e, scope *entity, d *syntax.PropertyDe
 	for _, s := range e.symbols {
 		if s.typ.kind == "list" && s.typ.elems[0].kind == "call" {
 			sequences++
-			for _, op := range s.typ.elems[0].ops() {
-				if sequence == nil {
-					sequence = op.parent
-				} else if sequence != op.parent {
-					sequence = nil
-					sequences = 2
-					break
-				}
+			receiver, consistent := s.typ.elems[0].receiverType()
+			if !consistent || sequence != nil && sequence != receiver {
+				sequence = nil
+				sequences = 2
+			} else {
+				sequence = receiver
 			}
 		}
 	}
@@ -543,7 +541,7 @@ func snapshotType(t *typ, seen map[*entity]bool) string {
 		return "interfaces and errors cannot be directly observed as snapshots"
 	}
 	seen[n] = true
-	for _, field := range n.fields {
+	for _, field := range visibleFields(n) {
 		if why := snapshotType(field.typ, seen); why != "" {
 			return why
 		}

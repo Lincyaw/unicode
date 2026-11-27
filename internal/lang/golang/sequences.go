@@ -50,10 +50,8 @@ func (c *contractCompiler) configureSequences(unit *contractUnit) bool {
 		chosen := map[string]bool{}
 		for _, target := range args {
 			if node := c.nodes[target]; node.Kind == graph.NodeKindType {
-				for _, op := range unit.spec.Operations {
-					if op.Owner == target {
-						chosen[op.Name] = true
-					}
+				for _, operation := range c.visibleOperationIDs(target) {
+					chosen[operation] = true
 				}
 			} else {
 				chosen[target] = true
@@ -103,8 +101,21 @@ func (c *contractCompiler) configureSequences(unit *contractUnit) bool {
 			return false
 		}
 		unit.spec.Sequence = symbol.Name
+		_, targets := ucSplitType(args[0])
+		receiverType := ""
+		for _, target := range targets {
+			owner := target
+			if c.nodes[target].Kind == graph.NodeKindOp {
+				owner = c.parents[target]
+			}
+			if receiverType != "" && receiverType != owner {
+				c.diagnostic(unit.node, "lang.golang.unsupported-contract", "the sequence combines different receiver types", "use one receiver type in the call union")
+				return false
+			}
+			receiverType = owner
+		}
 		for _, receiver := range unit.spec.Symbols {
-			if receiver.Type == calls[0].Owner {
+			if receiver.Type == receiverType {
 				unit.spec.SequenceReceiver = receiver.Name
 			}
 		}
@@ -173,21 +184,18 @@ func (c *contractCompiler) callLiteral(value syntax.Value, t string, pkg *packag
 	var selected ucOperation
 	_, targets := ucSplitType(model)
 	for _, target := range targets {
+		ids := []string{target}
 		if c.nodes[target].Kind == graph.NodeKindType {
-			for _, node := range c.nodes {
-				if node.Kind == graph.NodeKindOp && c.parents[node.Id] == target && lastName(node.Id) == string(call.Op) {
-					params, ret, raises := ucSignature(first(node.Attrs["signature"]))
-					selected = ucOperation{Name: node.Id, Result: ret, Raises: raises}
-					for _, p := range params {
-						selected.Params = append(selected.Params, p.Type)
-						selected.ParamNames = append(selected.ParamNames, p.Name)
-					}
-				}
+			ids = c.visibleOperationIDs(target)
+		}
+		for _, id := range ids {
+			if lastName(id) == string(call.Op) {
+				selected.Name = id
+				break
 			}
-		} else if lastName(target) == string(call.Op) {
-			selected.Name = target
 		}
 	}
+
 	if selected.Name == "" {
 		return "", true, fmt.Errorf("the call %s is not an operation of %s", call.Op, model)
 	}
@@ -276,4 +284,52 @@ func (c *contractCompiler) recordLiteral(value *syntax.BraceValue, t string, nam
 		body.WriteString(path + "=" + literal + ";")
 	}
 	return "func() " + t + " {" + body.String() + "return value}()", nil
+}
+
+func (c *contractCompiler) modelParents(id string) []string {
+	var edges []graph.Edge
+	for _, edge := range c.plan.Graph.Edges() {
+		if edge.Kind == graph.EdgeKindExtends && edge.From == id {
+			edges = append(edges, edge)
+		}
+	}
+	slices.SortStableFunc(edges, func(a, b graph.Edge) int {
+		if a.Origin.Path != b.Origin.Path {
+			return strings.Compare(a.Origin.Path, b.Origin.Path)
+		}
+		if a.Origin.Line != b.Origin.Line {
+			return a.Origin.Line - b.Origin.Line
+		}
+		if a.Origin.Column != b.Origin.Column {
+			return a.Origin.Column - b.Origin.Column
+		}
+		return strings.Compare(a.To, b.To)
+	})
+	var parents []string
+	for _, edge := range edges {
+		parents = append(parents, edge.To)
+	}
+	return parents
+}
+func (c *contractCompiler) visibleOperationIDs(id string) []string {
+	var out []string
+	seenTypes, seenNames := map[string]bool{}, map[string]bool{}
+	var visit func(string)
+	visit = func(current string) {
+		if seenTypes[current] {
+			return
+		}
+		seenTypes[current] = true
+		for _, node := range c.plan.Graph.Nodes() {
+			if node.Kind == graph.NodeKindOp && c.parents[node.Id] == current && !seenNames[lastName(node.Id)] {
+				seenNames[lastName(node.Id)] = true
+				out = append(out, node.Id)
+			}
+		}
+		for _, parent := range c.modelParents(current) {
+			visit(parent)
+		}
+	}
+	visit(id)
+	return out
 }

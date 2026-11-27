@@ -195,8 +195,8 @@ func (s *stepper) emit(e *entity, x *syntax.Emit, w enclosing) {
 	case event == nil:
 	case event.form != "event":
 		l.notAnEvent(e, x.Event.Pos, event, "a step can emit only an event")
-	case len(x.Args) != len(event.fields):
-		s.argumentCount(e, event.id, "fields", len(x.Args), len(event.fields))
+	case len(x.Args) != len(visibleFields(event)):
+		s.argumentCount(e, event.id, "fields", len(x.Args), len(visibleFields(event)))
 		s.emitted[event] = true
 	default:
 		s.emitted[event] = true

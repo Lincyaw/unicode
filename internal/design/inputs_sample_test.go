@@ -31,7 +31,7 @@ func (d *designer) callableTypes() []*gNode {
 	callable := d.callableOps()
 	var out []*gNode
 	for _, t := range d.types {
-		if len(t.ops) > 0 && !slices.ContainsFunc(t.ops, func(op *gNode) bool { return !slices.Contains(callable, op) }) {
+		if len(gVisibleOps(t)) > 0 && !slices.ContainsFunc(gVisibleOps(t), func(op *gNode) bool { return !slices.Contains(callable, op) }) {
 			out = append(out, t)
 		}
 	}
@@ -89,7 +89,18 @@ func (d *designer) callType() *gType {
 	t := &gType{kind: "call"}
 	for range count(d, "callTargets", 1, 2) {
 		if target := pick(d, "callTarget", targets); !slices.Contains(t.targets, target) {
-			t.targets = append(t.targets, target)
+			candidate := append(append([]*gNode{}, t.targets...), target)
+			names := map[string]bool{}
+			unique := true
+			for _, operation := range gCallOps(&gType{kind: "call", targets: candidate}) {
+				if names[operation.name] {
+					unique = false
+				}
+				names[operation.name] = true
+			}
+			if unique {
+				t.targets = append(t.targets, target)
+			}
 		}
 	}
 	return t
@@ -102,7 +113,7 @@ func gCallOps(t *gType) []*gNode {
 		if target.kind == "op" {
 			out = append(out, target)
 		} else {
-			out = append(out, target.ops...)
+			out = append(out, gVisibleOps(target)...)
 		}
 	}
 	return out
@@ -159,7 +170,7 @@ func sites(t *gType, path []string, depth int) []site {
 	}
 	switch {
 	case base.named != nil && !base.named.recursive:
-		for _, f := range base.named.fields {
+		for _, f := range gVisibleFields(base.named) {
 			out = append(out, sites(f.t, append(slices.Clone(path), f.name), depth+1)...)
 		}
 	case base.kind == "call":
@@ -351,8 +362,9 @@ func (d *designer) value(t *gType, path []string, lims []gLimit, depth int) synt
 		return &syntax.NameValue{Name: syntax.Lower(pick(d, "enumValue", members))}
 	}
 	v := &syntax.BraceValue{}
-	for _, i := range rapid.Permutation(indexes(len(n.fields))).Draw(d.t, "fieldOrder") {
-		f := n.fields[i]
+	fields := gVisibleFields(n)
+	for _, i := range rapid.Permutation(indexes(len(fields))).Draw(d.t, "fieldOrder") {
+		f := fields[i]
 		name := syntax.Lower(f.name)
 		var fv syntax.Value
 		switch {
@@ -649,7 +661,7 @@ func (g *flowGen) emit(parent string, sender, event *gNode) *syntax.Emit {
 	id := g.newStep(parent)
 	g.d.edges = append(g.d.edges, "from "+id+" "+sender.id, "emits "+id+" "+event.id)
 	g.emitted = append(g.emitted, event)
-	return &syntax.Emit{From: g.participant(sender), Event: syntax.TypeRef{Segments: g.d.refTo(event, g.scope)}, Args: g.args(len(event.fields))}
+	return &syntax.Emit{From: g.participant(sender), Event: syntax.TypeRef{Segments: g.d.refTo(event, g.scope)}, Args: g.args(len(gVisibleFields(event)))}
 }
 
 func (g *flowGen) async(parent string, op *gNode, depth int) *syntax.Async {

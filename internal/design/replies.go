@@ -9,27 +9,7 @@ import (
 
 // inheritedMembers includes inherited declarations once, even for a malformed
 // cyclic hierarchy: the hierarchy checker owns that diagnostic.
-func (l *loader) inheritedMembers(n *entity) ([]member, []*entity) {
-	var fields []member
-	var ops []*entity
-	seen := map[string]bool{}
-	var visit func(*entity)
-	visit = func(n *entity) {
-		if n == nil || seen[n.id] {
-			return
-		}
-		seen[n.id] = true
-		for _, e := range l.edges {
-			if e.Kind == graph.EdgeKindExtends && e.From == n.id {
-				visit(l.byID[e.To])
-			}
-		}
-		fields = append(fields, n.fields...)
-		ops = append(ops, n.ops...)
-	}
-	visit(n)
-	return fields, ops
-}
+func (l *loader) inheritedMembers(n *entity) ([]member, []*entity) { return visibleMembers(n) }
 
 func (l *loader) conformReplies(c *entity, v syntax.Value, op *entity, wrong func(syntax.Value, string) bool) bool {
 	list, ok := v.(*syntax.ListValue)
@@ -164,14 +144,14 @@ func generableResponse(t *typ, required, seen map[*entity]bool) string {
 	required[n], seen[n] = true, true
 	defer delete(required, n)
 	defer delete(seen, n)
-	for _, op := range n.ops {
+	for _, op := range visibleOperations(n) {
 		if op.result != nil {
 			if why := generableResponse(op.result, required, seen); why != "" {
 				return why
 			}
 		}
 		for _, failure := range op.raises {
-			for _, field := range failure.fields {
+			for _, field := range visibleFields(failure) {
 				if why := generableResponse(field.typ, required, seen); why != "" {
 					return why
 				}

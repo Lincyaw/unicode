@@ -60,12 +60,9 @@ func (c *contractCompiler) doubleModels(unit *contractUnit) []string {
 		ty := unit.spec.Types[model]
 		if ty.Form == "interface" {
 			found[model] = true
-			owners := map[string]bool{}
-			for owner := model; owner != "" && !owners[owner]; owner = unit.spec.Types[owner].Parent {
-				owners[owner] = true
-			}
 			for _, op := range unit.spec.Operations {
-				if owners[op.Owner] {
+				selected, visible := ucOperationFor(&unit.spec, model, lastName(op.Name))
+				if visible && selected.Name == op.Name {
 					visit(op.Result)
 					for _, failure := range op.Raises {
 						visit(failure)
@@ -106,14 +103,8 @@ func (c *contractCompiler) replySignature(unit *contractUnit, model string) (map
 	for i := 0; i < iface.NumMethods(); i++ {
 		method := iface.Method(i)
 		id := ""
-		owner := model
-		for owner != "" {
-			candidate := owner + "." + designName(method.Name())
-			if _, ok := unit.spec.Operations[candidate]; ok {
-				id = candidate
-				break
-			}
-			owner = unit.spec.Types[owner].Parent
+		if operation, ok := ucOperationFor(&unit.spec, model, designName(method.Name())); ok {
+			id = operation.Name
 		}
 		if id != "" {
 			key := lastName(id)
@@ -334,7 +325,7 @@ func (c *contractCompiler) replyErrors(unit *contractUnit, op ucOperation) map[s
 			continue
 		}
 		allowed := slices.Contains(op.Raises, id)
-		for parent := ty.Parent; parent != ""; parent = unit.spec.Types[parent].Parent {
+		for _, parent := range ucAncestors(unit.spec.Types, id) {
 			allowed = allowed || slices.Contains(op.Raises, parent)
 		}
 		if !allowed {
@@ -432,11 +423,9 @@ func (c *contractCompiler) doubleLiteral(value syntax.Value, t string, pkg *pack
 			}
 			if n.Kind == graph.NodeKindType {
 				ty := ucType{Form: n.Form}
-				for _, e := range c.plan.Graph.Edges() {
-					if e.Kind == graph.EdgeKindExtends && e.From == key {
-						ty.Parent = e.To
-					}
-				}
+
+				ty.Parents = c.modelParents(key)
+				ty.Parent = first(ty.Parents)
 				unit.spec.Types[key] = ty
 			}
 		}

@@ -37,7 +37,26 @@ type executionCounter struct{ Value, Calls, FailAt int }
 type executionFailure struct{ Attempt int }
 
 // executionReturnedItem keeps implementation data outside its modeled fields.
-type ExecutionParent struct{ Value int }
+type ExecutionParent struct {
+	Value int
+	Stamp int
+}
+
+func (parent *ExecutionParent) Read() int { return parent.Value }
+
+type executionShadow struct {
+	*ExecutionParent
+	Value bool
+	Delta int
+}
+type ExecutionParentError struct{ Value int }
+
+func (parent *ExecutionParentError) Error() string { return strconv.Itoa(parent.Value) }
+
+type executionChildError struct {
+	*ExecutionParentError
+	Value bool
+}
 type executionDerived struct {
 	*ExecutionParent
 	Delta int
@@ -137,6 +156,7 @@ func checkExecutesSequencesAndFlows(t rapid.TB, sample ExecutionSample) {
 	}
 	checkExecutionPurity(t, sample, initial)
 	checkExecutionPromotedLiteral(t, sample)
+	checkExecutionInheritedMembers(t, sample, initial)
 	if rt, ok := t.(*rapid.T); ok {
 		hierarchy := map[string]ucType{"Parent": {Form: "record", Fields: []ucField{{"value", "Value", "int"}}}, "Child": {Form: "record", Parent: "Parent", Fields: []ucField{{"delta", "Delta", "int"}}}}
 		generated := ucDraw(rt, reflect.TypeFor[executionDerived](), "Child", hierarchy, []string{"item.value in 1..3", "item.delta in -5..5"}, "item", 0).Interface().(executionDerived)
@@ -278,5 +298,33 @@ func checkExecutionPromotedLiteral(t rapid.TB, sample ExecutionSample) {
 	configuration := types.Config{}
 	if _, err := configuration.Check("executionliteral", set, []*ast.File{file}, nil); err != nil {
 		t.Fatalf("a promoted-field replay literal does not compile: %v", err)
+	}
+}
+
+func checkExecutionInheritedMembers(t rapid.TB, sample ExecutionSample, initial int) {
+	hierarchy := map[string]ucType{"Parent": {Form: "object", Fields: []ucField{{"value", "Value", "int"}, {"stamp", "Stamp", "int"}}}, "Child": {Form: "object", Parent: "Parent", Fields: []ucField{{"delta", "Delta", "int"}}}, "Shadow": {Form: "object", Parent: "Parent", Fields: []ucField{{"value", "Value", "bool"}, {"delta", "Delta", "int"}}}}
+	value := &executionDerived{ExecutionParent: &ExecutionParent{Value: initial, Stamp: initial + 1}, Delta: len(sample.Deltas)}
+	spec := &ucContract{ID: "execution.inherited", Path: "design/execution.uc", Symbols: []ucSymbol{{"child", "Child"}, {"numbers", "list<int>"}}, Types: hierarchy, Operations: map[string]ucOperation{"Parent.read": {Name: "Parent.read", Owner: "Parent", GoName: "Read", Result: "int", Pure: true}}, Call: runtimeExpr(t, "child.read()"), Ensures: []*ucExpr{runtimeExpr(t, "result == child.value"), runtimeExpr(t, "sum(x in numbers: child.read()) == size(numbers) * child.value")}}
+	outcome := ucExecute(spec, map[string]reflect.Value{"child": reflect.ValueOf(value), "numbers": reflect.ValueOf(sample.Deltas)}, false)
+	if outcome.Infrastructure || len(outcome.Diagnostics) > 0 {
+		t.Fatalf("an inherited pure method was unavailable on its child receiver: %+v", outcome)
+	}
+	shadow := &executionShadow{ExecutionParent: &ExecutionParent{Value: initial, Stamp: initial + 1}, Value: sample.Impure, Delta: len(sample.Deltas)}
+	normalized := ucNormalize(reflect.ValueOf(shadow), "Shadow", hierarchy)
+	if ucKey(ucFieldValue(normalized, "value")) != strconv.FormatBool(sample.Impure) || ucKey(ucFieldValue(normalized, "stamp")) != "i:"+strconv.Itoa(initial+1) {
+		t.Fatalf("parent normalization displaced a differently typed child field: %s", ucKey(normalized))
+	}
+	if rt, ok := t.(*rapid.T); ok {
+		generated := ucDraw(rt, reflect.TypeFor[executionShadow](), "Shadow", hierarchy, []string{"shadow.stamp in 1..3"}, "shadow", 0).Interface().(executionShadow)
+		if generated.ExecutionParent == nil || generated.Stamp < 1 || generated.Stamp > 3 {
+			t.Fatalf("a shadowed inherited input lost the remaining parent fields: %+v", generated)
+		}
+	}
+	failure := &executionChildError{ExecutionParentError: &ExecutionParentError{Value: initial}, Value: sample.Impure}
+	errors := &ucContract{ID: "execution.inherited-error", Path: "design/execution.uc", Types: map[string]ucType{"ParentFailure": {Form: "error", Fields: []ucField{{"value", "Value", "int"}}}, "ChildFailure": {Form: "error", Parent: "ParentFailure", Fields: []ucField{{"value", "Value", "bool"}}}}, Operations: map[string]ucOperation{}, ErrorTypes: map[string]reflect.Type{"ParentFailure": reflect.TypeFor[*ExecutionParentError](), "ChildFailure": reflect.TypeFor[*executionChildError]()}, Call: runtimeExpr(t, "rejectChild()"), Ensures: []*ucExpr{runtimeExpr(t, "raised(ParentFailure) and failure(ParentFailure).value == "+strconv.Itoa(initial)), runtimeExpr(t, "raised(ChildFailure) and failure(ChildFailure).value == "+strconv.FormatBool(sample.Impure))}}
+	errors.Operations["rejectChild"] = ucOperation{Name: "rejectChild", Raises: []string{"ParentFailure"}, Function: reflect.ValueOf(func() error { return failure })}
+	projected := ucExecute(errors, nil, false)
+	if projected.Infrastructure || len(projected.Diagnostics) > 0 {
+		t.Fatalf("an inherited error view read a shadowing child field: %+v", projected)
 	}
 }
