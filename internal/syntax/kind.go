@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// FileKind decides which grammar of docs/format.md §3 a file is parsed with.
+// FileKind decides which grammar of docs/language.md §3 a file is parsed with.
 //
 //uc:realizes syntax.FileKind
 type FileKind string

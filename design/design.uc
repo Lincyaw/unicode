@@ -32,7 +32,7 @@ property accepts-valid-design invariant "合法的设计载入之后没有诊断
 
 property rejects-broken-design invariant "合法的设计做一处违反某条约束的改动之后，载入在改动所在的文件和行给出这条约束的诊断" {
   about load
-  forall broken: Broken generated "一组随机的合法文件，在随机的一处做了违反 model.md §10 或 format.md 中某条只需设计就能判断的规则的改动"
+  forall broken: Broken generated "一组随机的合法文件，在随机的一处做了违反 model.md §10 或 language.md 中某条只需设计就能判断的规则的改动"
 }
 
 property load-ignores-file-order relation "文件以任何次序给出，载入得到的快照和诊断都相同" {

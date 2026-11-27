@@ -18,7 +18,7 @@ import (
 // check reports what the grammar's tags cannot say: which declarations a file
 // of each kind holds and in what order, the order and number of the members of
 // each block, the three name classes, the forms of references, well-formed
-// summaries, reserved names, and the few rules of docs/format.md §3 that need a form.
+// summaries, reserved names, and the few rules of docs/language.md §3 that need a form.
 func check(at locator, f *File) []diag.Diagnostic {
 	c := &checker{at: at}
 	c.file(f)
@@ -306,7 +306,7 @@ var reserved = []string{"true", "false", "none"}
 
 func matcher(pattern string) func(string) bool { return regexp.MustCompile(pattern).MatchString }
 
-// nameClass is one of the three ways of writing a name (docs/format.md §2).
+// nameClass is one of the three ways of writing a name (docs/language.md §2).
 type nameClass struct {
 	name    string
 	pattern func(string) bool

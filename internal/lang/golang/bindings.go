@@ -13,7 +13,7 @@ import (
 	"github.com/lincyaw/unicode/internal/graph"
 )
 
-// The bindings of docs/format.md §4.1: a line `//uc:<verb> <identity>` in the
+// The bindings of docs/language.md §6.1: a line `//uc:<verb> <identity>` in the
 // doc comment of a type or a function.
 const bindingPrefix = "//uc:"
 
@@ -24,8 +24,8 @@ var bindingKinds = map[string]graph.EdgeKind{
 }
 
 // namePattern is a name of the design: kebab, upper or lower camel
-// (docs/format.md §2). designRef is an identity, names joined by dots
-// (docs/format.md §3, Ref), and symbolSuffix the lower camel name of a symbol
+// (docs/language.md §2). designRef is an identity, names joined by dots
+// (docs/language.md §3, Ref), and symbolSuffix the lower camel name of a symbol
 // at the end of one.
 const namePattern = `(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*|[A-Za-z][A-Za-z0-9]*)`
 

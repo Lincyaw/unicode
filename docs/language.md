@@ -1,6 +1,10 @@
-# 设计文件、录制文件与代码绑定
+# unicode 设计语言
 
-设计层的节点和边写在设计文件中；录制的用例写在录制文件中；代码元素与设计节点的对应写在代码里，称为**绑定**。三者都只有一种写法，工具链不接受其他写法。本文定义这三种写法。它们表达的节点和边见 [model.md](model.md)。
+本文是 unicode 设计语言（下称本语言）的参考。本语言书写一个系统的设计：系统由哪些组件构成，各组件有哪些类型和操作，组件之间按什么流程协作，系统必须满足哪些性质。本语言的程序编译成图的设计层（[model.md](model.md)）；工具链再并入从代码抽取的代码层，检查两者是否一致。
+
+本语言的源文件有两种：设计文件和录制文件。此外，代码中的**绑定**声明一个代码元素落实哪个设计节点。三者都只有一种写法，工具链不接受其他写法。
+
+本文依次定义源文件（§1）、词法（§2）、语法（§3）、语义（§4）、编译（§5）和绑定（§6），最后给出一个完整的例子（§7）。
 
 ## 1 文件
 
@@ -145,7 +149,106 @@ NL            = 换行 { 换行 } .
 
 一个值的宽度按显示宽度计（东亚的宽字符算两列），包括缩进、前面的 `name = ` 或 `key: `，以及结尾的逗号。值能在 100 列之内写完时写在一行，元素之间用逗号分隔，最后一项之后没有逗号；写不完时，每个元素、字段或参数各占一行，缩进一级，每一项之后都有逗号。这条规则逐层适用：拆开之后的每一项，在它自己的缩进下能写完时就写在一行。不能再拆的值写不完时，仍写在一行。
 
-## 4 绑定
+## 4 语义
+
+本语言的一个**程序**是一个仓库在一个提交上 `design/` 与 `corpus/` 中的全部文件。程序的含义是图的设计层：一组节点和边，其种类和形式见 [model.md](model.md) §3–§4，标识见 [model.md](model.md) §7。所有文件共享一个命名空间，没有导入语句：引用按 §2 的规则解析到任一文件中声明的节点。文件的次序不影响程序的含义。
+
+### 4.1 声明与节点
+
+每条声明产生一个节点，并由一条 `contains` 边挂在包含它的声明之下。组件文件中的顶层声明属于该组件；外部系统中的类型和操作属于该外部系统，例如 `payment-gateway.charge`。
+
+| 声明 | 节点的种类 / 形式 | 标识（以组件 `order` 为例） |
+| --- | --- | --- |
+| `system shop` | `container` / `system` | `shop` |
+| `actor customer person` | `actor` / `person` | `customer` |
+| `actor payment-gateway external` | `actor` / `external` | `payment-gateway` |
+| `component order` | `container` / `component` | `order` |
+| `type Order object` | `type` / 声明中的形式 | `order.Order` |
+| 类型中的 `op total` | `op` / `op` | `order.Order.total` |
+| 组件中的 `op parseCart` | `op` / `op` | `order.parseCart` |
+| `flow submit-order` | `flow` / `flow` | `order.submit-order` |
+| 流程中的步骤 | `step` / `call`、`send`、`emit`、`async`、`alt`、`opt`、`loop`、`on` | 流程的标识后接 `#` 和按文本先后的序号，如 `order.submit-order#1` |
+| `property total-is-sum invariant` | `property` / 声明中的形式 | `order.total-is-sum` |
+| 设计文件中的 `case empty` | `case` / `declared` | `order.total-is-sum.empty` |
+| 录制文件中的 `case r-3f9a2c1d coverage` | `case` / `recorded` | `order.total-is-sum.r-3f9a2c1d` |
+
+其余构造不产生节点，而是成为节点的属性：
+
+- `notation` 和 `language`：系统允许的记法，以及各语言的源码根目录；
+- `label`、`focus`、`paths`：容器或类型的标签、关注度和拥有的路径；
+- `field`、`value`：类型的字段和枚举值；
+- `forall`、`where`：性质或流程的符号和限定；
+- 用例中的赋值：用例对各符号的取值，按 §3.1 解读，并且必须落在限定之内；
+- 摘要：节点的摘要。性质的摘要就是它的陈述。
+
+### 4.2 子句与边
+
+| 构造 | 产生的边 |
+| --- | --- |
+| 组件中的 `uses R` | `uses` 组件 → R |
+| `extends T`、`implements T` | `extends`、`implements` 类型 → T |
+| `field x: E` | E 中每个命名类型 T：`refers` 类型 → T |
+| 操作的参数、返回值和 `raises` | 其中每个命名类型 T：`refers` 操作 → T |
+| `handles E` | `subscribes` 操作 → E |
+| `forall x: E` | E 中每个命名类型 T：`refers` 性质或流程 → T |
+| `about R` | `about` 性质 → R |
+| `P -> R(…)`、`P ->> R(…)` | `call`、`send` 步骤；`calls` 步骤 → R，`from` 步骤 → P |
+| `P emits E(…)` | `emit` 步骤；`emits` 步骤 → E，`from` 步骤 → P |
+| `async R { … }` | `async` 步骤；`calls` 步骤 → R |
+| `on E { … }` | `on` 步骤；`handles` 步骤 → E |
+
+`owns`、`depends`、`traces`、`reaches` 等边不由本语言写出，在编译的链接阶段推导得到（§5.4）。
+
+## 5 编译
+
+编译把一个程序变成图的设计层，再与代码层链接成完整的图。前端（§5.1–§5.3）只读设计文件和录制文件；链接（§5.4）还读代码。
+
+```
+路径   ─分类─▶ 文件种类
+源文本 ─词法分析─▶ 记号 ─语法分析─▶ 语法树 ─静态规则─▶ 合法的语法树 ─打印─▶ 规范文本
+全部合法的语法树 ─载入─▶ 设计层 ─链接─▶ 图、诊断与状态
+```
+
+| 阶段 | 实现 | 输入 → 输出 | 诊断 |
+| --- | --- | --- | --- |
+| 分类 | `syntax.KindOf` | 路径 → 文件种类 | `cli.not-a-design-file` |
+| 词法分析 | `internal/syntax/lex.go` | 字节 → 记号 | `syntax.tab`、`syntax.control-character`、`syntax.invalid-escape` 等 |
+| 语法分析 | `syntax.Parse`，基于 participle | 记号 → 语法树 `syntax.File` | `syntax.unexpected-token` 等，每个文件至多一条 |
+| 静态规则 | `internal/syntax/check.go` | 语法树 → 合法的语法树 | `syntax.declaration-order`、`syntax.invalid-name` 等 |
+| 规范格式 | `internal/syntax/print.go` | 语法树 → 规范文本 | `cli.not-canonical` |
+| 载入 | `design.Load` | 全部合法的语法树 → 设计层 | `design.*` |
+| 链接 | 语言后端、`graph`、`check` | 设计层与代码 → 图与状态 | `cli.extract-failed`、`graph.*`、`check.*` |
+
+### 5.1 分类、词法分析与语法分析
+
+- **分类**：路径决定文件的种类，种类决定使用哪个起始符号。`design/system.uc` 是系统文件，`design/` 中的其他 `.uc` 文件是组件文件，`corpus/` 中的 `.uc` 文件是录制文件；其他路径不是本语言的源文件。
+- **词法分析**：先拒绝 §2 禁止的字符，即制表符、CR、其他控制字符和非 UTF-8 的字节，每处一条诊断；再切分记号：注释、字符串、数、名称、`->>`、`->`、`..` 和标点。字符串和注释各自整体作为一个记号，因此不会被当作关键字。
+- **语法分析**：§3 的文法以 participle 的结构体标签写在 `internal/syntax/grammar.go` 中，与 §3 的产生式逐条对应。分析得到语法树 `syntax.File`；遇到第一个不合文法的记号即停止，报告一条诊断。
+
+### 5.2 静态规则与规范格式
+
+- **静态规则**：文法表达不了的规则在语法树上检查，例如声明和成员的次序、名称的写法、保留字、摘要的形式、同一块中重复的成员。违反的规则全部报告。语法树只有在没有任何诊断时才进入下一阶段。
+- **规范格式**：打印器把语法树写成规范文本，它实现 §3 的排版规则。`unicode fmt` 用它改写文件；`unicode check` 把它与源文本逐字节比较，不同时报 `cli.not-canonical`。规范文本再经分析和打印，结果不变。
+
+### 5.3 载入
+
+`design.Load` 接收全部合法的语法树，产出设计层和诊断（`design.Loaded`），分三步：
+
+1. **声明**：按固定次序读取声明，为每条声明建一个节点并给出标识。次序是系统文件、由浅到深的组件文件、组件中的成员、录制文件，同组之内按路径。两条声明得到同一标识时，后读到的报 `design.duplicate-name`；读取次序固定，所以哪一条算重复与文件次序无关。
+2. **解析引用**：全部节点建好之后，按依赖分批解析引用：先是组件的 `uses`；再是类型和操作的签名、符号的类型；再是符号的取值域，它要读类型的字段；最后是步骤和用例，它们要读前面的全部结果。解析成功即按 §4.2 建边；失败时报 `design.unresolved-reference` 或 `design.wrong-reference-kind`。
+3. **设计约束**：检查只需设计就能判断的约束（[design.md](design.md) §5.1），包括用例的值是否属于符号的类型并落在限定之内。
+
+有语法错误的文件不参与载入；其余文件照常载入，指向缺失声明的引用报为未解析。
+
+### 5.4 链接
+
+链接把设计层与代码层合成一张图：每种已配置语言的后端抽取代码层，代码中的绑定（§6）成为 `realizes`、`checks` 和 `generates` 边；合并之后按 [model.md](model.md) §9 推导其余的边和显著性，再按 [model.md](model.md) §10 检查约束，得到诊断和每个设计节点的状态。步骤、缓存和快照见 [design.md](design.md) §5。相同的程序和代码总是得到逐字节相同的快照。
+
+### 5.5 诊断
+
+每条诊断有诊断码、位置、原因和修正办法。诊断码写作 `<阶段>.<短横线名称>`，阶段为 `cli`、`syntax`、`design`、`graph` 或 `check`。诊断都是错误，没有警告；输出按路径、行、列和诊断码排序。
+
+## 6 绑定
 
 绑定写在代码中声明的正上方，参数都是字面量，语言后端不执行代码也能读出。绑定只有三种：
 
@@ -153,7 +256,7 @@ NL            = 换行 { 换行 } .
 - **`checks <标识>`**：写在谓词上，表示它检查这条性质或这个流程。谓词的参数就是性质或流程的符号；驱动由 `gen` 生成（[design.md](design.md) §6.2）。一个函数至多带一个 `checks`。
 - **`generates <标识>`**：写在生成器函数上，标识是性质或流程的标识后接 `.` 和一个生成的符号的名称，表示它给出这个符号的生成器。同一个生成器可以用于几个符号，每个符号写一行 `generates`。
 
-### 4.1 Go
+### 6.1 Go
 
 绑定是声明的文档注释中的指令，独占一行，写作 `//uc:` 后接动词、一个空格和标识：
 
@@ -181,7 +284,7 @@ func genSample() *rapid.Generator[Sample] {
 }
 ```
 
-### 4.2 Python
+### 6.2 Python
 
 绑定是 `uc` 包的装饰器。模块只能写作 `import uc`，不能取别名，也不能用 `from uc import`。装饰器只能写作 `@uc.realizes("<标识>")`、`@uc.checks("<标识>")` 或 `@uc.generates("<标识>")`，只有一个字符串字面量参数：
 
@@ -201,7 +304,7 @@ def check_total_is_sum(order: Order) -> None:
 
 `uc` 包只依赖标准库。它的装饰器原样返回被装饰的对象，只在对象上记下标识，供运行时核对流程的调用顺序时使用。
 
-## 5 例子
+## 7 例子
 
 一个网上商店，下面是它的系统文件、库存、支付和订单三个组件，以及一个录制文件。
 

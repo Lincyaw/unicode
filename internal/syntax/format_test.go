@@ -128,7 +128,7 @@ func treeDifference(a, b reflect.Value, path string) string {
 	return ""
 }
 
-// canonicalProblem describes how text breaks the layout of docs/format.md §3,
+// canonicalProblem describes how text breaks the layout of docs/language.md §3,
 // or returns "": no tab or CR, no trailing space, one final newline, each
 // line indented two spaces per open block or bracket, no blank line inside a
 // block, exactly one blank line between top-level items, and comments right
@@ -187,7 +187,7 @@ func canonicalProblem(text []byte) string {
 }
 
 // spacingProblem describes the first pair of tokens on one line of text whose
-// gap breaks the spacing of docs/format.md §3, or returns "".
+// gap breaks the spacing of docs/language.md §3, or returns "".
 func spacingProblem(text []byte) string {
 	lex, err := ucLexer.LexString("", string(text))
 	if err != nil {
@@ -234,7 +234,7 @@ func wantGap(a, b lexer.Token) int {
 	return 1
 }
 
-// canonicalNumber is the canonical form of a number (docs/format.md §2): no
+// canonicalNumber is the canonical form of a number (docs/language.md §2): no
 // leading zeros in the integer part, no -0, and a fraction without trailing
 // zeros beyond its first digit.
 var canonicalNumberForm = regexp.MustCompile(`^(0(\.(0|[0-9]*[1-9]))?|-0\.[0-9]*[1-9]|-?[1-9][0-9]*(\.(0|[0-9]*[1-9]))?)$`)
@@ -263,7 +263,7 @@ var valueColumns = &runewidth.Condition{EastAsianWidth: false, StrictEmojiNeutra
 const valueWidth = 100
 
 // valueLayoutProblem describes the first line of a value in canonical text
-// that breaks docs/format.md §3.1, or returns "": a line wider than 100
+// that breaks docs/language.md §3.1, or returns "": a line wider than 100
 // columns that still holds a bracketed value with items, or a value broken
 // across lines that would fit on one line at its indentation.
 func valueLayoutProblem(text []byte) string {

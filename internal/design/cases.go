@@ -82,14 +82,14 @@ func valuePos(v syntax.Value) lexer.Position {
 	panic("design: a value of an unknown kind")
 }
 
-// conform checks that v is a value of t (docs/format.md §3.1) and reports
+// conform checks that v is a value of t (docs/language.md §3.1) and reports
 // each place where it is not. A value of an unresolved type, an interface or
 // an error passes: those already have their diagnostics, or no literal values.
 func (l *loader) conform(c *entity, v syntax.Value, t *typ) bool {
 	wrong := func(at syntax.Value, why string) bool {
 		l.report(c.file, valuePos(at), "design.value-type-mismatch", c.id,
 			fmt.Sprintf("%s is not a value of %s: %s", syntax.ValueText(at), t.text(), why),
-			"write a value of "+t.text()+" by docs/format.md §3.1")
+			"write a value of "+t.text()+" by docs/language.md §3.1")
 		return false
 	}
 	if _, none := v.(*syntax.NoneValue); none && t.kind != "optional" {

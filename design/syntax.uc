@@ -38,7 +38,7 @@ type Broken record "一个合法文件做了一处违反某条规则的改动：
 
 op kindOf(path: string) -> FileKind raises NotADesignFile "由仓库中的相对路径判断文件的种类"
 
-op parse(path: string, kind: FileKind, src: bytes) -> Parsed "按 format.md 的词法和语法解析一个文件"
+op parse(path: string, kind: FileKind, src: bytes) -> Parsed "按 language.md 的词法和语法解析一个文件"
 
 property kind-of-follows-path invariant "design/system.uc 是系统文件；design/ 下其余文件名为 <名称>.uc、名称不为空的整洁路径是组件文件；corpus/ 下同样的路径是录制文件；其余路径都被拒绝，包括只叫 .uc 的文件和不整洁的路径（含 .、.. 或连续的 /）" {
   about kindOf
@@ -61,5 +61,5 @@ property format-is-stable relation "合法的文本 s 解析后打印得到 t：
 
 property rejects-broken-text invariant "合法的文件做一处违反某条规则的改动之后，解析在改动所在的行和列给出这条规则的诊断，并且不给出语法树" {
   about parse
-  forall broken: Broken generated "一个随机的合法文件，在随机的一处做了违反 format.md 某条规则的改动，附上改动所在的行和应当得到的诊断码"
+  forall broken: Broken generated "一个随机的合法文件，在随机的一处做了违反 language.md 某条规则的改动，附上改动所在的行和应当得到的诊断码"
 }

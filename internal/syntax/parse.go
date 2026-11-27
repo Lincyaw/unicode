@@ -23,7 +23,7 @@ type Parsed struct {
 	Diagnostics []diag.Diagnostic
 }
 
-// Parse parses one file with the lexis and grammar of docs/format.md §2–§3.
+// Parse parses one file with the lexis and grammar of docs/language.md §2–§3.
 // Every forbidden character gets a diagnostic; a file that does not parse
 // gets one, the first problem found; a file that parses gets one for each
 // rule of check.go it breaks. The diagnostics come ordered by line, column and code.
@@ -97,9 +97,9 @@ func parseError(at locator, err error) diag.Diagnostic {
 	// cannot arise from this grammar; one is still reported where it stands.
 	var perr participle.Error
 	if errors.As(err, &perr) {
-		return at.diagnostic(perr.Position().Offset, "syntax.unexpected-token", perr.Message(), "rewrite this line by the grammar of docs/format.md §3")
+		return at.diagnostic(perr.Position().Offset, "syntax.unexpected-token", perr.Message(), "rewrite this line by the grammar of docs/language.md §3")
 	}
-	return at.diagnostic(0, "syntax.unexpected-token", err.Error(), "rewrite the file by the grammar of docs/format.md §3")
+	return at.diagnostic(0, "syntax.unexpected-token", err.Error(), "rewrite the file by the grammar of docs/language.md §3")
 }
 
 // unexpected reports a token the grammar did not expect. Participle's message
@@ -155,7 +155,7 @@ func (l locator) unexpected(u *participle.UnexpectedTokenError) diag.Diagnostic 
 	return l.diagnostic(off, "syntax.unexpected-token", u.Message(), "write the "+c.name+" as "+c.form)
 }
 
-// construct is one kind of line of docs/format.md §3: its name, how it is
+// construct is one kind of line of docs/language.md §3: its name, how it is
 // written, and where it may stand.
 type construct struct{ name, form, place string }
 
@@ -345,7 +345,7 @@ func (l locator) tokens(start int) lineTokens {
 // construct names the kind of the line: its first keyword, a misplaced else,
 // a step, an assignment, a closing brace, part of a broken value, or unknown.
 // A first word followed by ->, ->>, . or emits starts a step, and one
-// followed by = an assignment, as in docs/format.md §3, even when the word is
+// followed by = an assignment, as in docs/language.md §3, even when the word is
 // a keyword. Any other line inside a value (inValue) is part of it.
 func (ts lineTokens) construct(inValue bool) string {
 	if len(ts) == 0 {

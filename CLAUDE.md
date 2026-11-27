@@ -4,14 +4,14 @@ This project's engineering conventions are the general rules of the `engineering
 
 ## Project
 
-- unicode is a toolchain that builds one graph of a repository's design intent, code and evidence; notations (DDD, UML class and sequence diagrams, activity diagrams, event storming, C4) are views of that graph. `docs/model.md` defines the graph, `docs/format.md` the design file format, the recorded-case files and the code bindings, and `docs/design.md` the toolchain itself. `docs/decisions.md` logs each decision and its reason.
+- unicode is a toolchain that builds one graph of a repository's design intent, code and evidence; notations (DDD, UML class and sequence diagrams, activity diagrams, event storming, C4) are views of that graph. `docs/model.md` defines the graph, `docs/language.md` the design language (its files, lexis, grammar, semantics and compilation) and the code bindings, and `docs/design.md` the toolchain itself. `docs/decisions.md` logs each decision and its reason.
 - The toolchain's own design is in `design/*.uc`, written in its own format. Each Go package is one component there, and code element names follow the design through the name mapping of `docs/design.md` §4.
 
 ## Principles
 
 1. **Design first.** A change to the graph, the format or the toolchain's structure edits the documents and the design files before any code. The documents state the current design; `docs/decisions.md` records only what was decided and why.
 2. **Requirements are found by using the toolchain on itself.** When the toolchain's own design cannot say something it needs, the model or the format changes (with a decision entry); the design file and the code never work around the gap.
-3. **The specification decides, not the implementer.** Where `docs/model.md` or `docs/format.md` is ambiguous, the implementer picks the reading closest to the text, states the ambiguity and the reading in its report, and the main session fixes the document.
+3. **The specification decides, not the implementer.** Where `docs/model.md` or `docs/language.md` is ambiguous, the implementer picks the reading closest to the text, states the ambiguity and the reading in its report, and the main session fixes the document.
 4. **Strict by construction.** Every diagnostic is an error: there are no warnings. Each one carries a stable code (`<component>.<kebab-name>`), a position, the cause and the fix. Nothing is suppressed without a one-line reason, and every suppression is listed in review.
 5. **Every check is a predicate.** Each property and flow has exactly one predicate whose parameters are its symbols. Tests are only the drivers that call predicates. Until `unicode gen` writes drivers (M4), they are written by hand in `*_test.go` with `pgregory.net/rapid` and native fuzzing, and are deleted when generation replaces them. No test pins one example; concrete examples are declared cases.
 6. **Bindings from the first line.** Code that realizes a design node carries its `//uc:realizes` directive, predicates carry `//uc:checks`, generators of generated symbols carry `//uc:generates`, even before the checks that read them exist.

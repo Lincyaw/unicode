@@ -13,7 +13,7 @@ import (
 	"github.com/lincyaw/unicode/internal/diag"
 )
 
-// The lexis of docs/format.md §2: the tokens, the characters no file may
+// The lexis of docs/language.md §2: the tokens, the characters no file may
 // contain, the escapes of strings and the canonical form of numbers.
 
 // ucLexer keeps strings and comments as written, quotes and `//` included, so

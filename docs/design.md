@@ -1,6 +1,6 @@
 # unicode 工具链设计
 
-unicode 把一个仓库的设计意图、代码和证据组织成一张图（[model.md](model.md)），设计意图写在设计文件中（[format.md](format.md)）。本文写工具链本身：用法、组件、语言后端、建图、生成与运行、视图与切片、命令行、计划，以及工具链对自己的验证。设计理由集中在附录 A，待定的事项列在附录 B。
+unicode 把一个仓库的设计意图、代码和证据组织成一张图（[model.md](model.md)），设计意图写在设计文件中（[language.md](language.md)）。本文写工具链本身：用法、组件、语言后端、建图、生成与运行、视图与切片、命令行、计划，以及工具链对自己的验证。设计理由集中在附录 A，待定的事项列在附录 B。
 
 ## 1 目标
 
@@ -50,7 +50,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 
 | 用途 | 库 |
 | --- | --- |
-| 设计文件和录制文件的词法与语法：[format.md](format.md) §3 的语法写成它的语法结构体 | `github.com/alecthomas/participle/v2` |
+| 设计文件和录制文件的词法与语法：[language.md](language.md) §3 的语法写成它的语法结构体 | `github.com/alecthomas/participle/v2` |
 | 命令行的命令、参数和帮助 | `github.com/spf13/cobra` |
 | 路径模式中的 `**` | `github.com/bmatcuk/doublestar/v4` |
 | 值的显示宽度（规范格式的 100 列） | `github.com/mattn/go-runewidth` |
@@ -119,7 +119,7 @@ type Backend interface {
 
 `design` 载入设计文件和录制文件时检查以下各项，诊断码写作 `design.<短横线名称>`。`unicode check --design-only` 报出的就是它们，加上语法和规范格式的诊断。
 
-- [format.md](format.md) 中的语义规则：
+- [language.md](language.md) 中的语义规则：
   - `design/system.uc` 恰有一个，`design/` 中其余每个文件声明的组件，其标识与文件路径相符；录制文件的路径与它指向的性质或流程的标识相符；
   - 引用按 §2 的规则解析；
   - 顶层组件写了 `focus`；
@@ -371,16 +371,16 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 
 | 里程碑 | 内容 | 完成的标志 |
 | --- | --- | --- |
-| M0 设计 | 本文、[model.md](model.md)、[format.md](format.md) | 设计评审通过 |
+| M0 设计 | 本文、[model.md](model.md)、[language.md](language.md) | 设计评审通过 |
 | M1 设计文件 | `syntax`、`fmt`、`design`、`check --design-only`，包括流程、符号、限定、用例和录制文件的检查；用格式写出工具链自己的设计 | 工具链自己的 `design/` 通过 `fmt --check` 和 `check --design-only` |
 | M2 Go 后端 | 抽取、绑定、建图、全部静态约束 | 工具链的代码带上绑定，`unicode check` 在工具链自身上通过（2026-11-26 完成：0 条诊断，611 个声明项全部一致） |
 | M3 查询与视图 | `node`、`slice`、`impact`、`view`、`build` 和抽取缓存；查看器的雏形 | 此后给 agent 派任务都附上切片 |
 | M4 Go 生成与回放 | `gen`：骨架、生成器、`apply`、外部系统的替身和驱动；`unicode test` 的快路径 | 此后工具链的新组件和检查都由 `gen` 起头，工具链自己的性质由生成的驱动检查 |
-| M5 Python | 抽取脚本、`uc` 包、Python 的生成和回放；把 [format.md](format.md) §5 的商店例子做成样例仓库 | 样例仓库通过 `unicode check` 和 `unicode test` |
+| M5 Python | 抽取脚本、`uc` 包、Python 的生成和回放；把 [language.md](language.md) §7 的商店例子做成样例仓库 | 样例仓库通过 `unicode check` 和 `unicode test` |
 | M6 探索与证据 | 慢路径：按覆盖挑选、缩小、缩减和录制；设计覆盖；运行时核对流程；结果作为证据并入快照 | 性质视图显示覆盖率和录制的用例 |
 | M7 评审 | 评审记录与评审状态，按比较结果评审 | 评审只列出待审的项 |
 
-从 M1 起，工具链用自己的格式描述自己；从 M2 起，用自己检查自己。M1 写出工具链的设计之后，本文、[model.md](model.md) 和 [format.md](format.md) 中能写成性质的条目，都移到设计文件里成为 `property`，文档只留下理由和设计文件表达不了的内容。
+从 M1 起，工具链用自己的格式描述自己；从 M2 起，用自己检查自己。M1 写出工具链的设计之后，本文、[model.md](model.md) 和 [language.md](language.md) 中能写成性质的条目，都移到设计文件里成为 `property`，文档只留下理由和设计文件表达不了的内容。
 
 ## 10 工具链对自己的验证
 

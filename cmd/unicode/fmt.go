@@ -25,7 +25,7 @@ func fmtCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "fmt [path...]",
 		Short: "Rewrite design and corpus files in the canonical format; with --check, only report the files that are not",
-		Long: "fmt rewrites design and corpus files in the canonical format of docs/format.md. With --check it rewrites\n" +
+		Long: "fmt rewrites design and corpus files in the canonical format of docs/language.md. With --check it rewrites\n" +
 			"nothing and reports each file that is not canonical. Without paths it takes every file under design/ and corpus/;\n" +
 			"a path names a file or a directory inside them.",
 		RunE: func(_ *cobra.Command, paths []string) error {

@@ -17,7 +17,7 @@ import (
 // declare, the syntax trees of the files, and the identities of the nodes and
 // edges (`kind from to`) that docs/model.md §3–§4 and §7 give them. Every
 // choice keeps the design valid: references are written so that they resolve
-// by docs/format.md §2, dependencies follow `uses`, and cases fit their
+// by docs/language.md §2, dependencies follow `uses`, and cases fit their
 // symbols' types and limits.
 
 // Sample is a valid set of design and corpus files, with the nodes and edges

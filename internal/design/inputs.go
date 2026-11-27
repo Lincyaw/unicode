@@ -40,7 +40,7 @@ func (lim *limit) text() string {
 	return path + " " + lim.op + " " + lim.low + ".." + lim.high
 }
 
-// empty tells whether an interval's low bound exceeds its high bound (docs/format.md §3).
+// empty tells whether an interval's low bound exceeds its high bound (docs/language.md §3).
 func (lim *limit) empty() bool {
 	return lim.op != "subset" && rat(lim.low).Cmp(rat(lim.high)) > 0
 }

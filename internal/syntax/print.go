@@ -7,7 +7,7 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// maxWidth is the display width a value line may take (docs/format.md §3.1).
+// maxWidth is the display width a value line may take (docs/language.md §3.1).
 const maxWidth = 100
 
 // widths measures display width with East Asian wide characters as two
@@ -15,7 +15,7 @@ const maxWidth = 100
 // the same bytes everywhere.
 var widths = &runewidth.Condition{EastAsianWidth: false, StrictEmojiNeutral: true}
 
-// Print writes the file in the canonical format of docs/format.md §3: one
+// Print writes the file in the canonical format of docs/language.md §3: one
 // blank line before each top-level declaration or comment group, none inside
 // blocks, two spaces of indentation per block, and one final newline.
 func (f *File) Print() []byte {

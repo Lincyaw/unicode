@@ -498,7 +498,7 @@ func insertLine[L any](lines *[]L, line L, before func(L) bool) {
 }
 
 // insertDecl puts a declaration of a component file last in its group
-// (docs/format.md §3: types, operations, flows, then properties).
+// (docs/language.md §3: types, operations, flows, then properties).
 func insertDecl(f *syntax.File, decl syntax.Decl) {
 	group := func(d syntax.Decl) int {
 		switch d.(type) {

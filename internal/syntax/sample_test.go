@@ -9,7 +9,7 @@ import (
 )
 
 // This file builds random valid syntax trees covering every construct of
-// docs/format.md §3, and writes them as text with random legal layout.
+// docs/language.md §3, and writes them as text with random legal layout.
 
 // keywords are drawn as names now and then: names are not reserved, so a
 // name may equal a keyword wherever its class allows.

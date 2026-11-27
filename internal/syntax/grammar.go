@@ -7,7 +7,7 @@ import (
 	"github.com/alecthomas/participle/v2/lexer"
 )
 
-// The grammar of docs/format.md §3, written as participle struct tags; these
+// The grammar of docs/language.md §3, written as participle struct tags; these
 // structs are the syntax tree. Every block is a list of lines, comments
 // included, so the printer keeps each comment where it was. The lines of a
 // block are taken in any order, and check.go checks the order afterwards, so
@@ -15,7 +15,7 @@ import (
 // a grammar error. check.go also checks what a tag cannot say: the three name
 // classes, the forms of references, summaries and reserved names.
 
-// Kebab, Upper and Lower are names of the three classes of docs/format.md §2.
+// Kebab, Upper and Lower are names of the three classes of docs/language.md §2.
 type (
 	Kebab string
 	Upper string
@@ -40,7 +40,7 @@ func (s *Summary) Capture(values []string) error {
 	return nil
 }
 
-// Number is a number in its canonical form (docs/format.md §2): no leading
+// Number is a number in its canonical form (docs/language.md §2): no leading
 // zeros in the integer part, no -0, and no trailing zeros in the fraction
 // beyond its first digit. Parsing normalizes it, so fmt prints it canonical.
 type Number string

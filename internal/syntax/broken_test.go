@@ -14,7 +14,7 @@ import (
 	"github.com/lincyaw/unicode/internal/diag"
 )
 
-// Broken is a valid file with one edit that breaks a rule of docs/format.md:
+// Broken is a valid file with one edit that breaks a rule of docs/language.md:
 // its kind, its text, the line and byte column of the edit, and the code of
 // the rule's diagnostic.
 //
@@ -196,7 +196,7 @@ func clone(x any) any {
 
 func isComment(l any) bool { _, ok := l.(*Comment); return ok }
 
-// The ranks of the lines of each level, in the order of docs/format.md §3;
+// The ranks of the lines of each level, in the order of docs/language.md §3;
 // a comment has none.
 func systemRank(l any) int {
 	switch l.(type) {
@@ -951,7 +951,7 @@ var breakages = []breakage{
 	edited("syntax.not-an-integer", component, fractionalSize(true)),
 }
 
-// genBroken draws a random valid file and breaks one rule of docs/format.md
+// genBroken draws a random valid file and breaks one rule of docs/language.md
 // at a random site of it.
 //
 //uc:generates syntax.rejects-broken-text.broken
