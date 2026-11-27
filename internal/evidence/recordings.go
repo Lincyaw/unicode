@@ -41,6 +41,38 @@ func corpusPath(check string) (string, error) {
 	return "corpus/" + strings.ReplaceAll(check, ".", "/") + ".uc", nil
 }
 
+func parseCorpusFile(path string, data []byte) (string, *syntax.File, *diag.Diagnostic) {
+	fail := func(cause, fix string) (string, *syntax.File, *diag.Diagnostic) {
+		problem := storeDiagnostic("evidence.invalid-corpus", path, cause, fix)
+		return "", nil, &problem
+	}
+	parsed := syntax.Parse(path, syntax.FileKindCorpus, data)
+	if len(parsed.Diagnostics) > 0 {
+		problem := storeDiagnostic("evidence.invalid-corpus", path, parsed.Diagnostics[0].Message, "correct the corpus syntax before recording")
+		problem.Position = parsed.Diagnostics[0].Position
+		return "", nil, &problem
+	}
+	if !bytes.Equal(parsed.File.Print(), data) {
+		return fail("the corpus file is not in canonical format", "run unicode fmt on the corpus file before recording")
+	}
+	check := ""
+	for _, declaration := range parsed.File.Decls {
+		switch declaration := declaration.(type) {
+		case *syntax.CorpusDecl:
+			check = strings.Join(declaration.Target.Segments, ".")
+		case *syntax.RecordedCase:
+			if !recordedName.MatchString(string(declaration.Name)) {
+				return fail("the corpus case name is not r- followed by eight lowercase hexadecimal digits", "restore the recorder-owned case identity")
+			}
+		}
+	}
+	expected, err := corpusPath(check)
+	if err != nil || expected != path {
+		return fail("the corpus header does not match its namespace path", "use the exact namespace path of the corpus target")
+	}
+	return check, parsed.File, nil
+}
+
 func corpusFiles(root string, g *graph.Graph) (map[string]corpusFile, []string, []diag.Diagnostic) {
 	files := map[string]corpusFile{}
 	removals := []string{}
@@ -96,34 +128,12 @@ func corpusFiles(root string, g *graph.Graph) (map[string]corpusFile, []string, 
 			problems = append(problems, storeDiagnostic("evidence.invalid-corpus", relative, problem.Error(), "restore read access to the corpus file"))
 			return nil
 		}
-		parsed := syntax.Parse(relative, syntax.FileKindCorpus, data)
-		if len(parsed.Diagnostics) > 0 {
-			d := storeDiagnostic("evidence.invalid-corpus", relative, parsed.Diagnostics[0].Message, "correct the corpus syntax before recording")
-			d.Position = parsed.Diagnostics[0].Position
-			problems = append(problems, d)
+		check, _, corpusProblem := parseCorpusFile(relative, data)
+		if corpusProblem != nil {
+			problems = append(problems, *corpusProblem)
 			return nil
 		}
-		if !bytes.Equal(parsed.File.Print(), data) {
-			problems = append(problems, storeDiagnostic("evidence.invalid-corpus", relative, "the corpus file is not in canonical format", "run unicode fmt on the corpus file before recording"))
-			return nil
-		}
-		check := ""
-		for _, declaration := range parsed.File.Decls {
-			switch declaration := declaration.(type) {
-			case *syntax.CorpusDecl:
-				check = strings.Join(declaration.Target.Segments, ".")
-			case *syntax.RecordedCase:
-				if !recordedName.MatchString(string(declaration.Name)) {
-					problems = append(problems, storeDiagnostic("evidence.invalid-corpus", relative, "the corpus case name is not r- followed by eight lowercase hexadecimal digits", "restore the recorder-owned case identity"))
-					return nil
-				}
-			}
-		}
-		expected, problem := corpusPath(check)
-		if problem != nil || expected != relative {
-			problems = append(problems, storeDiagnostic("evidence.invalid-corpus", relative, "the corpus header does not match its namespace path", "move the file to the path of its exact corpus target"))
-			return nil
-		}
+
 		target := g.Node(check)
 		if target == nil {
 			removals = append(removals, relative)
