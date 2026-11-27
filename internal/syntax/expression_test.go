@@ -65,7 +65,7 @@ func expressionSample(t *rapid.T) Sample {
 func brokenContractSyntax(t *rapid.T) Broken {
 	name := fmt.Sprintf("contract%d", rapid.IntRange(0, 9999).Draw(t, "contract name"))
 	base := "component sample \"Contract syntax\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty " + name + " postcondition \"Contract claim\" {\n  about Account.move\n  forall amount: int\n  call Account.move(amount)\n  ensure result == amount\n}\n"
-	variant := rapid.IntRange(0, 9).Draw(t, "invalid contract syntax")
+	variant := rapid.IntRange(0, 10).Draw(t, "invalid contract syntax")
 	text, code, mark := base, "", "property "
 	switch variant {
 	case 0:
@@ -104,12 +104,50 @@ func brokenContractSyntax(t *rapid.T) Broken {
 		text = strings.Replace(base, "  call Account.move(amount)\n", "  observe amount\n  changes amount + 1\n  call Account.move(amount)\n", 1)
 		code = "syntax.unexpected-token"
 		mark = "+"
+	case 10:
+		return brokenObservationSyntax(t)
 	}
 	offset := strings.Index(text, mark)
 	line, column := lineColumn(text, offset)
 	return Broken{Kind: FileKindComponent, Text: text, Line: line, Column: column, Code: code}
 }
 
+func brokenObservationSyntax(t *rapid.T) Broken {
+	paths := make([]string, rapid.IntRange(1, 4).Draw(t, "observed paths"))
+	badPath := rapid.IntRange(0, len(paths)-1).Draw(t, "malformed path")
+	badName := string(genUpper(t, "uppercase segment"))
+	if rapid.Bool().Draw(t, "kebab segment") {
+		badName = words.Draw(t, "segment prefix") + "-" + words.Draw(t, "segment suffix")
+	}
+	var badOffset int
+	for i := range paths {
+		segments := make([]string, rapid.IntRange(1, 5).Draw(t, "path segments"))
+		for j := range segments {
+			segments[j] = string(genLower(t, "path segment"))
+		}
+		if i == badPath {
+			badSegment := rapid.IntRange(0, len(segments)-1).Draw(t, "malformed segment")
+			for _, segment := range segments[:badSegment] {
+				badOffset += len(segment) + 1
+			}
+			segments[badSegment] = badName
+		}
+		paths[i] = strings.Join(segments, ".")
+	}
+	for _, path := range paths[:badPath] {
+		badOffset += len(path) + 2
+	}
+	observation := strings.Join(paths, ", ")
+	text := "component sample \"Observation syntax\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty observation postcondition \"Observation paths\" {\n  about Account.touch\n  forall account: Account\n  observe " + observation + "\n  changes none\n  call account.touch()\n  ensure true\n}\n"
+	offset := strings.Index(text, "  observe ") + len("  observe ") + badOffset
+	line, column := lineColumn(text, offset)
+	return Broken{Kind: FileKindComponent, Text: text, Line: line, Column: column, Code: "syntax.invalid-name"}
+}
+
 func TestContractSyntaxRejectsInvalidClaims(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) { checkRejectsBrokenText(t, brokenContractSyntax(t)) })
+}
+
+func TestObservationSyntaxRejectsMalformedPaths(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) { checkRejectsBrokenText(t, brokenObservationSyntax(t)) })
 }
