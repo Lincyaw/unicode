@@ -410,6 +410,8 @@ system shop "网上商店：浏览商品、下单、支付"
 
 notation ddd
 
+notation c4
+
 language python {
   root "src"
 }
@@ -426,6 +428,7 @@ actor payment-gateway external "外部支付网关" {
 // design/inventory.uc
 component inventory "库存：各商品的可用数量与预留" {
   label bounded-context
+  label container
   focus support
   paths "src/shop/inventory/**"
 }
@@ -465,6 +468,8 @@ property available-never-negative invariant "任意一串预留和释放之后�
 ```
 // design/payment.uc
 component payment "支付：经外部网关扣款" {
+  label bounded-context
+  label container
   focus support
   paths "src/shop/payment/**"
   uses payment-gateway
@@ -486,6 +491,7 @@ type Payments object "扣款" {
 // design/order.uc
 component order "订单：从购物车生成订单，并管理订单的状态" {
   label bounded-context
+  label container
   focus core
   paths "src/shop/order/**"
   uses inventory, payment
