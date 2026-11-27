@@ -582,6 +582,13 @@ func (l *loader) changePath(c *expressionCheck, expr *syntax.Expr, observations 
 
 func (l *loader) flowExpressions(e, scope *entity, d *syntax.FlowDecl, steps []syntax.Step) {
 	c := l.expressionContext(e, scope)
+	manual := false
+	for _, line := range d.Lines {
+		if x, ok := line.(*syntax.Manual); ok {
+			e.setAttr("manual", []string{string(x.Reason)})
+			manual = true
+		}
+	}
 	for _, step := range steps {
 		if _, comment := step.(*syntax.Comment); comment {
 			continue
@@ -589,6 +596,38 @@ func (l *loader) flowExpressions(e, scope *entity, d *syntax.FlowDecl, steps []s
 		if call, ok := step.(*syntax.Call); ok {
 			c.tested = l.resolve(scope, call.Op.Segments)
 			c.allowOld = true
+			if !manual && c.tested != nil {
+				callee := c.tested.id
+				if c.tested.parent.kind == graph.NodeKindType {
+					var receiver string
+					count := 0
+					for _, symbol := range e.symbols {
+						if symbol.typ.named() == c.tested.parent {
+							receiver = symbol.name
+							count++
+						}
+					}
+					if count != 1 {
+						c.bad(&syntax.Expr{Pos: call.Pos}, "an automatic flow method needs exactly one receiver input", "declare exactly one forall input of the entry operation's owner type or declare manual")
+					} else {
+						callee = receiver + "." + c.tested.name
+					}
+				}
+				expr := &syntax.Expr{Pos: call.Pos, Kind: "call", Children: []*syntax.Expr{{Pos: call.Pos, Kind: "name", Text: callee}}}
+				if c.tested.parent.kind == graph.NodeKindType {
+					if dot := strings.LastIndexByte(callee, '.'); dot >= 0 {
+						expr.Children[0] = &syntax.Expr{Pos: call.Pos, Kind: "field", Text: callee[dot+1:], Children: []*syntax.Expr{{Pos: call.Pos, Kind: "name", Text: callee[:dot]}}}
+					}
+				}
+				for _, arg := range call.Args {
+					expr.Children = append(expr.Children, &syntax.Expr{Pos: call.Pos, Kind: "name", Text: string(arg)})
+				}
+				c.clause, c.ordinal = "call", 1
+				c.invoke(expr, true)
+				e.setAttr("call", []string{syntax.ExprText(expr)})
+			}
+		} else if !manual {
+			c.bad(&syntax.Expr{Pos: e.pos}, "an automatic flow needs a first synchronous call", "start with a synchronous entry operation or declare manual")
 		}
 		break
 	}
