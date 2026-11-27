@@ -6,6 +6,12 @@ const HAN = /\p{Script=Han}/u;
 /** A string that starts like a page path, such as "/view"; the root "/" alone is not one. */
 const PAGE_PATH = /^\/[a-z]/;
 
+/** The elements a page never writes itself: every button and field is one of the design kit's controls. */
+const KIT_ELEMENTS = new Set(['button', 'input']);
+
+/** A JSX element written in lower case is a DOM element rather than a component. */
+const DOM_ELEMENT = /^[a-z]/;
+
 export default {
   meta: { name: 'viewer' },
   rules: {
@@ -46,6 +52,18 @@ export default {
         };
       },
     },
+    'controls-from-kit': {
+      meta: { type: 'problem', docs: { description: 'Every button and field is a control of the design kit, so each has the kit\'s look, motion and focus ring.' } },
+      create(context) {
+        return {
+          JSXOpeningElement(node) {
+            if (node.name.type === 'JSXIdentifier' && KIT_ELEMENTS.has(node.name.name)) {
+              context.report({ node, message: `Use a control of src/ui instead of a raw <${node.name.name}>: Button, IconButton or MarkButton for an action (MarkButton for a mark such as a node or a row), SearchField for a field. A look the kit lacks becomes a prop or variant in src/ui, noted in its README.` });
+            }
+          },
+        };
+      },
+    },
     'icons-from-the-table': {
       meta: { type: 'problem', docs: { description: 'Every Lucide glyph a page draws is named in components/marks/icons, after the icon table of docs/design.md §7.5.' } },
       create(context) {
@@ -53,6 +71,19 @@ export default {
           ImportDeclaration(node) {
             if (node.source.value === 'lucide-react') {
               context.report({ node, message: 'Import Lucide glyphs from components/marks/icons, which names each glyph the viewer draws after docs/design.md §7.5\'s icon table; add a glyph there, and to the table, when a new meaning needs one.' });
+            }
+          },
+        };
+      },
+    },
+    'no-native-tooltip': {
+      meta: { type: 'problem', docs: { description: 'Details wait in the kit\'s Hint, never in the browser\'s title tooltip.' } },
+      create(context) {
+        return {
+          JSXAttribute(node) {
+            const element = node.parent;
+            if (node.name.type === 'JSXIdentifier' && node.name.name === 'title' && element.name.type === 'JSXIdentifier' && DOM_ELEMENT.test(element.name.name)) {
+              context.report({ node, message: 'Put the detail in a Hint from src/ui/hint instead of a title attribute: the browser\'s tooltip has neither the kit\'s look nor a reliable delay, and touch and keyboard readers never see it.' });
             }
           },
         };

@@ -42,7 +42,9 @@
       "files": ["src/components/**", "src/pages/**"],
       "rules": {
         "viewer/paths-from-routes": "error",
-        "viewer/icons-from-the-table": "error"
+        "viewer/icons-from-the-table": "error",
+        "viewer/controls-from-kit": "error",
+        "viewer/no-native-tooltip": "error"
       }
     },
     {
