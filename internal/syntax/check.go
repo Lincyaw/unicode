@@ -350,6 +350,14 @@ func (c *checker) walk(v reflect.Value, sizeBound bool) {
 			// What a node holds comes after the keyword it starts with, which may be spelled like a name.
 			c.next = max(c.next, p.Interface().(lexer.Position).Offset+len(lead(v.Type())))
 		}
+		if observe, ok := v.Interface().(Observe); ok && len(observe.Paths) != 0 {
+			for _, path := range observe.Paths {
+				for _, segment := range path.Segments {
+					c.text(reflect.ValueOf(Lower(segment)), false)
+				}
+			}
+			return
+		}
 		if c.reference(v) {
 			return
 		}
