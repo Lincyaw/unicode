@@ -394,10 +394,14 @@ func (w world) folder(id string, exempt map[string]bool) (string, string) {
 	return "", ""
 }
 
-// expectation is what a view must draw.
+// expectation is what a view must draw: its nodes, the folded containers,
+// the utility containers left out, and its edges, each with the edges of
+// the graph it stands for when an end is folded, or none when it is one.
 type expectation struct {
 	nodes, folded, hiders map[string]bool
-	edges                 map[edgeKey]bool
+	edges                 map[edgeKey][]graph.Edge
+	// home maps a node folded into a container, or left out with one, to that container.
+	home map[string]string
 }
 
 // placeInto draws id, or the support container it folds into, or records the
@@ -406,11 +410,25 @@ func (w world) placeInto(x *expectation, id string, exempt map[string]bool) {
 	switch c, f := w.folder(id, exempt); f {
 	case "support":
 		x.nodes[c], x.folded[c] = true, true
+		x.home[id] = c
 	case "utility":
 		x.hiders[c] = true
+		x.home[id] = c
 	default:
 		x.nodes[id] = true
 	}
+}
+
+// standIn is the drawn node that stands for id: id, or the folded container
+// it is in; "" when neither is drawn.
+func (x expectation) standIn(id string) string {
+	if c, ok := x.home[id]; ok && x.folded[c] {
+		return c
+	}
+	if x.nodes[id] {
+		return id
+	}
+	return ""
 }
 
 func (w world) detailFunction(id string) bool {
@@ -422,7 +440,7 @@ func (w world) detailFunction(id string) bool {
 // then what each expansion reveals placed, then the edges between drawn nodes.
 func (w world) expected(a asked, expand []string) expectation {
 	kind, input := a.kind, a.input
-	x := expectation{nodes: map[string]bool{}, folded: map[string]bool{}, hiders: map[string]bool{}, edges: map[edgeKey]bool{}}
+	x := expectation{nodes: map[string]bool{}, folded: map[string]bool{}, hiders: map[string]bool{}, edges: map[edgeKey][]graph.Edge{}, home: map[string]string{}}
 	exempt := w.exempt(kind, input, expand)
 	for _, id := range keys(w.candidates(a)) {
 		if w.nodes[id].Salient {
@@ -456,13 +474,38 @@ func (w world) expected(a asked, expand []string) expectation {
 			}
 		}
 	}
+	plain := map[edgeKey]bool{}
 	for _, e := range w.edges {
 		k := edgeKey{e.Kind, e.From, e.To}
-		if x.nodes[e.From] && x.nodes[e.To] && (slices.Contains(drawnKinds[kind], e.Kind) || revealed[k]) {
-			x.edges[k] = true
+		from, to := x.standIn(e.From), x.standIn(e.To)
+		if from == "" || to == "" || !slices.Contains(drawnKinds[kind], e.Kind) && !revealed[k] {
+			continue
+		}
+		if from == e.From && to == e.To {
+			plain[k] = true
+		} else if from != to {
+			at := edgeKey{e.Kind, from, to}
+			x.edges[at] = append(x.edges[at], e)
+		}
+	}
+	for k := range plain {
+		if merged, ok := x.edges[k]; ok {
+			x.edges[k] = append(merged, w.edge(k))
+		} else {
+			x.edges[k] = nil
 		}
 	}
 	return x
+}
+
+// edge returns the edge of the graph with the key k.
+func (w world) edge(k edgeKey) graph.Edge {
+	for _, e := range w.edges {
+		if e.Kind == k.kind && e.From == k.from && e.To == k.to {
+			return e
+		}
+	}
+	return graph.Edge{}
 }
 
 // detailPath returns the calls edges of the paths from start to end whose

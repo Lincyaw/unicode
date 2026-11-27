@@ -84,9 +84,9 @@ func genGraph(t *rapid.T, minFlows int) graph.Fragment {
 	b := &builder{t: t, at: map[string]int{}, keys: map[edgeKey]bool{}}
 	sys := b.node("sys", graph.NodeKindContainer, "system", graph.LayerDesign, true,
 		map[string][]string{"notations": b.subset("notation", []string{"ddd", "c4"})})
-	focuses := []string{"core", "core", "support", "utility"}
+	focuses := []string{"core", "core", "support", "support", "utility"}
 	var components []string
-	for i := range rapid.IntRange(1, 5).Draw(t, "components") {
+	for i := range rapid.IntRange(1, 6).Draw(t, "components") {
 		parent := b.pick("componentParent", append([]string{sys}, components...))
 		attrs := map[string][]string{}
 		if parent == sys || rapid.Bool().Draw(t, "ownFocus") {
@@ -161,7 +161,7 @@ func genGraph(t *rapid.T, minFlows int) graph.Fragment {
 	for range rapid.IntRange(0, 4).Draw(t, "uses") {
 		b.edge(graph.EdgeKindUses, b.pick("user", components), b.pick("used", append(append([]string{}, components...), actors...)))
 	}
-	for range rapid.IntRange(0, 4).Draw(t, "depends") {
+	for range rapid.IntRange(0, 6).Draw(t, "depends") {
 		b.edge(graph.EdgeKindDepends, b.pick("dependent", components), b.pick("dependency", append(append([]string{}, components...), externals...)))
 	}
 	for range rapid.IntRange(0, 5).Draw(t, "typeEdges") {
@@ -240,7 +240,7 @@ func (b *builder) code(components, types, ops, steps, cases []string) {
 		parent := b.pick("filePackage", packages)
 		id := b.node(fmt.Sprintf("file:%s/f%d.go", parent[3:], i), graph.NodeKindContainer, "file", graph.LayerCode, false, nil)
 		b.edge(graph.EdgeKindContains, parent, id)
-		if rapid.IntRange(0, 2).Draw(t, "owned") > 0 {
+		if rapid.IntRange(0, 3).Draw(t, "owned") > 0 {
 			b.edge(graph.EdgeKindOwns, b.pick("owner", components), id)
 		}
 		files = append(files, id)
@@ -256,7 +256,7 @@ func (b *builder) code(components, types, ops, steps, cases []string) {
 		codeTypes = append(codeTypes, id)
 	}
 	properties := b.ofKind(graph.NodeKindProperty)
-	for i := range rapid.IntRange(1, 8).Draw(t, "functions") {
+	for i := range rapid.IntRange(2, 10).Draw(t, "functions") {
 		parent := b.pick("functionParent", append(append([]string{}, files...), codeTypes...))
 		salient := rapid.Bool().Draw(t, "functionSalient")
 		id := b.node(fmt.Sprintf("%s.fn%d", parent, i), graph.NodeKindOp, "func", graph.LayerCode, salient, nil)
@@ -271,7 +271,7 @@ func (b *builder) code(components, types, ops, steps, cases []string) {
 		}
 		functions = append(functions, id)
 	}
-	for range rapid.IntRange(2, 16).Draw(t, "calls") {
+	for range rapid.IntRange(2, 20).Draw(t, "calls") {
 		b.edge(graph.EdgeKindCalls, b.pick("caller", functions), b.pick("callee", functions))
 	}
 	b.reaches(functions)

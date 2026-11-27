@@ -1,6 +1,7 @@
 package view
 
 import (
+	"cmp"
 	"maps"
 	"slices"
 	"strings"
@@ -19,6 +20,9 @@ type folding struct {
 	drawn   map[string]bool
 	folded  map[string]bool
 	hidden  map[string]bool
+	// into maps a node placed into a folded container to that container,
+	// and a node that a utility container keeps out of the view to "".
+	into map[string]string
 }
 
 type edgeKey struct {
@@ -34,11 +38,12 @@ var focusFolding = []ViewKind{ViewKindArchitecture, ViewKindClass, ViewKindCalls
 // fold draws the salient nodes of a selection, folding support containers
 // and leaving out utility ones when the view is one of focusFolding; then it
 // draws what the expanded salient functions and reaches edges reveal; then
-// every edge between drawn nodes that the selection or an expansion picks.
+// the edges that the selection or an expansion picks, between the nodes
+// that stand for their ends.
 func (ix index) fold(r request, sel selection, expand []string) View {
 	kind, input := r.kind, r.input
 	f := folding{ix: ix, byFocus: slices.Contains(focusFolding, kind), exempt: map[string]bool{input: true},
-		drawn: map[string]bool{}, folded: map[string]bool{}, hidden: map[string]bool{}}
+		drawn: map[string]bool{}, folded: map[string]bool{}, hidden: map[string]bool{}, into: map[string]string{}}
 	for _, id := range append(ix.enclosing(input), expand...) {
 		f.exempt[id] = true
 	}
@@ -64,11 +69,7 @@ func (ix index) fold(r request, sel selection, expand []string) View {
 	for _, id := range f.order {
 		v.Nodes = append(v.Nodes, ViewNode{Node: ix.nodes[id]})
 	}
-	for _, e := range ix.edges {
-		if f.drawn[e.From] && f.drawn[e.To] && (slices.Contains(sel.kinds, e.Kind) || revealed[edgeKey{e.Kind, e.From, e.To}]) {
-			v.Edges = append(v.Edges, ViewEdge{Edge: e})
-		}
-	}
+	v.Edges = f.edges(sel, revealed)
 	return v
 }
 
@@ -79,11 +80,80 @@ func (f *folding) place(id string) {
 	case "support":
 		f.draw(c)
 		f.folded[c] = true
+		if c != id {
+			f.into[id] = c
+		}
 	case "utility":
 		f.hidden[c] = true
+		f.into[id] = ""
 	default:
 		f.draw(id)
 	}
+}
+
+// stand returns the drawn node that stands for id: id itself, or the folded
+// container it was placed into; "" when the view draws neither.
+func (f *folding) stand(id string) string {
+	if f.drawn[id] {
+		return id
+	}
+	return f.into[id]
+}
+
+// edges draws each edge of the kinds the selection picks, and each edge an
+// expansion reveals, between the nodes that stand for its ends. The edges
+// that come to join the same two nodes because an end was folded merge
+// into one edge, which counts them; an edge folded into a single node is
+// not drawn.
+func (f *folding) edges(sel selection, revealed map[edgeKey]bool) []ViewEdge {
+	groups := map[edgeKey][]graph.Edge{}
+	moved := map[edgeKey]bool{}
+	for _, e := range f.ix.edges {
+		if !slices.Contains(sel.kinds, e.Kind) && !revealed[edgeKey{e.Kind, e.From, e.To}] {
+			continue
+		}
+		from, to := f.stand(e.From), f.stand(e.To)
+		shifted := from != e.From || to != e.To
+		if from == "" || to == "" || shifted && from == to {
+			continue
+		}
+		k := edgeKey{e.Kind, from, to}
+		groups[k] = append(groups[k], e)
+		moved[k] = moved[k] || shifted
+	}
+	drawn := []ViewEdge{}
+	for _, k := range slices.SortedFunc(maps.Keys(groups), edgeKey.compare) {
+		if !moved[k] {
+			drawn = append(drawn, ViewEdge{Edge: groups[k][0]})
+		} else {
+			drawn = append(drawn, ViewEdge{Edge: merged(k, groups[k]), Count: len(groups[k])})
+		}
+	}
+	return drawn
+}
+
+func (k edgeKey) compare(o edgeKey) int {
+	return cmp.Or(cmp.Compare(k.kind, o.kind), cmp.Compare(k.from, o.from), cmp.Compare(k.to, o.to))
+}
+
+// merged is the edge k that stands for the edges of the graph es: derived
+// from them, at the origin of the first, with the values of their
+// attributes in the order they first appear.
+func merged(k edgeKey, es []graph.Edge) graph.Edge {
+	e := graph.Edge{Kind: k.kind, From: k.from, To: k.to, Source: graph.SourceDerived, Origin: es[0].Origin}
+	for _, x := range es {
+		for _, key := range slices.Sorted(maps.Keys(x.Attrs)) {
+			if e.Attrs == nil {
+				e.Attrs = map[string][]string{}
+			}
+			for _, v := range x.Attrs[key] {
+				if !slices.Contains(e.Attrs[key], v) {
+					e.Attrs[key] = append(e.Attrs[key], v)
+				}
+			}
+		}
+	}
+	return e
 }
 
 func (f *folding) draw(id string) {

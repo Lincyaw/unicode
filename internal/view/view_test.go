@@ -77,18 +77,19 @@ func checkViewIsFoldedSubgraph(t rapid.TB, request Request) {
 	for _, e := range request.Fragment.Edges {
 		graphEdges[edgeKey{e.Kind, e.From, e.To}] = e
 	}
-	edges := map[edgeKey]bool{}
+	edges := map[edgeKey]ViewEdge{}
 	for _, e := range got.Edges {
 		k := edgeKey{e.Kind, e.From, e.To}
+		_, twice := edges[k]
 		switch {
-		case edges[k]:
+		case twice:
 			t.Fatalf("the %s view of %q draws the edge %s %q %q twice", request.Kind, request.Id, e.Kind, e.From, e.To)
-		case !reflect.DeepEqual(e.Edge, graphEdges[k]):
-			t.Fatalf("the %s view of %q draws the edge %+v, which the graph does not hold", request.Kind, request.Id, e)
+		case e.Count == 0 && !reflect.DeepEqual(e.Edge, graphEdges[k]):
+			t.Fatalf("the %s view of %q draws the edge %+v without a count, yet the graph does not hold it", request.Kind, request.Id, e)
 		case !drawn[e.From] || !drawn[e.To]:
 			t.Fatalf("the %s view of %q draws the edge %s %q %q, an end of which it does not draw", request.Kind, request.Id, e.Kind, e.From, e.To)
 		}
-		edges[k] = true
+		edges[k] = e
 	}
 
 	if len(request.Expand) == 0 {
@@ -136,11 +137,21 @@ func checkViewIsFoldedSubgraph(t rapid.TB, request Request) {
 	if extra := difference(drawn, want.nodes, strings.Compare); len(extra) > 0 {
 		t.Fatalf("the %s view of %q, expanding %q, draws %q, which §7.1–§7.2 do not", request.Kind, request.Id, request.Expand, extra)
 	}
-	if missing := difference(want.edges, edges, compareKeys); len(missing) > 0 {
-		t.Fatalf("the %s view of %q, expanding %q, leaves out the edges %v between drawn nodes", request.Kind, request.Id, request.Expand, missing)
+	if missing := difference(present(want.edges), present(edges), compareKeys); len(missing) > 0 {
+		t.Fatalf("the %s view of %q, expanding %q, leaves out the edges %v between the nodes that stand for their ends", request.Kind, request.Id, request.Expand, missing)
 	}
-	if extra := difference(edges, want.edges, compareKeys); len(extra) > 0 {
+	if extra := difference(present(edges), present(want.edges), compareKeys); len(extra) > 0 {
 		t.Fatalf("the %s view of %q, expanding %q, draws the edges %v, which the view does not pick", request.Kind, request.Id, request.Expand, extra)
+	}
+	for k, stands := range want.edges {
+		switch e := edges[k]; {
+		case len(stands) == 0 && e.Count != 0:
+			t.Fatalf("the %s view of %q counts %d edges in the edge %s %q %q, which is an edge of the graph between drawn nodes", request.Kind, request.Id, e.Count, k.kind, k.from, k.to)
+		case len(stands) > 0 && e.Count != len(stands):
+			t.Fatalf("the %s view of %q merges %d edges into the edge %s %q %q to a folded container, not the %d it stands for: %v", request.Kind, request.Id, e.Count, k.kind, k.from, k.to, len(stands), stands)
+		case len(stands) > 0 && !reflect.DeepEqual(e.Edge, mergedOf(k, stands)):
+			t.Fatalf("the %s view of %q draws the merged edge %+v, not one derived from the edges it stands for, at the first one's origin, with their attributes: %+v", request.Kind, request.Id, e.Edge, mergedOf(k, stands))
+		}
 	}
 	if !reflect.DeepEqual(folded, want.folded) {
 		t.Fatalf("the %s view of %q, expanding %q, folds %q, not %q", request.Kind, request.Id, request.Expand, got.Folded, keys(want.folded))
@@ -148,6 +159,38 @@ func checkViewIsFoldedSubgraph(t rapid.TB, request Request) {
 	if got.Hidden != len(want.hiders) {
 		t.Fatalf("the %s view of %q, expanding %q, counts %d utility containers left out, not %d: %q", request.Kind, request.Id, request.Expand, got.Hidden, len(want.hiders), keys(want.hiders))
 	}
+}
+
+// present returns the keys of a map as a set.
+func present[V any](m map[edgeKey]V) map[edgeKey]bool {
+	s := map[edgeKey]bool{}
+	for k := range m {
+		s[k] = true
+	}
+	return s
+}
+
+// mergedOf is the edge k that stands for the edges of the graph stands: a
+// derived edge at the origin of the first of them by kind, start and end,
+// with the values of their attributes in that order, each once.
+func mergedOf(k edgeKey, stands []graph.Edge) graph.Edge {
+	sorted := slices.SortedFunc(slices.Values(stands), func(a, b graph.Edge) int {
+		return compareKeys(edgeKey{a.Kind, a.From, a.To}, edgeKey{b.Kind, b.From, b.To})
+	})
+	e := graph.Edge{Kind: k.kind, From: k.from, To: k.to, Source: graph.SourceDerived, Origin: sorted[0].Origin}
+	for _, x := range sorted {
+		for key, values := range x.Attrs {
+			for _, v := range values {
+				if e.Attrs == nil {
+					e.Attrs = map[string][]string{}
+				}
+				if !slices.Contains(e.Attrs[key], v) {
+					e.Attrs[key] = append(e.Attrs[key], v)
+				}
+			}
+		}
+	}
+	return e
 }
 
 func set(ids []string) map[string]bool {
