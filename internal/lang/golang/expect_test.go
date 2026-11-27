@@ -52,6 +52,7 @@ func (w *world) module() Module {
 		x.addPackage(p)
 	}
 	x.addImplements()
+	x.expectContent(files)
 	m := Module{Files: files, Diagnostics: x.diagnostics}
 	for _, n := range x.nodes {
 		m.Nodes = append(m.Nodes, describeNode(n))

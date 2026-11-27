@@ -351,16 +351,17 @@ func (l locator) tokens(start int) lineTokens {
 
 // construct names the kind of the line: its first keyword, a misplaced else,
 // a step, an assignment, a closing brace, part of a broken value, or unknown.
-// A first word followed by ->, ->>, . or emits starts a step, and one
-// followed by = an assignment, as in docs/language.md §3, even when the word is
-// a keyword. Any other line inside a value (inValue) is part of it.
+// A first word followed by ->, ->>, ., or emits and then an UpperCamelCase
+// word or a dotted reference starts a step (G5), and one followed by = an
+// assignment, as in docs/language.md §3, even when the word is a keyword. Any
+// other line inside a value (inValue) is part of it.
 func (ts lineTokens) construct(inValue bool) string {
 	if len(ts) == 0 {
 		return "unknown"
 	}
 	first := ts[0]
 	startsStep := len(ts) > 1 && (ts[1].Type == symbols["Arrow"] || ts[1].Type == symbols["SendArrow"] ||
-		ts[1].Value == "." || ts[1].Value == "emits")
+		ts[1].Value == "." || ts[1].Value == "emits" && ts.emitted())
 	_, keyword := constructs[first.Value]
 	keyword = keyword && !slices.Contains(unnamed, first.Value)
 	word := first.Type == symbols["Ident"]
@@ -381,6 +382,13 @@ func (ts lineTokens) construct(inValue bool) string {
 		return "literal"
 	}
 	return "unknown"
+}
+
+// emitted tells whether the third token of the line starts the event of an
+// emit step: an UpperCamelCase word, or the first segment of a dotted reference.
+func (ts lineTokens) emitted() bool {
+	return len(ts) > 2 && ts[2].Type == symbols["Ident"] &&
+		(upperClass.pattern(ts[2].Value) || len(ts) > 3 && ts[3].Value == ".")
 }
 
 // inValue tells whether the line that holds offset lies inside a value: a
