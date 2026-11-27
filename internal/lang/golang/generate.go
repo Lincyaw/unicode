@@ -53,6 +53,7 @@ type contractCompiler struct {
 	literalImports  map[string]string
 	foreignNames    map[string]string
 	foreignOriginal map[string]string
+	carrierModels   map[string]string
 }
 type contractUnit struct {
 	node          graph.Node
@@ -407,10 +408,10 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 		c.diagnostic(n, "lang.golang.missing-contract-package", "no Go package realizes the property or its tested operation", "realize the operation or bind the manual predicate in its component package")
 		return nil
 	}
-	if len(n.Attrs["manual"]) > 0 || n.Kind == graph.NodeKindFlow {
+	if len(n.Attrs["manual"]) > 0 {
 		d, ok := c.bound(graph.EdgeKindChecks, n.Id)
 		if !ok {
-			c.diagnostic(n, "lang.golang.unsupported-contract", "a manual property or staged flow has no bound predicate", "bind a meaningful handwritten predicate until its generated execution is supported")
+			c.diagnostic(n, "lang.golang.unsupported-contract", "a manual property or flow has no bound predicate", "bind a meaningful handwritten predicate for its stated manual claim")
 			return nil
 		}
 		unit.predicate, _ = d.obj.(*types.Func)
@@ -440,6 +441,7 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 			op := ucOperation{Name: node.Id, GoName: upperFirst(lastName(node.Id)), Owner: c.parents[node.Id], Result: ret, Raises: raises, Pure: first(node.Attrs["pure"]) == "true"}
 			for _, parameter := range parameters {
 				op.Params = append(op.Params, parameter.Type)
+				op.ParamNames = append(op.ParamNames, parameter.Name)
 			}
 			if d, ok := c.bound(graph.EdgeKindRealizes, node.Id); ok {
 				op.GoName = d.obj.Name()
@@ -458,6 +460,9 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 			}
 			unit.spec.Observers = append(unit.spec.Observers, ucObserver{Name: lastName(node.Id), Type: first(node.Attrs["type"]), Inputs: node.Attrs["inputs"]})
 		}
+	}
+	if !c.configureSequences(unit) {
+		return nil
 	}
 	earlier := map[string]string{}
 	for _, symbol := range unit.spec.Symbols {
@@ -577,8 +582,8 @@ func (c *contractCompiler) goType(text string, pkg *packages.Package, imports ma
 			return inner
 		}
 		return "*" + inner
-	case "call":
-		return ""
+	case "call", "replies":
+		return c.carrierType(text, pkg)
 	}
 	d, ok := c.bound(graph.EdgeKindRealizes, text)
 	if !ok {
@@ -612,6 +617,9 @@ func (c *contractCompiler) literal(text, goType string, pkg *packages.Package) (
 	return c.valueLiteral(value, goType, pkg)
 }
 func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packages.Package) (string, error) {
+	if text, ok, err := c.callLiteral(value, t, pkg); ok {
+		return text, err
+	}
 	if strings.HasPrefix(t, "*") {
 		_, none := value.(*syntax.NoneValue)
 		_, record := value.(*syntax.BraceValue)
@@ -750,6 +758,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 	c.literalImports = file.imports
 	c.foreignNames, c.foreignOriginal = map[string]string{}, map[string]string{}
 	var body strings.Builder
+	body.WriteString(c.renderCallDeclarations(file))
 	var bridges []string
 	for index, unit := range file.units {
 		id := strconv.Itoa(index)
@@ -784,6 +793,11 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 					usedErrors[e.Text] = true
 				}
 			})
+		}
+		for _, ty := range unit.spec.Types {
+			for _, op := range ty.Calls {
+				usedOps[op.Name] = true
+			}
 		}
 		for op := range usedOps {
 			for _, errType := range unit.spec.Operations[op].Raises {
@@ -848,12 +862,17 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 			d, _ := c.bound(graph.EdgeKindObserves, unit.node.Id+"."+o.Name)
 			fmt.Fprintf(&body, "s.Observers[%d].Read=reflect.ValueOf(%s);", i, c.qualify(d.obj, file.pkg, file.imports))
 		}
+		c.renderCallSpec(&body, file, unit)
 		body.WriteString("return &s }\n")
 		predicate := ""
 		if unit.predicate != nil {
 			predicate = c.qualify(unit.predicate, file.pkg, file.imports)
 		} else {
-			predicate = (&Backend{}).MapName(lang.NameRolePredicate, lastName(unit.node.Id))
+			role := lang.NameRolePredicate
+			if unit.node.Kind == graph.NodeKindFlow {
+				role = lang.NameRoleFlowPredicate
+			}
+			predicate = (&Backend{}).MapName(role, lastName(unit.node.Id))
 			bridge := "ucPredicate" + id + "_"
 			handle := "t"
 			symbolNames := map[string]bool{}
@@ -894,7 +913,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		}
 		fmt.Fprintf(&body, "func ucInvoke%s(tb rapid.TB, s *ucContract, values map[string]reflect.Value){", id)
 		if unit.predicate != nil {
-			body.WriteString("pre:=*s;pre.Call=nil;pre.Ensures=nil;ucCheck(tb,&pre,values);")
+			body.WriteString("pre:=*s;pre.Call=nil;pre.Ensures=nil;pre.Sequence=\"\";ucCheck(tb,&pre,values); started:=time.Now();defer func(){if ucCurrent!=nil&&s.Within>0 {ucCurrent.durations=append(ucCurrent.durations,time.Since(started))}}();")
 		}
 		var args []string
 		for _, s := range unit.spec.Symbols {
@@ -1055,7 +1074,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 			if name.Name == "_" {
 				continue
 			}
-			if declared[name.Name] || file.pkg.Types.Scope().Lookup(name.Name) != nil {
+			if declared[name.Name] || file.pkg.Types.Scope().Lookup(name.Name) != nil && !c.retainedCarrier(name.Name, file.pkg) {
 				c.diagnostic(file.units[0].node, "lang.golang.driver-name-collision", "generated declaration "+name.Name+" conflicts with another declaration in package "+file.pkg.PkgPath, "rename the handwritten declaration or give the conflicting properties distinct predicate names")
 				return nil
 			}
