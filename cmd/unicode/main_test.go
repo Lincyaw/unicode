@@ -118,7 +118,8 @@ type RepoFile struct {
 	Mode    int
 }
 
-// symlinkMode is the mode of every symbolic link on Linux.
+// symlinkMode marks a generated symbolic link. Predicates observe its actual
+// permissions after the operating system creates it.
 const symlinkMode = int(os.ModeSymlink | 0o777)
 
 func isSymlink(f RepoFile) bool { return os.FileMode(f.Mode)&os.ModeSymlink != 0 }
@@ -511,6 +512,7 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]RepoFile, check bool, tar
 	jsonRoot, textRoot := writeRepo(t, files), writeRepo(t, files)
 	defer removeAll(t, filepath.Dir(jsonRoot))
 	defer removeAll(t, filepath.Dir(textRoot))
+	files = readRepo(t, jsonRoot)
 	// run runs fmt on the repository at root from the working directory at,
 	// with the root and the path arguments written relative to it.
 	run := func(root string, options ...string) (int, string, string) {

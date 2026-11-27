@@ -42,7 +42,7 @@ func genWriteSample() *rapid.Generator[WriteSample] {
 		text := rapid.String().Draw(t, "content")
 		owned := "// " + generatedMarker + "\n" + text
 		s := WriteSample{Files: map[string]string{"owned.go": owned, "user.go": text}, Links: map[string]string{}, Edits: []lang.Edit{{Path: stem + "/new.go", Content: []byte(owned + "\n")}}}
-		switch rapid.IntRange(0, 8).Draw(t, "conflict") {
+		switch rapid.IntRange(0, 9).Draw(t, "conflict") {
 		case 0:
 			s.Edits = append(s.Edits, lang.Edit{Path: "owned.go", Content: []byte(owned + "new")})
 		case 1:
@@ -57,6 +57,8 @@ func genWriteSample() *rapid.Generator[WriteSample] {
 		case 5:
 			s.Links["redirect"] = "../outside"
 			s.Edits = append(s.Edits, lang.Edit{Path: "redirect/user.go", Content: []byte(owned)})
+		case 8:
+			s.Edits = append(s.Edits, lang.Edit{Path: "", Content: []byte(owned)})
 		case 7:
 			s.Edits = append(s.Edits, lang.Edit{Path: stem, Content: []byte(owned)})
 		case 6:
@@ -123,6 +125,11 @@ func checkWritePreservesUnownedFiles(t rapid.TB, sample WriteSample) {
 	}
 	ds := Write(root, sample.Edits)
 	if !valid {
+		for _, d := range ds {
+			if d.Position.Path == "" || d.Position.Line < 1 || d.Position.Column < 1 || d.Message == "" || d.Fix == "" {
+				t.Fatalf("Write returned an incomplete diagnostic: %+v", d)
+			}
+		}
 		if len(ds) == 0 {
 			t.Fatal("Write accepted a conflicting plan")
 		}

@@ -182,6 +182,7 @@ func readExpected(files map[string]RepoFile) ([]diagnosticJSON, []syntax.File) {
 func checkFlowCheckDesign(t rapid.TB, files map[string]RepoFile, designOnly bool) {
 	root := writeRepo(t, files)
 	defer removeAll(t, filepath.Dir(root))
+	files = readRepo(t, root)
 	args := func(format string) []string {
 		args := []string{"--root", root, "--format", format, "check"}
 		if designOnly {

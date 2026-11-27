@@ -188,16 +188,21 @@ func (c *checker) file(f *File) {
 			seen := lines(c, flowOrder, d.Lines)
 			steps(c, d.Lines)
 			if seen["ensure"] != 0 || seen["within"] != 0 {
+				found := false
 				for _, line := range d.Lines {
 					if _, ok := line.(*Comment); ok {
 						continue
 					}
 					if _, ok := line.(Step); ok {
+						found = true
 						if _, call := line.(*Call); !call {
 							c.report(position(line), "syntax.invalid-flow-call", "a checked flow must start with a synchronous call", "start the flow's steps with sender -> op(args)")
 						}
 						break
 					}
+				}
+				if !found {
+					c.report(d.Pos, "syntax.invalid-flow-call", "a checked flow needs a first synchronous call", "start the flow's steps with sender -> op(args)")
 				}
 			}
 		case *PropertyDecl:

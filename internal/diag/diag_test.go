@@ -14,6 +14,13 @@ func checkDiagnosticJSONIsFlat(t rapid.TB, diagnostic Diagnostic) {
 	if err != nil {
 		t.Fatalf("cannot encode a diagnostic: %v", err)
 	}
+	var decoded Diagnostic
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("cannot decode diagnostic JSON: %v", err)
+	}
+	if !reflect.DeepEqual(decoded, diagnostic) {
+		t.Fatalf("diagnostic round-trip changed its fields: %+v, want %+v", decoded, diagnostic)
+	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(encoded, &fields); err != nil {
 		t.Fatalf("a diagnostic did not encode as an object: %v", err)

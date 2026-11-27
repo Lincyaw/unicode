@@ -32,3 +32,13 @@ property rejects-broken-graph invariant "合乎约束的图做一处违反某条
   forall broken: Broken generated "一张随机的合乎约束的图，在随机的一处违反了 design.md §5.3 中的某条约束"
   manual "需要先构造并推导带特定约束改动的图，再核对完整诊断和状态"
 }
+
+property conforming-result-contract postcondition "合乎约束且已推导的图没有诊断，全部状态为 verified" {
+  about conform
+  forall snapshot: graph.Graph generated "由合乎全部约束的图样本构造并完成推导的图"
+  observe none
+  changes none
+  call conform(snapshot)
+  ensure size(result.diagnostics) == 0
+  ensure all(id in result.statuses: result.statuses[id] == graph.Status.verified)
+}

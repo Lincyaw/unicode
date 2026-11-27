@@ -42,13 +42,22 @@ func genExecuteSample() *rapid.Generator[ExecuteSample] {
 			for range rapid.IntRange(1, 3).Draw(t, name+"roots") {
 				roots = append(roots, name+": "+rapid.StringMatching(`[a-z]{1,7}`).Draw(t, "root"))
 			}
+			fileID := "file:" + name + "/checks_test.go"
+			add(graph.Node{Id: fileID, Kind: graph.NodeKindContainer, Form: "file", Layer: graph.LayerCode, Attrs: map[string][]string{"language": {name}, "path": {name + "/checks_test.go"}}})
 			report := lang.RunReport{}
 			for i := range rapid.IntRange(1, 3).Draw(t, name+"checks") {
 				id := fmt.Sprintf("%s.check-%d", name, i)
-				code := name + ":example.com/checks.check" + fmt.Sprint(i)
+				prefix := name
+				if name == "python" {
+					prefix = "py"
+				}
+				code := prefix + ":example.com/checks.check" + fmt.Sprint(i)
 				add(graph.Node{Id: id, Kind: graph.NodeKindProperty, Form: "invariant", Layer: graph.LayerDesign, Origin: diag.Position{Path: "design/" + name + ".uc", Line: i + 1, Column: 1}})
 				add(graph.Node{Id: code, Kind: graph.NodeKindOp, Form: "func", Layer: graph.LayerCode})
 				if err := g.AddEdge(graph.Edge{Kind: graph.EdgeKindChecks, From: code, To: id}); err != nil {
+					t.Fatal(err)
+				}
+				if err := g.AddEdge(graph.Edge{Kind: graph.EdgeKindContains, From: fileID, To: code}); err != nil {
 					t.Fatal(err)
 				}
 				result := lang.RunResult{Id: id, Passed: rapid.Bool().Draw(t, "passed"), Accepted: rapid.IntRange(1, 50).Draw(t, "accepted"), Rejected: rapid.IntRange(0, 10).Draw(t, "rejected")}

@@ -25,10 +25,11 @@ import (
 //
 //uc:realizes design.Sample
 type Sample struct {
-	Files map[string]string
-	Nodes []string
-	Edges []string
-	Attrs map[string]map[string][]string
+	Files     map[string]string
+	Nodes     []string
+	Edges     []string
+	Attrs     map[string]map[string][]string
+	EdgeAttrs map[string]map[string][]string
 }
 
 // gNode is one declared node of the model.
@@ -305,6 +306,9 @@ func count(d *designer, label string, low, high int) int {
 func genSample() *rapid.Generator[Sample] {
 	return rapid.Custom(func(t *rapid.T) Sample {
 		if rapid.IntRange(0, 2).Draw(t, "contract") == 0 {
+			if rapid.Bool().Draw(t, "returned value") {
+				return resultContractFixture(t)
+			}
 			return contractFixture(t)
 		}
 		d := newDesign(t, rapid.Bool().Draw(t, "rich"))

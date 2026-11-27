@@ -15,8 +15,8 @@
 | --- | --- |
 | design | 设计文件和录制文件声明的意图 |
 | code | 从代码抽取的事实 |
-| evidence | 运行检查的结果（§3.4） |
-| review | 评审记录（§3.4） |
+| evidence | 运行检查的结果（§3.5） |
+| review | 评审记录（§3.5） |
 
 **元素。** kind(n) ∈ {container, type, op, actor} 的节点称为元素。设计层和代码层使用同一组元素种类；`realizes` 边把代码层的元素对应到同一种类的设计层元素上。
 
@@ -383,9 +383,9 @@
 | 28 | 未实现：M4，要等 `gen` | — |
 | 29 | `design.unresolved-reference`、`design.wrong-reference-kind`、`cli.not-canonical` | `design.rejects-broken-design`、`cli.check-design` |
 | 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5；生成器的 map 名称未实现：[design.md](design.md) §4 没有给出生成器的名称映射 | `design.rejects-broken-design` |
-| 31 | 未实现：表达式的载入尚未实现 | — |
+| 31 | `design.expression-type` | `design.rejects-broken-design` |
 | 32 | 未实现：M4，驱动核对纯操作 | — |
 | 33 | 未实现：M7，评审 | — |
 | 34 | `check.missing-observer`、`check.multiple-observers`、`check.observer-signature`、`check.observer-outside-container` | `check.rejects-broken-graph` |
-| 35 | 未实现：黑盒契约的观察与变化范围检查 | — |
+| 35 | `design.invalid-observation`、`design.invalid-change-path`；运行时快照和范围核对未实现：M4 | `design.rejects-broken-design` |
 | 36 | 未实现：M7，观察适配器的评审 | — |

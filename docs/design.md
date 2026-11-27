@@ -35,7 +35,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | `internal/syntax` | 设计文件和录制文件的词法、语法、语法树和规范格式的打印 | diag |
 | `internal/design` | 把语法树解析成设计层的节点和边；检查设计内部、流程、符号与用例的约束 | syntax、graph、diag |
 | `internal/lang` | 语言后端的接口、名称映射、生成计划和运行计划的类型 | graph、diag |
-| `internal/lang/golang` | Go 后端 | lang、graph、diag |
+| `internal/lang/golang` | Go 后端：抽取、名称映射、契约生成与执行 | lang、graph、diag、syntax |
 | `internal/lang/python` | Python 后端，嵌入抽取脚本 | lang、graph、diag |
 | `internal/check` | 归属、依赖、绑定、可执行、生成与录制这几组约束 | graph、diag |
 | `internal/query` | 节点、引用、搜索、切片和影响 | graph |
@@ -172,7 +172,7 @@ type Runner interface {
 
 | 种类 | 属性的键 |
 | --- | --- |
-| container（`package`、`file`） | `language`、`path`（文件的路径，或包的导入路径） |
+| container（`package`、`file`） | `language`、`path`（文件的路径，或包的导入路径）；工具生成的文件另带 `generated: true` |
 | type | `name`、`fields`（每项 `名称: 类型`；未导出的字段是细节，不列出）、`values`（以字符串为底层类型、带常量的类型，每项是常量名按反向映射得到的枚举值，例如 `OrderStatusDraft` 写作 `draft`） |
 | op（`func`、`method`、`abstract`） | `name`（带 `checks` 绑定的谓词，写作性质或流程的名称）、`signature`、`testKind`（`none`、`example`、`property` 或 `fuzz`）、`stub`（`true` 或 `false`） |
 
@@ -321,7 +321,7 @@ M4 分阶段交付：先实现单次黑盒契约与手写谓词的回放、一�
   - 流程：符号、步骤树和每一步的 `traces`；
   - 容器：子容器、`uses`、带状态的 `depends`，以及类型的摘要。
 
-按种类补充的内容放在切片的 `extras` 中，焦点节点本身不重复列出，其他部分之间允许重复（例如操作所属的类型既是祖先，也在 `extras` 中）。性质的符号类型沿 `refers` 只经过类型逐层展开；流程给出整棵步骤树和每一步 `traces` 的终点；容器要补充的内容都在一步之内，没有 `extras`。`get` 的边按种类、起点、终点排序。
+按种类补充的内容放在切片的 `extras` 中，焦点节点本身不重复列出，其他部分之间允许重复（例如操作所属的类型既是祖先，也在 `extras` 中）。性质的符号类型沿 `refers` 只经过类型逐层展开；具名观察另从父性质的 `symbols` 解析 `inputs` 对应的输入类型，展开其字段类型及快照类型，并包含 `observes` 的适配器；流程给出整棵步骤树和每一步 `traces` 的终点；容器要补充的内容都在一步之内，没有 `extras`。`get` 的边按种类、起点、终点排序。
 
 切片的 `edges` 是两端都在切片列出的节点之中的 `contains` 边，由它还原祖先链和流程的步骤树。
 
@@ -513,6 +513,19 @@ M4 分阶段交付：先实现单次黑盒契约与手写谓词的回放、一�
   | `serve.unreadable-snapshot` | 快照文件在运行中读不出，属于环境 |
   | `serve.not-implemented` | 查看器的比较尚未实现，属于工具链的能力 |
   | `serve.internal-error` | 服务端未能回答请求，属于工具链自身 |
+  | `gen.duplicate-backend` | 同一种语言注册了多个生成后端 |
+  | `gen.unsupported-language` | 配置的语言没有可用生成能力 |
+  | `gen.duplicate-path` | 生成计划多次写入同一个路径 |
+  | `gen.invalid-path` | 生成路径不规范、越出仓库或与其他目标存在父子冲突 |
+  | `gen.symlink` | 生成目标或其父路径是符号链接 |
+  | `gen.unowned-file` | 目标已有非工具生成的文件，属于覆盖冲突 |
+  | `gen.write-failed` | 预检或原子写入生成文件失败 |
+  | `run.duplicate-backend` | 同一种语言注册了多个运行后端 |
+  | `run.unsupported-language` | 目标语言没有可用运行能力 |
+  | `run.unknown-check` | 目标不是已绑定到配置语言的性质或流程 |
+  | `run.results-write-failed` | 结果文件不可安全写入 |
+  | `run.invalid-report` | 后端报告缺失、重复、包含未选目标，或无有效执行却报告通过 |
+  | `run.no-checks` | 所选范围没有可执行性质或流程 |
 
 ## 9 计划
 

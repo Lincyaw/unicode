@@ -767,7 +767,7 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 | L5 | `syntax.not-an-integer`、`cli.not-canonical` | `syntax.rejects-broken-text`、`syntax.format-is-stable` |
 | L6 | `syntax.invalid-name`、`syntax.invalid-reference` | `syntax.rejects-broken-text` |
 | L7 | `syntax.reserved-name` | `syntax.rejects-broken-text` |
-| G0 | `syntax.unexpected-token`、`syntax.unexpected-end`、`syntax.missing-member`、`syntax.declaration-order` | `syntax.rejects-broken-text` |
+| G0 | `syntax.unexpected-token`、`syntax.unexpected-end`、`syntax.missing-member`、`syntax.declaration-order`、`syntax.missing-claim`、`syntax.mixed-claim` | `syntax.rejects-broken-text` |
 | G1 | `syntax.declaration-order` | `syntax.rejects-broken-text` |
 | G2 | `syntax.member-order`、`syntax.value-outside-enum`、`syntax.field-not-allowed` | `syntax.rejects-broken-text` |
 | G3 | `syntax.member-order`、`syntax.missing-member`、`syntax.duplicate-member` | `syntax.rejects-broken-text` |
@@ -779,16 +779,16 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 | G9 | `design.uses-person`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
 | G10 | `design.empty-interval` | `design.rejects-broken-design` |
 | G11 | `syntax.comment-in-value`、`syntax.unexpected-token` | `syntax.rejects-broken-text` |
-| G12 | 未实现：表达式的语法尚未实现 | — |
-| G13 | 未实现：表达式的语法尚未实现 | — |
-| G14 | 未实现：表达式的语法尚未实现 | — |
-| G15 | 未实现：表达式的语法尚未实现 | — |
-| G16 | 未实现：表达式的语法尚未实现 | — |
-| G17 | 未实现：表达式的语法尚未实现 | — |
-| G18 | 未实现：黑盒契约的观察与范围配对 | — |
-| G19 | 未实现：具名观察与观察输入 | — |
-| G20 | 未实现：一般前提表达式 | — |
-| G21 | 未实现：允许变化的路径 | — |
+| G12 | `syntax.empty-summary`、`syntax.summary-tab-or-newline`、`syntax.summary-surrounding-space` | `syntax.rejects-broken-text` |
+| G13 | `syntax.invalid-tested-call`、`syntax.invalid-time-budget`、`design.call-not-about` | `syntax.rejects-broken-text`、`design.rejects-broken-design` |
+| G14 | `design.invalid-call-sequence` | `design.rejects-broken-design` |
+| G15 | `syntax.expression-keyword-name` | `syntax.rejects-broken-text` |
+| G16 | `syntax.expression-spacing` | `syntax.rejects-broken-text` |
+| G17 | `syntax.invalid-flow-call` | `syntax.rejects-broken-text` |
+| G18 | `syntax.invalid-observation-scope` | `syntax.rejects-broken-text` |
+| G19 | `design.invalid-observation`、`design.duplicate-name` | `design.rejects-broken-design` |
+| G20 | `design.expression-type` | `design.rejects-broken-design` |
+| G21 | `design.invalid-change-path`、`design.expression-type` | `design.rejects-broken-design` |
 | P1 | `cli.not-canonical` | `syntax.format-is-stable` |
 | P2 | `cli.not-canonical` | `syntax.format-is-stable` |
 | P3 | `cli.not-canonical` | `syntax.format-is-stable` |
@@ -800,9 +800,9 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 | R3 | `design.unresolved-reference` | `design.rejects-broken-design` |
 | B1 | `lang.golang.unknown-binding-verb`、`lang.golang.missing-binding-id`、`lang.golang.invalid-binding-id` | `lang.golang.extracts-generated-module` |
 | B2 | `lang.golang.misplaced-binding` | `lang.golang.extracts-generated-module` |
-| E1 | 未实现：表达式的载入尚未实现 | — |
-| E2 | 未实现：表达式的载入尚未实现 | — |
-| E3 | 未实现：表达式的载入尚未实现 | — |
+| E1 | `design.expression-type` | `design.rejects-broken-design` |
+| E2 | `design.expression-type`、`design.unresolved-reference`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
+| E3 | `design.expression-type` | `design.rejects-broken-design` |
 | E4 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
 | E5 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
 | E6 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
