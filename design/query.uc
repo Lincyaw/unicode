@@ -52,20 +52,24 @@ op impact(g: graph.Graph, ids: list<string>) -> list<Affected> raises NotFound "
 property slice-is-minimal-context invariant "切片恰好含有焦点、焦点的祖先链、焦点一步可达的显著节点，以及按种类补充的显著节点：操作所属的类型和该类型的其余操作，性质沿 refers 经由类型能到达的类型，流程的整个步骤树和每一步 traces 到的函数；细节节点只计入个数，展开之后才列出；切片的 edges 恰是两端都在切片列出的节点之中的 contains 边，由此能还原祖先链和流程的步骤树；切片中的边都是图中的边" {
   about slice
   forall question: Question generated "一张随机的图，焦点和展开的标识取自图中的节点"
+  manual "需要独立计算图的闭包、最短路径、排序或文本子串，当前表达式没有这些构造"
 }
 
 property impact-is-reverse-reachability relation "影响恰是沿 design.md §7.4 的边反向能到达焦点的显著节点；每条路径都是图中的路径，并且最短" {
   about impact
   forall question: Question generated "一张随机的图，焦点取自图中的节点"
+  manual "需要独立计算图的闭包、最短路径、排序或文本子串，当前表达式没有这些构造"
 }
 
 property get-shows-incident-edges invariant "get 给出的出边恰是起点为该节点的边，入边恰是终点为它的边；refs 恰是终点为它的边；不存在的标识得到 NotFound" {
   about get, refs
   forall question: Question generated "一张随机的图，焦点有的取自图中的节点，有的是不存在的标识"
+  manual "需要独立计算图的闭包、最短路径、排序或文本子串，当前表达式没有这些构造"
 }
 
 property search-matches-text invariant "搜索的结果恰是标识或摘要包含这段文字、种类相符的节点" {
   about search
   forall question: Question generated "一张随机的图，以及一段取自其中某个标识或摘要的文字，或者随机的文字"
   forall kind: optional<graph.NodeKind>
+  manual "需要独立计算图的闭包、最短路径、排序或文本子串，当前表达式没有这些构造"
 }

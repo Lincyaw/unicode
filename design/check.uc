@@ -24,9 +24,11 @@ op conform(g: graph.Graph) -> Checked "在推导过的图上，检查需要代�
 property accepts-conforming-graph invariant "合乎约束的图推导、检查之后没有诊断，每个声明项的状态都是 verified" {
   about conform
   forall sample: Sample generated "一张随机的、合乎 design.md §5.3 全部约束的图"
+  manual "需要先构造并推导带特定约束改动的图，再核对完整诊断和状态"
 }
 
 property rejects-broken-graph invariant "合乎约束的图做一处违反某条约束的改动之后，检查给出这条约束的诊断，对象是改动的节点或边；改动涉及的声明项，状态不再是 verified" {
   about conform
   forall broken: Broken generated "一张随机的合乎约束的图，在随机的一处违反了 design.md §5.3 中的某条约束"
+  manual "需要先构造并推导带特定约束改动的图，再核对完整诊断和状态"
 }
