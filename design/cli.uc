@@ -1,7 +1,7 @@
 component cli "命令行：解析参数，调用其余组件，输出结果和退出码" {
   focus support
   paths "cmd/unicode/**"
-  uses diag, graph, syntax, design, lang, lang.golang, lang.python, check, query, view, gen, run, serve
+  uses diag, graph, syntax, design, lang, lang.golang, lang.python, check, query, view, gen, run, serve, repo
 }
 
 type RepoFile record "仓库中的一个文件：内容和权限位" {

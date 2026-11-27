@@ -112,7 +112,8 @@ var identityKeys = map[string]bool{"id": true, "from": true, "to": true, "focus"
 	"select": true, "children": true, "folded": true, "refers": true}
 
 // identitiesIn collects the node identities in a decoded answer; a node's
-// or an edge's attrs hold none.
+// or an edge's attrs hold none, and a comparison's items as the base has
+// them, and those it removed, are not in the snapshot.
 func identitiesIn(v any, key string, into map[string]bool) {
 	switch v := v.(type) {
 	case string:
@@ -124,8 +125,11 @@ func identitiesIn(v any, key string, into map[string]bool) {
 			identitiesIn(x, key, into)
 		}
 	case map[string]any:
+		if v["change"] == "removed" {
+			return
+		}
 		for k, x := range v {
-			if k == "attrs" {
+			if k == "attrs" || k == "before" {
 				continue
 			}
 			if counts, ok := x.(map[string]any); ok && k == "details" {
@@ -280,6 +284,13 @@ func checkQueriesAgree(t rapid.TB, exchange Exchange) {
 			for i := range min(len(got), len(want)) {
 				why = cmpOr(why, sameNode(got[i].Node, &g, want[i].Node.Id), sameEdges(got[i].Path, want[i].Path))
 			}
+		case "/api/compare":
+			if q.Get("base") != "HEAD" {
+				refusal(t, req, resp, http.StatusBadRequest, "serve.bad-revision")
+				continue
+			}
+			base := graphOf(t, baseOf(exchange.Fragment))
+			why = sameComparison(decode[Comparison](t, req, resp), &base, &g)
 		default:
 			why = sameView(t, s, req, resp, &g)
 		}
@@ -287,6 +298,46 @@ func checkQueriesAgree(t rapid.TB, exchange Exchange) {
 			t.Fatalf("the answer to %s differs from calling query or view directly: %s\n%s", req, why, resp.Body)
 		}
 	}
+}
+
+// sameComparison tells where a comparison's answer differs from
+// graph.Compare of the base and the served graph: each item's change, the
+// node as each side has it, and the attribute values; "" when nowhere.
+func sameComparison(got Comparison, base, head *graph.Graph) string {
+	want := graph.Compare(base, head)
+	if len(got.Nodes) != len(want.Nodes) || len(got.Edges) != len(want.Edges) {
+		return fmt.Sprintf("the answer lists %d nodes and %d edges, compare %d and %d", len(got.Nodes), len(got.Edges), len(want.Nodes), len(want.Edges))
+	}
+	for i, w := range want.Nodes {
+		n := got.Nodes[i]
+		attrs := make([]graph.AttrChange, len(n.Attrs))
+		for j, a := range n.Attrs {
+			attrs[j] = graph.AttrChange{Key: a.Key, Removed: a.Removed, Added: a.Added}
+		}
+		why := ""
+		switch {
+		case n.Id != w.Id || string(n.Change) != string(w.Change) || !reflect.DeepEqual(attrs, w.Attrs):
+			why = fmt.Sprintf("node change %d is %s %s %v, compare gives %s %s %v", i+1, n.Change, n.Id, attrs, w.Change, w.Id, w.Attrs)
+		case (n.Before == nil) != (w.Before == nil) || (n.After == nil) != (w.After == nil):
+			why = fmt.Sprintf("the change of %s gives a side that compare does not, or misses one", w.Id)
+		case n.Before != nil:
+			why = sameNode(*n.Before, base, w.Id)
+		}
+		if n.After != nil {
+			why = cmpOr(why, sameNode(*n.After, head, w.Id))
+		}
+		if why != "" {
+			return why
+		}
+	}
+	for i, w := range want.Edges {
+		e := got.Edges[i]
+		if string(e.Kind) != string(w.Kind) || e.From != w.From || e.To != w.To || string(e.Change) != string(w.Change) ||
+			(e.Before == nil) != (w.Before == nil) || (e.After == nil) != (w.After == nil) {
+			return fmt.Sprintf("edge change %d is %s %s %s %s, compare gives %s %s %s %s", i+1, e.Change, e.Kind, e.From, e.To, w.Change, w.Kind, w.From, w.To)
+		}
+	}
+	return ""
 }
 
 func sameSlice(got Slice, g *graph.Graph, want query.Context) string {
@@ -376,7 +427,7 @@ func cmpOr(whys ...string) string {
 func checkAnswersAreDeterministic(t rapid.TB, exchange Exchange) {
 	s, root, _ := served(t, exchange)
 	defer removeAll(t, root)
-	again, err := Open(root, s.path)
+	again, err := Open(root, s.path, s.builder)
 	if err != nil {
 		t.Fatalf("Open refused the snapshot it read before: %v", err)
 	}

@@ -1,10 +1,12 @@
 component serve "查看器的后端：读取 unicode build 写出的快照，载入时按 unicode check 的约束检查，回答 api/openapi.yaml 的只读接口" {
   focus support
   paths "internal/serve/**"
-  uses graph, diag, check, query, view, lang.golang
+  uses graph, diag, check, query, view, lang.golang, repo
 }
 
 type Unreadable error "快照文件不存在、读不出，或者不是 unicode build 写出的快照"
+
+type Unbuildable error "比较的基准提交取不出文件，或者建不出图"
 
 type Request record "一次接口请求：以 /api 开头的路径和查询参数" {
   field path: string
@@ -20,13 +22,17 @@ type Server object "查看器的后端：持有读入的快照及其检查结果
   op answer(request: Request) -> Response "按 api/openapi.yaml 回答一次接口请求；拒绝的请求得到 {code, message, fix}，诊断码为 serve.*"
 }
 
+type Builder interface "建出仓库在一个提交上的图，像查询的 --rev 那样取出该提交的文件再建图；由命令行提供" {
+  op build(root: string, commit: string) -> graph.Graph raises Unbuildable
+}
+
 type Exchange record "一个仓库和对它的查看器的一组接口请求：快照中的图、工作区中的文件和请求，供性质使用" {
   field fragment: graph.Fragment
   field files: map<string, string>
   field requests: list<Request>
 }
 
-op open(root: string, snapshot: string) -> Server raises Unreadable "读入仓库 root 的快照文件 snapshot，按 unicode check 的约束检查一遍"
+op open(root: string, snapshot: string, builder: Builder) -> Server raises Unreadable "读入仓库 root 的快照文件 snapshot，按 unicode check 的约束检查一遍；比较的基准由 builder 建图"
 
 flow answer-request "查看器发来一次接口请求：快照文件自上次读入后改变过时，先重新读入、解码，并按 unicode check 的约束检查，再回答；此后的应答都来自新的快照" {
   forall exchange: Exchange generated "一张随机的图写成快照，以及对它的各个接口的请求；请求之间快照文件有时被改写成另一张图"
@@ -50,9 +56,9 @@ property identities-resolve invariant "应答中作为节点标识出现的每�
   manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"
 }
 
-property queries-agree relation "/api/node、/api/search、/api/slice、/api/impact 和 /api/views 的应答，与直接调用 query 和 view 的结果有同样的节点和边，次序相同；标识不存在时为 404 serve.not-found，视图不适用于输入时为 400 serve.not-applicable" {
-  about Server.answer, query.get, query.search, query.slice, query.impact, view.select
-  forall exchange: Exchange generated "一张随机的图，以及对这五个接口的请求，标识多取自图中的节点，有时不存在"
+property queries-agree relation "/api/node、/api/search、/api/slice、/api/impact、/api/views 和 /api/compare 的应答，与直接调用 query、view 和 graph.compare 的结果有同样的节点和边，次序相同；标识不存在时为 404 serve.not-found，视图不适用于输入时为 400 serve.not-applicable，基准不是提交时为 400 serve.bad-revision" {
+  about Server.answer, query.get, query.search, query.slice, query.impact, view.select, graph.compare
+  forall exchange: Exchange generated "一张随机的图，以及对这六个接口的请求，标识多取自图中的节点，有时不存在；比较的基准是另一张图，它的提交有时读不出"
   manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"
 }
 

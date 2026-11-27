@@ -17,6 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/serve"
 )
 
@@ -88,7 +89,7 @@ func runServe(root, snapshot, addr string, web pageDir, format string, stdout, s
 	if err != nil {
 		return err
 	}
-	s, err := serve.Open(root, snapshot)
+	s, err := serve.Open(root, snapshot, commitGraphs{})
 	if err != nil {
 		return &exitError{code: exitEnvironment, err: fmt.Errorf("%w; run unicode build to write the snapshot", err)}
 	}
@@ -143,4 +144,13 @@ type statusWriter struct {
 func (w *statusWriter) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
+}
+
+// commitGraphs builds the graph of a commit for serve's comparisons, as
+// unicode diff builds its base.
+type commitGraphs struct{}
+
+func (commitGraphs) Build(root, commit string) (graph.Graph, error) {
+	g, _, err := revisionGraph(root, commit)
+	return g, err
 }

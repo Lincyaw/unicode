@@ -10,13 +10,14 @@ import (
 	"github.com/lincyaw/unicode/internal/check"
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/query"
+	"github.com/lincyaw/unicode/internal/repo"
 	"github.com/lincyaw/unicode/internal/view"
 )
 
 // answers implements the operations of api/openapi.yaml over the snapshot
 // that Answer puts in each request's context. A refusal is a problem error,
 // which writeError writes.
-type answers struct{}
+type answers struct{ s *Server }
 
 var _ StrictServerInterface = answers{}
 
@@ -57,17 +58,19 @@ func (answers) GetView(ctx context.Context, request GetViewRequestObject) (GetVi
 	return GetView200JSONResponse(v), nil
 }
 
-func (answers) GetEntity(ctx context.Context, request GetEntityRequestObject) (GetEntityResponseObject, error) {
+func (a answers) GetEntity(ctx context.Context, request GetEntityRequestObject) (GetEntityResponseObject, error) {
 	st := stateOf(ctx)
 	e, err := st.entity(request.Params.Id)
 	if err != nil {
 		return nil, err
 	}
 	if base := request.Params.Base; base != nil {
-		// The changes need graph.Compare; until it exists the page has none, but the base must be a commit.
-		if _, err := revision(st.root, *base); err != nil {
+		c, err := a.s.compare(st, *base)
+		if err != nil {
 			return nil, err
 		}
+		changes := st.changes(request.Params.Id, c)
+		e.Changes = &changes
 	}
 	return GetEntity200JSONResponse(e), nil
 }
@@ -192,25 +195,27 @@ func (answers) GetCode(ctx context.Context, request GetCodeRequestObject) (GetCo
 	return GetCode200JSONResponse(e), nil
 }
 
-func (answers) Compare(ctx context.Context, request CompareRequestObject) (CompareResponseObject, error) {
-	if _, err := revision(stateOf(ctx).root, request.Params.Base); err != nil {
+func (a answers) Compare(ctx context.Context, request CompareRequestObject) (CompareResponseObject, error) {
+	st := stateOf(ctx)
+	c, err := a.s.compare(st, request.Params.Base)
+	if err != nil {
 		return nil, err
 	}
-	return nil, refuse(http.StatusNotImplemented, "serve.not-implemented", "compare the two revisions with git diff until unicode diff exists",
-		"comparing snapshots needs graph.Compare, which this version of unicode does not have yet")
+	return Compare200JSONResponse(st.comparison(c)), nil
 }
 
 func (answers) ListRevisions(ctx context.Context, request ListRevisionsRequestObject) (ListRevisionsResponseObject, error) {
-	st := stateOf(ctx)
 	limit := 20
 	if l := request.Params.Limit; l != nil {
 		limit = int(*l)
 	}
-	rs := revisions(st.root, "HEAD", limit)
-	if len(rs) > 0 {
-		rs[0].Branch = branch(st.root)
+	out := []Revision{}
+	// A repository without git or without a commit has no revisions to compare with.
+	rs, _ := repo.Log(stateOf(ctx).root, "HEAD", limit)
+	for _, r := range rs {
+		out = append(out, revision(r))
 	}
-	return ListRevisions200JSONResponse(rs), nil
+	return ListRevisions200JSONResponse(out), nil
 }
 
 // queryError refuses a query given an identity that is not a node with

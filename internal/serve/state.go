@@ -14,6 +14,7 @@ import (
 	"github.com/lincyaw/unicode/internal/check"
 	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
+	"github.com/lincyaw/unicode/internal/repo"
 	"github.com/lincyaw/unicode/internal/view"
 )
 
@@ -32,8 +33,10 @@ type state struct {
 	files   map[string]string
 	checked check.Checked
 	head    WorkingTree
-	// applies memoizes whether a view applies to an input, by "kind input".
-	applies sync.Map
+	// applies memoizes whether a view applies to an input, by "kind input";
+	// comparisons the comparison with each base commit.
+	applies     sync.Map
+	comparisons sync.Map
 }
 
 // load reads the snapshot file path of the repository at root, decodes it
@@ -47,16 +50,26 @@ func load(root, path string, builtAt time.Time) (*state, error) {
 	if err != nil {
 		return nil, Unreadable{Path: path, Cause: err}
 	}
-	st := &state{root: root, path: path, builtAt: builtAt.UTC(), g: g, nodes: map[string]graph.Node{},
-		out: map[string][]graph.Edge{}, in: map[string][]graph.Edge{}, edges: map[string]graph.Edge{}}
+	st := indexed(root, g)
+	if st.system == "" {
+		return nil, Unreadable{Path: path, Cause: errors.New("the snapshot has no system container, so unicode build did not write it")}
+	}
+	st.path, st.builtAt = path, builtAt.UTC()
+	st.checked = check.Conform(&g)
+	st.head = readHead(root, filepath.Dir(path))
+	return st, nil
+}
+
+// indexed indexes the graph of the repository at root, unchecked: the
+// served snapshot before its check, or the graph of a base revision.
+func indexed(root string, g graph.Graph) *state {
+	st := &state{root: root, g: g, nodes: map[string]graph.Node{}, out: map[string][]graph.Edge{}, in: map[string][]graph.Edge{},
+		edges: map[string]graph.Edge{}, checked: check.Checked{Statuses: map[string]graph.Status{}}}
 	for _, n := range g.Nodes() {
 		st.nodes[n.Id] = n
 		if st.system == "" && n.Layer == graph.LayerDesign && n.Kind == graph.NodeKindContainer && n.Form == "system" {
 			st.system = n.Id
 		}
-	}
-	if st.system == "" {
-		return nil, Unreadable{Path: path, Cause: errors.New("the snapshot has no system container, so unicode build did not write it")}
 	}
 	for _, e := range g.Edges() {
 		st.out[e.From] = append(st.out[e.From], e)
@@ -64,9 +77,17 @@ func load(root, path string, builtAt time.Time) (*state, error) {
 		st.edges[edgeID(e.Kind, e.From, e.To)] = e
 	}
 	st.files = files(st.nodes)
-	st.checked = check.Conform(&g)
-	st.head = readHead(root)
-	return st, nil
+	return st
+}
+
+// readHead reads the working tree of the repository at root, whose build
+// writes to the directory out; without git or a commit it is empty.
+func readHead(root, out string) WorkingTree {
+	w, err := repo.ReadWorkingTree(root, out)
+	if err != nil {
+		return WorkingTree{}
+	}
+	return WorkingTree{Commit: w.Commit, Short: w.Short, Branch: optional(w.Branch), Subject: w.Subject, Time: w.Time, Dirty: w.Dirty}
 }
 
 func edgeID(kind graph.EdgeKind, from, to string) string { return string(kind) + " " + from + " " + to }

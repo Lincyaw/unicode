@@ -62,7 +62,7 @@ func checkFlowAnswerRequest(t rapid.TB, exchange Exchange) {
 	other := shrunk(exchange.Fragment)
 	at := time.Now().Add(time.Hour)
 	rewrite(t, root, graphOf(t, other), at)
-	fresh, err := Open(root, path)
+	fresh, err := Open(root, path, s.builder)
 	if err != nil {
 		t.Fatalf("Open refused the rewritten snapshot that Encode wrote: %v", err)
 	}

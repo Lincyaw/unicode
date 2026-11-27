@@ -267,41 +267,41 @@ func replace(files map[string]string, path, old, new string) {
 // it violates one constraint of the design, of the code or of the bindings
 // between them, its code does not load, or it configures a language that has
 // no backend; some changes cascade into further diagnostics.
-var codeBreaks = []func(t *rapid.T, r repo, c repoComponent, files map[string]string){
-	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+var codeBreaks = []func(t *rapid.T, r repoModel, c repoComponent, files map[string]string){
+	func(_ *rapid.T, _ repoModel, c repoComponent, files map[string]string) {
 		files["design/"+c.name+".uc"] += "@\n"
 	},
-	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+	func(_ *rapid.T, _ repoModel, c repoComponent, files map[string]string) {
 		replace(files, "design/"+c.name+".uc", "\n", "\n\n")
 	},
-	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+	func(_ *rapid.T, _ repoModel, c repoComponent, files map[string]string) {
 		replace(files, "design/"+c.name+".uc", "field n: int", "field n: Nothing")
 	},
-	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+	func(_ *rapid.T, _ repoModel, c repoComponent, files map[string]string) {
 		replace(files, "design/"+c.name+".uc", "field n: int\n", "field n: int\n  field label: string\n")
 	},
-	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+	func(_ *rapid.T, _ repoModel, c repoComponent, files map[string]string) {
 		replace(files, "internal/"+c.name+"/"+c.name+".go", "//uc:realizes "+c.name+".Item\n", "")
 	},
-	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+	func(_ *rapid.T, _ repoModel, c repoComponent, files map[string]string) {
 		replace(files, "internal/"+c.name+"/"+c.name+".go", "func Make(n int) Item {\n\treturn Item{N: n}", "func Make(n int) *Item {\n\treturn &Item{N: n}")
 	},
-	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+	func(_ *rapid.T, _ repoModel, c repoComponent, files map[string]string) {
 		replace(files, "internal/"+c.name+"/"+c.name+".go", "return Item{N: n}", `panic("unicode: unimplemented")`)
 	},
-	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+	func(_ *rapid.T, _ repoModel, c repoComponent, files map[string]string) {
 		replace(files, "internal/"+c.name+"/"+c.name+"_test.go", "//uc:checks "+c.name+".keeps\n", "")
 	},
-	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+	func(_ *rapid.T, _ repoModel, c repoComponent, files map[string]string) {
 		replace(files, "internal/"+c.name+"/"+c.name+".go", "//uc:realizes "+c.name+".make", "//uc:realise "+c.name+".make")
 	},
-	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+	func(_ *rapid.T, _ repoModel, c repoComponent, files map[string]string) {
 		replace(files, "internal/"+c.name+"/"+c.name+".go", "//uc:realizes "+c.name+".make", "//uc:realizes "+c.name+".makeIt")
 	},
-	func(_ *rapid.T, _ repo, _ repoComponent, files map[string]string) {
+	func(_ *rapid.T, _ repoModel, _ repoComponent, files map[string]string) {
 		files["internal/stray/stray.go"] = "// Package stray belongs to no component.\npackage stray\n"
 	},
-	func(t *rapid.T, r repo, _ repoComponent, files map[string]string) {
+	func(t *rapid.T, r repoModel, _ repoComponent, files map[string]string) {
 		// A component calls into an earlier one that it does not use; the earlier never imports the later.
 		type pair struct{ from, to string }
 		var pairs []pair
@@ -318,13 +318,13 @@ var codeBreaks = []func(t *rapid.T, r repo, c repoComponent, files map[string]st
 		p := rapid.SampledFrom(pairs).Draw(t, "undeclared")
 		files["internal/"+p.from+"/extra.go"] = fmt.Sprintf("package %s\n\nimport \"%s/internal/%s\"\n\nfunc makeOther() { _ = %s.Make(1) }\n", p.from, modulePath, p.to, p.to)
 	},
-	func(_ *rapid.T, _ repo, c repoComponent, files map[string]string) {
+	func(_ *rapid.T, _ repoModel, c repoComponent, files map[string]string) {
 		files["internal/"+c.name+"/"+c.name+".go"] += "\nfunc broken() int { return undefined }\n"
 	},
-	func(_ *rapid.T, _ repo, _ repoComponent, files map[string]string) {
+	func(_ *rapid.T, _ repoModel, _ repoComponent, files map[string]string) {
 		replace(files, "design/system.uc", "actor who", "language python {\n  root \"py\"\n}\n\nactor who")
 	},
-	func(_ *rapid.T, _ repo, _ repoComponent, files map[string]string) {
+	func(_ *rapid.T, _ repoModel, _ repoComponent, files map[string]string) {
 		replace(files, "design/system.uc", `root "."`, `root "src"`)
 	},
 }
