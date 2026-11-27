@@ -1,7 +1,7 @@
-.PHONY: check lint test fmt-check self-check rule-check api api-check deep
+.PHONY: check lint test fmt-check self-check rule-check api api-check serve-gen serve-gen-check deep
 
 # check is what a lane runs before it commits: fast, default rapid settings.
-check: lint test fmt-check self-check rule-check api-check
+check: lint test fmt-check self-check rule-check api-check serve-gen-check
 
 lint:
 	golangci-lint run
@@ -30,6 +30,17 @@ api:
 api-check:
 	pnpm --dir api install --frozen-lockfile --silent
 	pnpm --dir api run --silent check
+
+# The server's Go code (docs/design.md §3) is generated from api/openapi.yaml by
+# oapi-codegen. serve-gen regenerates it; serve-gen-check fails when it differs.
+SERVE_GEN = go tool oapi-codegen -config internal/serve/oapi-codegen.yaml api/openapi.yaml
+
+serve-gen:
+	$(SERVE_GEN) > internal/serve/openapi.gen.go.tmp
+	mv internal/serve/openapi.gen.go.tmp internal/serve/openapi.gen.go
+
+serve-gen-check:
+	@$(SERVE_GEN) | cmp -s - internal/serve/openapi.gen.go || { echo "internal/serve/openapi.gen.go differs from what oapi-codegen generates from api/openapi.yaml; it is generated, so do not edit it: run make serve-gen" >&2; exit 1; }
 
 # deep is the asynchronous stage after a merge (CLAUDE.md principle 9):
 # many rapid checks, a fuzz burst per Fuzz target, and mutation testing.

@@ -1,0 +1,14 @@
+# oapi-codegen writes the Go types and routes of the viewer's interface from
+# api/openapi.yaml (docs/design.md §3): the models, a net/http server and its
+# strict, typed handler interface. It writes to standard output: make serve-gen
+# writes internal/serve/openapi.gen.go, and make serve-gen-check fails when the
+# committed file differs.
+package: serve
+generate:
+  models: true
+  std-http-server: true
+  strict-server: true
+compatibility:
+  # Every enum constant carries its type's name, MemberKindField as
+  # graph.NodeKindType does, not only where two enums share a value.
+  always-prefix-enum-values: true

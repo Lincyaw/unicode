@@ -82,6 +82,7 @@ func genNode() *rapid.Generator[Node] {
 //uc:generates graph.compare-with-itself-is-empty.content
 //uc:generates graph.compare-follows-identity.base
 //uc:generates graph.compare-reverses.base
+//uc:generates graph.decode-inverts-encode.content
 func genFragment() *rapid.Generator[Fragment] {
 	return rapid.Custom(func(t *rapid.T) Fragment {
 		var c Fragment

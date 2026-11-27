@@ -90,6 +90,8 @@ type DuplicateEdge error "图中已有这条边：种类、起点和终点都相
 
 type DanglingEdge error "边的起点或终点不是图中的节点"
 
+type NotASnapshot error "字节不是 encode 写出的快照：不是 JSON，字段不符，或者其中的节点和边组不成一张图"
+
 type Graph object "一张图：节点按标识索引，边按种类、起点和终点索引" {
   op addNode(node: Node) raises DuplicateNode "加入一个节点"
   op addEdge(edge: Edge) raises DuplicateEdge, DanglingEdge "加入一条边；它的起点和终点必须已经在图中"
@@ -146,11 +148,19 @@ op newGraph() -> Graph "一张空图"
 
 op compare(base: Graph, head: Graph) -> Comparison "按标识对齐两张图的节点和边（model.md §8），列出 head 相对 base 新增、删除和修改的项：节点的修改是内容哈希不同，边的修改是属性不同"
 
+op decode(data: bytes) -> Graph raises NotASnapshot "encode 的逆：从快照还原出图"
+
 property encode-ignores-order relation "同一组节点和边，以任何次序加入，编码出的快照逐字节相同；快照中节点按标识、边按种类、起点、终点排序" {
   about Graph.encode
   forall content: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
   forall rotation: int
   where rotation in 0..1000
+}
+
+property decode-inverts-encode relation "解码 encode 写出的快照，再编码，得到逐字节相同的快照；解码任何字节都不会 panic，不是快照的字节得到 NotASnapshot" {
+  about decode, Graph.encode
+  forall content: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
+  forall noise: bytes
 }
 
 property derive-matches-definition relation "推导出的边和显著性，与按 model.md §9 的定义逐条直接计算的结果相同" {

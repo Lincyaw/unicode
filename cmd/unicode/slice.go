@@ -2,9 +2,6 @@ package main
 
 import (
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"maps"
 	"os"
@@ -15,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/lincyaw/unicode/internal/graph"
+	"github.com/lincyaw/unicode/internal/lang/golang"
 	"github.com/lincyaw/unicode/internal/query"
 )
 
@@ -78,70 +76,30 @@ func sliceNodes(s query.Context) []graph.Node {
 }
 
 // codeOf gives the source of the declaration of each code type and function
-// among nodes, keyed by identity. Only Go files are read; the source is the
-// top-level declaration that holds the node's origin, with its doc comment.
+// among nodes, keyed by identity: the lines of the top-level declaration that
+// holds the node's origin, with its doc comment, as golang.Declaration finds
+// them. Only Go files are read.
 func codeOf(root string, nodes []graph.Node) (map[string]string, error) {
 	code := map[string]string{}
-	files := map[string]*ast.File{}
 	sources := map[string][]byte{}
-	fset := token.NewFileSet()
 	for _, n := range nodes {
 		path := n.Origin.Path
 		if n.Layer != graph.LayerCode || n.Kind != graph.NodeKindType && n.Kind != graph.NodeKindOp || !strings.HasSuffix(path, ".go") {
 			continue
 		}
-		if _, read := files[path]; !read {
+		if _, read := sources[path]; !read {
 			src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
 			if err != nil {
 				return nil, fmt.Errorf("cannot read the source of %s: %w", n.Id, err)
 			}
-			f, err := parser.ParseFile(fset, path, src, parser.ParseComments)
-			if err != nil {
-				return nil, fmt.Errorf("cannot parse the source of %s: %w", n.Id, err)
-			}
-			files[path], sources[path] = f, src
+			sources[path] = src
 		}
-		if text, ok := declarationAt(fset, files[path], sources[path], n.Origin.Line, n.Origin.Column); ok {
-			code[n.Id] = text
+		if l := golang.Declaration(sources[path], n.Origin.Line, n.Origin.Column); l != nil {
+			lines := strings.SplitAfter(string(sources[path]), "\n")
+			code[n.Id] = strings.Join(lines[l.From-1:l.To], "")
 		}
 	}
 	return code, nil
-}
-
-// declarationAt is the source of the top-level declaration of f that holds
-// the position line:column, from its doc comment to its end; in a grouped
-// type declaration, of the type spec that holds it.
-func declarationAt(fset *token.FileSet, f *ast.File, src []byte, line, column int) (string, bool) {
-	tf := fset.File(f.Pos())
-	if line < 1 || line > tf.LineCount() {
-		return "", false
-	}
-	pos := tf.LineStart(line) + token.Pos(column-1)
-	text := func(doc *ast.CommentGroup, from, to token.Pos) string {
-		if doc != nil {
-			from = doc.Pos()
-		}
-		return string(src[tf.Offset(from):tf.Offset(to)])
-	}
-	for _, d := range f.Decls {
-		if pos < d.Pos() || pos >= d.End() {
-			continue
-		}
-		switch d := d.(type) {
-		case *ast.FuncDecl:
-			return text(d.Doc, d.Pos(), d.End()), true
-		case *ast.GenDecl:
-			if d.Lparen.IsValid() {
-				for _, s := range d.Specs {
-					if s, ok := s.(*ast.TypeSpec); ok && pos >= s.Pos() && pos < s.End() {
-						return text(s.Doc, s.Pos(), s.End()), true
-					}
-				}
-			}
-			return text(d.Doc, d.Pos(), d.End()), true
-		}
-	}
-	return "", false
 }
 
 func sliceText(s sliceOutput) []byte {

@@ -39,6 +39,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | `internal/check` | 归属、依赖、绑定、可执行、生成与录制这几组约束 | graph、diag |
 | `internal/query` | 节点、引用、搜索、切片和影响 | graph |
 | `internal/view` | 视图的选取与折叠 | graph |
+| `internal/serve` | 查看器的后端：读取快照，载入时按 `check` 的约束检查，回答 §7.5.1 的接口 | graph、diag、check、query、view、lang.golang |
 | `internal/gen` | 生成计划：缺少的骨架，以及应有的生成文件 | graph、lang、diag |
 | `internal/run` | 回放与探索：经后端运行驱动，按覆盖挑选输入，缩减并写出录制文件 | graph、lang、syntax、diag |
 | `cmd/unicode` | 解析参数，调用其余组件，输出结果和退出码 | 全部 |
@@ -60,6 +61,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | Go 代码的抽取（M2） | `golang.org/x/tools/go/packages` 与 `go/types` |
 | 查看器的接口：用 TypeSpec 写，生成 OpenAPI 3 文档（§7.5.1） | `@typespec/compiler`、`@typespec/http`、`@typespec/openapi`、`@typespec/openapi3`，1.18.0 |
 | `serve` 的接口类型和路由：由 OpenAPI 文档生成 Go 代码 | `github.com/oapi-codegen/oapi-codegen/v2` v2.8.2，生成的代码依赖 `github.com/oapi-codegen/runtime` v1.9.0 |
+| `serve` 的性质按 OpenAPI 文档校验每个应答 | `github.com/getkin/kin-openapi` v0.142.0（`openapi3filter` 与 `routers/legacy`），即 oapi-codegen 所依赖的版本 |
 | 前端的接口类型和请求：由 OpenAPI 文档生成 TypeScript 类型，按类型发出请求 | `openapi-typescript` 7.13.0 与 `openapi-fetch` 0.17.0 |
 
 规范格式的打印没有现成的库，由 `syntax` 自己完成。
@@ -301,7 +303,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 
 切片的 `edges` 是两端都在切片列出的节点之中的 `contains` 边，由它还原祖先链和流程的步骤树。
 
-代码只给位置（路径和行号）；加 `--with-code` 时附上源码，JSON 中为 `code`：标识到源码，源码是包含该节点的顶层声明及其文档注释。目前只有 Go 后端提供，Python 到来时成为后端的一个操作。
+代码只给位置（路径和行号）；加 `--with-code` 时附上源码，JSON 中为 `code`：标识到源码，源码是包含该节点的顶层声明及其文档注释所占的各行，由 Go 后端的 `declaration` 给出，查看器的源码片段也用它。目前只有 Go 后端提供，Python 到来时成为后端接口的一个操作。
 
 ### 7.4 影响与索引
 
@@ -351,7 +353,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 
 #### 7.5.1 接口
 
-**数据来源。** `unicode serve` 读取 `unicode build` 写出的快照 `.unicode/graph.json`，载入时按 `unicode check` 的约束检查一遍，得到诊断和每个声明项的状态。快照文件改变后，下一次请求时重新读入。比较的基准由后端按查询的 `--rev` 的方式取出该提交并建图，在进程内保留。
+**数据来源。** `unicode serve` 读取 `unicode build` 写出的快照 `.unicode/graph.json`，载入时按 `unicode check` 的约束检查一遍，得到诊断和每个声明项的状态。快照文件改变后（按修改时间和大小判断），下一次请求时重新读入；每个请求只从一个快照回答。工作区所在的提交、分支和是否有改动，在读入快照时由 git 给出。比较的基准由后端按查询的 `--rev` 的方式取出该提交并建图，在进程内保留。
 
 **约定。** 接口只读：视图、输入、展开、选中项和导航路径都记在页面地址中，服务端不保存状态。标识中含有 `.`、`#`、`:` 和 `/`，一律放在查询参数里，不放在路径中。接口的源文件是 `api/*.tsp`，`api/openapi.yaml` 由它生成，`make api-check` 确认二者一致；各字段的含义和取法以源文件中的说明为准。证据（运行、结果、覆盖，M6）和评审记录（M7）的字段是可选的，图中有了这些数据之后才给出。
 
@@ -360,7 +362,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 - 节点和边是快照中的节点和边（§5.2、[model.md](model.md) §8），节点带内容哈希 `digest`。节点另有 `title`（页面上的名称）、`status`（`check` 给出的状态）、代码元素的 `bindings`（绑定边及其指向的设计节点）、步骤的 `step`（所在流程、序号、发起方、目标、接收方、外层步骤和子步骤）；边另有 `status`。
 - 诊断与 `unicode check --format json` 的相同。一条边加另一端的节点沿用 `query.Neighbor`，切片沿用 `query.Context`，影响沿用 `query.Affected`，单个节点沿用 `query.NodeView`。
 - 视图在 `view.View`（`kind`、`nodes`、`edges`、`folded`、`hidden`）之上，加上输入节点、它的祖先和视图中各项的诊断。类型卡片带 `members`，即字段和枚举值与代码的逐项比较；容器卡片带 `contents`，展开时是其中的类型、操作、流程、性质和错误，折叠时是其中类型的名称；代码文件和代码类型带 `details`，即未画出的细节函数的个数。边的一端是折叠的容器时，`count` 是它代表的边数；`labels` 是边承载的操作。
-- 拒绝的请求返回 `{code, message, fix}`：标识或文件不存在为 404 `serve.not-found`；视图不适用于输入为 400 `serve.not-applicable`，提交读不出为 400 `serve.bad-revision`，路径不是设计文件、录制文件或快照中的代码文件为 400 `serve.bad-path`。
+- 拒绝的请求返回 `{code, message, fix}`：标识、边、文件或接口不存在为 404 `serve.not-found`；视图不适用于输入为 400 `serve.not-applicable`，提交读不出为 400 `serve.bad-revision`，路径不是设计文件、录制文件或快照中的代码文件为 400 `serve.bad-path`，参数缺失或不合类型（包括不存在的视图、节点或边的种类）为 400 `serve.bad-parameter`。快照文件在运行中变得读不出时，请求得到 503 `serve.unreadable-snapshot`，文件恢复后照常回答；比较要等 `graph.Compare`，在此之前为 501 `serve.not-implemented`；服务端自身的失败为 500 `serve.internal-error`。
 
 **接口。** 路径都在 `/api` 之下：
 
@@ -465,7 +467,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 - **`build`**：建图有诊断时（不含 `check` 的约束）不写快照，退出码为 10；JSON 为 `{"diagnostics": [...], "snapshot": "路径"}`。快照之外，`build` 在同一目录写出 `build.json`，即 `{"commit": "…", "dirty": false}`：`commit` 是仓库所在提交的完整哈希，`dirty` 表示根目录下有没有未提交的改动或未跟踪的文件，`build` 自己写出的 `graph.json` 和 `build.json` 不算。不在 Git 的工作区中、还没有提交或找不到 `git` 时，写出 `{"commit": null, "dirty": true}`。`--out DIR` 把这两个文件写到 `DIR` 中。搜索索引 `index.json` 等查看器确定格式后再写。
 - **查询**：`node`、`slice`、`impact` 和 `view` 每次都按工作区重新建图；`--rev REV` 只用于这些查询，以 `git archive` 取出该提交的文件到临时目录。查询中的标识（包括 `--expand` 的）不存在时退出码为 3；视图不适用于输入时退出码为 2。`view architecture` 和 `view events` 可以不给标识，表示整个系统。JSON 的字段名是设计中的名称（小驼峰）。
 - **`diff`**：`unicode diff <rev>` 像查询的 `--rev` 一样取出 `<rev>` 并建图，与按工作区建出的图比较；带 `--to REV` 时，与 `REV` 的图比较。两张图按 [model.md](model.md) §8 比较（`graph.Compare`）：节点按标识对齐，内容哈希不同为修改；边按种类、起点、终点对齐，属性不同为修改；只列出新增、删除和修改的项。与查询一样，建图的诊断由 `check` 报出，`diff` 不报。JSON 与 `api/compare.tsp` 的 `Comparison` 相同：`{"base": 提交, "head": 提交, "nodes": [...], "edges": [...]}`。提交是 `{commit, short, branch, subject, time}`，`branch` 只在该提交正是检出的分支所在时给出，`time` 是提交时间（UTC）；`head` 另有 `dirty`，与工作区比较时同 `build.json` 的 `dirty`，与提交比较时为 `false`。`nodes` 中每项是 `{id, change, before, after, attrs}`，`change` 为 `added`、`removed` 或 `modified`，`before`、`after` 是两边的节点（与 `node get` 的节点相同），只在该边有它时给出；`attrs` 按键排序，列出两边的值不同的键，每项 `{key, removed, added}` 是该键上去掉和加上的值，按各自原来的次序，重复的值按出现次数计。`edges` 中每项是 `{kind, from, to, change, before, after}`。文本先写两端的提交，再在 `nodes` 和 `edges` 两节中每项一行，修改的节点之后每个变了的键一行。`<rev>` 或 `REV` 不是提交时退出码为 2，找不到 `git` 时为 7。`diff` 不接受 `--rev`。
-- **`serve`**：`--snapshot` 缺省为根目录下的 `.unicode/graph.json`，`--addr` 缺省为 `127.0.0.1:8765`。前端由 `web/` 构建到 `web/dist`，构建结果用 Go 的 `embed` 嵌入程序；`serve` 在 `/` 下提供页面，在 `/api` 下提供接口。`--web DIR` 改为提供目录 DIR 中的页面，供开发时使用。开始监听后，标准输出写出页面的地址（JSON 为 `{"url": …}`），每个请求的日志写到标准错误；收到中断信号时退出，退出码为 0。快照不存在或读不出时退出码为 7，提示先运行 `unicode build`；地址无法监听时退出码也为 7。`serve` 不接受 `--rev`，比较的基准由接口的 `base` 参数给出。
+- **`serve`**：`--snapshot` 缺省为根目录下的 `.unicode/graph.json`，`--addr` 缺省为 `127.0.0.1:8765`。`serve` 在 `/` 下提供页面，在 `/api` 下提供接口。页面是 `--web DIR` 给出的目录中的文件，缺省为根目录下的 `web/dist`（存在时）；地址不是其中的文件时给出 `index.html`。没有页面目录时只提供接口，并在标准错误中说明。前端由 `web/` 构建到 `web/dist`；前端定型之后，构建结果用 Go 的 `embed` 嵌入程序，作为没有页面目录时的页面。`--web` 给出的不是目录时是参数错误。开始监听后，标准输出写出页面的地址（JSON 为 `{"url": …}`），每个请求的日志写到标准错误；收到中断信号时退出，退出码为 0。快照不存在或读不出时退出码为 7，提示先运行 `unicode build`；地址无法监听时退出码也为 7。`serve` 不接受 `--rev`，比较的基准由接口的 `base` 参数给出。
 - **`check --design-only`**：解析 `design/` 和 `corpus/` 下的全部文件，报出语法、规范格式和 §5.1 的诊断；JSON 为 `{"diagnostics": [...]}`。M2 之前，不带 `--design-only` 的 `check` 是参数错误。
 - **路径参数**：按工作目录解析，必须是根目录下 `design/` 或 `corpus/` 之内的文件或目录。路径不存在、不在这两个目录之内，或者找不到缺省的根目录，都是参数错误。目录会被遍历。`design/` 或 `corpus/` 中 `KindOf` 拒绝的文件给出诊断 `cli.not-a-design-file`，读不出的文件给出 `cli.unreadable-file`，符号链接给出诊断 `cli.symlink`，既不跟随读取，也不改写。全局参数也可以写在命令之后。
 - **改写与输出**：改写是原子的，并保留文件的权限，失败时不留下临时文件；写入或输出失败时退出码为 1。`cli.not-canonical` 的位置是与规范格式第一处不同的字节。`--help` 写到标准输出，退出码为 0。JSON 缩进两个空格。带 `--format json` 时，诊断是数据，写在标准输出的 JSON 中，标准错误只放日志；文本模式下，诊断写到标准错误，标准输出只列出改写了的或不是规范格式的文件。
@@ -478,6 +480,14 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
   | `cli.symlink` | 符号链接既不跟随读取，也不改写，属于文件系统 |
   | `cli.extract-failed` | 代码无法加载，或源码根目录不存在，属于环境 |
   | `cli.unsupported-language` | 系统文件配置的语言尚无后端，属于工具链的能力 |
+  | `serve.not-found` | 查看器请求的标识、边、文件或接口不存在，属于请求 |
+  | `serve.not-applicable` | 视图不适用于请求的输入，属于请求 |
+  | `serve.bad-revision` | 请求的基准提交读不出，属于请求 |
+  | `serve.bad-path` | 请求的路径不是快照描述的文件，属于请求 |
+  | `serve.bad-parameter` | 请求的参数缺失或不合类型，属于请求 |
+  | `serve.unreadable-snapshot` | 快照文件在运行中读不出，属于环境 |
+  | `serve.not-implemented` | 查看器的比较尚未实现，属于工具链的能力 |
+  | `serve.internal-error` | 服务端未能回答请求，属于工具链自身 |
 
 ## 9 计划
 
