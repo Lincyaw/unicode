@@ -28,16 +28,17 @@ const handle = "t: go:pgregory.net/rapid.TB"
 // detail function helper. A component uses only components declared before
 // it, so k0 uses none and may not depend on k1.
 type world struct {
-	t          *rapid.T
-	f          graph.Fragment
-	line       int
-	comps      []*comp
-	types      []*dtype
-	ops        []*dop
-	checkables []*checkable
-	steps      []*step
-	external   bool
-	client     *comp // the component that holds the external system's client
+	t            *rapid.T
+	f            graph.Fragment
+	line         int
+	comps        []*comp
+	types        []*dtype
+	ops          []*dop
+	checkables   []*checkable
+	steps        []*step
+	observations []*observation
+	external     bool
+	client       *comp // the component that holds the external system's client
 }
 
 type comp struct {
@@ -69,6 +70,11 @@ type checkable struct {
 	home       *comp
 	symbols    []string
 	generators map[string]string
+}
+
+type observation struct {
+	id, adapter string
+	home        *comp
 }
 
 // step is a flow step: what it calls or emits, who sends it, the function
@@ -472,7 +478,8 @@ func (w *world) checkables_(c *comp) {
 	if c.id == "k0" || rapid.Bool().Draw(w.t, "generated") {
 		symbols = append(symbols, [2]string{"s: string generated", "s: string"})
 	}
-	w.checkable(c, c.id+".p", graph.NodeKindProperty, "invariant", symbols)
+	property := w.checkable(c, c.id+".p", graph.NodeKindProperty, "postcondition", symbols)
+	w.observation(property, symbols)
 	var flowSymbols [][2]string
 	if rapid.Bool().Draw(w.t, "flowSymbol") {
 		flowSymbols = append(flowSymbols, [2]string{"n: int", "n: int"})
@@ -511,6 +518,29 @@ func (w *world) checkable(c *comp, id string, kind graph.NodeKind, form string, 
 	w.declared(graph.EdgeKindChecks, k.pred, id)
 	w.checkables = append(w.checkables, k)
 	return k
+}
+
+func (w *world) observation(property *checkable, symbols [][2]string) {
+	ordered := rapid.Permutation(symbols).Draw(w.t, "observationOrder")
+	ordered = ordered[:rapid.IntRange(1, len(ordered)).Draw(w.t, "observationInputs")]
+	var inputs, params []string
+	for i, pair := range ordered {
+		input, _, _ := strings.Cut(pair[0], ": ")
+		_, typ, _ := strings.Cut(pair[1], ": ")
+		inputs = append(inputs, input)
+		params = append(params, fmt.Sprintf("arg%d: %s", i, typ))
+	}
+	result, codeResult := w.typePair(objectOf(property.home), 1)
+	id := property.id + ".state"
+	w.node(id, graph.LayerDesign, graph.NodeKindObservation, "snapshot", w.designFile(property.home), map[string][]string{"type": {result}, "inputs": inputs})
+	w.declared(graph.EdgeKindContains, property.id, id)
+	signature := "(" + strings.Join(params, ", ") + ") -> " + codeResult
+	if rapid.Bool().Draw(w.t, "observerError") {
+		signature += " raises error"
+	}
+	adapter := w.function(property.home.file, property.home.pkg+".observe"+upper(name(property.id)), "observe", signature, "func")
+	w.declared(graph.EdgeKindObserves, adapter, id)
+	w.observations = append(w.observations, &observation{id: id, adapter: adapter, home: property.home})
 }
 
 // allowed lists the components whose operations the code of c may call

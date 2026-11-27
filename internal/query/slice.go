@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/lincyaw/unicode/internal/graph"
 )
@@ -112,7 +113,9 @@ func Slice(g *graph.Graph, ids []string, expand []string) (Context, error) {
 // additions returns what docs/design.md §7.3 adds for the kind of the node
 // f beyond one edge: for an operation, the type that contains it and that
 // type's other operations; for a property, the types it reaches along
-// refers edges through types, its symbols' types and theirs; for a flow,
+// refers edges through types, its symbols' types and theirs, plus its named
+// observations and their adapters and types; for an observation, those
+// adapters and its input and snapshot types; for a flow,
 // every step of its step tree and the functions those steps trace to.
 func additions(g *graph.Graph, ix index, f string) []string {
 	var found []string
@@ -128,6 +131,12 @@ func additions(g *graph.Graph, ix index, f string) []string {
 		}
 	case graph.NodeKindProperty:
 		found = closure(g, ix, f, graph.EdgeKindRefers, graph.NodeKindType)
+		for _, observation := range reach(g, ix.out[f], graph.EdgeKindContains, graph.NodeKindObservation, true) {
+			found = append(found, observation)
+			found = append(found, observationContext(g, ix, observation)...)
+		}
+	case graph.NodeKindObservation:
+		found = observationContext(g, ix, f)
 	case graph.NodeKindFlow:
 		found = closure(g, ix, f, graph.EdgeKindContains, graph.NodeKindStep)
 		for _, step := range slices.Clone(found) {
@@ -135,6 +144,25 @@ func additions(g *graph.Graph, ix index, f string) []string {
 		}
 	}
 	return found
+}
+
+func observationContext(g *graph.Graph, ix index, observation string) []string {
+	found := closure(g, ix, observation, graph.EdgeKindRefers, graph.NodeKindType)
+	for _, property := range reach(g, ix.in[observation], graph.EdgeKindContains, graph.NodeKindProperty, false) {
+		for _, symbol := range g.Node(property).Attrs["symbols"] {
+			name, typ, _ := strings.Cut(symbol, ": ")
+			if !slices.Contains(g.Node(observation).Attrs["inputs"], name) {
+				continue
+			}
+			for _, word := range strings.FieldsFunc(typ, func(r rune) bool { return strings.ContainsRune("<>, []", r) }) {
+				if n := g.Node(word); n != nil && n.Kind == graph.NodeKindType {
+					found = append(found, word)
+					found = append(found, closure(g, ix, word, graph.EdgeKindRefers, graph.NodeKindType)...)
+				}
+			}
+		}
+	}
+	return append(found, reach(g, ix.in[observation], graph.EdgeKindObserves, graph.NodeKindOp, false)...)
 }
 
 // reach returns the other ends of the edges of the kind among edges, those

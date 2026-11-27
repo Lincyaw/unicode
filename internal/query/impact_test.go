@@ -14,7 +14,7 @@ import (
 // spreading are the edge kinds of docs/design.md §7.4, along which a change spreads backwards.
 var spreading = []graph.EdgeKind{graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindRefers,
 	graph.EdgeKindSubscribes, graph.EdgeKindEmits, graph.EdgeKindRealizes, graph.EdgeKindTraces,
-	graph.EdgeKindExercises, graph.EdgeKindDepends, graph.EdgeKindAbout, graph.EdgeKindChecks}
+	graph.EdgeKindExercises, graph.EdgeKindDepends, graph.EdgeKindAbout, graph.EdgeKindChecks, graph.EdgeKindObserves}
 
 //uc:checks query.impact-is-reverse-reachability
 func checkImpactIsReverseReachability(t rapid.TB, question Question) {
@@ -39,8 +39,12 @@ func checkImpactIsReverseReachability(t rapid.TB, question Question) {
 			distance[id] = level
 		}
 		for _, e := range question.Fragment.Edges {
-			if _, known := distance[e.From]; slices.Contains(spreading, e.Kind) && frontier[e.To] && !known {
+			owner := e.Kind == graph.EdgeKindContains && nodes[e.From].Kind == graph.NodeKindProperty && nodes[e.To].Kind == graph.NodeKindObservation
+			if _, known := distance[e.From]; (slices.Contains(spreading, e.Kind) || owner) && frontier[e.To] && !known {
 				next[e.From] = true
+			}
+			if _, known := distance[e.To]; e.Kind == graph.EdgeKindObserves && frontier[e.From] && !known {
+				next[e.To] = true
 			}
 		}
 		frontier = next
@@ -78,15 +82,20 @@ func checkImpactIsReverseReachability(t rapid.TB, question Question) {
 		at := id
 		for i, e := range a.Path {
 			k := edgeKey{e.Kind, e.From, e.To}
+			owner := e.Kind == graph.EdgeKindContains && nodes[e.From].Kind == graph.NodeKindProperty && nodes[e.To].Kind == graph.NodeKindObservation
+			forward := e.From == at && (slices.Contains(spreading, e.Kind) || owner)
+			backward := e.To == at && e.Kind == graph.EdgeKindObserves
 			switch {
-			case e.From != at:
-				t.Fatalf("edge %d of the path for %q starts at %q, not at %q where the path has got to: %+v", i+1, id, e.From, at, a.Path)
-			case !slices.Contains(spreading, e.Kind):
-				t.Fatalf("edge %d of the path for %q is a %s edge, along which a change does not spread", i+1, id, e.Kind)
+			case !forward && !backward:
+				t.Fatalf("edge %d of the path for %q cannot explain a change from %q along %s: %+v", i+1, id, at, e.Kind, a.Path)
 			case !reflect.DeepEqual(e, edges[k]):
 				t.Fatalf("edge %d of the path for %q is %+v, which is not an edge of the graph", i+1, id, e)
 			}
-			at = e.To
+			if forward {
+				at = e.To
+			} else {
+				at = e.From
+			}
 		}
 		if !changed[at] {
 			t.Fatalf("the path for %q ends at %q, which is not a changed node: %+v", id, at, a.Path)

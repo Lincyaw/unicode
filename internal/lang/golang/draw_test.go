@@ -467,7 +467,7 @@ type binding struct {
 func (w *world) drawBinding(label, on string) binding {
 	verb := "realizes"
 	if on != "type" {
-		verb = rapid.SampledFrom([]string{"realizes", "checks", "generates"}).Draw(w.t, label+"Verb")
+		verb = rapid.SampledFrom([]string{"realizes", "checks", "generates", "observes"}).Draw(w.t, label+"Verb")
 	}
 	component := rapid.StringMatching(`[a-z]{1,3}(-[a-z]{1,2})?(\.[a-z]{1,3})?`).Draw(w.t, label+"Component")
 	var id string

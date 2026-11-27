@@ -351,7 +351,7 @@
 | D3 | 由性质验证 | `graph.derive-matches-definition` |
 | D4 | 由性质验证 | `graph.derive-matches-definition` |
 | D5 | 由性质验证 | `graph.derive-matches-definition` |
-| D6 | 由性质验证；“生成文件中的元素都是细节”未实现：M4 | `graph.derive-matches-definition` |
+| D6 | 由性质验证 | `graph.derive-matches-definition` |
 | D7 | 由性质验证 | `graph.derive-matches-definition` |
 | 1 | `design.unresolved-reference`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
 | 2 | `design.duplicate-name` | `design.rejects-broken-design` |
@@ -386,6 +386,6 @@
 | 31 | 未实现：表达式的载入尚未实现 | — |
 | 32 | 未实现：M4，驱动核对纯操作 | — |
 | 33 | 未实现：M7，评审 | — |
-| 34 | 未实现：黑盒契约的观察绑定、签名和归属检查 | — |
+| 34 | `check.missing-observer`、`check.multiple-observers`、`check.observer-signature`、`check.observer-outside-container` | `check.rejects-broken-graph` |
 | 35 | 未实现：黑盒契约的观察与变化范围检查 | — |
 | 36 | 未实现：M7，观察适配器的评审 | — |

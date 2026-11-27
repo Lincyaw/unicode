@@ -114,6 +114,7 @@ const (
 	EdgeKindHandles    EdgeKind = "handles"
 	EdgeKindImplements EdgeKind = "implements"
 	EdgeKindImports    EdgeKind = "imports"
+	EdgeKindObserves   EdgeKind = "observes"
 	EdgeKindOwns       EdgeKind = "owns"
 	EdgeKindReaches    EdgeKind = "reaches"
 	EdgeKindRealizes   EdgeKind = "realizes"
@@ -153,6 +154,8 @@ func (e EdgeKind) Valid() bool {
 	case EdgeKindImplements:
 		return true
 	case EdgeKindImports:
+		return true
+	case EdgeKindObserves:
 		return true
 	case EdgeKindOwns:
 		return true
@@ -217,17 +220,18 @@ func (e MemberKind) Valid() bool {
 
 // Defines values for NodeKind.
 const (
-	NodeKindActor     NodeKind = "actor"
-	NodeKindCase      NodeKind = "case"
-	NodeKindContainer NodeKind = "container"
-	NodeKindFlow      NodeKind = "flow"
-	NodeKindOp        NodeKind = "op"
-	NodeKindProperty  NodeKind = "property"
-	NodeKindResult    NodeKind = "result"
-	NodeKindReview    NodeKind = "review"
-	NodeKindRun       NodeKind = "run"
-	NodeKindStep      NodeKind = "step"
-	NodeKindType      NodeKind = "type"
+	NodeKindActor       NodeKind = "actor"
+	NodeKindCase        NodeKind = "case"
+	NodeKindContainer   NodeKind = "container"
+	NodeKindFlow        NodeKind = "flow"
+	NodeKindObservation NodeKind = "observation"
+	NodeKindOp          NodeKind = "op"
+	NodeKindProperty    NodeKind = "property"
+	NodeKindResult      NodeKind = "result"
+	NodeKindReview      NodeKind = "review"
+	NodeKindRun         NodeKind = "run"
+	NodeKindStep        NodeKind = "step"
+	NodeKindType        NodeKind = "type"
 )
 
 // Valid indicates whether the value is a known member of the NodeKind enum.
@@ -240,6 +244,8 @@ func (e NodeKind) Valid() bool {
 	case NodeKindContainer:
 		return true
 	case NodeKindFlow:
+		return true
+	case NodeKindObservation:
 		return true
 	case NodeKindOp:
 		return true
@@ -398,7 +404,8 @@ type Adequacy struct {
 	Error *float64 `json:"error,omitempty"`
 }
 
-// Affected A node a change reaches, with a shortest path of edges from it to a changed node (query.Affected).
+// Affected A node a change reaches, with a shortest connected path to a changed node (query.Affected).
+// The path keeps the original edges; an observes edge may be followed in either direction.
 type Affected struct {
 	// Node One node of the graph: the node of the snapshot (graph.Node with its content hash, as `unicode build` writes it),
 	// and what the viewer needs to name it, colour its status and link it.
@@ -787,7 +794,7 @@ type Node struct {
 	// Attrs Everything else, as lists of strings in the canonical format; the keys are those of docs/design.md §5.2
 	Attrs map[string][]string `json:"attrs"`
 
-	// Bindings A code element: its bindings, each the realizes, checks or generates edge with the design node it points at
+	// Bindings A code element: its realizes, checks, generates or observes edges with the design nodes they point at
 	Bindings *[]Neighbor `json:"bindings,omitempty"`
 
 	// Digest The content hash, SHA-256 in lower-case hex (docs/model.md §6)
@@ -1162,7 +1169,7 @@ type ViewNode struct {
 	// Attrs Everything else, as lists of strings in the canonical format; the keys are those of docs/design.md §5.2
 	Attrs map[string][]string `json:"attrs"`
 
-	// Bindings A code element: its bindings, each the realizes, checks or generates edge with the design node it points at
+	// Bindings A code element: its realizes, checks, generates or observes edges with the design nodes they point at
 	Bindings *[]Neighbor `json:"bindings,omitempty"`
 
 	// Contents A container drawn as a card. Expanded: the types (with their operations), flows, properties and errors it

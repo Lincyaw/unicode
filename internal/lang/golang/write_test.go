@@ -27,9 +27,15 @@ func write(f *gfile) *writer {
 	first := &writer{file: f, line: 1, col: 1, imports: map[string]bool{}, at: map[any]diag.Position{}}
 	first.decls()
 	out := &writer{file: f, line: 1, col: 1, imports: map[string]bool{}, at: map[any]diag.Position{}}
+	if f.header != "" && !f.headerAfterPackage {
+		out.put(f.header + "\n\n")
+	}
 	out.comments("", f.doc)
 	out.at[f] = out.pos()
 	out.put("package " + f.pkg.name + "\n")
+	if f.header != "" && f.headerAfterPackage {
+		out.put("\n" + f.header + "\n")
+	}
 	if len(first.imports) > 0 {
 		out.put("\nimport (\n")
 		for _, path := range slices.Sorted(maps.Keys(first.imports)) {
