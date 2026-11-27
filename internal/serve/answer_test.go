@@ -463,3 +463,85 @@ func checkAnswersAreDeterministic(t rapid.TB, exchange Exchange) {
 		}
 	}
 }
+
+// tabKinds are the views in the order of their tabs, as the interface writes them.
+var tabKinds = func() []ViewKind {
+	kinds := make([]ViewKind, len(viewKinds))
+	for i, k := range viewKinds {
+		kinds[i] = ViewKind(k)
+	}
+	return kinds
+}()
+
+// tabsAnswered are the tabs an answer gives: an entity page's or a view's; none for other answers.
+func tabsAnswered(t rapid.TB, req Request, resp Response) ([]ViewTab, bool) {
+	switch {
+	case resp.Status != http.StatusOK:
+		return nil, false
+	case req.Path == "/api/entity":
+		return decode[Entity](t, req, resp).Tabs, true
+	case strings.HasPrefix(req.Path, "/api/views/"):
+		return decode[View](t, req, resp).Tabs, true
+	}
+	return nil, false
+}
+
+// viewRequest is the request for the view a tab gives, as the page writes its address.
+func viewRequest(r ViewRequest, system string) Request {
+	q := map[string][]string{}
+	if r.Input.Id != system || !slices.Contains([]ViewKind{ViewKindArchitecture, ViewKindEvents, ViewKindDdd, ViewKindC4}, r.Kind) {
+		q["input"] = []string{r.Input.Id}
+	}
+	if len(r.Expand) > 0 {
+		q["expand"] = r.Expand
+	}
+	if r.Layer != nil {
+		q["layer"] = []string{string(*r.Layer)}
+	}
+	if r.Level != nil {
+		q["level"] = []string{string(*r.Level)}
+	}
+	return Request{Path: "/api/views/" + string(r.Kind), Query: q}
+}
+
+//uc:checks serve.tabs-open-views
+func checkTabsOpenViews(t rapid.TB, exchange Exchange) {
+	s, root, g := served(t, exchange)
+	defer removeAll(t, root)
+	st := indexed(root, g)
+	notations := st.nodes[st.system].Attrs["notations"]
+	for _, req := range exchange.Requests {
+		tabs, ok := tabsAnswered(t, req, s.Answer(req))
+		if !ok {
+			continue
+		}
+		kinds := make([]ViewKind, len(tabs))
+		for i, tab := range tabs {
+			kinds[i] = tab.Kind
+		}
+		if !slices.Equal(kinds, tabKinds) {
+			t.Fatalf("the answer to %s gives tabs for the views %v, not one for each view in the tabs' order %v", req, kinds, tabKinds)
+		}
+		for _, tab := range tabs {
+			switch {
+			case (tab.View == nil) == (tab.Closed == nil):
+				t.Fatalf("the answer to %s gives the %s tab %+v, which should have either a view or a reason", req, tab.Kind, tab)
+			case tab.View != nil:
+				view := viewRequest(*tab.View, st.system)
+				if got := s.Answer(view); got.Status != http.StatusOK {
+					t.Fatalf("the answer to %s leads the %s tab to %s, which is refused with %d\n%s", req, tab.Kind, view, got.Status, got.Body)
+				}
+			case *tab.Closed == ClosedTabUndeclaredNotation:
+				if (tab.Kind != ViewKindDdd && tab.Kind != ViewKindC4) || slices.Contains(notations, string(tab.Kind)) {
+					t.Fatalf("the answer to %s closes the %s tab for an undeclared notation, yet the system file declares %v", req, tab.Kind, notations)
+				}
+			default:
+				for _, n := range g.Nodes() {
+					if _, err := view.Select(&g, view.ViewKind(tab.Kind), n.Id, nil, view.ClassLayerDesign, view.C4LevelContainer); err == nil {
+						t.Fatalf("the answer to %s closes the %s tab for want of an input, yet the view takes %q", req, tab.Kind, n.Id)
+					}
+				}
+			}
+		}
+	}
+}

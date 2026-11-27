@@ -63,6 +63,12 @@ property queries-agree relation "/api/node、/api/search、/api/slice、/api/imp
   manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"
 }
 
+property tabs-open-views invariant "实体页和视图的 tabs 按标签的次序每种视图恰好一项：给出请求的项，/api/views 按这个请求回答；关闭的项，undeclared-notation 只给系统文件没有声明其记法的领域和 C4 视图，no-input 只给图中没有任何节点能作为输入的视图" {
+  about Server.answer
+  forall exchange: Exchange generated "一张随机的图，以及对各个接口的请求，标识多取自图中的节点"
+  manual "需要启动服务，经 HTTP 读出实体页、视图和标签所指的视图，再对图中每个节点判断视图是否适用，表达式没有这些环境操作"
+}
+
 property answers-are-deterministic invariant "同一个快照上，同一个请求的应答逐字节相同，与它之前回答过哪些请求无关" {
   about Server.answer
   forall exchange: Exchange generated "一张随机的图，以及对各个接口的请求，有的重复出现"

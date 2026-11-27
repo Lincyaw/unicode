@@ -532,6 +532,7 @@ func genFlowRequest() *rapid.Generator[Request] {
 // a contract that calls Select on it.
 //
 //uc:generates view.view-echoes-its-request.g
+//uc:generates view.inputs-are-what-select-takes.g
 func genSelectGraph() *rapid.Generator[*graph.Graph] {
 	return rapid.Custom(func(t *rapid.T) *graph.Graph {
 		g := graphOf(t, genGraph(t, 0))

@@ -8,6 +8,7 @@ import { diagnostics, edgeEntity, impact, nodesById, nodeView, search, slice, sn
 import { REVISIONS } from './shopChecks';
 import type { C4Level, ClassLayer, EdgeKind, NodeKind, Problem, ViewKind } from './schemaTypes';
 import { NotApplicable, NotFound } from './viewKit';
+import { tabsOf } from './tabs';
 import { viewOf } from './views';
 
 /*
@@ -69,7 +70,7 @@ export const handlers = [
         ...(query.get('layer') !== null ? { layer: query.get('layer') as ClassLayer } : {}),
         ...(query.get('level') !== null ? { level: query.get('level') as C4Level } : {}),
       });
-      return response(200).json(view);
+      return response(200).json({ ...view, tabs: tabsOf(view.input.id) });
     } catch (error) {
       if (error instanceof NotFound) {
         return response(404).json(notFound(error.message));
@@ -89,10 +90,10 @@ export const handlers = [
     }
     const rev = query.get('base');
     if (rev === null) {
-      return response(200).json(entityOf(id));
+      return response(200).json({ ...entityOf(id), tabs: tabsOf(id) });
     }
     const base = resolveRevision(rev);
-    return base ? response(200).json(entityOf(id, base)) : response(400).json(badRevision(rev));
+    return base ? response(200).json({ ...entityOf(id, base), tabs: tabsOf(id) }) : response(400).json(badRevision(rev));
   }),
 
   http.get('/edge', ({ request, response }) => {

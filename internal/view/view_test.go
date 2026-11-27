@@ -316,3 +316,21 @@ func show(v any) string {
 	}
 	return string(out)
 }
+
+//uc:checks view.inputs-are-what-select-takes
+func checkInputsAreWhatSelectTakes(t rapid.TB, g *graph.Graph, kind ViewKind) {
+	inputs := Inputs(g, kind)
+	if !slices.IsSorted(inputs) {
+		t.Fatalf("Inputs gives the %s view's inputs %v, which are not sorted by identity", kind, inputs)
+	}
+	for _, n := range g.Nodes() {
+		_, err := Select(g, kind, n.Id, nil, ClassLayerDesign, C4LevelContainer)
+		var na NotApplicable
+		if err != nil && !errors.As(err, &na) {
+			t.Fatalf("Select of the %s view for %q failed with %v, not with NotApplicable", kind, n.Id, err)
+		}
+		if listed := slices.Contains(inputs, n.Id); listed != (err == nil) {
+			t.Fatalf("Inputs lists %q for the %s view: %v, yet Select for it gives the error %v", n.Id, kind, listed, err)
+		}
+	}
+}

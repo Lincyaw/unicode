@@ -56,7 +56,7 @@ export interface Drawing {
 }
 
 /** A view's answer: the drawing, its input with the input's ancestors, and the diagnostics of what it draws. */
-export function assembleView(kind: ViewKind, input: string, expand: string[], drawing: Drawing): View {
+export function assembleView(kind: ViewKind, input: string, expand: string[], drawing: Drawing): Omit<View, 'tabs'> {
   return {
     kind,
     input: full(input),

@@ -34,9 +34,9 @@ type state struct {
 	files   map[string]string
 	checked check.Checked
 	head    WorkingTree
-	// applies memoizes whether a view applies to an input, by "kind input";
+	// inputs memoizes the inputs each view kind takes, as a set;
 	// comparisons the comparison with each base commit.
-	applies     sync.Map
+	inputs      sync.Map
 	comparisons sync.Map
 }
 
@@ -363,15 +363,21 @@ func diagnostic(d diag.Diagnostic) Diagnostic {
 }
 
 // viewApplies tells whether the view of the kind applies to the input, as
-// view.Select decides; the answer is kept, as the snapshot does not change.
+// view.Select decides.
 func (st *state) viewApplies(kind view.ViewKind, input string) bool {
-	key := string(kind) + " " + input
-	if known, ok := st.applies.Load(key); ok {
-		return known.(bool)
+	_, takes := slices.BinarySearch(st.inputsOf(kind), input)
+	return takes
+}
+
+// inputsOf are the inputs the view of the kind takes, by identity
+// (view.Inputs); they are kept, as the snapshot does not change.
+func (st *state) inputsOf(kind view.ViewKind) []string {
+	if known, ok := st.inputs.Load(kind); ok {
+		return known.([]string)
 	}
-	_, err := view.Select(&st.g, kind, input, nil, view.ClassLayerDesign, view.C4LevelContainer)
-	st.applies.Store(key, err == nil)
-	return err == nil
+	ids := view.Inputs(&st.g, kind)
+	st.inputs.Store(kind, ids)
+	return ids
 }
 
 // relative writes path relative to the repository root when it is under it.

@@ -193,7 +193,8 @@ function coveringCases(id: string): string[] {
   return unique([id, ...realizersOf(id)].flatMap(target => incoming(target, 'covers').map(each => each.from)));
 }
 
-export function entityOf(id: string, base?: Revision): Entity {
+/** A node's page; its tabs are added where the answer is made (handlers.ts), as they draw on the views. */
+export function entityOf(id: string, base?: Revision): Omit<Entity, 'tabs'> {
   const node = raw(id);
   const listed: string[] = [];
   const list = (ids: string[]) => {
@@ -206,7 +207,7 @@ export function entityOf(id: string, base?: Revision): Entity {
   const sourced = node.layer === 'code' ? [id] : realizedBy.map(each => each.node.id);
   const covered = list(coveringCases(id));
   const evidence = evidenceOf(id);
-  const entity: Entity = {
+  const entity: Omit<Entity, 'tabs'> = {
     node: full(id),
     ancestors: ancestorsOf(id),
     diagnostics: [],

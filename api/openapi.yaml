@@ -926,6 +926,14 @@ components:
         - design
         - code
       description: "The layer the class view draws: the design's types, or the code types that realize them."
+    ClosedTab:
+      type: string
+      enum:
+        - undeclared-notation
+        - no-input
+      description: |-
+        Why a view's tab cannot be opened from a node (docs/design.md §7.5.1): the system file does not declare the view's
+        notation, or the graph holds no input the view takes.
     CodeDetail:
       type: object
       required:
@@ -1251,6 +1259,7 @@ components:
         - ancestors
         - diagnostics
         - views
+        - tabs
         - realizedBy
         - properties
         - flows
@@ -1278,6 +1287,11 @@ components:
             相关视图: the views that take the node as input; the class, DDD and architecture views of its container; the
             sequence and activity views of the flows it takes part in; the calls view of its operations or of the function
             that realizes it; the property view of its properties.
+        tabs:
+          type: array
+          items:
+            $ref: '#/components/schemas/ViewTab'
+          description: Where each view's tab leads from the node, in the tabs' order
         realizedBy:
           type: array
           items:
@@ -2033,6 +2047,7 @@ components:
         - folded
         - hidden
         - diagnostics
+        - tabs
       properties:
         kind:
           $ref: '#/components/schemas/ViewKind'
@@ -2077,6 +2092,11 @@ components:
           items:
             $ref: '#/components/schemas/Diagnostic'
           description: The diagnostics whose subject is a node or an edge it draws, the nodes in `contents` included
+        tabs:
+          type: array
+          items:
+            $ref: '#/components/schemas/ViewTab'
+          description: Where each view's tab leads from the view's input, in the tabs' order
       description: "The data of one view: what it draws, folded and ordered; the layout is the page's."
     ViewEdge:
       type: object
@@ -2246,6 +2266,25 @@ components:
           type: string
           description: The node to select in it, such as the step `order.submit-order#3`
       description: A view to open from a page, as its address writes it.
+    ViewTab:
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          $ref: '#/components/schemas/ViewKind'
+        view:
+          allOf:
+            - $ref: '#/components/schemas/ViewRequest'
+          description: The view to open; it applies, as /views/{kind} would answer it
+        closed:
+          allOf:
+            - $ref: '#/components/schemas/ClosedTab'
+          description: Why the tab cannot be opened
+      description: |-
+        Where a view's tab leads from a node (docs/design.md §7.5.1): the node's related view of the kind, else the default
+        input its scopes give (the node, its ancestors, the system); or, when there is none, why. Exactly one of `view` and
+        `closed` is given.
     WorkingTree:
       type: object
       required:

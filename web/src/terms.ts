@@ -1,4 +1,4 @@
-import type { ChangeKind, DriverMode, NodeKind, Status, ViewKind } from './api/types';
+import type { ChangeKind, ClosedTab, DriverMode, NodeKind, Status, ViewKind } from './api/types';
 
 /*
  * Every word the pages show, in formal Chinese, after the term table of docs/design.md §7.5. A concept has one word
@@ -27,17 +27,11 @@ export const VIEW_NAMES: Record<ViewKind, string> = {
   c4: 'C4',
 };
 
-/** Why a view tab cannot be chosen: the graph holds no input the view takes. */
-export const TAB_REASONS = {
-  notation: (notation: string) => `系统文件没有声明 ${NOTATION_NAMES[notation] ?? notation} 记法`,
-  noFlow: '设计中没有流程',
-  noOp: '设计中没有操作',
-  noProperty: '设计中没有性质',
-  noFile: '快照中没有代码文件',
-} as const;
-
-/** The notations of the labelled views, as the reasons name them. */
-const NOTATION_NAMES: Record<string, string> = { ddd: 'DDD', c4: 'C4' };
+/** Why a view tab cannot be chosen, as the server gives it (ClosedTab, docs/design.md §7.5.1); the hint sits on the tab itself. */
+export const CLOSED_TABS: Record<ClosedTab, string> = {
+  'undeclared-notation': '系统文件没有声明该视图的记法',
+  'no-input': '图中没有该视图能接受的输入',
+};
 
 /** The word for what a breadcrumb names when the input is the whole system. */
 export const VIEW_WORD = '视图';

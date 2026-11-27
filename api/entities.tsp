@@ -25,6 +25,9 @@ model Entity {
    */
   views: ViewRequest[];
 
+  /** Where each view's tab leads from the node, in the tabs' order */
+  tabs: ViewTab[];
+
   /**
    * 实现: the code elements that realize it, each with its realizes edge. For an external system, the clients that
    * realize its types and operations. A code element gives what it realizes in `node.bindings` instead.

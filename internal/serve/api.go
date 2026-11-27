@@ -288,6 +288,7 @@ func (st *state) view(kind view.ViewKind, input string, expand []string, layer v
 		}
 	}
 	out.Diagnostics = st.diagnostics(func(subject string) bool { return drawn[subject] })
+	out.Tabs = st.tabs(v.Input.Id)
 	return out, nil
 }
 
@@ -373,12 +374,18 @@ func viewIdentities(input string, expand []string) []string {
 // cases are left out.
 func (st *state) tree(id string, seen map[string]bool) TreeNode {
 	seen[id] = true
-	var kids []string
-	for _, c := range st.children(id) {
-		if n := st.nodes[c]; n.Layer == graph.LayerDesign && n.Kind != graph.NodeKindStep && n.Kind != graph.NodeKindCase && !seen[c] {
-			kids = append(kids, c)
+	out := TreeNode{Node: st.node(id), Children: []TreeNode{}}
+	for _, c := range st.treeChildren(id) {
+		if !seen[c] {
+			out.Children = append(out.Children, st.tree(c, seen))
 		}
 	}
+	return out
+}
+
+// treeChildren are a node's children in the design tree, in the tree's order.
+func (st *state) treeChildren(id string) []string {
+	kids := slices.DeleteFunc(st.children(id), func(c string) bool { return !st.inTree(c) })
 	if id == st.system {
 		slices.SortStableFunc(kids, func(a, b string) int {
 			if d := st.group(a) - st.group(b); d != 0 {
@@ -387,11 +394,7 @@ func (st *state) tree(id string, seen map[string]bool) TreeNode {
 			return strings.Compare(st.title(a), st.title(b))
 		})
 	}
-	out := TreeNode{Node: st.node(id), Children: []TreeNode{}}
-	for _, c := range kids {
-		out.Children = append(out.Children, st.tree(c, seen))
-	}
-	return out
+	return kids
 }
 
 // group orders the system's children in the design tree.

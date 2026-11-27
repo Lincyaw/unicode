@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/lincyaw/unicode/internal/check"
 	"github.com/lincyaw/unicode/internal/graph"
@@ -51,10 +50,12 @@ func (st *state) entity(id string) (Entity, error) {
 		return Entity{}, st.unknown(id)
 	}
 	p := &page{st: st, listed: map[string]bool{}}
+	views := st.relatedViews(id)
 	e := Entity{
 		Node:       st.node(id),
 		Ancestors:  st.nodeList(st.ancestors(id)),
-		Views:      st.relatedViews(id),
+		Views:      views,
+		Tabs:       st.tabsWith(id, views),
 		RealizedBy: p.neighborsOf(st.realizations(id)),
 		Properties: p.nodes(st.relatedProperties(id)),
 		Flows:      p.nodes(st.participations(id)),
@@ -252,12 +253,6 @@ func (st *state) relatedViews(id string) []ViewRequest {
 	for _, p := range st.relatedProperties(id) {
 		add(view.ViewKindProperty, p, "")
 	}
-	// Each answer selects a view over the whole graph, so they are found at once.
-	var wg sync.WaitGroup
-	for _, c := range candidates {
-		wg.Go(func() { st.viewApplies(c.kind, c.input) })
-	}
-	wg.Wait()
 	out := []ViewRequest{}
 	seen := map[candidate]bool{}
 	for _, c := range candidates {

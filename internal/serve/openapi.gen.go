@@ -77,6 +77,24 @@ func (e ClassLayer) Valid() bool {
 	}
 }
 
+// Defines values for ClosedTab.
+const (
+	ClosedTabNoInput            ClosedTab = "no-input"
+	ClosedTabUndeclaredNotation ClosedTab = "undeclared-notation"
+)
+
+// Valid indicates whether the value is a known member of the ClosedTab enum.
+func (e ClosedTab) Valid() bool {
+	switch e {
+	case ClosedTabNoInput:
+		return true
+	case ClosedTabUndeclaredNotation:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DriverMode.
 const (
 	DriverModeExplore DriverMode = "explore"
@@ -463,6 +481,10 @@ type CheckReport struct {
 // ClassLayer The layer the class view draws: the design's types, or the code types that realize them.
 type ClassLayer string
 
+// ClosedTab Why a view's tab cannot be opened from a node (docs/design.md §7.5.1): the system file does not declare the view's
+// notation, or the graph holds no input the view takes.
+type ClosedTab string
+
 // CodeDetail The sections of a code element's page. What it realizes or checks is `node.bindings`; where it is, `node.origin`.
 type CodeDetail struct {
 	// Callees 被调用方: the salient functions it calls or reaches, each with the edge
@@ -701,6 +723,9 @@ type Entity struct {
 
 	// Step A step
 	Step *StepDetail `json:"step,omitempty"`
+
+	// Tabs Where each view's tab leads from the node, in the tabs' order
+	Tabs []ViewTab `json:"tabs"`
 
 	// Type A design type
 	Type *TypeDetail `json:"type,omitempty"`
@@ -1134,6 +1159,9 @@ type View struct {
 
 	// Nodes The nodes it draws, in the view's order: a flow's lifelines and steps in their order, else by identity
 	Nodes []ViewNode `json:"nodes"`
+
+	// Tabs Where each view's tab leads from the view's input, in the tabs' order
+	Tabs []ViewTab `json:"tabs"`
 }
 
 // ViewEdge An edge a view draws.
@@ -1245,6 +1273,20 @@ type ViewRequest struct {
 
 	// Select The node to select in it, such as the step `order.submit-order#3`
 	Select *string `json:"select,omitempty"`
+}
+
+// ViewTab Where a view's tab leads from a node (docs/design.md §7.5.1): the node's related view of the kind, else the default
+// input its scopes give (the node, its ancestors, the system); or, when there is none, why. Exactly one of `view` and
+// `closed` is given.
+type ViewTab struct {
+	// Closed Why the tab cannot be opened
+	Closed *ClosedTab `json:"closed,omitempty"`
+
+	// Kind The kind of a view (docs/design.md §7.1), one per tab: 架构、领域、类、时序、活动、事件、调用、性质、代码、C4.
+	Kind ViewKind `json:"kind"`
+
+	// View The view to open; it applies, as /views/{kind} would answer it
+	View *ViewRequest `json:"view,omitempty"`
 }
 
 // WorkingTree The working tree the snapshot was read from: the commit it is checked out at, and whether it has changes.

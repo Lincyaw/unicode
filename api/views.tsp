@@ -132,6 +132,33 @@ model View {
 
   /** The diagnostics whose subject is a node or an edge it draws, the nodes in `contents` included */
   diagnostics: Diagnostic[];
+
+  /** Where each view's tab leads from the view's input, in the tabs' order */
+  tabs: ViewTab[];
+}
+
+/**
+ * Why a view's tab cannot be opened from a node (docs/design.md §7.5.1): the system file does not declare the view's
+ * notation, or the graph holds no input the view takes.
+ */
+enum ClosedTab {
+  `undeclared-notation`,
+  `no-input`,
+}
+
+/**
+ * Where a view's tab leads from a node (docs/design.md §7.5.1): the node's related view of the kind, else the default
+ * input its scopes give (the node, its ancestors, the system); or, when there is none, why. Exactly one of `view` and
+ * `closed` is given.
+ */
+model ViewTab {
+  kind: ViewKind;
+
+  /** The view to open; it applies, as /views/{kind} would answer it */
+  view?: ViewRequest;
+
+  /** Why the tab cannot be opened */
+  closed?: ClosedTab;
 }
 
 /** A view to open from a page, as its address writes it. */

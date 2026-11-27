@@ -13,7 +13,7 @@ import { kindWord, VIEW_NAMES, VIEW_WORD } from '../terms';
 import { Boundary } from './Boundary';
 import { HeaderTools } from './frame/HeaderTools';
 import { StatusBarData } from './frame/StatusBarData';
-import { tabLinks, useTabTargets } from './frame/tabs';
+import { tabLinks } from './frame/tabs';
 import { TopBarData } from './frame/TopBarData';
 import { TreeData } from './frame/TreeData';
 import { Preview } from './Preview';
@@ -34,9 +34,9 @@ function viewLinks(address: ViewAddress, navigate: (to: string, options?: { repl
 function ViewHeader({ address, links }: { address: ViewAddress; links: NodeLinks }) {
   const view = useView(address);
   const { system } = useSnapshot();
+  // The tabs lead from the selected node, once its page has arrived, else from the view's input.
   const selection = useOptionalEntity(address.select !== undefined && !isEdgeKey(address.select) ? address.select : undefined);
-  const input = useOptionalEntity(view.input.id);
-  const tabs = tabLinks(useTabTargets([selection, input]), (kind, target) => viewPath(kind === address.kind ? address : { ...target, base: address.base }));
+  const tabs = tabLinks(selection?.tabs ?? view.tabs, (kind, target) => viewPath(kind === address.kind ? address : { ...target, base: address.base }));
   const onSystem = view.input.form === 'system';
   const kind = kindWord(view.input.kind, view.input.form, view.input.layer);
   const crumbs = [...(onSystem ? [system] : view.ancestors).map(node => ({ label: node.title, to: links.entityHref(node.id) })), { label: onSystem ? VIEW_WORD : kind }];

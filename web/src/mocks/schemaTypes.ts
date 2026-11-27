@@ -18,6 +18,7 @@ export type ViewEdge = Schemas['ViewEdge'];
 export type View = Schemas['View'];
 export type ViewKind = Schemas['ViewKind'];
 export type ViewRequest = Schemas['ViewRequest'];
+export type ViewTab = Schemas['ViewTab'];
 export type Diagnostic = Schemas['Diagnostic'];
 export type Evidence = Schemas['Evidence'];
 export type Entity = Schemas['Entity'];

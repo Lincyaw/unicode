@@ -17,7 +17,7 @@ export interface ViewQuery {
 }
 
 /** The data of one view (docs/design.md §7.1–§7.2): what it draws, folded and ordered. */
-export function viewOf(kind: ViewKind, query: ViewQuery): View {
+export function viewOf(kind: ViewKind, query: ViewQuery): Omit<View, 'tabs'> {
   if (!viewKindValues.includes(kind)) {
     throw new NotApplicable(`there is no ${String(kind)} view; the views are ${viewKindValues.join(', ')}`);
   }

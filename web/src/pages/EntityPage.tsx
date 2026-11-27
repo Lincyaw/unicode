@@ -15,7 +15,7 @@ import { kindWord } from '../terms';
 import { Boundary } from './Boundary';
 import { HeaderTools } from './frame/HeaderTools';
 import { StatusBarData } from './frame/StatusBarData';
-import { tabLinks, useTabTargets } from './frame/tabs';
+import { tabLinks } from './frame/tabs';
 import { TopBarData } from './frame/TopBarData';
 import { TreeData } from './frame/TreeData';
 
@@ -33,7 +33,7 @@ function entityLinks(address: EntityAddress, navigate: (to: string) => void): No
 
 function EntityHeader({ address, links }: { address: EntityAddress; links: NodeLinks }) {
   const entity = useEntity(address.id, address.base);
-  const tabs = tabLinks(useTabTargets([entity]), (_kind, target) => viewPath({ ...target, base: address.base }));
+  const tabs = tabLinks(entity.tabs, (_kind, target) => viewPath({ ...target, base: address.base }));
   const { node } = entity;
   return (
     <PageHeader crumbs={[...entity.ancestors.map(ancestor => ({ label: ancestor.title, to: links.entityHref(ancestor.id) })), { label: kindWord(node.kind, node.form, node.layer) }]} title={displayName(node)}>

@@ -134,6 +134,22 @@ func Select(g *graph.Graph, kind ViewKind, id string, expand []string, layer Cla
 	return v, nil
 }
 
+// Inputs are the nodes the view of the kind takes as its input, by
+// identity: those for which Select, with no expansion, applies.
+//
+//uc:realizes view.inputs
+func Inputs(g *graph.Graph, kind ViewKind) []string {
+	ix := newIndex(g)
+	ids := []string{}
+	for id := range ix.nodes {
+		if _, err := ix.request(kind, id, ClassLayerDesign, C4LevelContainer); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	return ids
+}
+
 // request is a view request that Select accepted: its input is a node the
 // view applies to.
 type request struct {

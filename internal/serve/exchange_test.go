@@ -536,6 +536,13 @@ func genQueryExchange() *rapid.Generator[Exchange] {
 	return genExchangeOf(queryEndpoints)
 }
 
+// genTabsExchange draws requests for the answers that give tabs: entity pages and views.
+//
+//uc:generates serve.tabs-open-views.exchange
+func genTabsExchange() *rapid.Generator[Exchange] {
+	return genExchangeOf([]string{"/api/entity", "/api/views"})
+}
+
 // served writes an exchange's repository to a new directory, commits its
 // files when a request reads a revision, writes its snapshot at
 // .unicode/graph.json, and opens a server on it whose base commits all have
