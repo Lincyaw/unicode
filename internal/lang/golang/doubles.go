@@ -426,7 +426,7 @@ func (c *contractCompiler) doubleLiteral(value syntax.Value, t string, pkg *pack
 
 				ty.Parents = c.modelParents(key)
 				ty.Parent = first(ty.Parents)
-				unit.spec.Types[key] = ty
+				unit.spec.Types[key] = c.nativeModelType(key, ty)
 			}
 		}
 		ops, sigs := c.replySignature(unit, id)

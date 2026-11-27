@@ -458,7 +458,7 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 
 			ty.Parents = c.modelParents(node.Id)
 			ty.Parent = first(ty.Parents)
-			unit.spec.Types[node.Id] = ty
+			unit.spec.Types[node.Id] = c.nativeModelType(node.Id, ty)
 		}
 		if node.Kind == graph.NodeKindOp {
 			parameters, ret, raises := ucSignature(first(node.Attrs["signature"]))
