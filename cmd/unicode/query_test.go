@@ -107,13 +107,13 @@ func isDesignContainerCandidate(c candidate) bool {
 	return c.kind == graph.NodeKindContainer && c.layer == graph.LayerDesign
 }
 
-// genCommand draws a query command and its arguments for the repository:
+// genQueryCommand draws a query command and its arguments for the repository:
 // node get, node refs, node search, slice, impact or view, with identities of
 // its graph's nodes and now and then one that is not, and now and then
 // --rev HEAD.
 //
 //uc:generates cli.query-graph.command
-func genCommand(files map[string]RepoFile) *rapid.Generator[[]string] {
+func genQueryCommand(files map[string]RepoFile) *rapid.Generator[[]string] {
 	known := candidates(files)
 	return rapid.Custom(func(t *rapid.T) []string {
 		id := func(label string, of func(candidate) bool) string {
@@ -393,13 +393,13 @@ func checkCode(t rapid.TB, root string, files map[string]RepoFile, got any, s qu
 func TestFlowQueryGraph(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		files := genRepo().Draw(t, "files")
-		checkFlowQueryGraph(t, files, genCommand(files).Draw(t, "command"))
+		checkFlowQueryGraph(t, files, genQueryCommand(files).Draw(t, "command"))
 	})
 }
 
 func FuzzFlowQueryGraph(f *testing.F) {
 	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
 		files := genRepo().Draw(t, "files")
-		checkFlowQueryGraph(t, files, genCommand(files).Draw(t, "command"))
+		checkFlowQueryGraph(t, files, genQueryCommand(files).Draw(t, "command"))
 	}))
 }
