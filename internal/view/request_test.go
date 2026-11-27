@@ -11,7 +11,7 @@ import (
 )
 
 // Request is a graph and one view request on it: the view kind, the input
-// node and the identities to expand.
+// node, the identities to expand, the class view's layer and the C4 view's level.
 //
 //uc:realizes view.Request
 type Request struct {
@@ -19,6 +19,14 @@ type Request struct {
 	Kind     ViewKind
 	Id       string
 	Expand   []string
+	Layer    ClassLayer
+	Level    C4Level
+}
+
+// genLayers draws the layer and the level of a request.
+func genLayers(t *rapid.T) (ClassLayer, C4Level) {
+	return rapid.SampledFrom([]ClassLayer{ClassLayerDesign, ClassLayerCode}).Draw(t, "layer"),
+		rapid.SampledFrom([]C4Level{C4LevelContext, C4LevelContainer}).Draw(t, "level")
 }
 
 var viewKinds = []ViewKind{ViewKindArchitecture, ViewKindClass, ViewKindSequence, ViewKindActivity, ViewKindEvents,
@@ -356,11 +364,11 @@ func (b *builder) reaches(functions []string) {
 // drawn reaches edge written "reaches <from> <to>", a folded container or one
 // left out. The others are any container or function of the graph, or
 // names of nothing.
-func genExpand(t *rapid.T, f graph.Fragment, kind ViewKind, input string) []string {
+func genExpand(t *rapid.T, f graph.Fragment, kind ViewKind, input string, layer ClassLayer, level C4Level) []string {
 	w := newWorld(f)
 	var seen []string
 	if input, ok := w.applicable(kind, input); ok {
-		x := w.expected(kind, input, nil)
+		x := w.expected(asked{kind, input, layer, level}, nil)
 		for _, id := range keys(x.nodes) {
 			if w.nodes[id].Kind == graph.NodeKindOp || x.folded[id] {
 				seen = append(seen, id)
@@ -395,6 +403,7 @@ func genExpand(t *rapid.T, f graph.Fragment, kind ViewKind, input string) []stri
 // mostly a node the view applies to, and otherwise any node or "".
 //
 //uc:generates view.view-is-folded-subgraph.request
+//uc:generates view.view-names-input-ancestors.request
 func genRequest() *rapid.Generator[Request] {
 	return rapid.Custom(func(t *rapid.T) Request {
 		f := genGraph(t, 0)
@@ -411,7 +420,8 @@ func genRequest() *rapid.Generator[Request] {
 		if len(fitting) > 0 && rapid.IntRange(0, 5).Draw(t, "fits") > 0 {
 			id = rapid.SampledFrom(fitting).Draw(t, "input")
 		}
-		return Request{Fragment: f, Kind: kind, Id: id, Expand: genExpand(t, f, kind, id)}
+		layer, level := genLayers(t)
+		return Request{Fragment: f, Kind: kind, Id: id, Expand: genExpand(t, f, kind, id, layer, level), Layer: layer, Level: level}
 	})
 }
 
@@ -430,6 +440,26 @@ func genFlowRequest() *rapid.Generator[Request] {
 		}
 		kind := rapid.SampledFrom([]ViewKind{ViewKindSequence, ViewKindActivity}).Draw(t, "kind")
 		flow := rapid.SampledFrom(flows).Draw(t, "flow")
-		return Request{Fragment: f, Kind: kind, Id: flow, Expand: genExpand(t, f, kind, flow)}
+		layer, level := genLayers(t)
+		return Request{Fragment: f, Kind: kind, Id: flow, Expand: genExpand(t, f, kind, flow, layer, level), Layer: layer, Level: level}
 	})
+}
+
+// genSelectGraph draws a graph shaped like a real one, as genGraph does, for
+// a contract that calls Select on it.
+//
+//uc:generates view.view-echoes-its-request.g
+func genSelectGraph() *rapid.Generator[*graph.Graph] {
+	return rapid.Custom(func(t *rapid.T) *graph.Graph {
+		g := graphOf(t, genGraph(t, 0))
+		return &g
+	})
+}
+
+// genSelectInput draws the input of a contract's view request: "", an
+// identity that genGraph always or often draws, or one it never draws.
+//
+//uc:generates view.view-echoes-its-request.id
+func genSelectInput() *rapid.Generator[string] {
+	return rapid.SampledFrom([]string{"", "sys", "c0", "c1", "c0.c1", "c0.T0", "c1.T1", "c0.o0", "a0", "go:p0", "file:p0/f0.go", "nothing"})
 }

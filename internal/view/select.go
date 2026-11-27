@@ -10,7 +10,7 @@ import (
 )
 
 // selectors pick each view's candidate nodes and edge kinds (docs/design.md §7.1).
-var selectors = map[ViewKind]func(index, string) selection{
+var selectors = map[ViewKind]func(index, request) selection{
 	ViewKindArchitecture: architecture,
 	ViewKindClass:        class,
 	ViewKindSequence:     flow,
@@ -36,7 +36,8 @@ func hasLabel(n graph.Node, labels []string) bool {
 
 // architecture: the input, the design containers and external systems in
 // it, and those its containers use or depend on, or that use or depend on them.
-func architecture(ix index, input string) selection {
+func architecture(ix index, r request) selection {
+	input := r.input
 	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindUses, graph.EdgeKindDepends, graph.EdgeKindContains}}
 	s.add(input)
 	for _, d := range ix.descendants(input) {
@@ -57,7 +58,8 @@ func architecture(ix index, input string) selection {
 // class: for a container, the containers, external systems and types in it;
 // for a type, it and the types of its layer one refers, extends or
 // implements edge away. Each type comes with its operations.
-func class(ix index, input string) selection {
+func class(ix index, r request) selection {
+	input := r.input
 	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements, graph.EdgeKindContains}}
 	s.add(input)
 	if ix.nodes[input].Kind == graph.NodeKindContainer {
@@ -130,7 +132,8 @@ func lifelines(ix index, steps []string) []string {
 // order they first appear, its steps in their order, then the operations
 // the steps call, the events and errors they emit and handle, the functions
 // they trace to and the cases that cover them.
-func flow(ix index, input string) selection {
+func flow(ix index, r request) selection {
+	input := r.input
 	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindContains, graph.EdgeKindFrom, graph.EdgeKindCalls,
 		graph.EdgeKindEmits, graph.EdgeKindHandles, graph.EdgeKindTraces, graph.EdgeKindCovers}}
 	s.add(input)
@@ -151,7 +154,8 @@ func flow(ix index, input string) selection {
 
 // events: the events in the container, the steps that emit them and the
 // operations that subscribe to them.
-func events(ix index, input string) selection {
+func events(ix index, r request) selection {
+	input := r.input
 	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindEmits, graph.EdgeKindSubscribes}}
 	for _, d := range ix.descendants(input) {
 		if n := ix.nodes[d]; n.Kind == graph.NodeKindType && n.Form == "event" {
@@ -165,7 +169,8 @@ func events(ix index, input string) selection {
 
 // calls: the input with the functions that realize it, and every salient
 // function they reach along calls and reaches edges between salient functions.
-func calls(ix index, input string) selection {
+func calls(ix index, r request) selection {
+	input := r.input
 	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindRealizes}}
 	s.add(input)
 	for _, f := range ix.sources(input, graph.EdgeKindRealizes) {
@@ -185,7 +190,8 @@ func calls(ix index, input string) selection {
 
 // property: the property, or every property in the container, each with
 // what it is about, its cases and its predicate.
-func property(ix index, input string) selection {
+func property(ix index, r request) selection {
+	input := r.input
 	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindAbout, graph.EdgeKindContains, graph.EdgeKindChecks}}
 	props := []string{input}
 	if ix.nodes[input].Kind != graph.NodeKindProperty {
@@ -212,7 +218,8 @@ func property(ix index, input string) selection {
 // code: the file or type and what it contains, the functions at the other
 // end of the calls and reaches edges of its functions, and the cases that
 // cover any of them.
-func code(ix index, input string) selection {
+func code(ix index, r request) selection {
+	input := r.input
 	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindContains, graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindCovers}}
 	contents := append([]string{input}, ix.descendants(input)...)
 	s.add(contents...)
@@ -225,7 +232,8 @@ func code(ix index, input string) selection {
 
 // ddd: the bounded contexts among the container and the containers in it,
 // and the types in them that carry a DDD label or are events.
-func ddd(ix index, input string) selection {
+func ddd(ix index, r request) selection {
+	input := r.input
 	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements, graph.EdgeKindContains}}
 	for _, c := range append([]string{input}, ix.descendants(input)...) {
 		if n := ix.nodes[c]; !isDesignContainer(n) || !slices.Contains(n.Attrs["labels"], "bounded-context") {
@@ -243,7 +251,8 @@ func ddd(ix index, input string) selection {
 
 // c4: the container, the containers in it that carry a C4 label, and the
 // external systems at the other end of their dependencies.
-func c4(ix index, input string) selection {
+func c4(ix index, r request) selection {
+	input := r.input
 	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindUses, graph.EdgeKindDepends, graph.EdgeKindContains}}
 	s.add(input)
 	for _, d := range ix.descendants(input) {

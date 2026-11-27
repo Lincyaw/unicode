@@ -97,9 +97,10 @@ linters:
           files: ["**/internal/view/**"]
           allow:
             - github.com/lincyaw/unicode/internal/graph
+            - github.com/lincyaw/unicode/internal/check
           deny:
             - pkg: github.com/lincyaw/unicode/internal
-              desc: "组件 view 只能依赖 graph（design/view.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+              desc: "组件 view 只能依赖 graph、check（design/view.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
         serve:
           list-mode: lax
           files: ["**/internal/serve/**"]

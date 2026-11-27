@@ -35,7 +35,8 @@ var focusFolding = []ViewKind{ViewKindArchitecture, ViewKindClass, ViewKindCalls
 // and leaving out utility ones when the view is one of focusFolding; then it
 // draws what the expanded salient functions and reaches edges reveal; then
 // every edge between drawn nodes that the selection or an expansion picks.
-func (ix index) fold(kind ViewKind, input string, sel selection, expand []string) View {
+func (ix index) fold(r request, sel selection, expand []string) View {
+	kind, input := r.kind, r.input
 	f := folding{ix: ix, byFocus: slices.Contains(focusFolding, kind), exempt: map[string]bool{input: true},
 		drawn: map[string]bool{}, folded: map[string]bool{}, hidden: map[string]bool{}}
 	for _, id := range append(ix.enclosing(input), expand...) {
@@ -56,16 +57,16 @@ func (ix index) fold(kind ViewKind, input string, sel selection, expand []string
 			revealed[e] = true
 		}
 	}
-	v := View{Kind: kind, Nodes: []graph.Node{}, Edges: []graph.Edge{}, Folded: append([]string{}, slices.Sorted(maps.Keys(f.folded))...), Hidden: len(f.hidden)}
+	v := View{Kind: kind, Nodes: []ViewNode{}, Edges: []ViewEdge{}, Folded: append([]string{}, slices.Sorted(maps.Keys(f.folded))...), Hidden: len(f.hidden)}
 	if kind != ViewKindSequence && kind != ViewKindActivity {
 		slices.Sort(f.order)
 	}
 	for _, id := range f.order {
-		v.Nodes = append(v.Nodes, ix.nodes[id])
+		v.Nodes = append(v.Nodes, ViewNode{Node: ix.nodes[id]})
 	}
 	for _, e := range ix.edges {
 		if f.drawn[e.From] && f.drawn[e.To] && (slices.Contains(sel.kinds, e.Kind) || revealed[edgeKey{e.Kind, e.From, e.To}]) {
-			v.Edges = append(v.Edges, e)
+			v.Edges = append(v.Edges, ViewEdge{Edge: e})
 		}
 	}
 	return v

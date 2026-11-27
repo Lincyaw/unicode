@@ -87,6 +87,17 @@ func (ix index) parent(id string) string {
 	return ""
 }
 
+// containers returns the nodes that contain id along contains, innermost first.
+func (ix index) containers(id string) []string {
+	seen := map[string]bool{id: true}
+	var chain []string
+	for p := ix.parent(id); p != "" && !seen[p]; p = ix.parent(p) {
+		seen[p] = true
+		chain = append(chain, p)
+	}
+	return chain
+}
+
 // enclosing returns what encloses id, innermost first: a code file's owner
 // along owns, else its container along contains, and so on upwards.
 func (ix index) enclosing(id string) []string {

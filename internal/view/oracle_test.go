@@ -121,7 +121,7 @@ func (w world) focus(id string) string {
 
 // applicable resolves the input of a view and tells whether the view applies to it.
 func (w world) applicable(kind ViewKind, id string) (string, bool) {
-	if id == "" && (kind == ViewKindArchitecture || kind == ViewKindEvents) {
+	if id == "" && (kind == ViewKindArchitecture || kind == ViewKindEvents || kind == ViewKindDdd || kind == ViewKindC4) {
 		id = w.system
 	}
 	n, ok := w.nodes[id]
@@ -134,7 +134,7 @@ func (w world) applicable(kind ViewKind, id string) (string, bool) {
 	case ViewKindDdd, ViewKindC4:
 		return id, w.designContainer(id) && slices.Contains(w.nodes[w.system].Attrs["notations"], string(kind))
 	case ViewKindClass:
-		return id, n.Kind == graph.NodeKindContainer || n.Kind == graph.NodeKindType
+		return id, n.Layer == graph.LayerDesign && (n.Kind == graph.NodeKindContainer || n.Kind == graph.NodeKindType)
 	case ViewKindSequence, ViewKindActivity:
 		return id, n.Kind == graph.NodeKindFlow
 	case ViewKindCalls:
@@ -195,8 +195,18 @@ func (w world) participants(flow string) []string {
 	return found
 }
 
+// asked is a view request as the oracle reads it: the kind, the resolved
+// input, the class view's layer and the C4 view's level.
+type asked struct {
+	kind  ViewKind
+	input string
+	layer ClassLayer
+	level C4Level
+}
+
 // candidates returns what the view selects for the input before folding (§7.1).
-func (w world) candidates(kind ViewKind, input string) map[string]bool {
+func (w world) candidates(a asked) map[string]bool {
+	kind, input := a.kind, a.input
 	c := map[string]bool{input: true}
 	below := w.below(input)
 	add := func(ids ...string) {
@@ -410,10 +420,11 @@ func (w world) detailFunction(id string) bool {
 
 // expected computes the whole view: the candidates' salient nodes placed,
 // then what each expansion reveals placed, then the edges between drawn nodes.
-func (w world) expected(kind ViewKind, input string, expand []string) expectation {
+func (w world) expected(a asked, expand []string) expectation {
+	kind, input := a.kind, a.input
 	x := expectation{nodes: map[string]bool{}, folded: map[string]bool{}, hiders: map[string]bool{}, edges: map[edgeKey]bool{}}
 	exempt := w.exempt(kind, input, expand)
-	for _, id := range keys(w.candidates(kind, input)) {
+	for _, id := range keys(w.candidates(a)) {
 		if w.nodes[id].Salient {
 			w.placeInto(&x, id, exempt)
 		}

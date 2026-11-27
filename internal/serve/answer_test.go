@@ -326,7 +326,14 @@ func sameView(t rapid.TB, s *Server, req Request, resp Response, g *graph.Graph)
 			return ""
 		}
 	}
-	want, err := view.Select(g, view.ViewKind(kind), q.Get("input"), q["expand"])
+	layer, level := view.ClassLayerDesign, view.C4LevelContainer
+	if q.Has("layer") {
+		layer = view.ClassLayer(q.Get("layer"))
+	}
+	if q.Has("level") {
+		level = view.C4Level(q.Get("level"))
+	}
+	want, err := view.Select(g, view.ViewKind(kind), q.Get("input"), q["expand"], layer, level)
 	if errors.As(err, new(view.NotApplicable)) {
 		refusal(t, req, resp, http.StatusBadRequest, "serve.not-applicable")
 		return ""
@@ -341,7 +348,15 @@ func sameView(t rapid.TB, s *Server, req Request, resp Response, g *graph.Graph)
 	for i, e := range got.Edges {
 		edges[i] = Edge{Kind: e.Kind, From: e.From, To: e.To, Source: e.Source, Origin: e.Origin, Attrs: e.Attrs}
 	}
-	why := cmpOr(sameNodes(nodes, g, want.Nodes), sameEdges(edges, want.Edges))
+	wantNodes := make([]graph.Node, len(want.Nodes))
+	for i, n := range want.Nodes {
+		wantNodes[i] = n.Node
+	}
+	wantEdges := make([]graph.Edge, len(want.Edges))
+	for i, e := range want.Edges {
+		wantEdges[i] = e.Edge
+	}
+	why := cmpOr(sameNodes(nodes, g, wantNodes), sameEdges(edges, wantEdges))
 	if !slices.Equal(got.Folded, append([]string{}, want.Folded...)) || int(got.Hidden) != want.Hidden {
 		why = cmpOr(why, fmt.Sprintf("it folds %v and hides %d, select folds %v and hides %d", got.Folded, got.Hidden, want.Folded, want.Hidden))
 	}

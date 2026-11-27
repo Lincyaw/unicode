@@ -48,7 +48,7 @@ func compareKeys(a, b edgeKey) int {
 func checkViewIsFoldedSubgraph(t rapid.TB, request Request) {
 	g := graphOf(t, request.Fragment)
 	w := newWorld(request.Fragment)
-	got, err := Select(&g, request.Kind, request.Id, request.Expand)
+	got, err := Select(&g, request.Kind, request.Id, request.Expand, request.Layer, request.Level)
 	input, applies := w.applicable(request.Kind, request.Id)
 	if !applies {
 		if !errors.As(err, new(NotApplicable)) {
@@ -69,7 +69,7 @@ func checkViewIsFoldedSubgraph(t rapid.TB, request Request) {
 			t.Fatalf("the %s view of %q draws the node %q twice", request.Kind, request.Id, n.Id)
 		}
 		drawn[n.Id] = true
-		if !reflect.DeepEqual(n, w.nodes[n.Id]) {
+		if !reflect.DeepEqual(n.Node, w.nodes[n.Id]) {
 			t.Fatalf("the %s view of %q draws the node %+v, which the graph does not hold", request.Kind, request.Id, n)
 		}
 	}
@@ -83,7 +83,7 @@ func checkViewIsFoldedSubgraph(t rapid.TB, request Request) {
 		switch {
 		case edges[k]:
 			t.Fatalf("the %s view of %q draws the edge %s %q %q twice", request.Kind, request.Id, e.Kind, e.From, e.To)
-		case !reflect.DeepEqual(e, graphEdges[k]):
+		case !reflect.DeepEqual(e.Edge, graphEdges[k]):
 			t.Fatalf("the %s view of %q draws the edge %+v, which the graph does not hold", request.Kind, request.Id, e)
 		case !drawn[e.From] || !drawn[e.To]:
 			t.Fatalf("the %s view of %q draws the edge %s %q %q, an end of which it does not draw", request.Kind, request.Id, e.Kind, e.From, e.To)
@@ -129,7 +129,7 @@ func checkViewIsFoldedSubgraph(t rapid.TB, request Request) {
 		}
 	}
 
-	want := w.expected(request.Kind, input, request.Expand)
+	want := w.expected(asked{request.Kind, input, request.Layer, request.Level}, request.Expand)
 	if missing := difference(want.nodes, drawn, strings.Compare); len(missing) > 0 {
 		t.Fatalf("the %s view of %q, expanding %q, leaves out %q, which §7.1–§7.2 draw", request.Kind, request.Id, request.Expand, missing)
 	}
@@ -162,7 +162,7 @@ func set(ids []string) map[string]bool {
 func checkSequenceFollowsSteps(t rapid.TB, request Request) {
 	g := graphOf(t, request.Fragment)
 	w := newWorld(request.Fragment)
-	got, err := Select(&g, request.Kind, request.Id, request.Expand)
+	got, err := Select(&g, request.Kind, request.Id, request.Expand, request.Layer, request.Level)
 	if err != nil {
 		t.Fatalf("Select refused the %s view of the flow %q: %v", request.Kind, request.Id, err)
 	}
@@ -195,5 +195,41 @@ func checkSequenceFollowsSteps(t rapid.TB, request Request) {
 		case i > 0 && at < position[lifelines[i-1]]:
 			t.Fatalf("the %s view of %q draws the lifeline %q before %q, though %q appears first in the flow", request.Kind, request.Id, l, lifelines[i-1], lifelines[i-1])
 		}
+	}
+}
+
+//uc:checks view.view-names-input-ancestors
+func checkViewNamesInputAncestors(t rapid.TB, request Request) {
+	g := graphOf(t, request.Fragment)
+	w := newWorld(request.Fragment)
+	input, applies := w.applicable(request.Kind, request.Id)
+	got, err := Select(&g, request.Kind, request.Id, request.Expand, request.Layer, request.Level)
+	if !applies {
+		return
+	}
+	if err != nil {
+		t.Fatalf("Select refused the %s view of %q, a node it applies to: %v", request.Kind, request.Id, err)
+	}
+	if !reflect.DeepEqual(got.Input, w.nodes[input]) {
+		t.Fatalf("the %s view of %q gives the input %+v, not the node %q", request.Kind, request.Id, got.Input, input)
+	}
+	var ancestors []string
+	for _, a := range got.Ancestors {
+		if !reflect.DeepEqual(a, w.nodes[a.Id]) {
+			t.Fatalf("the %s view of %q gives the ancestor %+v, which the graph does not hold", request.Kind, request.Id, a)
+		}
+		ancestors = append(ancestors, a.Id)
+	}
+	var want []string
+	for at := input; ; {
+		parents := w.from(at, graph.EdgeKindContains)
+		if len(parents) == 0 || parents[0] == input || slices.Contains(want, parents[0]) {
+			break
+		}
+		want = append([]string{parents[0]}, want...)
+		at = parents[0]
+	}
+	if !slices.Equal(ancestors, want) {
+		t.Fatalf("the %s view of %q gives the ancestors %q, not the nodes that contain %q, the outermost first: %q", request.Kind, request.Id, ancestors, input, want)
 	}
 }
