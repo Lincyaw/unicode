@@ -99,9 +99,11 @@ func (ix index) declared(c string) []string {
 	return ids
 }
 
-// labels returns the design operations that a drawn edge carries, sorted:
-// for a depends, those that the callees of the calls it stands for realize;
-// for a calls edge from a person, the operations the steps it stands for call.
+// labels returns the operations that a drawn edge carries, by design name,
+// sorted (docs/design.md §7.1): for a depends, those that the callees of the
+// calls it stands for realize; for a calls edge from a person, the calls of
+// the steps it stands for as the flow writes them, the name and the
+// arguments, such as submit(cart).
 func (ix index) labels(from string, stands []graph.Edge) []string {
 	var ops []string
 	for _, e := range stands {
@@ -111,16 +113,19 @@ func (ix index) labels(from string, stands []graph.Edge) []string {
 				_, callee, _ := strings.Cut(call, " ")
 				for _, o := range ix.targets(callee, graph.EdgeKindRealizes) {
 					if n := ix.nodes[o]; n.Kind == graph.NodeKindOp && n.Layer == graph.LayerDesign {
-						ops = append(ops, o)
+						ops = append(ops, designName(o))
 					}
 				}
 			}
 		case e.Kind == graph.EdgeKindCalls && isPerson(ix.nodes[from]):
-			ops = append(ops, e.To)
+			ops = append(ops, designName(e.To)+"("+strings.Join(ix.nodes[e.From].Attrs["args"], ", ")+")")
 		}
 	}
 	slices.Sort(ops)
 	return slices.Compact(ops)
 }
+
+// designName is the name of a design node: the last segment of its identity.
+func designName(id string) string { return id[strings.LastIndex(id, ".")+1:] }
 
 func isPerson(n graph.Node) bool { return n.Kind == graph.NodeKindActor && n.Form == "person" }

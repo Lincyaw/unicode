@@ -195,6 +195,11 @@ func genGraph(t *rapid.T, minFlows int) graph.Fragment {
 	return b.frag
 }
 
+// subscribes tells whether the operation op subscribes to an event already.
+func (b *builder) subscribes(op string) bool {
+	return slices.ContainsFunc(b.frag.Edges, func(e graph.Edge) bool { return e.Kind == graph.EdgeKindSubscribes && e.From == op })
+}
+
 // parentOf returns the identity of the node that a generated identity names as its parent.
 func parentOf(id string) string {
 	for i := len(id) - 1; i >= 0; i-- {
@@ -206,7 +211,9 @@ func parentOf(id string) string {
 }
 
 // steps draws a step tree under the flow, the second step always nested in
-// the first, and numbers the steps in text order from 1, as their index.
+// the first, and numbers the steps in text order from 1, as their index. The
+// operation an async step runs subscribes, now and then, to an event that
+// triggers it.
 func (b *builder) steps(flow string, participants, ops, events, errors []string) []string {
 	n := rapid.IntRange(1, 12).Draw(b.t, "steps")
 	children := make([][]int, n+1) // children[0] are the flow's; children[i+1] are step i's
@@ -225,7 +232,11 @@ func (b *builder) steps(flow string, participants, ops, events, errors []string)
 		for _, c := range children[at] {
 			index := strconv.Itoa(len(ids) + 1)
 			form := rapid.SampledFrom([]string{"call", "send", "emit", "async", "alt", "opt", "loop", "on"}).Draw(b.t, "stepForm")
-			id := b.node(flow+"#"+index, graph.NodeKindStep, form, graph.LayerDesign, true, map[string][]string{"index": {index}})
+			attrs := map[string][]string{"index": {index}}
+			if args := b.subset("arg", []string{"order", "amount"}); form == "call" || form == "send" {
+				attrs["args"] = args
+			}
+			id := b.node(flow+"#"+index, graph.NodeKindStep, form, graph.LayerDesign, true, attrs)
 			ids = append(ids, id)
 			b.edge(graph.EdgeKindContains, parent, id)
 			switch form {
@@ -236,7 +247,11 @@ func (b *builder) steps(flow string, participants, ops, events, errors []string)
 				b.edge(graph.EdgeKindFrom, id, b.pick("emitter", participants))
 				b.edge(graph.EdgeKindEmits, id, b.pick("emitted", events))
 			case "async":
-				b.edge(graph.EdgeKindCalls, id, b.pick("subscriber", ops))
+				op := b.pick("subscriber", ops)
+				b.edge(graph.EdgeKindCalls, id, op)
+				if !b.subscribes(op) && rapid.Bool().Draw(b.t, "triggered") {
+					b.edge(graph.EdgeKindSubscribes, op, b.pick("trigger", events))
+				}
 			case "on":
 				b.edge(graph.EdgeKindHandles, id, b.pick("handled", errors))
 			}
