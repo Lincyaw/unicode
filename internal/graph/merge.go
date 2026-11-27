@@ -3,7 +3,7 @@ package graph
 // AddFragment adds a fragment's nodes, then its edges, and adds nothing when
 // it returns an error. Two kinds of edges wait for Derive instead of joining
 // the graph at once (docs/design.md §4, docs/model.md §9):
-//   - a binding (realizes, checks, generates) whose target is not a node of the
+//   - a binding (realizes, checks, generates, observes) whose target is not a node of the
 //     graph or the fragment; Derive adds it once its target is a node, and
 //     reports it otherwise;
 //   - a derived realizes, the candidate a backend gives for a method; Derive
@@ -62,7 +62,7 @@ func (g *Graph) AddFragment(fragment Fragment) error {
 }
 
 func isBinding(kind EdgeKind) bool {
-	return kind == EdgeKindRealizes || kind == EdgeKindChecks || kind == EdgeKindGenerates
+	return kind == EdgeKindRealizes || kind == EdgeKindChecks || kind == EdgeKindGenerates || kind == EdgeKindObserves
 }
 
 // isCandidate tells whether e is a backend's candidate for a method's realizes.

@@ -51,17 +51,18 @@ const (
 type NodeKind string
 
 const (
-	NodeKindContainer NodeKind = "container"
-	NodeKindType      NodeKind = "type"
-	NodeKindOp        NodeKind = "op"
-	NodeKindActor     NodeKind = "actor"
-	NodeKindFlow      NodeKind = "flow"
-	NodeKindStep      NodeKind = "step"
-	NodeKindProperty  NodeKind = "property"
-	NodeKindCase      NodeKind = "case"
-	NodeKindRun       NodeKind = "run"
-	NodeKindResult    NodeKind = "result"
-	NodeKindReview    NodeKind = "review"
+	NodeKindContainer   NodeKind = "container"
+	NodeKindType        NodeKind = "type"
+	NodeKindOp          NodeKind = "op"
+	NodeKindActor       NodeKind = "actor"
+	NodeKindFlow        NodeKind = "flow"
+	NodeKindStep        NodeKind = "step"
+	NodeKindProperty    NodeKind = "property"
+	NodeKindObservation NodeKind = "observation"
+	NodeKindCase        NodeKind = "case"
+	NodeKindRun         NodeKind = "run"
+	NodeKindResult      NodeKind = "result"
+	NodeKindReview      NodeKind = "review"
 )
 
 // EdgeKind is the kind of an edge (docs/model.md §4).
@@ -85,6 +86,7 @@ const (
 	EdgeKindRealizes   EdgeKind = "realizes"
 	EdgeKindChecks     EdgeKind = "checks"
 	EdgeKindGenerates  EdgeKind = "generates"
+	EdgeKindObserves   EdgeKind = "observes"
 	EdgeKindOwns       EdgeKind = "owns"
 	EdgeKindDepends    EdgeKind = "depends"
 	EdgeKindTraces     EdgeKind = "traces"
