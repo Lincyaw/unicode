@@ -41,8 +41,9 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | `internal/query` | 节点、引用、搜索、切片和影响 | graph |
 | `internal/view` | 视图的选取与折叠；类型卡片的成员沿用 `check` 对字段和枚举值的逐项比较 | graph、check |
 | `internal/repo` | 仓库：经 git 读出提交、工作区和提交中的文件，以及 `build` 写在快照旁边的记录 | — |
-| `internal/serve` | 查看器的后端：读取快照，载入时按 `check` 的约束检查，回答 §7.5.1 的接口；比较的基准由命令行建图；前端页面嵌入其中 | graph、diag、check、query、view、lang.golang、repo |
+| `internal/serve` | 查看器的后端：读取快照，载入时按 `check` 的约束检查，回答 §7.5.1 的接口；比较的基准由命令行建图；前端页面嵌入其中 | graph、diag、check、query、view、lang.golang、repo、review |
 | `internal/gen` | 生成计划：缺少的骨架，以及应有的生成文件 | graph、lang、diag |
+| `internal/review` | 不可变评审记录、内容指纹、待审候选和评审层片段 | graph、diag |
 | `internal/run` | 回放与探索：经后端运行驱动，按覆盖挑选输入，缩减并写出录制文件 | graph、lang、syntax、diag |
 | `cmd/unicode` | 解析参数，调用其余组件，输出结果和退出码 | 全部 |
 | `python/uc` | Python 运行时包 `uc`（装饰器），随工具链发布 | — |
@@ -495,6 +496,18 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 | 函数预览：实现、位置、签名、调用方、被调用方、细节函数（11） | `/entity` | `node.bindings`、`node.origin`；`code.declaration`、`code.callers`、`code.callees`、`code.details` |
 | reaches 预览：经过的细节函数、终点、相关步骤、展开（04） | `/edge` | `nodes`、`toNode`、`steps`、`views` |
 
+### 7.6 评审记录
+
+`review` 组件按内容判断评审是否有效，提供读取、写入、计算候选和生成评审层片段的接口；接口以 `design/review.uc` 为准。记录保存在 `.unicode/reviews/<记录内容的 SHA-256>.json`，版本为 1，每个文件只含一条不可变记录。记录包含 UTC RFC3339Nano 时间、评审者、目标、内容指纹、结论、意见、执行输入图摘要，以及供追溯的提交和 dirty 信息。重复相同记录幂等，不做单一大文件的读取后覆写。缺失存储是空集合；版本、字段、时间、摘要或路径不合法，以及符号链接，均给出定位诊断。
+
+目标恰为节点标识，或 `(edgeKind, from, to)`；二者不混用。普通节点的有效指纹基于 `graph.digest`；边基于身份和属性的 `graph.edgeDigest`，与比较一致，位置属性仍算边内容。人工性质和人工流程的指纹另外包含 `checks` 绑定身份和谓词内容；带具名观察的性质另外包含观察声明、`observes` 绑定及适配器内容，落实 model.md 第 33、36 条。其他无关内容不泛化传播失效。最新的匹配记录按 `(at, id)` 决定，状态是 `reviewed`；没有匹配记录时为 `pending`。结论与状态分开，评过不等于批准。
+
+无基准时，候选包括当前设计与非本工具生成代码的节点、边；普通细节函数仍在候选内。带基准时，候选为比较中的新增、修改和删除，并补上自身未变而因人工谓词或观察适配器变化待审的性质。删除目标用墓碑指纹，不能因为当前图里没有它就漏审。写入时重新计算指纹；调用方给出 `expectedDigest` 时，目标已变则拒绝写入。存储的记录不因结论而设置一致性状态。
+
+建图时加入 review 层记录节点和指向仍存在目标的 `about` 边；边目标的完整身份保存在节点属性中，删除项不生成悬空边。查询、评审计算及执行输入摘要排除这些运行产物，避免记录使自身失效。`graph.inputDigest` 对执行输入图做确定编码，排除 evidence/review、case、本工具生成代码及其关联边，保留其余节点、边和位置；用例另以输入摘要锚定。录制后新增用例及重新生成驱动不会立即使刚产生的证据过期。
+
+命令行写记录，查看器接口仍只读。实体和边的预览使用现有评审位置展示真实状态、结论和意见；待审列表支持比较基准与删除项。服务端把评审存储与结果文件的内容变化纳入读取条件，写完后下一次请求可见，不要求重启服务。界面沿用已有 Figma 原型的评审与证据位置；新增交互须先更新原型。
+
 ## 8 命令行
 
 命令行的使用者既是人，也是 agent，约定遵守 cli-design 的规则：标准输出只放数据，诊断和日志写到标准错误；每个命令都支持 `--format text|json`；不读标准输入，不提示确认。
@@ -514,6 +527,8 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 | `unicode slice <id>... [--expand ID]... [--with-code]` | 切片 | 无 |
 | `unicode impact <id>...` | 影响 | 无 |
 | `unicode view <kind> [<id>] [--expand ID]... [--layer design\|code] [--level context\|container]` | 视图的数据 | 无 |
+| `unicode review list [ID...] [--base REV] [--pending]` | 列出评审候选或待审项；带基准时包括删除项 | 无 |
+| `unicode review record [ID] [--edge KIND --from ID --to ID] [--base REV] [--removed] --reviewer NAME --decision approved\|changes-requested [--comment TEXT] [--expect-digest HASH]` | 对节点或边的当前内容记录评审；删除项须给出基准 | `.unicode/reviews/` |
 | `unicode schema` | 输出命令、参数和各命令输出的 JSON Schema | 无 |
 | `unicode serve [--snapshot FILE] [--addr HOST:PORT] [--web DIR]` | 启动查看器：读取快照，回答 §7.5.1 的接口，并提供前端页面 | 无 |
 
@@ -636,7 +651,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 5. 复杂关系已由 `requires` 表达；满足这些前提的输入生成先使用类型生成、前置符号依赖和拒绝采样，生成预算与拒绝计数的调优留待实际使用。
 6. 并发的性质：并行的调用、线性一致性。
 7. 录制用例的数量上限（暂定每条 64 个）和探索预算在各性质之间的分配方式。
-8. 评审记录存放在哪里（M7）。
+8. 评审记录存于 `.unicode/reviews/`，接口、指纹和删除项规则见 §7.6。
 9. `observe` 能否省略：不涉及设计之外的状态时，观察的通常就是 `changes` 路径的起点；可考虑只写 `changes` 时自动观察这些起点，只有读取外部状态时才写 `observe`，从而去掉 G18 的成对要求。
 10. 通用的 Go 规则放进 engineering-conventions skill 的 `reference/go.md`；本仓库的 AGENTS.md 只留本仓库特有的规则。
 11. 设计中的泛型类型（类型参数）：M1 不支持。

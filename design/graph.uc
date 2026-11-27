@@ -149,6 +149,10 @@ type Comparison record "两个快照的差别：新增、删除和修改的节�
 
 op newGraph() -> Graph "一张空图"
 
+op edgeDigest(edge: Edge) -> string pure "边的身份与属性的规范 SHA-256，与 compare 判断边修改的含义相同，不含出处"
+
+op inputDigest(g: Graph) -> string pure "执行输入图的 SHA-256，排除 evidence/review、全部 case、本工具生成代码及关联边；保留其余节点和边及其位置，避免把旧覆盖行套到新源码"
+
 op compare(base: Graph, head: Graph) -> Comparison pure "按标识对齐两张图的节点和边（model.md §8），列出 head 相对 base 新增、删除和修改的项：节点的修改是内容哈希不同，边的修改是属性不同"
 
 op decode(data: bytes) -> Graph raises NotASnapshot "encode 的逆：从快照还原出图"

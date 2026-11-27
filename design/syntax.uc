@@ -105,10 +105,14 @@ property format-is-stable relation "合法的文本 s 解析后打印得到 t：
   manual "需要比较完整语法树、路径分段或诊断的源位置与排序；这些结构不由表达式语言直接提供"
 }
 
-property rejects-broken-text invariant "合法的文件做一处违反某条规则的改动之后，解析在改动所在的行和列给出这条规则的诊断，并且不给出语法树" {
+property rejects-broken-text postcondition "合法的文件做一处违反某条规则的改动之后，解析在改动所在的行和列给出这条规则的诊断，并且不给出语法树" {
   about parse
   forall broken: Broken generated "一个随机的合法文件，在随机的一处做了违反 language.md 某条规则的改动，附上改动所在的行和应当得到的诊断码"
-  manual "需要比较完整语法树、路径分段或诊断的源位置与排序；这些结构不由表达式语言直接提供"
+  forall path: string generated "按 broken.kind 给出原有解析路径"
+  forall src: bytes generated "broken.text 的源码字节，不改变非法文本及独立预期位置"
+  call parse(path, broken.kind, src)
+  ensure result.file == none
+  ensure any(d in result.diagnostics: d.code == broken.code and d.position.line == broken.line and d.position.column == broken.column)
 }
 
 property expression-format-is-stable relation "深度三的表达式在复合项均有括号时解析、规范打印并再次解析，语法树与规范文本均保持稳定" {
@@ -117,16 +121,24 @@ property expression-format-is-stable relation "深度三的表达式在复合项
   manual "需要比较忽略位置的完整语法树、布局和规范文本，沿用格式性质的独立判定"
 }
 
-property contract-syntax-rejects-invalid-claims invariant "契约在陈述、调用、前提、观察、变化范围或关键字上有一处非法写法时，在正确位置拒绝" {
+property contract-syntax-rejects-invalid-claims postcondition "契约在陈述、调用、前提、观察、变化范围或关键字上有一处非法写法时，在正确位置拒绝" {
   about parse
   forall broken: Broken generated "沿用非法契约的十一个变体及其预期诊断和位置"
-  manual "需要构造非法源文本并比较诊断的位置与代码，沿用语法错误性质的独立判定"
+  forall path: string generated "按 broken.kind 给出原有解析路径"
+  forall src: bytes generated "broken.text 的源码字节，不改变非法文本及独立预期位置"
+  call parse(path, broken.kind, src)
+  ensure result.file == none
+  ensure any(d in result.diagnostics: d.code == broken.code and d.position.line == broken.line and d.position.column == broken.column)
 }
 
-property observation-syntax-rejects-malformed-paths invariant "直接观察路径的名称、大小写或分段不合文法时，在正确位置拒绝" {
+property observation-syntax-rejects-malformed-paths postcondition "直接观察路径的名称、大小写或分段不合文法时，在正确位置拒绝" {
   about parse
   forall broken: Broken generated "一至四条观察路径，每条一至五段，保留非法名称变体和预期位置"
-  manual "需要构造非法源文本并比较诊断的位置与代码，沿用语法错误性质的独立判定"
+  forall path: string generated "按 broken.kind 给出原有解析路径"
+  forall src: bytes generated "broken.text 的源码字节，不改变非法文本及独立预期位置"
+  call parse(path, broken.kind, src)
+  ensure result.file == none
+  ensure any(d in result.diagnostics: d.code == broken.code and d.position.line == broken.line and d.position.column == broken.column)
 }
 
 property parse-result-is-described postcondition "解析成功时返回路径和种类正确的文件；每条诊断有相同路径、正的位置以及原因和修正" {
