@@ -35,7 +35,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | `internal/syntax` | 设计文件和录制文件的词法、语法、语法树和规范格式的打印 | diag |
 | `internal/design` | 把语法树解析成设计层的节点和边；检查设计内部、流程、符号与用例的约束 | syntax、graph、diag |
 | `internal/lang` | 语言后端的接口、名称映射、生成计划和运行计划的类型 | graph、diag |
-| `internal/lang/golang` | Go 后端 | lang、graph、diag |
+| `internal/lang/golang` | Go 后端：抽取、名称映射、契约生成与执行 | lang、graph、diag、syntax |
 | `internal/lang/python` | Python 后端，嵌入抽取脚本 | lang、graph、diag |
 | `internal/check` | 归属、依赖、绑定、可执行、生成与录制这几组约束 | graph、diag |
 | `internal/query` | 节点、引用、搜索、切片和影响 | graph |
@@ -172,7 +172,7 @@ type Runner interface {
 
 | 种类 | 属性的键 |
 | --- | --- |
-| container（`package`、`file`） | `language`、`path`（文件的路径，或包的导入路径） |
+| container（`package`、`file`） | `language`、`path`（文件的路径，或包的导入路径）；工具生成的文件另带 `generated: true` |
 | type | `name`、`fields`（每项 `名称: 类型`；未导出的字段是细节，不列出）、`values`（以字符串为底层类型、带常量的类型，每项是常量名按反向映射得到的枚举值，例如 `OrderStatusDraft` 写作 `draft`） |
 | op（`func`、`method`、`abstract`） | `name`（带 `checks` 绑定的谓词，写作性质或流程的名称）、`signature`、`testKind`（`none`、`example`、`property` 或 `fuzz`）、`stub`（`true` 或 `false`） |
 
