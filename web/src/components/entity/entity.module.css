@@ -1,6 +1,7 @@
 /* The entity page: a document on the canvas, scrolled in its column. */
 .scroll { position: absolute; inset: 0; overflow: auto; }
-.page { display: grid; gap: var(--space-6); align-content: start; max-width: 45.5rem; padding: var(--space-6) var(--space-8) var(--space-12); }
+/* The page's one column never grows past its room: a wide table or diagram scrolls inside its own box. */
+.page { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-6); align-content: start; max-width: 45.5rem; padding: var(--space-6) var(--space-8) var(--space-12); }
 
 .head { display: grid; gap: var(--space-2); }
 .identity { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
@@ -20,7 +21,7 @@
 .plainLink { color: var(--text-main); }
 .cellLinks { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); min-width: 0; }
 
-.between { display: grid; grid-template-columns: repeat(5, max-content); gap: var(--space-4); align-items: center; }
+.between { display: grid; grid-template-columns: repeat(5, max-content); gap: var(--space-4); align-items: center; overflow-x: auto; overscroll-behavior-x: contain; }
 .column { display: grid; gap: var(--space-2); justify-items: start; }
 .center { display: grid; }
 .arrow { color: var(--text-faint); }

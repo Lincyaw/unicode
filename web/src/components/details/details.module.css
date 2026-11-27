@@ -9,7 +9,7 @@
 .codeLine { color: var(--text-main); font: var(--type-code); overflow-wrap: anywhere; }
 
 /* A section: the kit's small hinted heading over rows eight apart; a pill in it keeps its own width. */
-.section { display: grid; gap: var(--space-2); min-width: 0; }
+.section { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); min-width: 0; }
 .section > :is(a, button) { justify-self: start; }
 
 /* Icons keep their size in a row that runs short of room; the names beside them give way, cut with an ellipsis. */
