@@ -35,7 +35,8 @@ export type CardRow =
 
 /** The rows of a type's card: its fields or enum values, compared with the code where the view says so, then its operations. */
 export function typeRows(node: ViewNode): CardRow[] {
-  const scope = scopeOf(node.id);
+  // A code type reads relative to the component of the design type it realizes.
+  const scope = scopeOf(node.bindings?.[0]?.node.id ?? node.id);
   const members: CardRow[] = node.members
     ? node.members.map(member => {
       const warn = member.status === 'contradicted' || member.status === 'missing';
@@ -49,7 +50,11 @@ export function typeRows(node: ViewNode): CardRow[] {
       ...(node.attrs.values ?? []).map((name): CardRow => ({ kind: 'value', name, warn: false })),
     ];
   const shown = members.length > MAX_FIELDS ? [...members.slice(0, MAX_FIELDS), { kind: 'more' as const, count: members.length - MAX_FIELDS }] : members;
-  const ops = (node.contents ?? []).filter(child => child.kind === 'op').map((op): CardRow => ({ kind: 'op', op, text: opLine(op) }));
+  // A method's title carries its type's name, which the card's head already gives.
+  const ops = (node.contents ?? []).filter(child => child.kind === 'op').map((op): CardRow => {
+    const title = op.title.startsWith(`${node.title}.`) ? op.title.slice(node.title.length + 1) : op.title;
+    return { kind: 'op', op, text: relative(opLine({ ...op, title }), scope) };
+  });
   return [...shown, ...ops];
 }
 

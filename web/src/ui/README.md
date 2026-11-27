@@ -1,5 +1,7 @@
 # 设计系统
 
+本目录复制自 aegis-bench-site 的 `src/ui`，在 unicode 查看器中有以下改动：链接用 react-router 的 `Link`，控件自己的文案在 `words.ts`；悬浮说明按 Figma 原型画成反色的小卡片，ⓘ 用 Lucide 的 `info`；`base.css` 另有图标尺寸、页头与侧栏尺寸、`mono-strong` 等查看器用到的令牌。以下是原文。
+
 本目录是 Aegis Bench 对外站点的设计系统：设计令牌、全局样式和通用组件都在这里，站点各页面只从这里取颜色、尺寸、动效和控件。本目录不依赖任何业务领域，可以整体复制到别的项目中参考或使用。
 
 本文是设计规范，写的是检查表达不了的部分；能机械判断的规则在 `stylelint.config.js` 和 `.oxlintrc.json` 里，由 `npm run check` 执行。

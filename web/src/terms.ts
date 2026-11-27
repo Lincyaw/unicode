@@ -144,7 +144,7 @@ export const SECTIONS = {
   fix: '修正',
   owner: '所属组件',
   stepsOfFlow: '步骤',
-  imports: '导入',
+  imports: '导入与调用',
 } as const;
 
 export const EVENTS_COLUMNS = {
