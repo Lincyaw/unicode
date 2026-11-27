@@ -50,6 +50,9 @@ func (x *extraction) designType(t types.Type) string {
 }
 
 func (x *extraction) namedType(t *types.Named) string {
+	if model := x.carrierModel(t); model != "" {
+		return model
+	}
 	obj := t.Obj()
 	switch {
 	case obj.Pkg() == nil:
