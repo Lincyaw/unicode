@@ -190,7 +190,7 @@ func (c *checker) file(f *File) {
 			if seen["manual"] != 0 && seen["ensure"] != 0 {
 				c.report(d.Pos, "syntax.mixed-claim", "manual cannot be combined with ensure", "use either a generated flow claim or a manual reason")
 			}
-			if seen["ensure"] != 0 || seen["within"] != 0 {
+			if seen["manual"] == 0 && (seen["ensure"] != 0 || seen["within"] != 0) {
 				found := false
 				for _, line := range d.Lines {
 					if _, ok := line.(*Comment); ok {
