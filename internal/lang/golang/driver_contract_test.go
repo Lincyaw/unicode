@@ -285,6 +285,7 @@ func checkDriverModesPreserveClaims(t rapid.TB, sample DriverSample) {
 		predicate := functions[(&Backend{}).MapName("predicate", lastName(sample.Name))]
 		if predicate == nil {
 			t.Fatal("the automatic checks predicate is missing")
+			return
 		}
 		var parameters []string
 		for _, parameter := range predicate.Type.Params.List[1:] {
@@ -346,9 +347,10 @@ func checkDriverContext(t rapid.TB, sample DriverSample) {
 		tb := &driverTB{}
 		x := &ucExpr{Kind: "name", Text: "x"}
 		spec := &ucContract{ID: sample.Name, Path: "design/driver.uc", Line: 1, Column: 1, Symbols: []ucSymbol{{"x", "int"}}, Types: map[string]ucType{}}
-		if outcome == "skip" {
+		switch outcome {
+		case "skip":
 			spec.Requires = []*ucExpr{{Kind: "binary", Text: "<", Children: []*ucExpr{x, x}}}
-		} else if outcome == "fatal" {
+		case "fatal":
 			spec.Ensures = []*ucExpr{{Kind: "binary", Text: "<", Children: []*ucExpr{x, x}}}
 		}
 		func() {
