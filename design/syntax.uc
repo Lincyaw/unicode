@@ -119,6 +119,12 @@ property expression-format-is-stable relation "ensure 是随机表达式的组�
   about parse, File.print
   forall sample: Sample generated "一份固定的组件文件，其中一条性质的 ensure 是至多四层嵌套的随机表达式，用到全部二元运算符、not、字段和下标访问、两个实参的调用、量化式、old、raised 和 failure，每个复合子表达式都带括号，表达式不必类型正确"
   manual "需要比较忽略位置的两棵语法树，表达式不能构造或比较语法树；谓词复用 format-is-stable 的手写谓词"
+  case container-named-in {
+    sample = {
+      kind: component,
+      text: "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure raised(in.A)\n}\n",
+    }
+  }
 }
 
 property contract-syntax-rejects-invalid-claims postcondition "黑盒契约或流程有一处违反 language.md 的 G0、G13、G15 至 G18 或 L6 时，解析不给出语法树，并在出错处的行列给出所违反规则的诊断" {

@@ -233,8 +233,9 @@ func expressionLine(line string) bool {
 // expressionGap is the gap between the tokens a and b on a line of
 // expressions, where before is the token ahead of a, empty when a starts the
 // line. A word is a keyword or an operator by its place, not by its spelling
-// (L7): the clause keyword starts the line, and a word after a dot is a field
-// or an operation. Anywhere else ensure, requires and call are names, and a
+// (L7): the clause keyword starts the line, a word after a dot is a field or
+// an operation, and the words of the type reference that raised and failure
+// take are names. Anywhere else ensure, requires and call are names, and a
 // name takes its arguments without a space.
 func expressionGap(before, a, b lexer.Token) int {
 	if a.Value == "," || a.Value == ":" {
@@ -247,8 +248,9 @@ func expressionGap(before, a, b lexer.Token) int {
 		return 0
 	}
 	named := before.Value == "."
+	typeRef := a.Value == "(" && (before.Value == "raised" || before.Value == "failure")
 	operators := []string{"==", "!=", "<", "<=", ">", ">=", "+", "-", "*", "/", "and", "or", "implies", "in"}
-	if !named && slices.Contains(operators, a.Value) || slices.Contains(operators, b.Value) {
+	if !named && slices.Contains(operators, a.Value) || !typeRef && slices.Contains(operators, b.Value) {
 		return 1
 	}
 	clause := before.Value == "" && slices.Contains([]string{"ensure", "requires", "call"}, a.Value)
