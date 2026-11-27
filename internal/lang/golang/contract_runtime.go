@@ -64,6 +64,7 @@ type ucContract struct {
 	Observers                  []ucObserver
 	ErrorTypes                 map[string]reflect.Type
 	Installers                 map[string]reflect.Value `json:"-"`
+	SkipInstall                bool                     `json:"-"`
 }
 type ucDiagnostic struct {
 	Code, Subject string
@@ -1549,7 +1550,41 @@ func ucDraw(t *rapid.T, typ reflect.Type, model string, types map[string]ucType,
 	case "bool":
 		out.SetBool(rapid.Bool().Draw(t, path))
 	case "int":
-		out.SetInt(rapid.Int64Range(low, high).Draw(t, path))
+		if typ.Kind() >= reflect.Uint && typ.Kind() <= reflect.Uintptr {
+			if high < 0 {
+				t.SkipNow()
+			}
+			if low < 0 {
+				low = 0
+			}
+			maximum := uint64(math.MaxUint64)
+			if typ.Bits() < 64 {
+				maximum = (uint64(1) << typ.Bits()) - 1
+			}
+			upper := uint64(high)
+			if upper > maximum {
+				upper = maximum
+			}
+			if uint64(low) > upper {
+				t.SkipNow()
+			}
+			out.SetUint(rapid.Uint64Range(uint64(low), upper).Draw(t, path))
+		} else {
+			if typ.Bits() < 64 {
+				minimum := -(int64(1) << (typ.Bits() - 1))
+				maximum := (int64(1) << (typ.Bits() - 1)) - 1
+				if low < minimum {
+					low = minimum
+				}
+				if high > maximum {
+					high = maximum
+				}
+			}
+			if low > high {
+				t.SkipNow()
+			}
+			out.SetInt(rapid.Int64Range(low, high).Draw(t, path))
+		}
 	case "float":
 		out.SetFloat(rapid.Float64Range(floatLow, floatHigh).Draw(t, path))
 	case "string":
@@ -1797,8 +1832,10 @@ func ucExecute(s *ucContract, inputs map[string]reflect.Value, explore bool) (ou
 			}
 		}
 	}()
-	cleanup := ucInstallDoubles(s, inputs)
-	defer cleanup()
+	if !s.SkipInstall {
+		cleanup := ucInstallDoubles(s, inputs)
+		defer cleanup()
+	}
 	if s.Sequence == "" {
 		return ucExecuteSingle(s, inputs, explore)
 	}
@@ -1866,4 +1903,27 @@ func ucExecute(s *ucContract, inputs map[string]reflect.Value, explore bool) (ou
 		}
 	}
 	return out
+}
+
+// ucManual preserves the same substitution boundary around preconditions and
+// the handwritten predicate, including SkipNow, Fatal, Goexit and panic.
+func ucManual(t rapid.TB, s *ucContract, inputs map[string]reflect.Value, predicate func()) {
+	defer func() {
+		if problem := recover(); problem != nil {
+			if issue, ok := problem.(ucIssue); ok {
+				diagnostic := ucDiagnosticOf(s, issue)
+				if ucCurrent != nil {
+					ucCurrent.Infrastructure = true
+					ucCurrent.Passed = false
+					ucCurrent.Diagnostics = append(ucCurrent.Diagnostics, diagnostic)
+				}
+				t.Fatalf("contract %s environment failed: %s", s.ID, issue.message)
+				return
+			}
+			panic(problem)
+		}
+	}()
+	cleanup := ucInstallDoubles(s, inputs)
+	defer cleanup()
+	predicate()
 }
