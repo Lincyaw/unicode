@@ -13,7 +13,8 @@ import { edgeKey } from './graphParts';
  * component. Every call the view gives has an end in the input. The input stands in the middle; the functions calling
  * into it stand to its left and those it calls to its right, grouped by their file (docs/design.md §7.5.1); a group the
  * input both calls and is called by stands right. Each line leaves its row at a height of its own and runs through the
- * channel between two columns on a track of its own (channels.ts), so no stretch of one line lies on another.
+ * channel between two columns on a track of its own (channels.ts), so no stretch of one line lies on another; a mark
+ * on a line stands in a column beside the wall of its end outside the input, clear of the other marks.
  */
 
 const BOX_GAP = 20;
@@ -25,6 +26,24 @@ const GAP = 6;
 const INDENT = 16;
 const BINDING_GAP = 24;
 const MIN_WIDTH = 240;
+
+/** The size the page draws a tag at, as the kit's Tag draws one with an icon and a number of these digits. */
+const TAG_HEIGHT = 24;
+function tagWidth(digits: number): number {
+  return 36 + 8 * digits;
+}
+
+/**
+ * The mark a call carries on its line, if any, at about the size the page draws it: how many detail functions a reaches
+ * edge passes, and how many calls a merged edge stands for (CodeView's CallMark).
+ */
+function markOf(edge: ViewEdge): { width: number; height: number } | undefined {
+  const tags = [
+    ...(edge.kind === 'reaches' ? [String(edge.attrs.via?.length ?? 0).length] : []),
+    ...(edge.count === undefined ? [] : [String(edge.count).length]),
+  ];
+  return tags.length > 0 ? { width: tags.reduce((sum, digits) => sum + tagWidth(digits), 0) + 4 * (tags.length - 1), height: TAG_HEIGHT } : undefined;
+}
 
 /**
  * The heights where lines leave or enter a box: whole multiples of PORT_STEP, at the channel's start wall on the even
@@ -254,6 +273,9 @@ export function layOutCode(view: View): CodeLayout {
  */
 function lineOf(leg: Leg, legs: Leg[], input: Box): ChannelLine {
   const wallOf = (end: End): Wall => ((end.box === input) === (leg.channel === 'left') ? 'end' : 'start');
+  // A mark stands beside the wall of the line's end outside the input; a call within the input has it beside the input.
+  const outside = leg.from.box === input ? leg.to : leg.from;
+  const mark = markOf(leg.edge);
   const heightAt = (end: End) => {
     const sharing = legs.flatMap(other => [other.from, other.to].filter(item => item.box === end.box && item.top === end.top).map(item => ({ other, item })));
     const centre = (other: Leg, item: End) => {
@@ -269,7 +291,10 @@ function lineOf(leg: Leg, legs: Leg[], input: Box): ChannelLine {
     }
     return at;
   };
-  return { id: edgeKey(leg.edge), from: { y: heightAt(leg.from), wall: wallOf(leg.from) }, to: { y: heightAt(leg.to), wall: wallOf(leg.to) } };
+  return {
+    id: edgeKey(leg.edge), from: { y: heightAt(leg.from), wall: wallOf(leg.from) }, to: { y: heightAt(leg.to), wall: wallOf(leg.to) },
+    ...(mark ? { mark: { wall: wallOf(outside), ...mark } } : {}),
+  };
 }
 
 /** The heights in a row where lines may meet a wall: the multiples of PORT_STEP of the wall's parity, a step inside the row. */

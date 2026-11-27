@@ -8,7 +8,6 @@ import { InfoHint } from '../../ui/hint';
 import { Icon } from '../../ui/icons';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { LineMarks, Lines, type Line, type LineMark } from '../canvas/Edges';
-import { BADGE_SIDES } from '../canvas/markers';
 import { CHIP_HEIGHT } from '../canvas/sizes';
 import { ViaTag } from '../details/sections';
 import { relative, scopeOf, shortPath, statusOf } from '../marks/format';
@@ -94,7 +93,7 @@ export function CodeView({ view }: { view: View }) {
     id: edgeKey(edge), route: routeOf(edge), tone: edge.kind === 'reaches' ? 'reach' : 'plain', select: edge.kind === 'reaches' ? edgeKey(edge) : undefined,
   }));
   const marks: LineMark[] = layout.calls.filter(edge => edge.kind === 'reaches' || edge.count !== undefined)
-    .map(edge => ({ id: edgeKey(edge), route: routeOf(edge), sides: BADGE_SIDES, children: <CallMark edge={edge} /> }));
+    .map(edge => ({ id: edgeKey(edge), route: routeOf(edge), sides: ['center'], children: <CallMark edge={edge} /> }));
   const inputRect = layout.boxes[0]?.rect;
   if (!inputRect) {
     throw new Error('the code view laid out no box for its input');
