@@ -137,4 +137,3 @@ func (l *loader) conformInterface(c *entity, v syntax.Value, n *entity, wrong fu
 	}
 	return all
 }
-
