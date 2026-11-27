@@ -91,7 +91,7 @@ export function ChipList({ nodes, limit, scope }: { nodes: Node[]; limit?: numbe
   const { shown, more, unfold } = useFolded(nodes, limit);
   return (
     <div className={styles.chips}>
-      {shown.map(node => <NodeChip key={node.id} node={node} label={displayName(node, scope)} status={statusOf(node)} link />)}
+      {shown.map(node => <NodeChip key={node.id} node={node} label={displayName(node, scope)} status={statusOf(node)} mode="link" />)}
       {more > 0 && <MoreBadge count={more} onClick={unfold} />}
     </div>
   );

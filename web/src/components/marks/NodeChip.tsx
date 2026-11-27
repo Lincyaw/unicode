@@ -12,16 +12,17 @@ import styles from './marks.module.css';
 export type ChipState = 'default' | 'detail' | 'folded';
 
 /**
- * A node as a small chip: status, kind icon and name. On a canvas it previews on a click and enters its page on a
- * double click; in a list it is a link to its page; the node of the page itself (`current`) is no control. The
- * selected node is outlined in the brand colour.
+ * How a chip acts: on a drawing it previews its node on a click and enters its page on a double click (`select`); in
+ * a list it is a link to its page (`link`); as the node of the page itself it is no control (`current`).
  */
-export function NodeChip({ node, label, state = 'default', link = false, current = false, status, children, className }: {
+export type ChipMode = 'select' | 'link' | 'current';
+
+/** A node as a small chip: status, kind icon and name, acting by its mode; the selected node carries the still ∞ edge. */
+export function NodeChip({ node, label, state = 'default', mode = 'select', status, children, className }: {
   node: Node;
   label?: ReactNode;
   state?: ChipState;
-  link?: boolean;
-  current?: boolean;
+  mode?: ChipMode;
   status?: Node['status'];
   children?: ReactNode;
   className?: string;
@@ -39,11 +40,12 @@ export function NodeChip({ node, label, state = 'default', link = false, current
   const classes = clsx(styles.chip, className);
   // A chip is a control: the kit's ∞ edge sweeps round it under the pointer and holds still while it is selected.
   const control = clsx(classes, 'loop-edge');
-  if (current) {
-    return <span className={classes} data-state={state} aria-current="page">{content}</span>;
+  switch (mode) {
+    case 'current':
+      return <span className={classes} data-state={state} aria-current="page">{content}</span>;
+    case 'link':
+      return <Link className={control} data-state={state} to={links.entityHref(node.id)}>{content}</Link>;
+    case 'select':
+      return <button type="button" className={control} data-state={state} {...actions}>{content}</button>;
   }
-  if (link) {
-    return <Link className={control} data-state={state} to={links.entityHref(node.id)}>{content}</Link>;
-  }
-  return <button type="button" className={control} data-state={state} {...actions}>{content}</button>;
 }

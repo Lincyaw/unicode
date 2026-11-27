@@ -137,10 +137,10 @@ function Between({ node, page, before, after, beforeTitle, afterTitle, badge }: 
     <div className={styles.between}>
       <div className={styles.column}>
         <span className="t-micro c-faint">{beforeTitle}</span>
-        {before.map(item => <NodeChip key={item.id} node={item} label={displayName(item, scope)} status={statusOf(item)} link />)}
+        {before.map(item => <NodeChip key={item.id} node={item} label={displayName(item, scope)} status={statusOf(item)} mode="link" />)}
       </div>
       <ArrowRight className={styles.arrow} size={ICON_SMALL} strokeWidth={ICON_STROKE} aria-hidden="true" />
-      <div className={styles.center}><NodeChip node={node} label={displayName(node, scope)} current={node.id === page} link /></div>
+      <div className={styles.center}><NodeChip node={node} label={displayName(node, scope)} mode={node.id === page ? 'current' : 'link'} /></div>
       <ArrowRight className={styles.arrow} size={ICON_SMALL} strokeWidth={ICON_STROKE} aria-hidden="true" />
       <div className={styles.column}>
         <span className="t-micro c-faint">{afterTitle}</span>
@@ -149,7 +149,7 @@ function Between({ node, page, before, after, beforeTitle, afterTitle, badge }: 
           const target = neighbor ? neighbor.node : (item as Node);
           return (
             <span key={target.id} className={styles.withBadge}>
-              <NodeChip node={target} label={displayName(target, scope)} status={statusOf(target)} link />
+              <NodeChip node={target} label={displayName(target, scope)} status={statusOf(target)} mode="link" />
               {neighbor && badge?.(neighbor)}
             </span>
           );
@@ -212,7 +212,7 @@ function OpBody({ entity }: { entity: Entity }) {
     <>
       {detail && detail.signatureTypes.length > 0 && (
         <Section title={SECTIONS.signatureTypes}>
-          <div className={styles.chips}>{detail.signatureTypes.map(node => <NodeChip key={node.id} node={node} label={displayName(node, scopeOf(entity.node.id))} status={statusOf(node)} link />)}</div>
+          <div className={styles.chips}>{detail.signatureTypes.map(node => <NodeChip key={node.id} node={node} label={displayName(node, scopeOf(entity.node.id))} status={statusOf(node)} mode="link" />)}</div>
         </Section>
       )}
       {detail && (detail.callers.length > 0 || detail.callees.length > 0) && (
