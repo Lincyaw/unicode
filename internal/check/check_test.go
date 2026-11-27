@@ -2,6 +2,7 @@ package check
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"pgregory.net/rapid"
@@ -89,5 +90,68 @@ func checkRejectsBrokenGraph(t rapid.TB, broken Broken) {
 	}
 	if status, ok := checked.Statuses[broken.Subject]; ok && status == graph.StatusVerified {
 		t.Fatalf("Conform reported %s about the declared item %s, yet left its status verified", broken.Code, broken.Subject)
+	}
+}
+
+//uc:checks check.stubs-stay-incomplete
+func checkStubsStayIncomplete(t rapid.TB, sample Sample) {
+	checkAcceptsConformingGraph(t, sample)
+	base := derived(t, sample.Fragment)
+	// Only actual bindings determine the expected affected checks. Code
+	// declaration names and the implementation's indexing are irrelevant.
+	targets := map[string]map[string]bool{}
+	for _, edge := range base.Edges() {
+		if edge.Kind != graph.EdgeKindChecks && edge.Kind != graph.EdgeKindGenerates {
+			continue
+		}
+		code := base.Node(edge.From)
+		if code == nil || code.Layer != graph.LayerCode || code.Kind != graph.NodeKindOp {
+			continue
+		}
+		if targets[edge.From] == nil {
+			targets[edge.From] = map[string]bool{}
+		}
+		targets[edge.From][edge.To] = true
+	}
+	if len(targets) == 0 {
+		t.Fatal("the conforming sample has no bound predicate or generator")
+		return
+	}
+	for source, affected := range targets {
+		for _, unfinished := range []bool{true, false} {
+			fragment := graph.Fragment{Edges: slices.Clone(sample.Fragment.Edges)}
+			for _, node := range sample.Fragment.Nodes {
+				if node.Id == source {
+					attrs := map[string][]string{}
+					for key, value := range node.Attrs {
+						attrs[key] = slices.Clone(value)
+					}
+					if unfinished {
+						attrs["stub"] = []string{"true"}
+					} else {
+						attrs["stub"] = []string{"false"}
+					}
+					node.Attrs = attrs
+				}
+				fragment.Nodes = append(fragment.Nodes, node)
+			}
+			checked := Conform(derived(t, fragment))
+			if len(checked.Diagnostics) > 0 {
+				t.Fatalf("changing only the stub flag of %s produced diagnostics: %s", source, list(checked.Diagnostics))
+			}
+			items := declaredItems(base)
+			if len(checked.Statuses) != len(items) {
+				t.Fatalf("stub check returned %d states for %d declarations", len(checked.Statuses), len(items))
+			}
+			for _, id := range items {
+				want := graph.StatusVerified
+				if unfinished && affected[id] {
+					want = graph.StatusStub
+				}
+				if got, ok := checked.Statuses[id]; !ok || got != want {
+					t.Fatalf("stub=%v at %s gives %s status %s (present %v), want %s", unfinished, source, id, got, ok, want)
+				}
+			}
+		}
 	}
 }
