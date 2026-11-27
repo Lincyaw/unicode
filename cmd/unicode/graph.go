@@ -59,6 +59,21 @@ func readDesign(root string) ([]syntax.File, []diag.Diagnostic, error) {
 // fragment and derives. The diagnostics are those of reading the files,
 // loading the design, extracting the code and deriving, unsorted.
 func buildGraph(root string) (graph.Graph, []diag.Diagnostic, error) {
+	return buildGraphWithExtractor(root, lang.Backend.Extract)
+}
+
+// buildGraphForGeneration lets a backend repair stale generated output while
+// keeping the ordinary extraction path strict.
+func buildGraphForGeneration(root string) (graph.Graph, []diag.Diagnostic, error) {
+	return buildGraphWithExtractor(root, func(b lang.Backend, root string, roots []string) (lang.Extracted, error) {
+		if extractor, ok := b.(lang.GenerationExtractor); ok {
+			return extractor.ExtractForGeneration(root, roots)
+		}
+		return b.Extract(root, roots)
+	})
+}
+
+func buildGraphWithExtractor(root string, extract func(lang.Backend, string, []string) (lang.Extracted, error)) (graph.Graph, []diag.Diagnostic, error) {
 	files, diags, err := readDesign(root)
 	if err != nil {
 		return graph.Graph{}, nil, err
@@ -82,7 +97,7 @@ func buildGraph(root string) (graph.Graph, []diag.Diagnostic, error) {
 			return graph.Graph{}, nil, &exitError{code: exitEnvironment,
 				err: fmt.Errorf("extracting the %s code needs the command %s on PATH: %w", r.language, b.tool, err)}
 		}
-		extracted, err := b.Extract(root, r.dirs)
+		extracted, err := extract(b.Backend, root, r.dirs)
 		var failed lang.ExtractFailed
 		switch {
 		case errors.As(err, &failed):
