@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/renameio/v2"
+	"github.com/google/renameio/v2/maybe"
 
 	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
@@ -224,7 +224,7 @@ func save(root string, report lang.RunReport) *diag.Diagnostic {
 	if err != nil {
 		return fail(err)
 	}
-	if err := renameio.WriteFile(filepath.Join(dir, "results.json"), append(content, '\n'), 0o644); err != nil {
+	if err := maybe.WriteFile(filepath.Join(dir, "results.json"), append(content, '\n'), 0o644); err != nil {
 		return fail(err)
 	}
 	return nil

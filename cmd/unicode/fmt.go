@@ -12,7 +12,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/google/renameio/v2"
+	"github.com/google/renameio/v2/maybe"
 	"github.com/spf13/cobra"
 
 	"github.com/lincyaw/unicode/internal/diag"
@@ -196,7 +196,7 @@ func formatFile(root, rel string, check bool) (string, []diag.Diagnostic, error)
 	case check:
 		return statusNotCanonical, []diag.Diagnostic{notCanonical(rel, src, out)}, nil
 	}
-	if err := renameio.WriteFile(filepath.Join(root, filepath.FromSlash(rel)), out, 0o644); err != nil {
+	if err := maybe.WriteFile(filepath.Join(root, filepath.FromSlash(rel)), out, 0o644); err != nil {
 		return "", nil, fmt.Errorf("cannot write %s: %w", rel, err)
 	}
 	return statusRewritten, nil, nil

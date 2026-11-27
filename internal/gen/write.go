@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/google/renameio/v2"
+	"github.com/google/renameio/v2/maybe"
 
 	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/lang"
@@ -127,7 +127,7 @@ func preflight(root, rel string, createOnly bool, ioFailure func(string, error) 
 // writeEdit never replaces a skeleton, even if a target appears after preflight.
 func writeEdit(target string, edit lang.Edit, mode os.FileMode) error {
 	if !edit.CreateOnly {
-		return renameio.WriteFile(target, edit.Content, mode)
+		return maybe.WriteFile(target, edit.Content, mode)
 	}
 	file, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {

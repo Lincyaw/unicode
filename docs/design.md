@@ -57,7 +57,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | 命令行的命令、参数和帮助 | `github.com/spf13/cobra` |
 | 路径模式中的 `**` | `github.com/bmatcuk/doublestar/v4` |
 | 值的显示宽度（规范格式的 100 列） | `github.com/mattn/go-runewidth` |
-| 原子地改写文件，保留权限 | `github.com/google/renameio/v2` |
+| 改写文件，保留权限；在 POSIX 上原子，在 Windows 上不保证原子 | `github.com/google/renameio/v2/maybe` |
 | 深度验证中的变异测试 | `github.com/go-gremlins/gremlins` |
 | 生成器、性质测试与 fuzz 的驱动 | `pgregory.net/rapid` 与 Go 原生的 fuzz |
 | Go 代码的抽取（M2） | `golang.org/x/tools/go/packages` 与 `go/types` |
@@ -523,8 +523,8 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 - **`check --design-only`**：解析 `design/` 和 `corpus/` 下的全部文件，报出语法、规范格式和 §5.1 的诊断；JSON 为 `{"diagnostics": [...]}`。M2 之前，不带 `--design-only` 的 `check` 是参数错误。
 - **路径参数**：按工作目录解析，必须是根目录下 `design/` 或 `corpus/` 之内的文件或目录。路径不存在、不在这两个目录之内，或者找不到缺省的根目录，都是参数错误。目录会被遍历。`design/` 或 `corpus/` 中 `KindOf` 拒绝的文件给出诊断 `cli.not-a-design-file`，读不出的文件给出 `cli.unreadable-file`，符号链接给出诊断 `cli.symlink`，既不跟随读取，也不改写。全局参数也可以写在命令之后。
 - **构建与版本**：`make build` 先构建前端（`pnpm --dir web install --frozen-lockfile`，再 `pnpm --dir web build`），再用 `go build` 构建带页面的 `bin/unicode`。`unicode --version` 在标准输出写出版本（JSON 为 `{"version": …}`），退出码为 0。版本由构建时的 `-ldflags "-X main.version=…"` 写入：`make build` 写入 `git describe --tags --always --dirty` 的结果，`make build VERSION=…` 可以另给；发布的程序写入标签。没有写入时取 Go 记录的模块版本（例如 `go install …@v1.2.3` 得到 `v1.2.3`），再没有时为 `dev`。
-- **发布**：推送 `v*` 标签时，`.github/workflows/release.yml` 用 GoReleaser 按 `.goreleaser.yaml` 构建并发布：先构建前端，再为 linux 和 darwin 的 amd64、arm64 构建程序，版本为标签，各打包成 `tar.gz`，附 `checksums.txt`。工作流中的各个 action 按提交固定版本，GoReleaser 固定为 v2.20.3。Windows 暂不发布（附录 B）。
-- **改写与输出**：改写是原子的，并保留文件的权限，失败时不留下临时文件；写入或输出失败时退出码为 1。`cli.not-canonical` 的位置是与规范格式第一处不同的字节。`--help` 写到标准输出，退出码为 0。JSON 缩进两个空格。带 `--format json` 时，诊断是数据，写在标准输出的 JSON 中，标准错误只放日志；文本模式下，诊断写到标准错误，标准输出只列出改写了的或不是规范格式的文件。
+- **发布**：推送 `v*` 标签时，`.github/workflows/release.yml` 用 GoReleaser 按 `.goreleaser.yaml` 构建并发布：先构建前端，再为 linux、darwin 和 windows 的 amd64、arm64 构建程序，版本为标签，Windows 打包成 `zip`，其余打包成 `tar.gz`，附 `checksums.txt`。工作流中的各个 action 按提交固定版本，GoReleaser 固定为 v2.20.3。
+- **改写与输出**：改写在 POSIX 上是原子的（Windows 上不保证原子），并保留文件的权限，失败时不留下临时文件；写入或输出失败时退出码为 1。`cli.not-canonical` 的位置是与规范格式第一处不同的字节。`--help` 写到标准输出，退出码为 0。JSON 缩进两个空格。带 `--format json` 时，诊断是数据，写在标准输出的 JSON 中，标准错误只放日志；文本模式下，诊断写到标准错误，标准输出只列出改写了的或不是规范格式的文件。
 - **诊断的 JSON**：`{code, subject, path, line, column, message, fix}`。`code` 是稳定的诊断码，写作 `<组件>.<短横线名称>`，例如 `syntax.unexpected-token`；每条约束有一个或几个，修正办法不同的子规则各用一个。`syntax` 和 `cli` 的诊断，对象是文件的路径。
 - **生成的 JSON**：与 `lang.Generation` 同形，为 `{edits: [{path, content, createOnly}], diagnostics: [...]}`；`content` 是 UTF-8 源码字符串，不是字节的 base64。`--dry-run` 返回同样的计划，不写文件。普通生成遇到诊断时不应用计划，文本模式只列生成文件的路径。已有文件缺少生成标记属于覆盖冲突，退出码为 5。
 - **运行的 JSON**：与 `lang.RunReport` 同形，为 `{results: [{id, passed, accepted, rejected, observations, differences, diagnostics}], diagnostics}`，数组为空时也输出 `[]`。顶层诊断表示工具、观察、前提、域外输入、无有效执行或结果写入错误，退出码为 10；工具链不存在仍为 7。没有顶层诊断且有 `passed = false` 的性质时退出码为 11，其内部诊断定位 `ensure`、范围或后置表达式的失败。适配错误可另关联到该性质，但顶层必须保留。命令输出和 `.unicode/results.json` 均使用小驼峰字段，所有层级的诊断都使用上面的扁平 JSON 形状；`diag.Diagnostic` 的 JSON 编解码统一实现此形状。
@@ -637,4 +637,3 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 10. 通用的 Go 规则放进 engineering-conventions skill 的 `reference/go.md`；本仓库的 AGENTS.md 只留本仓库特有的规则。
 11. 设计中的泛型类型（类型参数）：M1 不支持。
 12. 记法的词汇是否允许项目扩展。目前内置、固定，以保证校验。
-13. Windows 上的程序：改写文件用的 renameio 在 Windows 上没有 `WriteFile`，`unicode` 因此编译不出 Windows 的程序。是改用 `renameio/v2/maybe`（Windows 上退为不保证原子的写入，与 §8 的"改写是原子的"不符），还是不支持 Windows。

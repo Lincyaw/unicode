@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/google/renameio/v2"
+	"github.com/google/renameio/v2/maybe"
 	"github.com/spf13/cobra"
 
 	"github.com/lincyaw/unicode/internal/repo"
@@ -72,10 +72,10 @@ func runBuild(root, out, format string, stdout, stderr io.Writer) error {
 			return &exitError{code: exitUnexpected, err: fmt.Errorf("cannot make the directory of the snapshot: %w", err)}
 		}
 		path := filepath.Join(out, repo.SnapshotFile)
-		if err := renameio.WriteFile(path, g.Encode(), 0o644); err != nil {
+		if err := maybe.WriteFile(path, g.Encode(), 0o644); err != nil {
 			return &exitError{code: exitUnexpected, err: fmt.Errorf("cannot write the snapshot: %w", err)}
 		}
-		if err := renameio.WriteFile(filepath.Join(out, repo.RecordFile), record, 0o644); err != nil {
+		if err := maybe.WriteFile(filepath.Join(out, repo.RecordFile), record, 0o644); err != nil {
 			return &exitError{code: exitUnexpected, err: fmt.Errorf("cannot write the head record: %w", err)}
 		}
 		report.Snapshot = path

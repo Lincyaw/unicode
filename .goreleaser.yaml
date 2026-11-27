@@ -16,8 +16,7 @@ builds:
     binary: unicode
     env:
       - CGO_ENABLED=0
-    # No windows: renameio, which every rewrite of a file goes through, has no WriteFile there.
-    goos: [linux, darwin]
+    goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     flags:
       - -trimpath
@@ -28,6 +27,9 @@ builds:
 
 archives:
   - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
 
 checksum:
   name_template: checksums.txt
