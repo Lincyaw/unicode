@@ -37,22 +37,22 @@ func (e C4Level) Valid() bool {
 
 // Defines values for ChangeKind.
 const (
-	Added     ChangeKind = "added"
-	Modified  ChangeKind = "modified"
-	Removed   ChangeKind = "removed"
-	Unchanged ChangeKind = "unchanged"
+	ChangeKindAdded     ChangeKind = "added"
+	ChangeKindModified  ChangeKind = "modified"
+	ChangeKindRemoved   ChangeKind = "removed"
+	ChangeKindUnchanged ChangeKind = "unchanged"
 )
 
 // Valid indicates whether the value is a known member of the ChangeKind enum.
 func (e ChangeKind) Valid() bool {
 	switch e {
-	case Added:
+	case ChangeKindAdded:
 		return true
-	case Modified:
+	case ChangeKindModified:
 		return true
-	case Removed:
+	case ChangeKindRemoved:
 		return true
-	case Unchanged:
+	case ChangeKindUnchanged:
 		return true
 	default:
 		return false
@@ -79,19 +79,19 @@ func (e ClassLayer) Valid() bool {
 
 // Defines values for DriverMode.
 const (
-	Explore DriverMode = "explore"
-	Fuzz    DriverMode = "fuzz"
-	Replay  DriverMode = "replay"
+	DriverModeExplore DriverMode = "explore"
+	DriverModeFuzz    DriverMode = "fuzz"
+	DriverModeReplay  DriverMode = "replay"
 )
 
 // Valid indicates whether the value is a known member of the DriverMode enum.
 func (e DriverMode) Valid() bool {
 	switch e {
-	case Explore:
+	case DriverModeExplore:
 		return true
-	case Fuzz:
+	case DriverModeFuzz:
 		return true
-	case Replay:
+	case DriverModeReplay:
 		return true
 	default:
 		return false
@@ -199,16 +199,16 @@ func (e Layer) Valid() bool {
 
 // Defines values for MemberKind.
 const (
-	Field MemberKind = "field"
-	Value MemberKind = "value"
+	MemberKindField MemberKind = "field"
+	MemberKindValue MemberKind = "value"
 )
 
 // Valid indicates whether the value is a known member of the MemberKind enum.
 func (e MemberKind) Valid() bool {
 	switch e {
-	case Field:
+	case MemberKindField:
 		return true
-	case Value:
+	case MemberKindValue:
 		return true
 	default:
 		return false
@@ -262,16 +262,16 @@ func (e NodeKind) Valid() bool {
 
 // Defines values for Outcome.
 const (
-	Failed Outcome = "failed"
-	Passed Outcome = "passed"
+	OutcomeFailed Outcome = "failed"
+	OutcomePassed Outcome = "passed"
 )
 
 // Valid indicates whether the value is a known member of the Outcome enum.
 func (e Outcome) Valid() bool {
 	switch e {
-	case Failed:
+	case OutcomeFailed:
 		return true
-	case Passed:
+	case OutcomePassed:
 		return true
 	default:
 		return false
@@ -280,16 +280,16 @@ func (e Outcome) Valid() bool {
 
 // Defines values for ReviewState.
 const (
-	Pending  ReviewState = "pending"
-	Reviewed ReviewState = "reviewed"
+	ReviewStatePending  ReviewState = "pending"
+	ReviewStateReviewed ReviewState = "reviewed"
 )
 
 // Valid indicates whether the value is a known member of the ReviewState enum.
 func (e ReviewState) Valid() bool {
 	switch e {
-	case Pending:
+	case ReviewStatePending:
 		return true
-	case Reviewed:
+	case ReviewStateReviewed:
 		return true
 	default:
 		return false
@@ -298,22 +298,22 @@ func (e ReviewState) Valid() bool {
 
 // Defines values for Source.
 const (
-	Declared  Source = "declared"
-	Derived   Source = "derived"
-	Extracted Source = "extracted"
-	Produced  Source = "produced"
+	SourceDeclared  Source = "declared"
+	SourceDerived   Source = "derived"
+	SourceExtracted Source = "extracted"
+	SourceProduced  Source = "produced"
 )
 
 // Valid indicates whether the value is a known member of the Source enum.
 func (e Source) Valid() bool {
 	switch e {
-	case Declared:
+	case SourceDeclared:
 		return true
-	case Derived:
+	case SourceDerived:
 		return true
-	case Extracted:
+	case SourceExtracted:
 		return true
-	case Produced:
+	case SourceProduced:
 		return true
 	default:
 		return false
@@ -322,22 +322,22 @@ func (e Source) Valid() bool {
 
 // Defines values for Status.
 const (
-	Contradicted Status = "contradicted"
-	Missing      Status = "missing"
-	Stub         Status = "stub"
-	Verified     Status = "verified"
+	StatusContradicted Status = "contradicted"
+	StatusMissing      Status = "missing"
+	StatusStub         Status = "stub"
+	StatusVerified     Status = "verified"
 )
 
 // Valid indicates whether the value is a known member of the Status enum.
 func (e Status) Valid() bool {
 	switch e {
-	case Contradicted:
+	case StatusContradicted:
 		return true
-	case Missing:
+	case StatusMissing:
 		return true
-	case Stub:
+	case StatusStub:
 		return true
-	case Verified:
+	case StatusVerified:
 		return true
 	default:
 		return false

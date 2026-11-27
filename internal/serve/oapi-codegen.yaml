@@ -8,3 +8,7 @@ generate:
   models: true
   std-http-server: true
   strict-server: true
+compatibility:
+  # Every enum constant carries its type's name, MemberKindField as
+  # graph.NodeKindType does, not only where two enums share a value.
+  always-prefix-enum-values: true

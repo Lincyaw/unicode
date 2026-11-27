@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	github.com/alecthomas/participle/v2 v2.1.4
 	github.com/bmatcuk/doublestar/v4 v4.10.7
+	github.com/getkin/kin-openapi v0.142.0
 	github.com/google/renameio/v2 v2.0.2
 	github.com/mattn/go-runewidth v0.0.31
 	github.com/oapi-codegen/runtime v1.9.0
@@ -21,7 +22,6 @@ require (
 	github.com/dprotaso/go-yit v0.0.0-20220510233725-9ba8df137936 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
-	github.com/getkin/kin-openapi v0.142.0 // indirect
 	github.com/go-gremlins/gremlins v0.6.0 // indirect
 	github.com/go-openapi/jsonpointer v0.23.1 // indirect
 	github.com/go-openapi/swag/jsonname v0.26.0 // indirect

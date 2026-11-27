@@ -61,6 +61,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | Go 代码的抽取（M2） | `golang.org/x/tools/go/packages` 与 `go/types` |
 | 查看器的接口：用 TypeSpec 写，生成 OpenAPI 3 文档（§7.5.1） | `@typespec/compiler`、`@typespec/http`、`@typespec/openapi`、`@typespec/openapi3`，1.18.0 |
 | `serve` 的接口类型和路由：由 OpenAPI 文档生成 Go 代码 | `github.com/oapi-codegen/oapi-codegen/v2` v2.8.2，生成的代码依赖 `github.com/oapi-codegen/runtime` v1.9.0 |
+| `serve` 的性质按 OpenAPI 文档校验每个应答 | `github.com/getkin/kin-openapi` v0.142.0（`openapi3filter` 与 `routers/legacy`），即 oapi-codegen 所依赖的版本 |
 | 前端的接口类型和请求：由 OpenAPI 文档生成 TypeScript 类型，按类型发出请求 | `openapi-typescript` 7.13.0 与 `openapi-fetch` 0.17.0 |
 
 规范格式的打印没有现成的库，由 `syntax` 自己完成。
@@ -352,7 +353,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 
 #### 7.5.1 接口
 
-**数据来源。** `unicode serve` 读取 `unicode build` 写出的快照 `.unicode/graph.json`，载入时按 `unicode check` 的约束检查一遍，得到诊断和每个声明项的状态。快照文件改变后，下一次请求时重新读入。比较的基准由后端按查询的 `--rev` 的方式取出该提交并建图，在进程内保留。
+**数据来源。** `unicode serve` 读取 `unicode build` 写出的快照 `.unicode/graph.json`，载入时按 `unicode check` 的约束检查一遍，得到诊断和每个声明项的状态。快照文件改变后（按修改时间和大小判断），下一次请求时重新读入；每个请求只从一个快照回答。工作区所在的提交、分支和是否有改动，在读入快照时由 git 给出。比较的基准由后端按查询的 `--rev` 的方式取出该提交并建图，在进程内保留。
 
 **约定。** 接口只读：视图、输入、展开、选中项和导航路径都记在页面地址中，服务端不保存状态。标识中含有 `.`、`#`、`:` 和 `/`，一律放在查询参数里，不放在路径中。接口的源文件是 `api/*.tsp`，`api/openapi.yaml` 由它生成，`make api-check` 确认二者一致；各字段的含义和取法以源文件中的说明为准。证据（运行、结果、覆盖，M6）和评审记录（M7）的字段是可选的，图中有了这些数据之后才给出。
 
@@ -361,7 +362,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 - 节点和边是快照中的节点和边（§5.2、[model.md](model.md) §8），节点带内容哈希 `digest`。节点另有 `title`（页面上的名称）、`status`（`check` 给出的状态）、代码元素的 `bindings`（绑定边及其指向的设计节点）、步骤的 `step`（所在流程、序号、发起方、目标、接收方、外层步骤和子步骤）；边另有 `status`。
 - 诊断与 `unicode check --format json` 的相同。一条边加另一端的节点沿用 `query.Neighbor`，切片沿用 `query.Context`，影响沿用 `query.Affected`，单个节点沿用 `query.NodeView`。
 - 视图在 `view.View`（`kind`、`nodes`、`edges`、`folded`、`hidden`）之上，加上输入节点、它的祖先和视图中各项的诊断。类型卡片带 `members`，即字段和枚举值与代码的逐项比较；容器卡片带 `contents`，展开时是其中的类型、操作、流程、性质和错误，折叠时是其中类型的名称；代码文件和代码类型带 `details`，即未画出的细节函数的个数。边的一端是折叠的容器时，`count` 是它代表的边数；`labels` 是边承载的操作。
-- 拒绝的请求返回 `{code, message, fix}`：标识或文件不存在为 404 `serve.not-found`；视图不适用于输入为 400 `serve.not-applicable`，提交读不出为 400 `serve.bad-revision`，路径不是设计文件、录制文件或快照中的代码文件为 400 `serve.bad-path`。
+- 拒绝的请求返回 `{code, message, fix}`：标识、边、文件或接口不存在为 404 `serve.not-found`；视图不适用于输入为 400 `serve.not-applicable`，提交读不出为 400 `serve.bad-revision`，路径不是设计文件、录制文件或快照中的代码文件为 400 `serve.bad-path`，参数缺失或不合类型（包括不存在的视图、节点或边的种类）为 400 `serve.bad-parameter`。快照文件在运行中变得读不出时，请求得到 503 `serve.unreadable-snapshot`，文件恢复后照常回答；比较要等 `graph.Compare`，在此之前为 501 `serve.not-implemented`；服务端自身的失败为 500 `serve.internal-error`。
 
 **接口。** 路径都在 `/api` 之下：
 
@@ -478,6 +479,14 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
   | `cli.symlink` | 符号链接既不跟随读取，也不改写，属于文件系统 |
   | `cli.extract-failed` | 代码无法加载，或源码根目录不存在，属于环境 |
   | `cli.unsupported-language` | 系统文件配置的语言尚无后端，属于工具链的能力 |
+  | `serve.not-found` | 查看器请求的标识、边、文件或接口不存在，属于请求 |
+  | `serve.not-applicable` | 视图不适用于请求的输入，属于请求 |
+  | `serve.bad-revision` | 请求的基准提交读不出，属于请求 |
+  | `serve.bad-path` | 请求的路径不是快照描述的文件，属于请求 |
+  | `serve.bad-parameter` | 请求的参数缺失或不合类型，属于请求 |
+  | `serve.unreadable-snapshot` | 快照文件在运行中读不出，属于环境 |
+  | `serve.not-implemented` | 查看器的比较尚未实现，属于工具链的能力 |
+  | `serve.internal-error` | 服务端未能回答请求，属于工具链自身 |
 
 ## 9 计划
 
