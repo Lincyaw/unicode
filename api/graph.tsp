@@ -116,6 +116,13 @@ model Node {
   /** The status `unicode check` gives it; only declared design items have one */
   status?: Status;
 
+  /**
+   * The nodes its refers edges point at, by identity: the types and operations its fields, parameters, results, errors,
+   * symbols and clauses name; a code operation's also those its body uses. A page links a name in a written type,
+   * signature or symbol only when it is one of these.
+   */
+  refers: string[];
+
   /** A code element: its realizes, checks, generates, observes or substitutes edges with the design nodes they point at */
   bindings?: Neighbor[];
 

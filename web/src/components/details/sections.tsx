@@ -63,10 +63,13 @@ export function NodeRow({ node, label, icon = false, dot = true, tone = 'main', 
   );
 }
 
-/** A property's symbol as its inputs read it, `forall name: type`, each type it names a link to its page. */
-export function SymbolLine({ symbol, scope }: { symbol: string; scope?: string }) {
+/**
+ * A property's symbol as its inputs read it, `forall name: type`, each type it names a link to its page; `refs` are
+ * the property's refers, which say what the type names.
+ */
+export function SymbolLine({ symbol, scope, refs }: { symbol: string; scope?: string; refs: readonly string[] }) {
   const at = symbol.indexOf(':');
-  return at < 0 ? <>forall {symbol}</> : <>forall {symbol.slice(0, at + 1)}<TypeText parts={typeParts(symbol.slice(at + 1), scope)} references="link" /></>;
+  return at < 0 ? <>forall {symbol}</> : <>forall {symbol.slice(0, at + 1)}<TypeText parts={typeParts(symbol.slice(at + 1), scope, refs)} references="link" /></>;
 }
 
 /** The +n that unfolds a list in place. */

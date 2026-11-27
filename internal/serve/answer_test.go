@@ -195,7 +195,7 @@ func sameNode(got Node, g *graph.Graph, id string) string {
 	}
 	want := Node{Id: n.Id, Kind: NodeKind(n.Kind), Form: n.Form, Layer: Layer(n.Layer), Source: Source(n.Source), Origin: position(n.Origin),
 		Summary: n.Summary, Salient: n.Salient, Digest: g.Digest(id), Attrs: attrs(n.Attrs)}
-	got.Title, got.Status, got.Bindings, got.Step = "", nil, nil, nil
+	got.Title, got.Status, got.Refers, got.Bindings, got.Step = "", nil, nil, nil, nil
 	if got.Id != id || !reflect.DeepEqual(got, want) {
 		return fmt.Sprintf("the answer gives the node %q as %+v, yet the graph holds %+v", id, got, want)
 	}

@@ -1508,6 +1508,7 @@ components:
         - digest
         - attrs
         - title
+        - refers
       properties:
         id:
           type: string
@@ -1550,6 +1551,14 @@ components:
           allOf:
             - $ref: '#/components/schemas/Status'
           description: The status `unicode check` gives it; only declared design items have one
+        refers:
+          type: array
+          items:
+            type: string
+          description: |-
+            The nodes its refers edges point at, by identity: the types and operations its fields, parameters, results, errors,
+            symbols and clauses name; a code operation's also those its body uses. A page links a name in a written type,
+            signature or symbol only when it is one of these.
         bindings:
           type: array
           items:
@@ -2171,6 +2180,7 @@ components:
         - digest
         - attrs
         - title
+        - refers
       properties:
         id:
           type: string
@@ -2213,6 +2223,14 @@ components:
           allOf:
             - $ref: '#/components/schemas/Status'
           description: The status `unicode check` gives it; only declared design items have one
+        refers:
+          type: array
+          items:
+            type: string
+          description: |-
+            The nodes its refers edges point at, by identity: the types and operations its fields, parameters, results, errors,
+            symbols and clauses name; a code operation's also those its body uses. A page links a name in a written type,
+            signature or symbol only when it is one of these.
         bindings:
           type: array
           items:

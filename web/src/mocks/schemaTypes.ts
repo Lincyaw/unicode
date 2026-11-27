@@ -39,7 +39,7 @@ export type ClassLayer = Schemas['ClassLayer'];
 export type C4Level = Schemas['C4Level'];
 
 /** A node as the fixture writes it: what the snapshot holds, before the check and the derived fields are added. */
-export type RawNode = Omit<Node, 'digest' | 'status' | 'bindings' | 'step'>;
+export type RawNode = Omit<Node, 'digest' | 'status' | 'refers' | 'bindings' | 'step'>;
 
 /** An edge as the fixture writes it, before the check gives it a status. */
 export type RawEdge = Omit<Edge, 'status'>;

@@ -843,6 +843,11 @@ type Node struct {
 	// Origin Where it is written: a design, corpus or code file
 	Origin Position `json:"origin"`
 
+	// Refers The nodes its refers edges point at, by identity: the types and operations its fields, parameters, results, errors,
+	// symbols and clauses name; a code operation's also those its body uses. A page links a name in a written type,
+	// signature or symbol only when it is one of these.
+	Refers []string `json:"refers"`
+
 	// Salient Salient or detail (docs/model.md §9, D6)
 	Salient bool `json:"salient"`
 
@@ -1233,6 +1238,11 @@ type ViewNode struct {
 
 	// Origin Where it is written: a design, corpus or code file
 	Origin Position `json:"origin"`
+
+	// Refers The nodes its refers edges point at, by identity: the types and operations its fields, parameters, results, errors,
+	// symbols and clauses name; a code operation's also those its body uses. A page links a name in a written type,
+	// signature or symbol only when it is one of these.
+	Refers []string `json:"refers"`
 
 	// Salient Salient or detail (docs/model.md §9, D6)
 	Salient bool `json:"salient"`

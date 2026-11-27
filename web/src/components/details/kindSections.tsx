@@ -346,7 +346,7 @@ export function CaseSections({ entity }: { entity: Entity }) {
 export function CheckedSections({ entity }: { entity: Entity }) {
   const { node } = entity;
   const checked = entity.flow ?? entity.property;
-  const inputs = [...(node.attrs.symbols ?? []).map(symbol => <SymbolLine key={symbol} symbol={symbol} />), ...(node.attrs.limits ?? []).map(limit => `  where ${limit}`)];
+  const inputs = [...(node.attrs.symbols ?? []).map(symbol => <SymbolLine key={symbol} symbol={symbol} refs={node.refers} />), ...(node.attrs.limits ?? []).map(limit => `  where ${limit}`)];
   return (
     <>
       {entity.property && entity.property.about.length > 0 && <Section title={SECTIONS.about}><ChipList nodes={entity.property.about} /></Section>}

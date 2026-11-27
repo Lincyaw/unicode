@@ -26,30 +26,38 @@ export interface TypePart {
   id?: string;
 }
 
-/** A design identity as types and signatures write it: dotted segments, such as `graph.Fragment` or `payment-gateway.Rejected`. */
-const REFERENCE = /[A-Za-z_][\w-]*(?:\.[A-Za-z_][\w-]*)+/g;
+/** Whether a character can stand inside an identity, so a reference found in a text is not part of a longer name. */
+function inName(character: string | undefined): boolean {
+  return character !== undefined && (character.toLowerCase() !== character.toUpperCase() || '0123456789_.-:/#'.includes(character));
+}
 
 /**
- * A written type or signature as parts: each reference it makes is a part of its own, written relative to `scope` when
- * one is given. With `refs`, only those identities are references (a field's `refers`); otherwise every dotted identity is.
+ * A written type or signature as parts: each of the identities `refs` gives (a node's or a member's `refers`, from the
+ * interface) where the text writes it is a part of its own, written relative to `scope` when one is given; every other
+ * piece of text stays plain.
  */
-export function typeParts(text: string, scope?: string, refs?: readonly string[]): TypePart[] {
+export function typeParts(text: string, scope: string | undefined, refs: readonly string[]): TypePart[] {
   const written = (part: string) => (scope === undefined ? part : relative(part, scope));
+  // The longest identity first, so `order.OrderLine` is not taken for `order.Order`.
+  const byLength = [...refs].sort((a, b) => b.length - a.length);
   const parts: TypePart[] = [];
+  let plainFrom = 0;
   let at = 0;
-  for (const match of text.matchAll(REFERENCE)) {
-    const id = match[0];
-    if (refs !== undefined && !refs.includes(id)) {
+  while (at < text.length) {
+    const id = inName(text[at - 1]) ? undefined : byLength.find(ref => text.startsWith(ref, at) && !inName(text[at + ref.length]));
+    if (id === undefined) {
+      at += 1;
       continue;
     }
-    if (match.index > at) {
-      parts.push({ text: written(text.slice(at, match.index)) });
+    if (at > plainFrom) {
+      parts.push({ text: written(text.slice(plainFrom, at)) });
     }
     parts.push({ text: written(id), id });
-    at = match.index + id.length;
+    at += id.length;
+    plainFrom = at;
   }
-  if (at < text.length) {
-    parts.push({ text: written(text.slice(at)) });
+  if (text.length > plainFrom) {
+    parts.push({ text: written(text.slice(plainFrom)) });
   }
   return parts;
 }
@@ -64,11 +72,11 @@ export function opLine(op: Pick<Node, 'id' | 'title' | 'attrs'>): string {
   return `${op.title}${signatureOf(op)}`;
 }
 
-/** The signature's call and what it raises, as parts whose references are apart, relative to the operation's component. */
-export function signatureTypes(op: Pick<Node, 'id' | 'attrs'>): { call: TypePart[]; raises?: TypePart[] } {
+/** The signature's call and what it raises, as parts whose references (the operation's `refers`) are apart, relative to the operation's component. */
+export function signatureTypes(op: Pick<Node, 'id' | 'attrs' | 'refers'>): { call: TypePart[]; raises?: TypePart[] } {
   const scope = scopeOf(op.id);
   const [call, raises] = (op.attrs.signature?.[0] ?? '()').split(' raises ');
-  return { call: typeParts(call ?? '', scope), raises: raises === undefined ? undefined : typeParts(raises, scope) };
+  return { call: typeParts(call ?? '', scope, op.refers), raises: raises === undefined ? undefined : typeParts(raises, scope, op.refers) };
 }
 
 /** A field written `name: type`, split into its name and its type. */

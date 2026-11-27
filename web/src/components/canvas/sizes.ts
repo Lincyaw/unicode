@@ -51,7 +51,7 @@ function memberRows(node: ViewNode): CardRow[] {
     : [
       ...(node.attrs.fields ?? []).map((field): CardRow => {
         const { name, type } = fieldParts(field);
-        return { kind: 'field', name, type: typeParts(type, scope), warn: false };
+        return { kind: 'field', name, type: typeParts(type, scope, node.refers), warn: false };
       }),
       ...(node.attrs.values ?? []).map((name): CardRow => ({ kind: 'value', name, warn: false })),
     ];

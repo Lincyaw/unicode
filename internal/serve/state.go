@@ -230,12 +230,19 @@ func (st *state) node(id string) Node {
 	return out
 }
 
-// brief writes a node with its digest, title and status only.
+// brief writes a node with its digest, title, status and the nodes it refers to only.
 func (st *state) brief(id string) Node {
 	n := st.nodes[id]
 	return Node{Id: n.Id, Kind: NodeKind(n.Kind), Form: n.Form, Layer: Layer(n.Layer), Source: Source(n.Source),
 		Origin: position(n.Origin), Summary: n.Summary, Salient: n.Salient, Digest: st.g.Digest(id),
-		Attrs: attrs(n.Attrs), Title: st.title(id), Status: st.status(id)}
+		Attrs: attrs(n.Attrs), Title: st.title(id), Status: st.status(id), Refers: st.refers(id)}
+}
+
+// refers are the nodes the refers edges of id point at, by identity, each once.
+func (st *state) refers(id string) []string {
+	ids := append([]string{}, st.targets(id, graph.EdgeKindRefers)...)
+	slices.Sort(ids)
+	return slices.Compact(ids)
 }
 
 func (st *state) nodeList(ids []string) []Node {

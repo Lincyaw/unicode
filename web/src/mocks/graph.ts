@@ -95,11 +95,12 @@ export function digestOf(node: Pick<RawNode, 'kind' | 'form' | 'summary' | 'attr
   return digest;
 }
 
-/** A node with its hash and status, without the fields that name other nodes. */
+/** A node with its hash, its status and the nodes its refers edges point at, without the fields that hold other nodes. */
 export function plain(id: string): Node {
   const node = raw(id);
   const status = statusOf(id);
-  return { ...node, digest: digestOf(node), ...(status ? { status } : {}) };
+  const refers = [...new Set(outgoing(id, 'refers').map(each => each.to))].sort();
+  return { ...node, digest: digestOf(node), refers, ...(status ? { status } : {}) };
 }
 
 /** A node as the interface answers it: with a code element's bindings and a step's place in its flow. */

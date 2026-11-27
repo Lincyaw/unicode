@@ -54,7 +54,7 @@ function PropertyBlock({ property, view }: { property: ViewNode; view: View }) {
   const cases = view.edges.filter(edge => edge.kind === 'contains' && edge.from === property.id).flatMap(edge => byId.get(edge.to) ?? []).filter(node => node.kind === 'case');
   const predicate = view.edges.filter(edge => edge.kind === 'checks' && edge.to === property.id).flatMap(edge => byId.get(edge.from) ?? [])[0];
   const evidence = property.evidence;
-  const inputs = [...(property.attrs.symbols ?? []).map(symbol => <SymbolLine key={symbol} symbol={symbol} scope={scope} />), ...(property.attrs.limits ?? []).map(limit => `  where ${limit}`)];
+  const inputs = [...(property.attrs.symbols ?? []).map(symbol => <SymbolLine key={symbol} symbol={symbol} scope={scope} refs={property.refers} />), ...(property.attrs.limits ?? []).map(limit => `  where ${limit}`)];
   return (
     <article className={styles.block}>
       <div className={styles.card}>
