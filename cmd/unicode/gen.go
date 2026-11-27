@@ -19,10 +19,10 @@ func genCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
 	check := false
 	c := &cobra.Command{
 		Use:   "gen",
-		Short: "Generate predicates and test drivers from the design",
+		Short: "Generate missing skeletons, predicates and test drivers from the design",
 		Long: "gen builds the graph and asks each configured language backend for its generation plan.\n" +
 			"It writes the planned files only when building and planning give no diagnostics, and only\n" +
-			"replaces files owned by unicode. With --dry-run it reports the plan and writes nothing.\n" +
+			"replaces files owned by unicode, while skeletons are created only at absent paths. With --dry-run it reports the plan and writes nothing.\n" +
 			"With --check it verifies that all generated files are current and writes nothing.\n" +
 			"JSON includes each file's relative path and complete source text; text lists their paths,\n" +
 			"except that a successful --check is silent.",
@@ -52,8 +52,9 @@ func availableBackends() []lang.Backend {
 }
 
 type editJSON struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
+	Path       string `json:"path"`
+	Content    string `json:"content"`
+	CreateOnly bool   `json:"createOnly"`
 }
 
 type generationJSON struct {
@@ -84,7 +85,7 @@ func runGen(root, format string, dryRun, check bool, stdout, stderr io.Writer) e
 	report := generationJSON{Edits: []editJSON{}, Diagnostics: append([]diag.Diagnostic{}, diags...)}
 	var text []byte
 	for _, edit := range generated.Edits {
-		report.Edits = append(report.Edits, editJSON{Path: edit.Path, Content: string(edit.Content)})
+		report.Edits = append(report.Edits, editJSON{Path: edit.Path, Content: string(edit.Content), CreateOnly: edit.CreateOnly})
 		if len(diags) == 0 && !check {
 			text = fmt.Appendln(text, edit.Path)
 		}

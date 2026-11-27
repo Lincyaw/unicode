@@ -3,6 +3,7 @@ package gen
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -33,7 +34,7 @@ func Write(root string, edits []lang.Edit) []diag.Diagnostic {
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return []diag.Diagnostic{ioDiagnostic(edit.Path, err)}
 		}
-		if err := renameio.WriteFile(target, edit.Content, modes[edit.Path]); err != nil {
+		if err := writeEdit(target, edit, modes[edit.Path]); err != nil {
 			return []diag.Diagnostic{ioDiagnostic(edit.Path, err)}
 		}
 	}
@@ -56,7 +57,7 @@ func preflightEdits(root string, edits []lang.Edit, ioFailure func(string, error
 			continue
 		}
 		seen[edit.Path] = true
-		mode, d := preflight(root, edit.Path, ioFailure)
+		mode, d := preflight(root, edit.Path, edit.CreateOnly, ioFailure)
 		if d != nil {
 			ds = append(ds, *d)
 			continue
@@ -75,7 +76,7 @@ func preflightEdits(root string, edits []lang.Edit, ioFailure func(string, error
 	return modes, ds
 }
 
-func preflight(root, rel string, ioFailure func(string, error) diag.Diagnostic) (os.FileMode, *diag.Diagnostic) {
+func preflight(root, rel string, createOnly bool, ioFailure func(string, error) diag.Diagnostic) (os.FileMode, *diag.Diagnostic) {
 	parts := strings.Split(rel, "/")
 	current := root
 	for i := -1; i < len(parts); i++ {
@@ -105,6 +106,10 @@ func preflight(root, rel string, ioFailure func(string, error) diag.Diagnostic) 
 			d := diagnostic("gen.unowned-file", rel, "the target is not a regular tool-generated file", "choose a new generated path or remove the conflicting entry")
 			return 0, &d
 		}
+		if createOnly {
+			d := diagnostic("gen.unowned-file", rel, "a create-only skeleton target already exists", "rebuild the generation plan after extracting the existing source; never overwrite a skeleton")
+			return 0, &d
+		}
 		src, err := os.ReadFile(current)
 		if err != nil {
 			d := ioFailure(rel, err)
@@ -117,6 +122,22 @@ func preflight(root, rel string, ioFailure func(string, error) diag.Diagnostic) 
 		return info.Mode().Perm(), nil
 	}
 	return 0o644, nil
+}
+
+// writeEdit never replaces a skeleton, even if a target appears after preflight.
+func writeEdit(target string, edit lang.Edit, mode os.FileMode) error {
+	if !edit.CreateOnly {
+		return renameio.WriteFile(target, edit.Content, mode)
+	}
+	file, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	n, writeErr := file.Write(edit.Content)
+	if writeErr == nil && n != len(edit.Content) {
+		writeErr = io.ErrShortWrite
+	}
+	return errors.Join(writeErr, file.Close())
 }
 
 func hasMarker(src []byte) bool {
