@@ -131,13 +131,32 @@ func checkable(n graph.Node) bool {
 }
 
 func checkLanguage(g *graph.Graph, id, name string) bool {
+	parents := map[string][]string{}
+	var pending []string
 	for _, e := range g.Edges() {
-		if e.Kind != graph.EdgeKindChecks || e.To != id {
+		if e.Kind == graph.EdgeKindChecks && e.To == id {
+			pending = append(pending, e.From)
+		}
+		if e.Kind == graph.EdgeKindContains {
+			parents[e.To] = append(parents[e.To], e.From)
+		}
+	}
+	seen := map[string]bool{}
+	for len(pending) > 0 {
+		current := pending[0]
+		pending = pending[1:]
+		if seen[current] {
 			continue
 		}
-		if n := g.Node(e.From); n != nil && n.Layer == graph.LayerCode && strings.HasPrefix(n.Id, name+":") {
+		seen[current] = true
+		n := g.Node(current)
+		if n == nil || n.Layer != graph.LayerCode {
+			continue
+		}
+		if n.Kind == graph.NodeKindContainer && n.Form == "file" && slices.Contains(n.Attrs["language"], name) {
 			return true
 		}
+		pending = append(pending, parents[current]...)
 	}
 	return false
 }

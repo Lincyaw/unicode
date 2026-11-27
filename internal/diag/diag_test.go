@@ -18,14 +18,8 @@ func checkDiagnosticJSONIsFlat(t rapid.TB, diagnostic Diagnostic) {
 	if err := json.Unmarshal(encoded, &decoded); err != nil {
 		t.Fatalf("cannot decode diagnostic JSON: %v", err)
 	}
-	// JSON preserves Unicode scalar values; compare the encoded strings when
-	// the original Go strings contain invalid UTF-8 byte sequences.
-	decodedJSON, err := json.Marshal(decoded)
-	if err != nil || string(decodedJSON) != string(encoded) {
-		t.Fatalf("diagnostic did not round-trip: %s, %v", decodedJSON, err)
-	}
-	if decoded.Position.Line != diagnostic.Position.Line || decoded.Position.Column != diagnostic.Position.Column {
-		t.Fatal("diagnostic round-trip changed its numeric position")
+	if !reflect.DeepEqual(decoded, diagnostic) {
+		t.Fatalf("diagnostic round-trip changed its fields: %+v, want %+v", decoded, diagnostic)
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(encoded, &fields); err != nil {
