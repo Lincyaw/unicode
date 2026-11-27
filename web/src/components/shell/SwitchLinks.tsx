@@ -1,6 +1,7 @@
 import { clsx } from 'clsx';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
+import { Hint } from '../../ui/hint';
 import styles from './shell.module.css';
 
 export interface SwitchItem {
@@ -9,6 +10,15 @@ export interface SwitchItem {
 
   /** Where it leads; an item without one cannot be chosen now and stays faint */
   href?: string;
+
+  /** Why an item without a place cannot be chosen, shown while the pointer rests on it */
+  reason?: string;
+}
+
+/** An item that cannot be chosen: faint, with its reason behind a hint when it has one. */
+function Unavailable({ item }: { item: SwitchItem }) {
+  const label = <span data-key={item.key} className={clsx(styles.tab, styles.unavailable)} aria-disabled="true" tabIndex={item.reason === undefined ? undefined : 0}>{item.label}</span>;
+  return item.reason === undefined ? label : <Hint content={item.reason}>{label}</Hint>;
 }
 
 /**
@@ -36,7 +46,7 @@ export function SwitchLinks({ label, items, current, className }: { label: strin
     <nav ref={track} className={clsx(styles.tabs, className)} aria-label={label}>
       {thumb && <span className={styles.thumb} style={{ width: thumb.width, transform: `translateX(${thumb.left}px)` }} aria-hidden="true" />}
       {items.map(item => (item.href === undefined
-        ? <span key={item.key} data-key={item.key} className={clsx(styles.tab, styles.unavailable)} aria-disabled="true">{item.label}</span>
+        ? <Unavailable key={item.key} item={item} />
         : <Link key={item.key} data-key={item.key} className={styles.tab} to={item.href} aria-current={item.key === current ? 'page' : undefined}>{item.label}</Link>))}
     </nav>
   );

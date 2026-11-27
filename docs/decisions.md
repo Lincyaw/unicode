@@ -111,3 +111,4 @@
 83. **提交历史保持线性。** 用户要求此后的提交保持线性：开发线先变基到 main，`make check` 通过后快进合并（`git merge --ff-only`），不再产生合并提交；取远端时用 `git pull --rebase`。此前已有的合并提交保留不改。
 84. **支持 Windows：改写文件用 `renameio/v2/maybe`。** 它在 POSIX 上原子地改写，在 Windows 上退为不保证原子的写入；unicode 是开发工具，写入中途失败的代价小于缺少 Windows 程序。发布增加 windows 的 amd64、arm64，打包为 zip。
 85. **前端嵌入 `unicode`，发布用 GoReleaser。** Vite 把前端构建到 `internal/serve/ui/dist`，`//go:embed all:ui` 把它编进程序；构建产物不入库，`ui/.gitkeep` 让没有 Node 时也能编译，此时 `serve` 只提供接口并提示 `make build`。`unicode serve` 默认使用嵌入的页面，`--web DIR` 仍可覆盖，供开发前端时使用。`make build` 先构建前端再构建 `bin/unicode`；`unicode --version` 取 `-ldflags` 设定的版本，否则取模块的构建信息，再否则为 `dev`。推送 `v*` 标签时，GoReleaser 构建各平台的程序并附校验和。不用 corepack：`package.json` 的 `packageManager` 已固定 pnpm 版本，CI 用 `pnpm/action-setup`。
+86. **每个视图标签都能进入。** 用户在工具链自己的仓库上看到四到六个灰色的标签，点了没有反应：时序、活动、调用和代码要选中项给出输入，领域和 C4 要声明记法。标签的输入先取选中项和当前输入给出的视图，没有时在最近的范围中取缺省输入（第一个流程、第一个显著操作、含性质的组件、代码所在的文件），沿设计树向上直到整个系统；只有图中没有任何可用的输入时标签才不可选，原因放在悬停提示中。不另做选择输入的弹层：缺省输入进入视图后，读者可以在设计树和画布上改选。

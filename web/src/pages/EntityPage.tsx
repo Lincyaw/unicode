@@ -1,6 +1,5 @@
 import { Navigate, useNavigate, useSearchParams } from 'react-router';
-import { useEntity, useNodes, useSnapshot } from '../api/client';
-import type { ViewKind } from '../api/types';
+import { useEntity, useNodes } from '../api/client';
 import { EntityBody } from '../components/entity/EntityBody';
 import { EntityPane, type TrailItem } from '../components/entity/EntityPane';
 import entityStyles from '../components/entity/entity.module.css';
@@ -16,7 +15,7 @@ import { kindWord } from '../terms';
 import { Boundary } from './Boundary';
 import { HeaderTools } from './frame/HeaderTools';
 import { StatusBarData } from './frame/StatusBarData';
-import { tabTargets } from './frame/tabs';
+import { tabLinks, useTabTargets } from './frame/tabs';
 import { TopBarData } from './frame/TopBarData';
 import { TreeData } from './frame/TreeData';
 
@@ -34,13 +33,11 @@ function entityLinks(address: EntityAddress, navigate: (to: string) => void): No
 
 function EntityHeader({ address, links }: { address: EntityAddress; links: NodeLinks }) {
   const entity = useEntity(address.id, address.base);
-  const { system } = useSnapshot();
-  const targets = tabTargets(system, [entity]);
-  const hrefs: Partial<Record<ViewKind, string>> = Object.fromEntries(Object.entries(targets).map(([kind, request]) => [kind, links.viewHref(request)]));
+  const tabs = tabLinks(useTabTargets([entity]), (_kind, target) => viewPath({ ...target, base: address.base }));
   const { node } = entity;
   return (
     <PageHeader crumbs={[...entity.ancestors.map(ancestor => ancestor.title), kindWord(node.kind, node.form, node.layer)]} title={displayName(node)}>
-      <ViewTabs hrefs={hrefs} />
+      <ViewTabs tabs={tabs} />
       <HeaderTools
         base={address.base}
         baseHref={base => entityPath({ ...address, base })}

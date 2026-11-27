@@ -112,11 +112,17 @@ export function readEntityAddress(params: URLSearchParams): EntityAddress | unde
   };
 }
 
-/** The address of a view a page offers, such as an entry of the related views, keeping the base being compared with. */
+/** The views that take the whole system when the address names no input (docs/design.md §7.5.1). */
+const SYSTEM_VIEWS: ReadonlySet<ViewKind> = new Set(['architecture', 'events', 'ddd', 'c4']);
+
+/**
+ * The address of a view a page offers, such as an entry of the related views, keeping the base being compared with. A
+ * view that takes the whole system by default leaves the system out of its address; the others keep it as their input.
+ */
 export function requestedView(request: ViewRequest, base: string | undefined): ViewAddress {
   return {
     kind: request.kind,
-    input: request.input.form === 'system' ? undefined : request.input.id,
+    input: request.input.form === 'system' && SYSTEM_VIEWS.has(request.kind) ? undefined : request.input.id,
     expand: request.expand,
     layer: request.layer,
     level: request.level,

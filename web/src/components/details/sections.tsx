@@ -2,6 +2,7 @@ import { clsx } from 'clsx';
 import { ArrowUpRight, Ellipsis, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
+import { requestedView } from '../../routes/address';
 import type { CodeExcerpt, Diagnostic, Node, ViewRequest } from '../../api/types';
 import { ABOUT, CONTROLS, kindWord, SECTIONS, VIEW_NAMES } from '../../terms';
 import { ICON_SIZE, ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
@@ -123,7 +124,7 @@ export function ViewLinks({ views, self, current }: { views: ViewRequest[]; self
   const seen = new Set<string>();
   const shown = views.filter(request => {
     const key = `${request.kind} ${request.input.id}`;
-    const isCurrent = current !== undefined && request.kind === current.kind && (current.input ?? '') === (request.input.form === 'system' ? '' : request.input.id);
+    const isCurrent = current !== undefined && request.kind === current.kind && current.input === requestedView(request, undefined).input;
     if (seen.has(key) || isCurrent) {
       return false;
     }

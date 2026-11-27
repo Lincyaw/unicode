@@ -27,6 +27,18 @@ export const VIEW_NAMES: Record<ViewKind, string> = {
   c4: 'C4',
 };
 
+/** Why a view tab cannot be chosen: the graph holds no input the view takes. */
+export const TAB_REASONS = {
+  notation: (notation: string) => `系统文件没有声明 ${NOTATION_NAMES[notation] ?? notation} 记法`,
+  noFlow: '设计中没有流程',
+  noOp: '设计中没有操作',
+  noProperty: '设计中没有性质',
+  noFile: '快照中没有代码文件',
+} as const;
+
+/** The notations of the labelled views, as the reasons name them. */
+const NOTATION_NAMES: Record<string, string> = { ddd: 'DDD', c4: 'C4' };
+
 /** The word for what a breadcrumb names when the input is the whole system. */
 export const VIEW_WORD = '视图';
 

@@ -1,6 +1,5 @@
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useOptionalEntity, useSnapshot, useView } from '../api/client';
-import type { ViewKind } from '../api/types';
 import { LinksContext, type NodeLinks } from '../components/marks/links';
 import { Frame } from '../components/shell/Frame';
 import { PageHeader } from '../components/shell/PageHeader';
@@ -14,7 +13,7 @@ import { kindWord, VIEW_NAMES, VIEW_WORD } from '../terms';
 import { Boundary } from './Boundary';
 import { HeaderTools } from './frame/HeaderTools';
 import { StatusBarData } from './frame/StatusBarData';
-import { tabTargets } from './frame/tabs';
+import { tabLinks, useTabTargets } from './frame/tabs';
 import { TopBarData } from './frame/TopBarData';
 import { TreeData } from './frame/TreeData';
 import { Preview } from './Preview';
@@ -37,10 +36,7 @@ function ViewHeader({ address, links }: { address: ViewAddress; links: NodeLinks
   const { system } = useSnapshot();
   const selection = useOptionalEntity(address.select !== undefined && !isEdgeKey(address.select) ? address.select : undefined);
   const input = useOptionalEntity(view.input.id);
-  const targets = tabTargets(system, [selection, input]);
-  const hrefs: Partial<Record<ViewKind, string>> = Object.fromEntries(
-    Object.entries(targets).map(([kind, request]) => [kind, kind === address.kind ? viewPath(address) : links.viewHref(request)]),
-  );
+  const tabs = tabLinks(useTabTargets([selection, input]), (kind, target) => viewPath(kind === address.kind ? address : { ...target, base: address.base }));
   const onSystem = view.input.form === 'system';
   const crumbs = onSystem ? [system.title, VIEW_WORD] : [...view.ancestors.map(node => node.title), kindWord(view.input.kind, view.input.form, view.input.layer)];
   return (
@@ -48,7 +44,7 @@ function ViewHeader({ address, links }: { address: ViewAddress; links: NodeLinks
       crumbs={crumbs}
       title={onSystem ? VIEW_NAMES[address.kind] : <>{VIEW_NAMES[address.kind]}<span aria-hidden="true">·</span>{displayName(view.input)}</>}
     >
-      <ViewTabs current={address.kind} hrefs={hrefs} />
+      <ViewTabs current={address.kind} tabs={tabs} />
       <HeaderTools
         base={address.base}
         baseHref={base => viewPath({ ...address, base })}
