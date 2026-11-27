@@ -15,7 +15,7 @@ type SinceSample record "增量检查选择的两张图与显式标识" {
   field selected: list<string>
 }
 
-op affectedChecks(base: graph.Graph, head: graph.Graph, selected: list<string>) -> list<string> "比较两端节点和边，从两张图传播影响；变化用例归到父检查，globals 变化传播到所在包及导入方包的代码，筛选仍存在的性质并与显式选择取交集"
+op affectedChecks(base: graph.Graph, head: graph.Graph, selected: list<string>) -> list<string> "比较两端节点和边，从两张图传播影响；变化用例归到父检查，globals 或导入目标变化传播到所在包及导入方包的代码，筛选仍存在的性质并与显式选择取交集"
 
 op main(args: list<string>) -> int "执行一条命令，返回退出码"
 
@@ -110,7 +110,7 @@ flow serve-viewer "用户运行 unicode serve：已经运行过 unicode build �
   manual "需要准备快照、启动 HTTP 服务并发送中断信号，由手写谓词核对实际进程边界"
 }
 
-property changed-checks-are-selected invariant "增量检查包含新改性质、调用者、已删除依赖的使用者及变化用例的父检查；显式标识缩小选择；全局声明变化影响同包和导入方检查，排版变化不误选全部" {
+property changed-checks-are-selected invariant "增量检查包含新改性质、调用者、已删除依赖的使用者及变化用例的父检查；显式标识缩小选择；全局声明或导入目标变化影响同包和导入方检查，排版变化不误选全部" {
   about affectedChecks
   forall sample: SinceSample generated "带调用、检查、用例与操作内容变化的两张小图，以及可选的显式检查标识"
   manual "需要沿两端图的边独立求闭包并核对删除和变更的归属，表达式没有图遍历"
