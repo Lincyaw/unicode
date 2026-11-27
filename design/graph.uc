@@ -201,3 +201,12 @@ property compare-with-itself-is-empty invariant "一张图与它自己比较，�
   where rotation in 0..1000
   manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
 }
+
+property compare-self-contract postcondition "同一张图作为比较两端时，节点与边的差异均为空" {
+  about compare
+  forall snapshot: Graph generated "由有效片段建立的图，包含任意次序的节点和边"
+  observe none
+  changes none
+  call compare(snapshot, snapshot)
+  ensure size(result.nodes) == 0 and size(result.edges) == 0
+}
