@@ -43,19 +43,43 @@ function scopes(id: string, root: TreeNode): TreeNode[] {
   return [...new Set(ids)].flatMap(each => subtree(root, each) ?? []).concat(root);
 }
 
-/** The code files a design container owns, by path. */
-function ownedFiles(id: string): string[] {
-  return outgoing(id, 'owns').map(each => each.to).sort();
+/** The nodes a node contains, at any depth. */
+function within(id: string): string[] {
+  return childrenOf(id).flatMap(child => [child, ...within(child)]);
 }
 
-/** The file a node's code lies in: a file, a code element's file, the file of the first code realizing a design node, a container's first owned file. */
+/** Whether a code element belongs to the tests: a test function, or code bound by checks, generates, observes or substitutes. */
+function verifies(id: string): boolean {
+  const testKind = raw(id).attrs.testKind?.[0];
+  return (testKind !== undefined && testKind !== 'none') || outgoing(id).some(each => ['checks', 'generates', 'observes', 'substitutes'].includes(each.kind));
+}
+
+/**
+ * Code files in the order the code tab prefers them: a file that is not a test file first, then the file with more code
+ * elements that realize a design node, then by path.
+ */
+function byCode(files: string[]): string[] {
+  const weights = new Map(files.map(file => {
+    const inside = within(file);
+    return [file, { test: inside.some(verifies), realizing: inside.filter(each => outgoing(each, 'realizes').length > 0).length }];
+  }));
+  const weightOf = (file: string) => weights.get(file) ?? { test: false, realizing: 0 };
+  return [...files].sort((a, b) => Number(weightOf(a).test) - Number(weightOf(b).test) || weightOf(b).realizing - weightOf(a).realizing || (a < b ? -1 : Number(a > b)));
+}
+
+/** The code files a design container owns, in the order of byCode. */
+function ownedFiles(id: string): string[] {
+  return byCode(outgoing(id, 'owns').map(each => each.to));
+}
+
+/** The file a node's code lies in: a file, a code element's file, the file of the first code realizing a design node, a package's or a container's first file in the order of byCode. */
 function codeFile(id: string): string | undefined {
   const node = raw(id);
   if (node.layer === 'code') {
     if (node.form === 'file') {
       return id;
     }
-    return node.kind === 'container' ? childrenOf(id).filter(child => raw(child).form === 'file').sort()[0] : ancestorsOf(id).findLast(ancestor => ancestor.form === 'file')?.id;
+    return node.kind === 'container' ? byCode(childrenOf(id).filter(child => raw(child).form === 'file'))[0] : ancestorsOf(id).findLast(ancestor => ancestor.form === 'file')?.id;
   }
   const realizer = realizersOf(id)[0];
   return realizer !== undefined ? codeFile(realizer) : ownedFiles(id)[0];

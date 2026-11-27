@@ -92,7 +92,7 @@ func (st *state) defaultInput(kind view.ViewKind, id string, places []string) st
 			return file
 		}
 		// A container's first owned file the view takes, a detail file being one it does not.
-		owned := func(c string) string { return first(st.ownedFiles(c), applies) }
+		owned := func(c string) string { return first(st.filesByCode(st.ownedFiles(c)), applies) }
 		holder := first(places, func(p string) bool { return owned(p) != "" })
 		if holder == "" {
 			holder = st.nearest([]string{st.system}, func(n string) bool { return owned(n) != "" })
@@ -125,10 +125,10 @@ func (st *state) nearest(places []string, test func(string) bool) string {
 	return ""
 }
 
-// codeFile is the file a node's code lies in: a file itself, a package's
-// first file, the file a code element is declared in, the file of the first
-// code element that realizes a design node, a container's first owned
-// file; "" when there is none.
+// codeFile is the file a node's code lies in: a file itself, the file a
+// code element is declared in, the file of the first code element that
+// realizes a design node, and the first file of a package or of a
+// container's owned files in the order of filesByCode; "" when there is none.
 func (st *state) codeFile(id string) string {
 	n := st.nodes[id]
 	switch {
@@ -136,8 +136,7 @@ func (st *state) codeFile(id string) string {
 		return id
 	case n.Layer == graph.LayerCode && n.Kind == graph.NodeKindContainer:
 		files := slices.DeleteFunc(st.children(id), func(c string) bool { return st.nodes[c].Form != "file" })
-		slices.Sort(files)
-		return first(files, func(string) bool { return true })
+		return first(st.filesByCode(files), func(string) bool { return true })
 	case n.Layer == graph.LayerCode:
 		ancestors := st.ancestors(id)
 		slices.Reverse(ancestors)
@@ -146,14 +145,69 @@ func (st *state) codeFile(id string) string {
 	if r := st.realizations(id); len(r) > 0 {
 		return st.codeFile(r[0].edge.From)
 	}
-	return first(st.ownedFiles(id), func(string) bool { return true })
+	return first(st.filesByCode(st.ownedFiles(id)), func(string) bool { return true })
 }
 
-// ownedFiles are the code files a design container owns, by path.
+// ownedFiles are the code files a design container owns.
 func (st *state) ownedFiles(id string) []string {
-	files := st.targets(id, graph.EdgeKindOwns)
-	slices.Sort(files)
-	return files
+	return st.targets(id, graph.EdgeKindOwns)
+}
+
+// filesByCode orders code files as the code tab prefers them (docs/design.md
+// §7.5.1): a file that is not a test file first, then the file with more
+// code elements that realize a design node, then by path.
+func (st *state) filesByCode(files []string) []string {
+	type weight struct {
+		test      bool
+		realizing int
+	}
+	weights := map[string]weight{}
+	for _, f := range files {
+		w := weight{}
+		for _, c := range st.within(f) {
+			w.test = w.test || st.verifies(c)
+			if len(st.targets(c, graph.EdgeKindRealizes)) > 0 {
+				w.realizing++
+			}
+		}
+		weights[f] = w
+	}
+	ordered := slices.Clone(files)
+	slices.SortFunc(ordered, func(a, b string) int {
+		wa, wb := weights[a], weights[b]
+		return cmp.Or(compareTest(wa.test, wb.test), cmp.Compare(wb.realizing, wa.realizing), cmp.Compare(a, b))
+	})
+	return ordered
+}
+
+// verifies tells whether a code element belongs to the tests: a test
+// function, or code bound by checks, generates, observes or substitutes.
+func (st *state) verifies(id string) bool {
+	if kind := st.attr(id, "testKind"); kind != "" && kind != "none" {
+		return true
+	}
+	return len(st.targets(id, graph.EdgeKindChecks, graph.EdgeKindGenerates, graph.EdgeKindObserves, graph.EdgeKindSubstitutes)) > 0
+}
+
+// compareTest orders a file that is not a test file before one that is.
+func compareTest(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case b:
+		return -1
+	}
+	return 1
+}
+
+// within are the nodes that id contains, at any depth.
+func (st *state) within(id string) []string {
+	var ids []string
+	for _, c := range st.targets(id, graph.EdgeKindContains) {
+		ids = append(ids, c)
+		ids = append(ids, st.within(c)...)
+	}
+	return ids
 }
 
 // first is the first of the ids that passes the test, "" when none does.
