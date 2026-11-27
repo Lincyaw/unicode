@@ -78,7 +78,7 @@ var (
 	externalOrder  = newOrder("external actor", "syntax.member-order", [][]string{{"type"}, {"op"}})
 	typeOrder      = newOrder("type", "syntax.member-order", [][]string{{"label"}, {"extends"}, {"implements"}, {"field", "value"}, {"op"}})
 	flowOrder      = newOrder("flow", "syntax.member-order",
-		[][]string{{"forall"}, {"where"}, {step, "on", "async", "alt", "opt", "loop"}, {"within"}, {"ensure"}, {"case"}}, "within")
+		[][]string{{"forall"}, {"where"}, {step, "on", "async", "alt", "opt", "loop"}, {"within"}, {"ensure", "manual"}, {"case"}}, "within", "manual")
 	propertyOrder = newOrder("property", "syntax.member-order", [][]string{{"about"}, {"forall"}, {"where"}, {"observe"}, {"requires"}, {"changes"}, {"call"}, {"within"}, {"ensure", "manual"}, {"case"}}, "about", "changes", "call", "within", "manual")
 )
 
@@ -187,6 +187,9 @@ func (c *checker) file(f *File) {
 		case *FlowDecl:
 			seen := lines(c, flowOrder, d.Lines)
 			steps(c, d.Lines)
+			if seen["manual"] != 0 && seen["ensure"] != 0 {
+				c.report(d.Pos, "syntax.mixed-claim", "manual cannot be combined with ensure", "use either a generated flow claim or a manual reason")
+			}
 			if seen["ensure"] != 0 || seen["within"] != 0 {
 				found := false
 				for _, line := range d.Lines {

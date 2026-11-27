@@ -614,6 +614,7 @@ func (*CaseDecl) propertyLine()      {}
 func (*Act) propertyLine()           {}
 func (*Ensure) propertyLine()        {}
 func (*Within) propertyLine()        {}
+func (*Manual) flowLine()            {}
 func (*Manual) propertyLine()        {}
 func (*Requires) propertyLine()      {}
 func (*Observe) propertyLine()       {}
@@ -668,7 +669,7 @@ var unions = []union{
 	unionOf[ComponentLine](&Comment{}, &Label{}, &Focus{}, &Paths{}, &Uses{}),
 	unionOf[Member](&Comment{}, &Label{}, &Extends{}, &Implements{}, &Field{}, &EnumValue{}, &OpDecl{}),
 	unionOf[TypeExpr](&Builtin{}, &ElemType{}, &MapType{}, &CallType{}, &RepliesType{}, &NamedType{}),
-	unionOf[FlowLine](&Comment{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &Within{}, &Ensure{}, &CaseDecl{},
+	unionOf[FlowLine](&Comment{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &Within{}, &Ensure{}, &Manual{}, &CaseDecl{},
 		&OnBlock{}, &Async{}, &Alt{}, &Opt{}, &Loop{}, &Call{}, &Send{}, &Emit{}),
 	unionOf[PropertyLine](&Comment{}, &About{}, &Symbol{}, &SubsetLimit{}, &IntervalLimit{}, &Observe{}, &Requires{}, &Changes{},
 		&Act{}, &Within{}, &Ensure{}, &Manual{}, &CaseDecl{}),
