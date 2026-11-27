@@ -1,17 +1,18 @@
 import * as Popover from '@radix-ui/react-popover';
 import { clsx } from 'clsx';
-import { Check, GitCompareArrows } from '../marks/icons';
 import { Link } from 'react-router';
 import type { Comparison, Revision } from '../../api/types';
 import { ABOUT, CHANGE_KINDS, CONTROLS } from '../../terms';
-import { InfoHint } from '../../ui/hint';
+import { HintedHeading } from '../../ui/content';
+import { Button } from '../../ui/controls';
 import hintStyles from '../../ui/hint.module.css';
-import styles from './shell.module.css';
 import { Icon } from '../../ui/icons';
+import { Check, GitCompareArrows } from '../marks/icons';
+import styles from './shell.module.css';
 
 /**
- * The compare button: it names the base revision the pages compare with, and opens the recent commits to choose
- * another, with what differs from the chosen one.
+ * The compare button, the header's one outlined control: it names the base revision the pages compare with, and opens
+ * the recent commits to choose another, with what differs from the chosen one.
  */
 export function CompareButton({ base, revisions, comparison, baseHref, entityHref }: {
   base?: string;
@@ -23,16 +24,15 @@ export function CompareButton({ base, revisions, comparison, baseHref, entityHre
   const changed = comparison?.nodes.filter(change => change.change !== 'unchanged') ?? [];
   return (
     <Popover.Root>
-      <Popover.Trigger className={styles.compare} aria-label={CONTROLS.compare}>
-        <Icon glyph={GitCompareArrows} size="small" />
-        <span className="t-mono">{base ?? CONTROLS.compare}</span>
+      <Popover.Trigger asChild>
+        <Button variant="line" size="medium" label={base === undefined ? undefined : CONTROLS.comparedWith(base)}>
+          <Icon glyph={GitCompareArrows} size="small" />
+          {base === undefined ? CONTROLS.compare : <span className="t-mono">{base}</span>}
+        </Button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content className={clsx(hintStyles.popover, styles.panel)} align="start" sideOffset={8} collisionPadding={12} onOpenAutoFocus={event => event.preventDefault()}>
-          <div className={styles.panelHead}>
-            <span className="t-micro c-faint">{CONTROLS.compare}</span>
-            <InfoHint subject={CONTROLS.compare}>{ABOUT.compare}</InfoHint>
-          </div>
+          <HintedHeading rank="h2" className="t-label" title={CONTROLS.compare} about={ABOUT.compare} />
           <ul className={styles.revisions}>
             <li>
               <Link className={styles.revision} to={baseHref(undefined)} aria-current={base === undefined ? 'true' : undefined}>
@@ -54,8 +54,8 @@ export function CompareButton({ base, revisions, comparison, baseHref, entityHre
             <ul className={styles.changes}>
               {changed.map(change => (
                 <li key={change.id} className={styles.change}>
-                  <span className="t-micro c-faint">{CHANGE_KINDS[change.change]}</span>
-                  {change.change === 'removed' ? <span className="t-mono c-faint">{change.id}</span> : <Link className="t-mono" to={entityHref(change.id)}>{change.id}</Link>}
+                  <span className="t-micro c-muted">{CHANGE_KINDS[change.change]}</span>
+                  {change.change === 'removed' ? <span className="t-mono c-muted">{change.id}</span> : <Link className="t-mono" to={entityHref(change.id)}>{change.id}</Link>}
                 </li>
               ))}
             </ul>

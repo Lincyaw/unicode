@@ -1,80 +1,56 @@
 /* The viewer fills the window: bars above and below, three columns between, each scrolling on its own. */
 .frame {
   display: grid;
-  grid-template-rows: var(--bar-height) var(--header-height) minmax(0, 1fr) var(--status-height);
+  grid-template-rows: var(--bar-height) auto minmax(0, 1fr) var(--status-height);
+  grid-template-columns: minmax(0, 1fr);
   height: 100vh;
   height: 100dvh;
 }
-.body { display: grid; grid-template-columns: var(--tree-width) minmax(0, 1fr) var(--pane-width); min-height: 0; }
-.tree { padding: var(--space-4) var(--space-3); overflow: auto; }
+/* The reader sizes the side columns with the handles between them and the canvas. */
+.body { position: relative; display: grid; grid-template-columns: var(--tree-width, 18rem) auto minmax(0, 1fr) auto var(--pane-width, 22.5rem); min-height: 0; }
+.tree { min-width: 0; padding: var(--space-4) var(--space-3); overflow: auto; }
 .main { position: relative; min-width: 0; overflow: hidden; border-left: var(--rule-hairline); border-right: var(--rule-hairline); }
-.pane { padding: var(--space-5); overflow: auto; }
+.pane { min-width: 0; padding: var(--space-5); overflow: auto; }
+.headerRow { display: flex; align-items: center; min-width: 0; border-bottom: var(--rule-hairline); }
+.drawerToggle { display: none; }
 
 /* Top bar */
-.topBar { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-6); border-bottom: var(--rule-hairline); }
-.wordmark { font: var(--type-wordmark); white-space: nowrap; }
-.topBar > .wordmark + span { margin-right: var(--space-3); }
-.themeSwitch { display: grid; place-items: center; color: var(--text-muted); transition: color var(--duration-fast); }
-.themeSwitch:hover { color: var(--text-main); }
-
-.search {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 16.25rem;
-  height: calc(var(--control-small) + var(--space-1));
-  padding: 0 var(--space-3);
-  border: var(--rule-hairline);
-  border-radius: var(--radius-full);
-  color: var(--text-faint);
-  transition: border-color var(--duration-fast);
-}
-.search:focus-within { border-color: var(--text-faint); }
-.search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text-main); font: var(--type-small); }
-.search input::placeholder { color: var(--text-faint); }
-.search input::-webkit-search-cancel-button { display: none; }
-.search kbd { font: var(--type-mono); }
-.results { z-index: 50; width: 26rem; max-height: 22rem; padding: var(--space-2); overflow: auto; }
-.result { display: flex; align-items: center; gap: var(--space-2); width: 100%; padding: var(--space-1) var(--space-2); border-radius: var(--radius-md); text-align: left; }
+.topBar { display: flex; align-items: center; gap: var(--space-3); min-width: 0; padding: 0 var(--space-6); border-bottom: var(--rule-hairline); }
+.brand { display: inline-flex; flex: none; align-items: center; gap: var(--space-2); color: var(--text-main); font: var(--type-wordmark); }
+.brandMark { display: block; flex: none; }
+.brandMark path { fill: none; stroke-width: var(--size-stroke); stroke-linejoin: round; }
+.brandMark path:first-child { stroke: var(--brand-dev); }
+.brandMark path:last-child { stroke: var(--brand-ops); }
+.appName { flex: none; margin-right: var(--space-3); }
+.search { flex: 0 1 15rem; min-width: 0; }
+.search > .searchField { width: 100%; }
+.results { z-index: 50; width: min(26rem, var(--radix-popover-content-available-width)); max-height: 22rem; padding: var(--space-2); overflow: auto; }
+.result { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-width: 0; padding: var(--space-1) var(--space-2); border-radius: var(--radius-md); }
 .result:hover { background: var(--bg-muted); }
-.resultId { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resultTitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resultId { flex: 0 1 auto; min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topEnd { margin-left: auto; }
 
 /* Header */
-.header { display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-6); border-bottom: var(--rule-hairline); }
-.heading { display: grid; gap: var(--space-1); min-width: 0; margin-right: var(--space-4); }
-.title { display: flex; align-items: center; gap: var(--space-2); font: var(--type-page-title); white-space: nowrap; }
+/*
+ * The heading gives way first: its path and title end in an ellipsis. On a window too narrow for one row, the tabs and
+ * tools wrap under the heading; on a narrow one the tabs scroll in their own track.
+ */
+.header { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); min-width: 0; padding: var(--space-2) var(--space-6); }
+.heading { display: grid; flex: 1 1 12rem; gap: var(--space-px); min-width: 0; }
+/* The path is one line, ending in an ellipsis when it runs out of room. */
+.heading > nav { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.title { overflow: hidden; font: var(--type-page-title); text-overflow: ellipsis; white-space: nowrap; }
+.header > nav { flex: 0 1 auto; min-width: 0; }
+.tools { display: flex; flex: none; align-items: center; gap: var(--space-2); }
 
-
-.diagnosticCount {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-px) var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--bg-warning-soft);
-  color: var(--accent-warning);
-  font: var(--type-micro);
-}
-.diagnosticCount:hover, .diagnosticCount[data-state="open"] { box-shadow: inset 0 0 0 var(--size-hairline) currentcolor; }
-
-.compare {
-  display: inline-flex;
-  align-items: center;
-  gap: calc(var(--space-1) + var(--space-px));
-  padding: var(--space-1) var(--space-3);
-  border: var(--rule-emphasis);
-  border-radius: var(--radius-full);
-  color: var(--text-muted);
-  transition: background-color var(--duration-fast);
-}
-.compare:hover, .compare[data-state="open"] { background: var(--bg-muted); }
+/* A count of diagnostics draws its icon in the failure colour only when there is one. */
+.alert { color: var(--accent-warning); }
 
 .panel { z-index: 50; display: grid; gap: var(--space-3); width: 28rem; max-height: min(32rem, var(--radix-popover-content-available-height)); padding: var(--space-4); overflow: auto; }
-.panelHead { display: flex; align-items: center; gap: var(--space-1); }
 .diagnosticList { display: grid; gap: var(--space-3); }
 .diagnostic { display: grid; gap: var(--space-1); padding-bottom: var(--space-3); border-bottom: var(--rule-hairline); }
 .diagnostic:last-child { padding-bottom: 0; border-bottom: 0; }
-.diagnosticCode { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--accent-warning); font: var(--type-micro); }
 .revisions { display: grid; gap: var(--space-px); }
 .revision { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); border-radius: var(--radius-md); }
 .revision:hover { background: var(--bg-muted); }
@@ -86,7 +62,7 @@
 /* Status bar */
 .statusBar { display: flex; align-items: center; gap: calc(var(--space-1) + var(--space-px)); padding: 0 var(--space-6); border-top: var(--rule-hairline); }
 .gap { width: var(--space-2); }
-.statusCount { display: inline-flex; align-items: center; gap: calc(var(--space-1) + var(--space-px)); color: var(--accent-warning); }
+.statusCount { display: inline-flex; align-items: center; gap: calc(var(--space-1) + var(--space-px)); }
 
 /* Design tree */
 .paneHead { display: flex; align-items: center; gap: var(--space-2); height: var(--space-6); margin-bottom: var(--space-2); padding: 0 var(--space-3); }
@@ -110,3 +86,35 @@
 .treeToggle { display: grid; flex: none; place-items: center; width: var(--space-3); height: var(--space-3); color: var(--text-faint); }
 .treeItem { display: flex; flex: 1; align-items: center; gap: var(--space-2); min-width: 0; height: 100%; text-align: left; }
 .treeLabel { flex: 1; min-width: 0; overflow: hidden; font: var(--type-code); text-overflow: ellipsis; white-space: nowrap; }
+
+/*
+ * Below the narrow breakpoint the canvas takes the whole width; the design tree and the right pane lie over it as
+ * drawers, which slide in from their sides when the reader opens them from the header.
+ */
+@media (max-width: 760px) {
+  .topBar { padding: 0 var(--space-4); }
+  .appName { display: none; }
+  .headerRow { padding: 0 var(--space-2); }
+  .header { padding: var(--space-2); }
+  /* The tools stay beside the heading, and the tabs take a line of their own. */
+  .tools { order: 1; }
+  .header > nav { order: 2; overflow-x: auto; scrollbar-width: none; }
+  .drawerToggle { display: flex; flex: none; }
+  .body { grid-template-columns: minmax(0, 1fr); overflow: hidden; }
+  .body > [role="separator"] { display: none; }
+  .main { border: 0; }
+  .tree, .pane {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 30;
+    width: min(calc(100% - var(--space-12)), 24rem);
+    background: var(--bg-page);
+    box-shadow: var(--shadow-float);
+    visibility: hidden;
+    transition: transform var(--duration-base) var(--ease-out), visibility var(--duration-base);
+  }
+  .tree { left: 0; border-right: var(--rule-hairline); transform: translateX(-100%); }
+  .pane { right: 0; border-left: var(--rule-hairline); transform: translateX(100%); }
+  .body[data-drawer="tree"] > .tree, .body[data-drawer="pane"] > .pane { visibility: visible; transform: none; }
+}

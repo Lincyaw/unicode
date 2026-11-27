@@ -2,9 +2,7 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router';
 import { useEntity, useNodes } from '../api/client';
 import { EntityBody } from '../components/entity/EntityBody';
 import { EntityPane, type TrailItem } from '../components/entity/EntityPane';
-import entityStyles from '../components/entity/entity.module.css';
 import { LinksContext, type NodeLinks } from '../components/marks/links';
-import { Frame } from '../components/shell/Frame';
 import { PageHeader } from '../components/shell/PageHeader';
 import { ViewTabs } from '../components/shell/ViewTabs';
 import {
@@ -14,6 +12,7 @@ import { displayName } from '../components/marks/format';
 import { kindWord } from '../terms';
 import { Boundary } from './Boundary';
 import { HeaderTools } from './frame/HeaderTools';
+import { SizedFrame } from './frame/SizedFrame';
 import { StatusBarData } from './frame/StatusBarData';
 import { tabLinks } from './frame/tabs';
 import { TopBarData } from './frame/TopBarData';
@@ -36,21 +35,26 @@ function EntityHeader({ address, links }: { address: EntityAddress; links: NodeL
   const tabs = tabLinks(entity.tabs, (_kind, target) => viewPath({ ...target, base: address.base }));
   const { node } = entity;
   return (
-    <PageHeader crumbs={[...entity.ancestors.map(ancestor => ({ label: ancestor.title, to: links.entityHref(ancestor.id) })), { label: kindWord(node.kind, node.form, node.layer) }]} title={displayName(node)}>
+    <PageHeader
+      crumbs={[...entity.ancestors.map(ancestor => ({ label: ancestor.title, to: links.entityHref(ancestor.id) })), { label: kindWord(node.kind, node.form, node.layer) }]}
+      title={displayName(node)}
+      tools={(
+        <HeaderTools
+          base={address.base}
+          baseHref={base => entityPath({ ...address, base })}
+          subjectHref={subject => (isEdgeKey(subject) ? undefined : links.entityHref(subject))}
+          entityHref={links.entityHref}
+        />
+      )}
+    >
       <ViewTabs tabs={tabs} />
-      <HeaderTools
-        base={address.base}
-        baseHref={base => entityPath({ ...address, base })}
-        subjectHref={subject => (isEdgeKey(subject) ? undefined : links.entityHref(subject))}
-        entityHref={links.entityHref}
-      />
     </PageHeader>
   );
 }
 
 function EntityMain({ address }: { address: EntityAddress }) {
   const entity = useEntity(address.id, address.base);
-  return <div className={entityStyles.scroll}><EntityBody entity={entity} /></div>;
+  return <EntityBody entity={entity} />;
 }
 
 function EntityTrail({ address }: { address: EntityAddress }) {
@@ -84,8 +88,9 @@ export function EntityPage() {
   const key = entityPath(address);
   return (
     <LinksContext value={links}>
-      <Frame
-        topBar={<Boundary reset="top" quiet><TopBarData base={address.base} /></Boundary>}
+      <SizedFrame
+        place={key}
+        topBar={<Boundary reset="top" quiet><TopBarData enter={id => entityPath(following(address, id))} /></Boundary>}
         header={<Boundary reset={key} quiet><EntityHeader address={address} links={links} /></Boundary>}
         tree={<Boundary reset={address.id}><EntityTree address={address} links={links} /></Boundary>}
         main={<Boundary reset={key}><EntityMain address={address} /></Boundary>}

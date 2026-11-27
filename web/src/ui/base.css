@@ -49,12 +49,9 @@
   --type-page-title: 600 18px/1.4 var(--font-text);
   /* Identities and names in a drawing or a list: medium for a heading, regular for a row. */
   --type-mono-strong: 500 12px/1.5 var(--font-mono);
-  /* A tool page's bars and side panes. */
-  --bar-height: 55px;
-  --header-height: 80px;
-  --status-height: 34px;
-  --tree-width: 288px;
-  --pane-width: 360px;
+  /* A tool page's top bar and status bar. */
+  --bar-height: var(--space-12);
+  --status-height: var(--space-8);
   /* The landing page's title and section headings grow with the window. */
   --type-hero: 600 clamp(30px, 4vw, 56px)/1.16 var(--font-text);
   --type-section: 600 clamp(26px, 3vw, 38px)/1.2 var(--font-text);

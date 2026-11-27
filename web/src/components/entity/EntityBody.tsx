@@ -270,16 +270,18 @@ function OtherBody({ entity }: { entity: Entity }) {
   }
 }
 
-/** The entity page's content on the canvas: the head, then the sections of the node's kind. */
+/** The entity page's content on the canvas, scrolled in its column: the head, then the sections of the node's kind. */
 export function EntityBody({ entity }: { entity: Entity }) {
   const { node } = entity;
   const design = node.layer === 'design';
   return (
-    <article className={styles.page}>
-      <Head entity={entity} />
-      {design && node.kind === 'type' && <TypeBody entity={entity} />}
-      {design && node.kind === 'op' && <OpBody entity={entity} />}
-      {!(design && (node.kind === 'type' || node.kind === 'op')) && <OtherBody entity={entity} />}
-    </article>
+    <div className={styles.scroll}>
+      <article className={styles.page}>
+        <Head entity={entity} />
+        {design && node.kind === 'type' && <TypeBody entity={entity} />}
+        {design && node.kind === 'op' && <OpBody entity={entity} />}
+        {!(design && (node.kind === 'type' || node.kind === 'op')) && <OtherBody entity={entity} />}
+      </article>
+    </div>
   );
 }

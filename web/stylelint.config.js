@@ -10,6 +10,7 @@ const LIBRARY_PROPERTIES = {
     '--radix-select-trigger-width': '',
     '--radix-select-content-available-height': '',
     '--radix-popover-content-available-height': '',
+    '--radix-popover-content-available-width': '',
   },
 };
 

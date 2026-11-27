@@ -1,23 +1,31 @@
-import { Moon } from '../marks/icons';
+import { clsx } from 'clsx';
 import type { ReactNode } from 'react';
+import { Link } from 'react-router';
 import { APP } from '../../terms';
-
-import { toggleTheme } from '../../ui/theme';
-import { Badge } from '../marks/Badge';
+import { ButtonLink, IconButton, ThemeIcon } from '../../ui/controls';
+import type { Theme } from '../../ui/theme';
+import { BrandMark } from './BrandMark';
 import styles from './shell.module.css';
-import { Icon } from '../../ui/icons';
 
-/** The top bar: the wordmark, the system's name as a link to its page, the search box and the theme switch. */
-export function TopBar({ system, systemHref, search }: { system: string; systemHref: string; search: ReactNode }) {
+/** The name the wordmark spells beside its mark. */
+const WORDMARK = 'unicode';
+
+/**
+ * The top bar: the wordmark, which leads home, the system's name, which leads to the system's page, the search box and
+ * the switch to the other theme, which shows the theme it switches to.
+ */
+export function TopBar({ system, homeHref, systemHref, search, theme, onTheme }: {
+  system: string; homeHref: string; systemHref: string; search: ReactNode; theme: Theme; onTheme: () => void;
+}) {
   return (
     <header className={styles.topBar}>
-      <span className={styles.wordmark}>∞ unicode</span>
-      <span className="t-small c-muted">{APP.name}</span>
-      <Badge tone="neutral" to={systemHref}>{system}</Badge>
+      <Link className={styles.brand} to={homeHref}><BrandMark />{WORDMARK}</Link>
+      <span className={clsx(styles.appName, 't-small c-muted')}>{APP.name}</span>
+      <ButtonLink to={systemHref} variant="quiet" size="small">{system}</ButtonLink>
       {search}
-      <button type="button" className={styles.themeSwitch} aria-label={APP.theme} onClick={toggleTheme}>
-        <Icon glyph={Moon} />
-      </button>
+      <span className={styles.topEnd}>
+        <IconButton label={APP.theme} variant="quiet" onClick={onTheme}><ThemeIcon theme={theme} /></IconButton>
+      </span>
     </header>
   );
 }

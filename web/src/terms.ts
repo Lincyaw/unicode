@@ -36,6 +36,11 @@ export const CLOSED_TABS: Record<ClosedTab, string> = {
 /** The word for what a breadcrumb names when the input is the whole system. */
 export const VIEW_WORD = '视图';
 
+/** A view's title: the view's name and the name of its input. */
+export function viewTitle(view: string, input: string): string {
+  return `${view} · ${input}`;
+}
+
 export const STATUS_NAMES: Record<Status, string> = {
   verified: '已验证',
   missing: '缺失',
@@ -266,12 +271,16 @@ export const CONTROLS = {
   open: '进入实体页',
   compare: '比较',
   compareNone: '不比较',
+  comparedWith: (base: string) => `与 ${base} 比较`,
   diagnostics: '诊断',
+  diagnosticsCount: (count: number) => `诊断 ${count} 条`,
   expandRow: '展开',
   collapseRow: '收起',
   viewSwitch: '视图',
   tree: '设计树',
   details: '详情',
+  resizeTree: '调整设计树的宽度',
+  resizePane: '调整详情栏的宽度',
   layer: '层',
   level: '层级',
   linesUnit: '行',

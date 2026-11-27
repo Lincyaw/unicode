@@ -1,7 +1,6 @@
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useOptionalEntity, useSnapshot, useView } from '../api/client';
 import { LinksContext, type NodeLinks } from '../components/marks/links';
-import { Frame } from '../components/shell/Frame';
 import { PageHeader } from '../components/shell/PageHeader';
 import { ViewTabs } from '../components/shell/ViewTabs';
 import { ViewDrawing } from './ViewDrawing';
@@ -9,9 +8,10 @@ import {
   DEFAULT_VIEW, enteringFromView, entityPath, isEdgeKey, readViewAddress, readViewKind, requestedView, selecting, toggling, viewPath, type ViewAddress,
 } from '../routes/address';
 import { displayName } from '../components/marks/format';
-import { kindWord, VIEW_NAMES, VIEW_WORD } from '../terms';
+import { kindWord, VIEW_NAMES, VIEW_WORD, viewTitle } from '../terms';
 import { Boundary } from './Boundary';
 import { HeaderTools } from './frame/HeaderTools';
+import { SizedFrame } from './frame/SizedFrame';
 import { StatusBarData } from './frame/StatusBarData';
 import { tabLinks } from './frame/tabs';
 import { TopBarData } from './frame/TopBarData';
@@ -43,15 +43,17 @@ function ViewHeader({ address, links }: { address: ViewAddress; links: NodeLinks
   return (
     <PageHeader
       crumbs={crumbs}
-      title={onSystem ? VIEW_NAMES[address.kind] : <>{VIEW_NAMES[address.kind]}<span aria-hidden="true">·</span>{displayName(view.input)}</>}
+      title={onSystem ? VIEW_NAMES[address.kind] : viewTitle(VIEW_NAMES[address.kind], displayName(view.input))}
+      tools={(
+        <HeaderTools
+          base={address.base}
+          baseHref={base => viewPath({ ...address, base })}
+          subjectHref={subject => (isEdgeKey(subject) ? viewPath(selecting(address, subject)) : links.entityHref(subject))}
+          entityHref={links.entityHref}
+        />
+      )}
     >
       <ViewTabs current={address.kind} tabs={tabs} />
-      <HeaderTools
-        base={address.base}
-        baseHref={base => viewPath({ ...address, base })}
-        subjectHref={subject => (isEdgeKey(subject) ? viewPath(selecting(address, subject)) : links.entityHref(subject))}
-        entityHref={links.entityHref}
-      />
     </PageHeader>
   );
 }
@@ -74,8 +76,9 @@ export function ViewPage() {
   const drawn = viewPath({ ...address, select: undefined, base: undefined });
   return (
     <LinksContext value={links}>
-      <Frame
-        topBar={<Boundary reset="top" quiet><TopBarData base={address.base} /></Boundary>}
+      <SizedFrame
+        place={key}
+        topBar={<Boundary reset="top" quiet><TopBarData enter={id => entityPath(enteringFromView(address, id))} /></Boundary>}
         header={<Boundary reset={key} quiet><ViewHeader address={address} links={links} /></Boundary>}
         tree={<Boundary reset="tree"><ViewTree address={address} links={links} /></Boundary>}
         main={<Boundary reset={drawn}><ViewDrawing address={address} /></Boundary>}

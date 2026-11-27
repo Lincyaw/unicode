@@ -23,3 +23,14 @@ export function useMediaQuery(query: string): boolean {
     () => matchMedia(query).matches,
   );
 }
+
+/** The window's width, following every resize. */
+export function useWindowWidth(): number {
+  return useSyncExternalStore(
+    notify => {
+      addEventListener('resize', notify);
+      return () => removeEventListener('resize', notify);
+    },
+    () => innerWidth,
+  );
+}

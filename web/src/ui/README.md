@@ -11,7 +11,8 @@
 - `MarkButton` 是作为数据标记的可点元素，例如图上的节点、树的行、结果列表中的一项。它不是胶囊，样式由使用方给出；`src/ui` 之外不直接写 `<button>`。
 - `Tag` 有 `tone`：中性，或失败、通过、需留意三种真实状态。状态色画在边线和图标上，文字保持正文色。标签里可以带图标。
 - 拖动条在悬停和拖动时显出的线用 `--border-emphasis`；只有键盘聚焦时才用焦点色。
-- `base.css` 另有查看器用到的令牌：`--type-page-title`、`--type-mono-strong` 及对应的 `.t-code`、`.t-mono-strong`，以及页头和侧栏的尺寸。
+- `media.ts` 另有 `useWindowWidth`，给出窗口的宽度，供占满窗口的工具页限制各栏的宽度。
+- `base.css` 另有查看器用到的令牌：`--type-page-title`、`--type-mono-strong` 及对应的 `.t-code`、`.t-mono-strong`，以及工具页顶栏和状态栏的高度 `--bar-height`、`--status-height`。
 
 以下是原文。
 
