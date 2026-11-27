@@ -53,7 +53,8 @@ func (w *world) module() Module {
 	}
 	x.addImplements()
 	m := Module{Files: files, Diagnostics: x.diagnostics}
-	for _, n := range x.nodes {
+	nodes := slices.SortedFunc(maps.Values(x.nodes), func(a, b graph.Node) int { return cmp.Compare(a.Id, b.Id) })
+	for _, n := range digestClasses(nodes) {
 		m.Nodes = append(m.Nodes, describeNode(n))
 	}
 	for key, e := range x.edges {
@@ -111,6 +112,12 @@ func (x *expectation) addPackage(p *gpkg) {
 				}
 			case *gfunc:
 				x.addFunc(decl, fileID)
+			case *gvar:
+				for k := range decl.bodies {
+					for i := range decl.bodies[k] {
+						x.closureComments(&decl.bodies[k][i])
+					}
+				}
 			case *gloose:
 				x.misplaced(decl.doc)
 			}
@@ -135,9 +142,11 @@ func summaryOf(doc []binding) string {
 	return strings.TrimPrefix(doc[0].text, "// ")
 }
 
+// addType expects a type's node, its declaration written in plain, so that
+// two types share a digest exactly when they declare the same.
 func (x *expectation) addType(ty *gtype, fileID string) {
 	id := typeIdentity(ty)
-	attrs := map[string][]string{"name": {ty.name}}
+	attrs := map[string][]string{"name": {ty.name}, "declaration": {plainType(ty)}}
 	switch ty.form {
 	case "struct":
 		attrs["fields"] = []string{}
@@ -191,7 +200,7 @@ func (x *expectation) values(ty *gtype) []string {
 // addAbstract expects the node of a method an interface declares.
 func (x *expectation) addAbstract(iface *gtype, sig *gsig) {
 	id := typeIdentity(iface) + "." + sig.name
-	x.op(id, "abstract", x.at[sig], sig, sig.doc, "none", false)
+	x.op(id, "abstract", x.at[sig], sig, sig.doc, "none", false, nil)
 	x.edge(graph.EdgeKindContains, typeIdentity(iface), id, graph.SourceExtracted)
 	x.refersSig(id, sig)
 	x.bindings(id, sig.doc, false, true)
@@ -216,26 +225,33 @@ func (x *expectation) addFunc(fn *gfunc, fileID string) {
 		}
 	}
 	stub := fn.terminal == marker && !slices.ContainsFunc(fn.body, isStatement)
-	x.op(id, form, x.at[fn], fn.sig, fn.doc, testKind, stub)
+	x.op(id, form, x.at[fn], fn.sig, fn.doc, testKind, stub, []string{plainBody(fn)})
 	x.edge(graph.EdgeKindContains, parent, id, graph.SourceExtracted)
 	x.refersSig(id, fn.sig)
 	x.bindings(id, fn.doc, false, fn.recv != nil)
 	for i := range fn.body {
 		x.addStmt(id, &fn.body[i])
 	}
+	x.closureCalls(id, fn.body)
 	if fn.recv != nil {
 		x.candidates(id, fn.recv, fn.sig.name)
 	}
 }
 
-func (x *expectation) op(id, form string, at diag.Position, sig *gsig, doc []binding, testKind string, stub bool) {
+// op expects an operation's node; a function's body is written in plain,
+// so that two functions share a digest exactly when their bodies are the same.
+func (x *expectation) op(id, form string, at diag.Position, sig *gsig, doc []binding, testKind string, stub bool, body []string) {
 	name := lowerFirst(sig.name)
 	if checks(doc) {
 		name = predicateOf(sig.name)
 	}
-	x.node(id, graph.NodeKindOp, form, at, summaryOf(doc), map[string][]string{
+	attrs := map[string][]string{
 		"name": {name}, "signature": {x.signature(sig)}, "testKind": {testKind}, "stub": {strconv.FormatBool(stub)},
-	})
+	}
+	if body != nil {
+		attrs["body"] = body
+	}
+	x.node(id, graph.NodeKindOp, form, at, summaryOf(doc), attrs)
 }
 
 // predicateOf is the property's or flow's name a predicate's name maps from.
@@ -280,8 +296,7 @@ func (x *expectation) addStmt(id string, s *gstmt) {
 	case "closure":
 		x.addStmt(id, s.inner)
 	case "call", "assign":
-		key := x.edge(graph.EdgeKindCalls, id, funcIdentity(s.target), graph.SourceExtracted)
-		x.sites[key] = append(x.sites[key], x.at[s])
+		x.call(id, funcIdentity(s.target), s)
 		if s.via != nil {
 			x.edge(graph.EdgeKindRefers, id, typeIdentity(s.via), graph.SourceExtracted)
 		}
@@ -292,8 +307,7 @@ func (x *expectation) addStmt(id string, s *gstmt) {
 			x.refers(id, s.target.sig.results[0])
 		}
 	case "iface":
-		key := x.edge(graph.EdgeKindCalls, id, typeIdentity(x.declaring(s.method))+"."+s.method.name, graph.SourceExtracted)
-		x.sites[key] = append(x.sites[key], x.at[s])
+		x.call(id, x.abstract(s.method), s)
 		x.edge(graph.EdgeKindRefers, id, typeIdentity(s.via), graph.SourceExtracted)
 		for _, p := range s.method.params {
 			x.refers(id, p.typ)
@@ -301,6 +315,78 @@ func (x *expectation) addStmt(id string, s *gstmt) {
 	case "comment":
 		x.unbound(&s.comment)
 	}
+}
+
+// call expects a calls edge with the site of a statement's callee.
+func (x *expectation) call(from, to string, s *gstmt) {
+	key := x.edge(graph.EdgeKindCalls, from, to, graph.SourceExtracted)
+	x.sites[key] = append(x.sites[key], x.at[s])
+}
+
+// abstract is the identity of the operation an interface's method is.
+func (x *expectation) abstract(sig *gsig) string {
+	return typeIdentity(x.declaring(sig)) + "." + sig.name
+}
+
+// closureCalls expects the calls of the closures in the variables a body
+// uses, and in the variables their statements use in turn, as calls of the
+// body's function, each variable's once; no refers edge comes with them.
+func (x *expectation) closureCalls(id string, body []gstmt) {
+	held := heldBy(body)
+	seen := map[*gvar]bool{}
+	for len(held) > 0 {
+		v := held[0]
+		held = held[1:]
+		if seen[v] {
+			continue
+		}
+		seen[v] = true
+		for k := range v.bodies {
+			for i := range v.bodies[k] {
+				held = append(held, x.closureStmt(id, &v.bodies[k][i])...)
+			}
+		}
+	}
+}
+
+// closureStmt expects the call of a statement in a variable's closure as a
+// call of the function id, and returns the variables the statement uses.
+func (x *expectation) closureStmt(id string, s *gstmt) []*gvar {
+	switch s.kind {
+	case "closure":
+		return x.closureStmt(id, s.inner)
+	case "call", "assign":
+		x.call(id, funcIdentity(s.target), s)
+	case "iface":
+		x.call(id, x.abstract(s.method), s)
+	case "varCall", "varRef":
+		return []*gvar{s.held}
+	}
+	return nil
+}
+
+// closureComments expects a diagnostic for a //uc: line in a variable's closure.
+func (x *expectation) closureComments(s *gstmt) {
+	switch s.kind {
+	case "closure":
+		x.closureComments(s.inner)
+	case "comment":
+		x.unbound(&s.comment)
+	}
+}
+
+// heldBy lists the variables the statements of a body use, its closures' included.
+func heldBy(body []gstmt) []*gvar {
+	var out []*gvar
+	for _, s := range body {
+		switch {
+		case s.kind == "varCall" || s.kind == "varRef":
+			out = append(out, s.held)
+		case s.inner != nil:
+			out = append(out, heldBy([]gstmt{*s.inner})...)
+		}
+	}
+	return out
 }
 
 // declaring is the interface that declares a method.

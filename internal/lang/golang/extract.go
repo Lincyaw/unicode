@@ -41,6 +41,8 @@ type extraction struct {
 	realizes    map[string][]string // a type's identity to the design types it realizes
 	predicates  map[string]bool     // the operations that carry a checks binding
 	values      map[string][]string // a type's identity to its constants' enum values
+	vars        map[string][]initializer
+	varUses     map[string]varUse
 	diagnostics []diag.Diagnostic
 }
 
@@ -72,6 +74,8 @@ func extract(l loaded) lang.Extracted {
 		realizes:   map[string][]string{},
 		predicates: map[string]bool{},
 		values:     map[string][]string{},
+		vars:       map[string][]initializer{},
+		varUses:    map[string]varUse{},
 	}
 	for _, p := range l.packages {
 		x.addPackage(p)
@@ -142,7 +146,8 @@ func unicodeGenerated(file *ast.File) bool {
 }
 
 // addDecl adds the nodes of a declaration and records whose doc comment is
-// whose; a constant adds an enum value to its type.
+// whose; a constant adds an enum value to its type, and a variable records
+// its value.
 func (x *extraction) addDecl(p *packages.Package, f sourceFile, fileID string, decl ast.Decl, docs map[*ast.CommentGroup]bound) {
 	switch decl := decl.(type) {
 	case *ast.GenDecl:
@@ -152,6 +157,7 @@ func (x *extraction) addDecl(p *packages.Package, f sourceFile, fileID string, d
 				x.addType(p, f, fileID, typeDoc(decl, spec), spec, docs)
 			case *ast.ValueSpec:
 				x.addValues(p, spec)
+				x.addInitializers(p, spec)
 			}
 		}
 	case *ast.FuncDecl:
@@ -177,7 +183,7 @@ func (x *extraction) addType(p *packages.Package, f sourceFile, fileID string, d
 	d := declared{id: typeID(name), pkg: p, file: f, pos: spec.Name.Pos(), spec: spec, name: name}
 	x.addNode(graph.Node{
 		Id: d.id, Kind: graph.NodeKindType, Form: typeForm(name), Origin: x.position(p, d.pos),
-		Summary: synopsis(doc), Attrs: map[string][]string{"name": {name.Name()}},
+		Summary: synopsis(doc), Attrs: map[string][]string{"name": {name.Name()}, "declaration": {declarationDigest(spec)}},
 	})
 	x.addEdge(graph.EdgeKindContains, fileID, d.id, x.position(p, d.pos))
 	x.declared = append(x.declared, d)
@@ -200,9 +206,12 @@ func (x *extraction) addType(p *packages.Package, f sourceFile, fileID string, d
 }
 
 func (x *extraction) addOp(d declared, form, parent string, doc *ast.CommentGroup, testKind string, stub bool, docs map[*ast.CommentGroup]bound) {
+	attrs := map[string][]string{"testKind": {testKind}, "stub": {strconv.FormatBool(stub)}}
+	if d.decl != nil && d.decl.Body != nil {
+		attrs["body"] = []string{bodyDigest(d.decl.Body)}
+	}
 	x.addNode(graph.Node{
-		Id: d.id, Kind: graph.NodeKindOp, Form: form, Origin: x.position(d.pkg, d.pos), Summary: synopsis(doc),
-		Attrs: map[string][]string{"testKind": {testKind}, "stub": {strconv.FormatBool(stub)}},
+		Id: d.id, Kind: graph.NodeKindOp, Form: form, Origin: x.position(d.pkg, d.pos), Summary: synopsis(doc), Attrs: attrs,
 	})
 	x.addEdge(graph.EdgeKindContains, parent, d.id, x.position(d.pkg, d.pos))
 	x.declared = append(x.declared, d)
@@ -261,7 +270,8 @@ func (x *extraction) addTypeEdges(d declared) {
 
 // addFuncEdges adds the refers edges of a function to the types of its
 // parameters and results and to the types its body names or gives its
-// variables, and its calls edges.
+// variables, and its calls edges: those of its body, and those of the
+// closures in the package-level variables its body uses.
 func (x *extraction) addFuncEdges(d declared) {
 	origin := x.position(d.pkg, d.pos)
 	refer := func(t *types.Named) {
@@ -279,6 +289,7 @@ func (x *extraction) addFuncEdges(d declared) {
 		return
 	}
 	info := d.pkg.TypesInfo
+	var vars []string
 	ast.Inspect(d.decl.Body, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.Ident:
@@ -286,19 +297,39 @@ func (x *extraction) addFuncEdges(d declared) {
 				mentioned(name.Type(), refer)
 			} else if v, ok := info.Defs[n].(*types.Var); ok {
 				mentioned(v.Type(), refer)
+			} else if id, ok := packageVar(info, n); ok {
+				vars = append(vars, id)
 			}
 		case *ast.CallExpr:
-			callee, ok := typeutil.Callee(info, n).(*types.Func)
-			name := calleeName(n.Fun)
-			if !ok || name == nil || !packageLevel(callee) {
-				return true
+			if callee, name, ok := staticCall(info, n); ok {
+				x.addCall(d.id, call{callee: callee, site: x.position(d.pkg, name.Pos())})
 			}
-			site := x.position(d.pkg, name.Pos())
-			key := x.addEdge(graph.EdgeKindCalls, d.id, funcID(callee.Origin()), site)
-			x.sites[key] = append(x.sites[key], site)
 		}
 		return true
 	})
+	x.addClosureCalls(d.id, vars)
+}
+
+// call is a static call: the function it calls, and where it names it.
+type call struct {
+	callee string
+	site   diag.Position
+}
+
+func (x *extraction) addCall(from string, c call) {
+	key := x.addEdge(graph.EdgeKindCalls, from, c.callee, c.site)
+	x.sites[key] = append(x.sites[key], c.site)
+}
+
+// staticCall is the identity of the package-level function or method that a
+// call statically calls, and the identifier that names it.
+func staticCall(info *types.Info, n *ast.CallExpr) (string, *ast.Ident, bool) {
+	callee, ok := typeutil.Callee(info, n).(*types.Func)
+	name := calleeName(n.Fun)
+	if !ok || name == nil || !packageLevel(callee) {
+		return "", nil, false
+	}
+	return funcID(callee.Origin()), name, true
 }
 
 // addImplements adds an implements edge from every type that is not an
