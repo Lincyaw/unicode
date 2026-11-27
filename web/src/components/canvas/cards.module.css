@@ -41,7 +41,7 @@
 .toggle { display: grid; place-items: center; color: var(--text-muted); }
 .toggle:hover { color: var(--text-main); }
 .names { display: flex; flex-wrap: wrap; gap: var(--space-2) calc(var(--space-2) + var(--space-px)); color: var(--text-muted); }
-.name { display: inline-flex; align-items: center; gap: var(--space-1); height: calc(var(--space-4) + var(--space-px)); font: var(--type-mono); }
+.name { display: inline-flex; align-items: center; gap: var(--space-1); max-width: 100%; height: calc(var(--space-4) + var(--space-px)); overflow: hidden; font: var(--type-mono); }
 
 /* An external system: dashed, outside the system's own components. */
 .external { border-style: dashed; border-color: var(--border-emphasis); background: none; }
