@@ -243,6 +243,14 @@ NL            = 换行 { 换行 } .
 
 字符串，即摘要、生成符号的取值域说明、`alt`、`opt`、`loop` 和 `else` 的标签，以及 `manual` 的原因，不参与约束的检查。它们计入节点的内容哈希，所以改动会出现在快照的比较和评审中（[model.md](model.md) §8）。
 
+摘要、取值域说明和 `manual` 的原因在查看器中单独显示，按下列规则书写：
+
+- **摘要**是一句话，只说一件事，单独显示时也能读懂："这""该""它"只指本条字符串中出现过的名词。摘要提到声明的关键字段或参数，不提声明中没有的东西，不用自造的缩略语。性质的摘要说明它的陈述。只作为性质或流程输入的类型，摘要以"X 的输入："开头，X 是用到它的性质、流程或组件。
+- **取值域说明**写取哪些值：范围、组成，以及特意加入的边界情形；不写生成器的来历。
+- **`manual` 的原因**写这条性质或这个流程需要、而表达式没有的那一项构造。它针对这一条，不是它所在的一组。
+- 两条声明的陈述相近时，各自的摘要写出两者的区别。
+- 文档定义过的术语只用定义的意思；英文标识只用来指确切的字段、命令或代码。
+
 ### 4.3 子句与边
 
 | 构造 | 产生的边 |
@@ -775,7 +783,7 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 | --- | --- | --- |
 | F1 | `cli.not-a-design-file` | `syntax.kind-of-follows-path`、`cli.format-files`、`cli.check-design` |
 | F2 | `syntax.missing-header`、`syntax.unknown-declaration`、`syntax.duplicate-member`、`syntax.missing-member`、`design.missing-system-file`、`design.component-path-mismatch` | `syntax.rejects-broken-text`、`design.rejects-broken-design` |
-| F3 | `cli.not-a-design-file`、`syntax.missing-header`、`syntax.unknown-declaration`、`syntax.duplicate-member`、`design.corpus-path-mismatch`；“只由 `unicode test --record` 写入”未实现：M6 | `cli.format-files`、`syntax.rejects-broken-text`、`design.rejects-broken-design` |
+| F3 | `cli.not-a-design-file`、`syntax.missing-header`、`syntax.unknown-declaration`、`syntax.duplicate-member`、`design.corpus-path-mismatch`；"只由 `unicode test --record` 写入"未实现：M6 | `cli.format-files`、`syntax.rejects-broken-text`、`design.rejects-broken-design` |
 | F4 | `cli.not-canonical` | `syntax.format-is-stable`、`cli.format-files`、`cli.check-design` |
 | L1 | `syntax.invalid-utf8`、`syntax.tab`、`syntax.carriage-return`、`syntax.control-character`、`syntax.unexpected-character` | `syntax.rejects-broken-text` |
 | L2 | `syntax.trailing-comment` | `syntax.rejects-broken-text` |

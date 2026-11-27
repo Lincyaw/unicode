@@ -48,3 +48,4 @@ This project's engineering conventions are the general rules of the `engineering
 ## Documents
 
 - `docs/` holds documents only. Each subject has one current document, edited in place on each decision. Documents are in Chinese, direct and linear; clarifications go in an appendix.
+- Summary strings in the design files (a declaration's summary, a `generated` domain description, a `manual` reason) follow the rules of `docs/language.md` §4.2: one sentence that reads alone, terms only in their defined sense.
