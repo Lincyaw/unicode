@@ -44,7 +44,7 @@ flow answer-request "查看器发来一次接口请求：快照文件自上次�
   }
 }
 
-property answers-follow-contract invariant "每个应答都合乎 api/openapi.yaml：状态码是该接口声明的，正文合乎声明的模式；拒绝的正文是诊断码为 serve.* 的 {code, message, fix}；不是接口的路径得到 404" {
+property answers-follow-contract invariant "每个应答都合乎 api/openapi.yaml：状态码是该接口声明的，正文合乎声明的模式；拒绝的正文是诊断码为 serve.* 的 {code, message, fix}；不是接口的路径得到 404；JSON 与快照的写法一样，不把 <、> 和 & 转义" {
   about Server.answer
   forall exchange: Exchange generated "一张随机的图，以及对各个接口的请求：标识多取自图中的节点，有时不存在，参数有时不合格式"
   manual "需要启动服务并检查 HTTP、OpenAPI、请求顺序和 JSON 引用，表达式没有这些环境操作"

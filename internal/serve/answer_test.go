@@ -64,6 +64,23 @@ func problemOf(body []byte) (Problem, string) {
 	return p, ""
 }
 
+// htmlEscape finds in a JSON document an escape of <, > or & (\u003c,
+// \u003e, \u0026), which the snapshot's JSON does not write; "" when there is none.
+func htmlEscape(body []byte) string {
+	for i := 0; i < len(body); i++ {
+		if body[i] != '\\' || i+1 >= len(body) {
+			continue
+		}
+		if body[i+1] == 'u' && i+6 <= len(body) {
+			if code := strings.ToLower(string(body[i+2 : i+6])); code == "003c" || code == "003e" || code == "0026" {
+				return string(body[i : i+6])
+			}
+		}
+		i++
+	}
+	return ""
+}
+
 //uc:checks serve.answers-follow-contract
 func checkAnswersFollowContract(t rapid.TB, exchange Exchange) {
 	router, err := contract()
@@ -95,6 +112,9 @@ func checkAnswersFollowContract(t rapid.TB, exchange Exchange) {
 		})
 		if err != nil {
 			t.Fatalf("the answer %d to %s does not match its schema in api/openapi.yaml: %v\n%s", resp.Status, req, err, resp.Body)
+		}
+		if escape := htmlEscape(resp.Body); escape != "" {
+			t.Fatalf("the answer to %s writes %s, an HTML escape that the snapshot's JSON does not write\n%s", req, escape, resp.Body)
 		}
 		if _, why := problemOf(resp.Body); resp.Status >= 400 && why != "" {
 			t.Fatalf("%s was refused with %d, but the body is not a serve.* refusal: %s\n%s", req, resp.Status, why, resp.Body)

@@ -223,8 +223,30 @@ func (r *recorder) Write(b []byte) (int, error) {
 	return r.body.Write(b)
 }
 
+// response is what the handler wrote, its JSON written again as the
+// snapshot's JSON is, with <, > and & as they are: the generated handlers
+// escape them for HTML.
 func (r *recorder) response() Response {
-	return Response{Status: r.status, Body: bytes.Clone(r.body.Bytes())}
+	return Response{Status: r.status, Body: plainJSON(r.body.Bytes())}
+}
+
+// plainJSON writes a JSON document again without escaping <, > and &; the
+// keys of an object come sorted, as the interface's types order their
+// fields, and numbers keep their text. A body that is not JSON is kept as it is.
+func plainJSON(body []byte) []byte {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return bytes.Clone(body)
+	}
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return bytes.Clone(body)
+	}
+	return out.Bytes()
 }
 
 // problem is a refused request: its status and its body.
@@ -244,7 +266,9 @@ func refuse(status int, code, fix, format string, args ...any) problem {
 func writeProblem(w http.ResponseWriter, p problem) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(p.status)
-	_ = json.NewEncoder(w).Encode(p.body)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(p.body)
 }
 
 // badParameter answers a request whose parameters do not bind: one missing,
