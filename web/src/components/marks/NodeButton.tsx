@@ -25,5 +25,5 @@ export function NodeRef({ id, className, children }: { id: string; className?: s
 
 /** Lifts the controls it holds, such as a hint or a toggle, above the cover of their box. */
 export function Above({ children, className }: { children: ReactNode; className?: string }) {
-  return <span className={clsx(styles.above, className)}>{children}</span>;
+  return <span className={clsx(styles.above, className)} data-lifted>{children}</span>;
 }

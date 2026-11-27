@@ -79,6 +79,20 @@ function keep(key: string | undefined, transform: ZoomTransform) {
   }
 }
 
+/**
+ * Whether an event starts a gesture: the wheel only with Ctrl (a trackpad's pinch arrives so) or Cmd, as the plain
+ * wheel pans below; a press with the main button or a touch anywhere but on a control lifted inside a box (a
+ * reference, a link, a hint, a chevron), which keeps its own click. A press on a box's cover pans when it moves.
+ */
+function startsGesture(event: Event): boolean {
+  if (event instanceof WheelEvent) {
+    return event.ctrlKey || event.metaKey;
+  }
+  const pressed = event as MouseEvent;
+  const lifted = event.target instanceof Element && event.target.closest('a, [data-ref], [data-lifted]') !== null;
+  return !pressed.button && !pressed.ctrlKey && !lifted;
+}
+
 /** Holds a transform so that at least KEEP_IN_SIGHT pixels of the drawing stay inside the canvas. */
 function keepInSight(transform: ZoomTransform, extent: [[number, number], [number, number]], size: DrawingSize): ZoomTransform {
   const [[left, top], [right, bottom]] = extent;
@@ -131,8 +145,7 @@ export function usePanZoom(viewport: RefObject<HTMLDivElement | null>, size: Dra
       .scaleExtent([MIN_SCALE, MAX_SCALE])
       .clickDistance(CLICK_DISTANCE)
       .wheelDelta(wheelZoom)
-      // The wheel zooms only with Ctrl (a trackpad's pinch arrives so) or Cmd; the plain wheel pans below.
-      .filter((event: Event) => (event instanceof WheelEvent ? event.ctrlKey || event.metaKey : !(event as MouseEvent).button && !(event as MouseEvent).ctrlKey))
+      .filter(startsGesture)
       .constrain((next, extent) => keepInSight(next, extent, latestSize.current))
       .on('zoom', (event: D3ZoomEvent<HTMLDivElement, unknown>) => setTransform(event.transform))
       .on('end', (event: D3ZoomEvent<HTMLDivElement, unknown>) => keep(memory, event.transform));
