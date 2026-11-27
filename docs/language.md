@@ -656,6 +656,84 @@ case r-3f9a2c1d coverage {
 - 流程中的每次调用都能在调用图中找到：`submit` 的方法能到达 `reserve`、`save` 和 `charge`，`charge` 的方法能到达网关的客户端；`charge` 的方法引用了落实 `Paid` 的类型。
 - 每条性质和每个流程都有一个谓词；声明的和录制的用例都符合符号的类型和限定；代码中没有手写的测试；生成文件与当前的设计一致。
 
+### 7.1 单次转账的黑盒契约
+
+`bank` 组件的操作实现、凭据和错误都由代码绑定；具名观察的适配器另带 `//uc:observes bank.declined-keeps-state.state`，接收 `Bank`，返回 `BankSnapshot` 或 `(BankSnapshot, error)`。
+
+```uc
+component bank "账户转账" {
+  focus core
+  paths "src/bank/**"
+}
+
+type Receipt record "转账凭据" {
+  field amount: int
+}
+
+type InsufficientFunds error "转出账户余额不足" {
+  field accountId: string
+  field available: int
+}
+
+type BankSnapshot record "观察适配器取得的账户余额" {
+  field balances: map<string, int>
+}
+
+type Bank object "按账户标识保存的余额" {
+  field balances: map<string, int>
+  op transfer(fromId: string, toId: string, amount: int) -> Receipt raises InsufficientFunds
+}
+
+property transfer-moves-money postcondition "转账金额与双方余额正确，其他账户保持不变" {
+  about Bank.transfer
+  forall bank: Bank
+  forall fromId: string
+  forall toId: string
+  forall amount: int
+  where amount in 1..100000
+  observe bank
+  requires fromId != toId
+  requires fromId in bank.balances and toId in bank.balances
+  requires amount <= bank.balances[fromId]
+  changes bank.balances[fromId], bank.balances[toId]
+  call bank.transfer(fromId, toId, amount)
+  ensure not raised(InsufficientFunds)
+  ensure result.amount == amount
+  ensure bank.balances[fromId] == old(bank.balances[fromId]) - amount
+  ensure bank.balances[toId] == old(bank.balances[toId]) + amount
+  case three-accounts {
+    bank = {balances: {"a": 10, "b": 5, "c": 7}}
+    fromId = "a"
+    toId = "b"
+    amount = 3
+  }
+}
+
+property declined-keeps-state postcondition "余额不足时指出账户与可用余额，观察到的余额全部保持不变" {
+  about Bank.transfer
+  forall bank: Bank
+  forall fromId: string
+  forall toId: string
+  forall amount: int
+  where amount in 1..100000
+  observe state: BankSnapshot from bank
+  requires fromId != toId
+  requires fromId in state.balances and toId in state.balances
+  requires amount > state.balances[fromId]
+  changes none
+  call bank.transfer(fromId, toId, amount)
+  ensure raised(InsufficientFunds)
+  ensure raised(InsufficientFunds) implies failure(InsufficientFunds).accountId == fromId
+  ensure raised(InsufficientFunds) implies failure(InsufficientFunds).available == old(state.balances[fromId])
+  case insufficient {
+    bank = {balances: {"a": 2, "b": 5}}
+    fromId = "a"
+    toId = "b"
+    amount = 3
+  }
+}
+```
+
 ## 附录 A 理由
 
 - **只有一种写法（F4）。** 规范格式让同一个设计只有一种文本，评审时的差异就是设计的差异；`fmt` 只改排版（P 规则），不替人改次序和结构（G 规则），因为次序是作者的阅读顺序。

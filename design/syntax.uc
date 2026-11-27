@@ -55,6 +55,24 @@ property kind-of-follows-path invariant "design/system.uc 是系统文件；desi
   about kindOf
   forall path: string generated "形如 design/…、corpus/… 和其他目录下的相对路径，扩展名有的是 .uc，有的不是，有的文件名只是 .uc，有的路径不整洁"
   manual "需要比较完整语法树、路径分段或诊断的源位置与排序；这些结构不由表达式语言直接提供"
+  case system-file {
+    path = "design/system.uc"
+  }
+  case nested-component {
+    path = "design/order/pricing.uc"
+  }
+  case recorded-input {
+    path = "corpus/order/total-is-sum.uc"
+  }
+  case outside-design {
+    path = "src/order.go"
+  }
+  case missing-name {
+    path = "design/.uc"
+  }
+  case unclean-path {
+    path = "design/order/../pricing.uc"
+  }
 }
 
 property parse-is-total invariant "解析任何字节都会返回，不会崩溃；每条诊断的位置都在文件之内，写明修正的办法；诊断按行、列、诊断码排序" {

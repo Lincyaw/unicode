@@ -8,6 +8,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 - **知识与代码一致**：结构从代码静态抽取，意图由设计声明，二者由检查对齐。没有对齐的知识会明确标出来。
 - **设计先行**：先写设计，再按设计生成骨架、生成器和测试驱动，最后写函数体，以及人工性质的谓词。
 - **检查都可执行**：每条性质和每个流程都有一个谓词。测试驱动全部由工具生成，按覆盖录制下来的输入构成可以快速回放的回归集。
+- **黑盒契约**：输入、前提、输出、观察值和允许变化的范围由设计声明；驱动调用真实实现并核对，不展开函数内部算法。具名观察通过只读适配器接入。此路径不依赖定理证明器或 SMT 求解器。
 - **结构统一，记法可换**：图只有一套结构（[model.md](model.md) §1），DDD、UML、时序图、事件风暴、C4 都是它的视图。
 
 ## 2 使用方式
@@ -34,7 +35,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | `internal/syntax` | 设计文件和录制文件的词法、语法、语法树和规范格式的打印 | diag |
 | `internal/design` | 把语法树解析成设计层的节点和边；检查设计内部、流程、符号与用例的约束 | syntax、graph、diag |
 | `internal/lang` | 语言后端的接口、名称映射、生成计划和运行计划的类型 | graph、diag |
-| `internal/lang/golang` | Go 后端 | lang、graph、diag |
+| `internal/lang/golang` | Go 后端：抽取、名称映射、契约生成与执行 | lang、graph、diag、syntax |
 | `internal/lang/python` | Python 后端，嵌入抽取脚本 | lang、graph、diag |
 | `internal/check` | 归属、依赖、绑定、可执行、生成与录制这几组约束 | graph、diag |
 | `internal/query` | 节点、引用、搜索、切片和影响 | graph |
@@ -66,6 +67,8 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 
 规范格式的打印没有现成的库，由 `syntax` 自己完成。
 
+表达式前端由 `syntax.parseExpr` 和 `syntax.exprText` 提供，供设计载入和 Go 生成共用。表达式属性保存规范的源引用拼写，解析后的语义引用另存为 `refers`；不能直接把局部引用替换成绝对名称，否则可能与输入符号的名称冲突。
+
 查看器的接口定义在 `api/` 中：TypeSpec 源文件 `api/*.tsp`、编译配置 `api/tspconfig.yaml`，以及由它们生成并提交的 `api/openapi.yaml`。`api/` 用 pnpm 管理 TypeSpec 的版本，不属于任何 Go 组件。
 
 ## 4 语言后端
@@ -74,15 +77,23 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 
 ```go
 type Backend interface {
-	Language() string                                    // "go"、"python"
-	Extract(root string, srcRoots []string) (graph.Fragment, []diag.Diagnostic, error)
-	MapName(kind graph.Kind, designName string) string   // 名称映射
-	Generate(plan GenPlan) ([]Edit, error)               // 骨架只新增；生成文件整体重写
-	Run(plan RunPlan) (RunReport, error)                 // 回放或探索，带每个输入的覆盖
+	Language() string
+	Extract(root string, srcRoots []string) (Extracted, error)
+	MapName(role NameRole, designName string) string
+}
+
+type Generator interface {
+	Language() string
+	Generate(plan GenPlan) Generation
+}
+
+type Runner interface {
+	Language() string
+	Run(plan RunPlan) RunReport
 }
 ```
 
-- **抽取**：后端读出 `container`、`type`、`op` 节点，以及 `contains`、`imports`、`calls`、`refers`、`extends`、`implements` 边。它同时读出代码中的绑定，写成 `realizes`、`checks` 和 `generates` 边；绑定的写法不合格式时，给出诊断。带 `realizes` 绑定的类型，它的每个方法按反向的名称映射（例如 Go 的 `Submit` 对应 `submit`）得到一条到 `<类型的标识>.<操作名>` 的 `realizes` 边，来源为推导；推导时，终点不存在的这类边被丢掉，那些方法是细节。代码层 `op` 的 `signature` 属性按下面的类型映射归一化成设计的写法，引用写成从根起的标识，与设计层的签名直接按字符串比较。后端产出的是代码层的图片段，格式与快照相同。
+- **抽取**：后端读出 `container`、`type`、`op` 节点，以及 `contains`、`imports`、`calls`、`refers`、`extends`、`implements` 边。它同时读出代码中的绑定，写成 `realizes`、`checks`、`generates` 和 `observes` 边；绑定的写法不合格式时，给出诊断。带 `realizes` 绑定的类型，它的每个方法按反向的名称映射（例如 Go 的 `Submit` 对应 `submit`）得到一条到 `<类型的标识>.<操作名>` 的 `realizes` 边，来源为推导；推导时，终点不存在的这类边被丢掉，那些方法是细节。代码层 `op` 的 `signature` 属性按下面的类型映射归一化成设计的写法，引用写成从根起的标识，与设计层的签名直接按字符串比较。后端产出的是代码层的图片段，格式与快照相同。
 - **Go 后端**：在进程内用 `golang.org/x/tools/go/packages` 和 `go/types` 解析源码和类型。调用按静态类型解析，接口方法的调用解析到接口的方法。抽取包括 `_test.go` 文件：谓词、生成器和只供它们使用的类型都在其中，它们的绑定照常读取。
 - **Python 后端**：工具链内嵌一个只用标准库的抽取脚本，以 `python3 -I` 运行。脚本用 `ast` 解析源码，把图片段以 JSON 写到标准输出。调用按名称和导入关系解析，解析不到的调用不成边，只计数。生成在 Go 中按模板完成。
 - **运行**：后端用该语言的测试工具运行驱动，在进程内逐个输入记录覆盖：Go 用 `-cover` 构建，并用 `runtime/coverage` 在每个输入前后清零和读出计数；Python 用标准库的 `sys.monitoring`。覆盖只统计谓词沿 `exercises` 可达的函数，不含生成文件和谓词本身。
@@ -111,6 +122,8 @@ type Backend interface {
 
   操作只有一个返回值；要返回几个结果时，写成一个记录。在 Go 中，`raises` 对应最后一个返回值 `error`，这是多返回值唯一的用法；在 Python 中，错误不出现在签名里。Python 中落实设计节点的函数和谓词，每个参数和返回值都必须有类型标注。
 - **生成器的签名**：带 `generates` 绑定的函数，参数是在该符号之前声明的符号中它用到的那些（按声明的次序，可以没有），返回该符号类型的生成器：Go 为 `func genX() *rapid.Generator[T]`，Python 为返回 Hypothesis strategy 的函数。
+- **观察适配器的签名**：参数是观察的 `from` 按次序列出的输入符号，类型一致，返回快照类型；Go 允许末尾另有 `error`，Python 的异常也按观察失败处理。它不接收测试句柄，不使用谓词的名称映射。一个适配器恰绑定一项观察，文件属于性质所在容器。
+- **可选能力**：`lang.Backend` 只要求抽取与名称映射；后端可以另实现 `lang.Generator` 和 `lang.Runner`，两者均有 `language`。`generate(GenPlan)` 返回 `Generation`，不直接写仓库；`run(RunPlan)` 返回逐性质的 `RunReport`。计划、生成文件和报告的字段以 `design/lang.uc` 为准。`gen.plan` 按系统的语言根目录调度，`gen.write` 预检全部路径、重复目标、符号链接和生成标记后逐文件原子写入；不承诺跨文件事务。`run.execute` 按目标标识调度后端，并原子写出 `.unicode/results.json`。
 
 ## 5 建图
 
@@ -142,7 +155,7 @@ type Backend interface {
 
 ### 5.2 节点的属性
 
-图中每个节点的摘要字段是它的摘要，其余内容写在属性中。属性的值都是字符串的列表，类型和值都按规范格式写出，引用都写成从根起的标识：
+图中每个节点的摘要字段是它的摘要，其余内容写在属性中。属性的值都是字符串的列表，类型和值都按规范格式写出。类型和节点引用写成绝对标识；表达式与状态路径保留规范源拼写，并由 `refers` 保存已解析的引用：
 
 | 种类 | 属性的键 |
 | --- | --- |
@@ -150,6 +163,8 @@ type Backend interface {
 | type | `labels`、`fields`（每项 `名称: 类型`）、`values` |
 | op | `signature`（`(参数: 类型, …) -> 类型 raises 错误, …`）、`pure`（纯操作为 `true`，其余不写出） |
 | flow、property | `symbols`（每项 `名称: 类型`，生成的符号另加 ` generated`）、`limits`（每项是一条限定的规范写法）、`call`（`call` 子句的规范写法）、`within`（时长）、`ensure`（每项一条表达式的规范写法，按书写次序）、`manual`（人工性质的原因） |
+| property 的黑盒契约 | `requires`（按次序的前提表达式）、`observe`（直接观察路径、具名观察声明或 `none`）、`changes`（允许变化的路径或 `none`）；`call` 只保存调用表达式，不带关键字 |
+| observation（snapshot） | `type`（快照类型）、`inputs`（`from` 列出的输入符号，保持次序） |
 | step | `index`、`label`、`args` |
 | case | `values`（每项 `符号 = 值`）、`reason`（录制的用例） |
 
@@ -157,13 +172,15 @@ type Backend interface {
 
 | 种类 | 属性的键 |
 | --- | --- |
-| container（`package`、`file`） | `language`、`path`（文件的路径，或包的导入路径） |
+| container（`package`、`file`） | `language`、`path`（文件的路径，或包的导入路径）；工具生成的文件另带 `generated: true` |
 | type | `name`、`fields`（每项 `名称: 类型`；未导出的字段是细节，不列出）、`values`（以字符串为底层类型、带常量的类型，每项是常量名按反向映射得到的枚举值，例如 `OrderStatusDraft` 写作 `draft`） |
 | op（`func`、`method`、`abstract`） | `name`（带 `checks` 绑定的谓词，写作性质或流程的名称）、`signature`、`testKind`（`none`、`example`、`property` 或 `fuzz`）、`stub`（`true` 或 `false`） |
 
 `calls` 边的属性 `sites` 列出每个调用位置，写作 `路径:行:列`；`generates` 边的属性 `symbols` 列出符号的名称。Go 签名的写法：指针 `*T` 写作 `optional<T>`，`check` 比较时把设计中 `object` 类型的 `optional<X>` 与 `X` 视为相同；末尾的 `error` 写作 ` raises error`，与设计中非空的 `raises` 相符；谓词的第一个参数（`rapid.TB`）保留在签名中，比较符号时跳过。绑定边的终点是设计层的标识。`Graph.AddFragment` 先暂存终点不在图中的绑定边和方法的候选边；推导时加入能解析的，绑定边中终点仍不存在的报为 `graph.unresolved-binding`，即 [model.md](model.md) §10 第 15 条中"目标存在"的一半；其余端点缺失的边仍是 `DanglingEdge`。
 
 `alt` 中的步骤属于哪个分支，写在从 `alt` 到该步骤的 `contains` 边的属性 `branch` 上。空的列表不写出。
+
+契约的 `refers` 边以 `clauses` 列出引用所在的子句，如 `requires#1`、`ensure#2`，以 `paths` 列出该引用访问的规范字段路径；同一对端点的引用合并，属性去重并排序。具名观察通过自身的 `refers` 引用快照类型。子句的具体源位置由生成器重新解析原文件、按性质标识和子句序号取得，写入生成的检查代码，不把行列号加入语义属性。
 
 `extends`、`implements`、`uses`、订阅、调用、发起方和 `about` 都是边，不是属性。快照是 `{"nodes": [...], "edges": [...]}`：节点按标识排序，边按种类、起点、终点排序，属性的键按字典序排列。
 
@@ -176,6 +193,10 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 ## 6 生成与运行
 
 `unicode gen` 产生两类文件：骨架和生成文件。`unicode test` 运行生成的驱动。
+
+M4 分阶段交付：先实现单次黑盒契约与手写谓词的回放、一般表达式求值和有明确输入生成器的预算内探索。完整流程与调用序列、外部接口替身、骨架生成和覆盖引导的缩减录制仍按后续阶段交付。某个目标尚未支持时给出定位诊断，不生成空检查或报告通过。已有手写性质驱动在对应生成驱动保留相同输入分布和断言之前继续保留。
+
+单次契约按 [language.md](language.md) E12、E17–E23 执行。生成文件首行使用 `// Code generated by unicode. DO NOT EDIT.`；Go 检查与被测代码放在同一包的生成测试文件中，测试时用包路径和固定入口选择运行，输入在每次运行内重新构造。生成器使用真实 Go 签名构造调用与值，不从归一化签名猜测指针。执行结果包含有效执行数、拒绝候选数、观察边界、范围外差异和子句诊断；观察错误不记为业务反例。未获得有效执行不能报告通过。
 
 ### 6.1 骨架
 
@@ -295,11 +316,12 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 - 每个节点沿各种边一步可达的显著节点，只给摘要；细节节点只给个数，展开之后才列出；
 - 按种类补充的内容：
   - 操作：所属类型的字段和各操作的签名、订阅的事件、约束它的性质、调用它的流程步骤、落实它的函数的位置；
-  - 性质：它约束的对象的签名、各符号的类型及其字段、限定、用例，以及谓词的位置；
+  - 性质：它约束的对象的签名、各符号的类型及其字段、限定、前提、观察与允许变化的范围、具名观察的快照类型和适配器、用例，以及谓词的位置；
+  - 具名观察：父性质、快照类型及其字段、输入符号的类型，以及适配器的位置；
   - 流程：符号、步骤树和每一步的 `traces`；
   - 容器：子容器、`uses`、带状态的 `depends`，以及类型的摘要。
 
-按种类补充的内容放在切片的 `extras` 中，焦点节点本身不重复列出，其他部分之间允许重复（例如操作所属的类型既是祖先，也在 `extras` 中）。性质的符号类型沿 `refers` 只经过类型逐层展开；流程给出整棵步骤树和每一步 `traces` 的终点；容器要补充的内容都在一步之内，没有 `extras`。`get` 的边按种类、起点、终点排序。
+按种类补充的内容放在切片的 `extras` 中，焦点节点本身不重复列出，其他部分之间允许重复（例如操作所属的类型既是祖先，也在 `extras` 中）。性质的符号类型沿 `refers` 只经过类型逐层展开；具名观察另从父性质的 `symbols` 解析 `inputs` 对应的输入类型，展开其字段类型及快照类型，并包含 `observes` 的适配器；流程给出整棵步骤树和每一步 `traces` 的终点；容器要补充的内容都在一步之内，没有 `extras`。`get` 的边按种类、起点、终点排序。
 
 切片的 `edges` 是两端都在切片列出的节点之中的 `contains` 边，由它还原祖先链和流程的步骤树。
 
@@ -307,7 +329,8 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 
 ### 7.4 影响与索引
 
-- **影响**：对一组变更的节点 C，影响是沿 `calls`、`reaches`、`refers`、`subscribes`、`emits`、`realizes`、`traces`、`exercises`、`depends`、`about`、`checks` 反向能到达 C 的节点。结果按种类分组，每一项附上一条最短的路径，说明它为什么受影响。默认只列显著的节点。
+- **影响**：对一组变更的节点 C，影响是沿 `calls`、`reaches`、`refers`、`subscribes`、`emits`、`realizes`、`traces`、`exercises`、`depends`、`about`、`checks`、`observes` 反向能到达 C 的节点。结果按种类分组，每一项附上一条最短的路径，说明它为什么受影响。默认只列显著的节点。
+- **观察的影响**：另从变更的适配器沿 `observes` 正向到观察，再沿该观察的 `contains` 反向到父性质；不沿其他 `contains` 传播。观察类型变化仍沿 `refers` 和 `observes` 反向影响适配器。说明路径保留图中边的原始方向，观察绑定可以逆向读出，因此路径是一串首尾相接的原图边，不要求每一条都按 `from` 到 `to` 遍历。
 - **索引**：可以按标识、名称、种类和摘要文字查找节点，并按边反查，例如谁调用了它、谁订阅了这个事件、哪些性质约束它。
 
 ### 7.5 查看器
@@ -472,6 +495,8 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 - **路径参数**：按工作目录解析，必须是根目录下 `design/` 或 `corpus/` 之内的文件或目录。路径不存在、不在这两个目录之内，或者找不到缺省的根目录，都是参数错误。目录会被遍历。`design/` 或 `corpus/` 中 `KindOf` 拒绝的文件给出诊断 `cli.not-a-design-file`，读不出的文件给出 `cli.unreadable-file`，符号链接给出诊断 `cli.symlink`，既不跟随读取，也不改写。全局参数也可以写在命令之后。
 - **改写与输出**：改写是原子的，并保留文件的权限，失败时不留下临时文件；写入或输出失败时退出码为 1。`cli.not-canonical` 的位置是与规范格式第一处不同的字节。`--help` 写到标准输出，退出码为 0。JSON 缩进两个空格。带 `--format json` 时，诊断是数据，写在标准输出的 JSON 中，标准错误只放日志；文本模式下，诊断写到标准错误，标准输出只列出改写了的或不是规范格式的文件。
 - **诊断的 JSON**：`{code, subject, path, line, column, message, fix}`。`code` 是稳定的诊断码，写作 `<组件>.<短横线名称>`，例如 `syntax.unexpected-token`；每条约束有一个或几个，修正办法不同的子规则各用一个。`syntax` 和 `cli` 的诊断，对象是文件的路径。
+- **生成的 JSON**：与 `lang.Generation` 同形，为 `{edits: [{path, content}], diagnostics: [...]}`；`content` 是 UTF-8 源码字符串，不是字节的 base64。`--dry-run` 返回同样的计划，不写文件。普通生成遇到诊断时不应用计划，文本模式只列生成文件的路径。已有文件缺少生成标记属于覆盖冲突，退出码为 5。
+- **运行的 JSON**：与 `lang.RunReport` 同形，为 `{results: [{id, passed, accepted, rejected, observations, differences, diagnostics}], diagnostics}`，数组为空时也输出 `[]`。顶层诊断表示工具、观察、前提、域外输入、无有效执行或结果写入错误，退出码为 10；工具链不存在仍为 7。没有顶层诊断且有 `passed = false` 的性质时退出码为 11，其内部诊断定位 `ensure`、范围或后置表达式的失败。适配错误可另关联到该性质，但顶层必须保留。命令输出和 `.unicode/results.json` 均使用小驼峰字段，所有层级的诊断都使用上面的扁平 JSON 形状；`diag.Diagnostic` 的 JSON 编解码统一实现此形状。
 - **诊断码与规则**：违反规则的诊断码按规则列在 [language.md](language.md) 和 [model.md](model.md) 的附录 B 中。不属于任何规则的诊断码如下：
 
   | 诊断码 | 原因 |
@@ -488,6 +513,19 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
   | `serve.unreadable-snapshot` | 快照文件在运行中读不出，属于环境 |
   | `serve.not-implemented` | 查看器的比较尚未实现，属于工具链的能力 |
   | `serve.internal-error` | 服务端未能回答请求，属于工具链自身 |
+  | `gen.duplicate-backend` | 同一种语言注册了多个生成后端 |
+  | `gen.unsupported-language` | 配置的语言没有可用生成能力 |
+  | `gen.duplicate-path` | 生成计划多次写入同一个路径 |
+  | `gen.invalid-path` | 生成路径不规范、越出仓库或与其他目标存在父子冲突 |
+  | `gen.symlink` | 生成目标或其父路径是符号链接 |
+  | `gen.unowned-file` | 目标已有非工具生成的文件，属于覆盖冲突 |
+  | `gen.write-failed` | 预检或原子写入生成文件失败 |
+  | `run.duplicate-backend` | 同一种语言注册了多个运行后端 |
+  | `run.unsupported-language` | 目标语言没有可用运行能力 |
+  | `run.unknown-check` | 目标不是已绑定到配置语言的性质或流程 |
+  | `run.results-write-failed` | 结果文件不可安全写入 |
+  | `run.invalid-report` | 后端报告缺失、重复、包含未选目标，或无有效执行却报告通过 |
+  | `run.no-checks` | 所选范围没有可执行性质或流程 |
 
 ## 9 计划
 
@@ -497,7 +535,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 | M1 设计文件 | `syntax`、`fmt`、`design`、`check --design-only`，包括流程、符号、限定、用例和录制文件的检查；用格式写出工具链自己的设计 | 工具链自己的 `design/` 通过 `fmt --check` 和 `check --design-only` |
 | M2 Go 后端 | 抽取、绑定、建图、全部静态约束 | 工具链的代码带上绑定，`unicode check` 在工具链自身上通过（2026-11-26 完成：0 条诊断，611 个声明项全部一致） |
 | M3 查询与视图 | `node`、`slice`、`impact`、`view`、`build` 和抽取缓存；查看器的雏形 | 此后给 agent 派任务都附上切片 |
-| M4 Go 生成与回放 | `gen`：骨架、生成器、由 `ensure` 生成的谓词、`apply`、外部系统的替身和驱动；`unicode test` 的快路径 | 此后工具链的新组件和检查都由 `gen` 起头，工具链自己的性质由生成的驱动检查 |
+| M4 Go 生成与回放 | 分阶段：先单次黑盒契约、手写谓词回放与预算内探索，再补骨架、调用序列、替身和完整流程；`unicode test` 的快路径 | 此后工具链的新组件和检查都由 `gen` 起头，工具链自己的性质由生成的驱动检查 |
 | M5 Python | 抽取脚本、`uc` 包、Python 的生成和回放；把 [language.md](language.md) §7 的商店例子做成样例仓库 | 样例仓库通过 `unicode check` 和 `unicode test` |
 | M6 探索与证据 | 慢路径：按覆盖挑选、缩小、缩减和录制；设计覆盖；运行时核对流程；结果作为证据并入快照 | 性质视图显示覆盖率和录制的用例 |
 | M7 评审 | 评审记录与评审状态，按比较结果评审 | 评审只列出待审的项 |
@@ -550,7 +588,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 2. 外部系统替身的应答怎样写进录制文件，以及各语言中驱动怎样用替身代替客户端。
 3. Go 中怎样在运行时记录落实设计操作的函数被进入的次序（Python 由 `uc` 的装饰器在测试时包装方法）。
 4. 错误的完整性：是否要求一次调用可能抛出的每个错误，要么有 `on` 分支处理，要么出现在发起方操作的 `raises` 中。
-5. 限定的写法是否还需要字段之间的关系，例如 `start <= end`；M1 只支持区间、大小和枚举子集。
+5. 复杂关系已由 `requires` 表达；满足这些前提的输入生成先使用类型生成、前置符号依赖和拒绝采样，生成预算与拒绝计数的调优留待实际使用。
 6. 并发的性质：并行的调用、线性一致性。
 7. 录制用例的数量上限（暂定每条 64 个）和探索预算在各性质之间的分配方式。
 8. 评审记录存放在哪里（M7）。

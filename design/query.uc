@@ -27,7 +27,7 @@ type Context record "回答一个问题所需的最小上下文（design.md §7.
   field edges: list<graph.Edge>
 }
 
-type Affected record "一个受影响的节点，以及说明原因的一条最短路径" {
+type Affected record "一个受影响的节点，以及说明原因的一条最短连接路径；观察绑定可逆向遍历，路径保留原边方向" {
   field node: graph.Node
   field path: list<graph.Edge>
 }
@@ -55,7 +55,7 @@ property slice-is-minimal-context invariant "切片恰好含有焦点、焦点�
   manual "需要独立计算图的闭包、最短路径、排序或文本子串，当前表达式没有这些构造"
 }
 
-property impact-is-reverse-reachability relation "影响恰是沿 design.md §7.4 的边反向能到达焦点的显著节点；每条路径都是图中的路径，并且最短" {
+property impact-is-reverse-reachability relation "影响恰是沿 design.md §7.4 的反向边与观察专用传播规则能到达焦点的显著节点；每条说明路径由相接的原图边组成，并且最短" {
   about impact
   forall question: Question generated "一张随机的图，焦点取自图中的节点"
   manual "需要独立计算图的闭包、最短路径、排序或文本子串，当前表达式没有这些构造"
