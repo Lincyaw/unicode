@@ -1,0 +1,53 @@
+{
+  "name": "unicode-viewer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@11.20.0",
+  "scripts": {
+    "gen": "openapi-typescript ../api/openapi.yaml --enum-values -o src/api/schema.ts",
+    "dev": "pnpm gen && vite",
+    "dev:serve": "pnpm gen && vite --mode serve",
+    "build": "pnpm gen && tsc -b && vite build",
+    "typecheck": "tsc -b",
+    "lint": "oxlint --type-aware --deny-warnings",
+    "lint:css": "stylelint \"src/**/*.css\"",
+    "check": "pnpm gen && pnpm typecheck && pnpm lint && pnpm lint:css && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "3.1.4",
+    "@radix-ui/react-popover": "1.3.1",
+    "@radix-ui/react-select": "2.4.1",
+    "@radix-ui/react-tooltip": "1.4.1",
+    "@tanstack/react-query": "5.108.4",
+    "clsx": "2.1.1",
+    "lucide-react": "1.80.0",
+    "openapi-fetch": "0.17.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-error-boundary": "6.1.6",
+    "react-router": "7.18.6"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "msw": "3.0.7",
+    "openapi-msw": "2.1.1",
+    "openapi-typescript": "7.13.0",
+    "oxlint": "1.94.0",
+    "oxlint-tsgolint": "7.0.2008",
+    "stylelint": "17.16.0",
+    "stylelint-config-standard": "40.0.0",
+    "stylelint-value-no-unknown-custom-properties": "6.1.1",
+    "typescript": "5.9.3",
+    "vite": "8.3.8"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
+  }
+}

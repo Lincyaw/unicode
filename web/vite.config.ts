@@ -1,0 +1,14 @@
+import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite';
+
+/*
+ * `pnpm dev` answers the interface from the mock server in the page's service worker. `pnpm dev:serve` (mode serve)
+ * starts no mock and proxies /api to `unicode serve`, at UNICODE_SERVE or its default address.
+ */
+export const SERVE_MODE = 'serve';
+export const DEFAULT_SERVE_ADDRESS = 'http://127.0.0.1:7090';
+
+export default defineConfig(({ mode }) => ({
+  plugins: [react()],
+  server: mode === SERVE_MODE ? { proxy: { '/api': process.env.UNICODE_SERVE ?? DEFAULT_SERVE_ADDRESS } } : {},
+}));

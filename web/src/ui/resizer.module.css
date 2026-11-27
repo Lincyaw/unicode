@@ -1,0 +1,18 @@
+/* A handle is a thin strip between columns that shows itself as a line while the pointer is on it or it is being dragged. */
+.handle {
+  position: relative;
+  z-index: 2;
+  width: var(--space-2);
+  margin: 0 calc(-1 * var(--space-1));
+  cursor: col-resize;
+  touch-action: none;
+}
+.handle::after {
+  content: "";
+  position: absolute;
+  inset: 0 calc(50% - var(--size-hairline));
+  background: transparent;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.handle:hover::after, .handle:active::after, .handle:focus-visible::after { background: var(--accent-brand); }
+.handle:focus-visible { outline: none; }

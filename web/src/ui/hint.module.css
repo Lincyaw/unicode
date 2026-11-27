@@ -1,0 +1,59 @@
+/*
+ * A popover is a glass card that approaches from its trigger's side and never zooms; any card a page opens beside its
+ * trigger uses it, and sets its own layer, size and padding.
+ */
+.popover {
+  border: var(--size-hairline) solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  background: var(--bg-glass-strong);
+  backdrop-filter: blur(var(--blur-glass)) saturate(var(--saturate-glass));
+  box-shadow: var(--shadow-float);
+  animation: popover-up var(--duration-base) var(--ease-out);
+}
+
+@keyframes popover-up {
+  from { opacity: 0; transform: translateY(var(--space-1)); }
+}
+
+.popover[data-side="bottom"] { animation-name: popover-down; }
+
+@keyframes popover-down {
+  from { opacity: 0; transform: translateY(calc(-1 * var(--space-1))); }
+}
+
+/* A hint is a small inverted card at a short measure, which approaches from its trigger's side like a popover. */
+.card {
+  z-index: 60;
+  display: grid;
+  gap: var(--space-1);
+  max-width: var(--hint-width);
+  padding: calc(var(--space-1) + var(--space-px)) calc(var(--space-2) + var(--space-px));
+  border-radius: var(--radius-md);
+  background: var(--bg-inverted);
+  box-shadow: var(--shadow-hint);
+  color: var(--text-on-inverted);
+  font: var(--type-micro);
+  animation: popover-up var(--duration-base) var(--ease-out);
+}
+
+.card[data-side="bottom"] { animation-name: popover-down; }
+
+.info {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--icon-small);
+  height: var(--icon-small);
+  color: var(--text-faint);
+  vertical-align: middle;
+  transition: color var(--duration-base);
+}
+
+.info:hover,
+.info:focus-visible,
+.info[data-state="delayed-open"],
+.info[data-state="instant-open"] { color: var(--accent-brand); }
+
+@media (prefers-reduced-motion: reduce) {
+  .popover, .card { animation: none; }
+}
