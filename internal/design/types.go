@@ -86,6 +86,16 @@ func (l *loader) typeOf(from, scope *entity, expr syntax.TypeExpr) *typ {
 		return &typ{kind: x.Kind, elems: []*typ{l.typeOf(from, scope, x.Elem)}}
 	case *syntax.MapType:
 		return &typ{kind: "map", elems: []*typ{l.typeOf(from, scope, x.Key), l.typeOf(from, scope, x.Value)}}
+	case *syntax.RepliesType:
+		r := x.Target
+		target := l.refer(from, scope, r.Segments, r.Pos, acceptOp)
+		if from.kind != graph.NodeKindProperty && from.kind != graph.NodeKindFlow {
+			l.report(from.file, r.Pos, "design.invalid-replies-type", from.id, "a replies type is only a direct property or flow input", "declare a forall symbol with replies<external.operation>")
+		}
+		if target != nil && !target.parent.is(graph.NodeKindActor, "external") {
+			l.report(from.file, r.Pos, "design.invalid-replies-type", from.id, "a replies type must name an operation directly provided by an external system", "name one external operation in replies<external.operation>")
+		}
+		return &typ{kind: "replies", refs: []ref{{strings.Join(r.Segments, "."), r.Pos, target}}}
 	case *syntax.CallType:
 		t := &typ{kind: "call"}
 		for _, r := range x.Targets {
@@ -108,12 +118,12 @@ func (t *typ) text() string {
 		return t.refs[0].text()
 	case "map":
 		return "map<" + t.elems[0].text() + ", " + t.elems[1].text() + ">"
-	case "call":
+	case "call", "replies":
 		texts := make([]string, len(t.refs))
 		for i, r := range t.refs {
 			texts[i] = r.text()
 		}
-		return "call<" + strings.Join(texts, ", ") + ">"
+		return t.kind + "<" + strings.Join(texts, ", ") + ">"
 	}
 	return t.kind + "<" + t.elems[0].text() + ">"
 }
