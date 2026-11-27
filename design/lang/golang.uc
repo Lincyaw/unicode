@@ -1,10 +1,21 @@
 component lang.golang "Go 后端：抽取、名称映射、生成与运行" {
   paths "internal/lang/golang/**"
-  uses lang
+  uses lang, syntax
 }
 
 type Backend object "Go 的后端：用 go/packages 和 go/types 静态抽取" {
   implements lang.Backend
+  implements lang.Generator
+  implements lang.Runner
+}
+
+type ContractSample record "黑盒运行时的转账样本，含正常、错误、拒绝和越界变化" {
+  field balances: map<string, int>
+  field fromId: string
+  field toId: string
+  field amount: int
+  field foreignDelta: int
+  field raiseError: bool
 }
 
 type Module record "一个随机生成的 Go 模块：文件，以及抽取应当得到的节点、边和诊断，供性质使用" {
@@ -26,4 +37,11 @@ op declaration(src: bytes, line: int, column: int) -> optional<Lines> "Go 源码
 property extracts-generated-module invariant "随机生成的 Go 模块，抽取得到的节点、边和诊断恰是生成时记下的那些，签名按 design.md §4 归一化；诊断写作 诊断码 路径:行" {
   about Backend
   forall module: Module generated "一个随机的 Go 模块：几个包和文件，类型、函数、方法、调用、导入、嵌入、接口的实现、测试文件，以及 //uc: 绑定，其中有的写法不合格式"
+  manual "需要写入并抽取临时 Go 模块，比较源码位置、归一化签名和诊断，表达式不执行文件系统操作"
+}
+
+property executes-contracts invariant "前提不成立时不调用被测函数；成立后按调用前键值检查余额与范围，正常和错误返回都保护范围外的值；观察失败和零有效执行单独报告；共享对象不改变调用前副本" {
+  about Backend
+  forall sample: ContractSample generated "随机余额、账户标识、金额、外部账户改动和错误结果，含缺失键、重复标识及共享对象"
+  manual "需要构造实际函数与观察适配器并记录是否调用，独立谓词逐项核对运行时与生成文件"
 }
