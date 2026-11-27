@@ -4,7 +4,6 @@ import (
 	"errors"
 	"slices"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 )
@@ -78,16 +77,4 @@ func genKindPath() *rapid.Generator[string] {
 		"design/.uc", "corpus/.uc", "corpus/sub/.uc", "design/..uc", "design/system.UC", "design/system.ucx", "design", "corpus", "design.uc",
 		"design/./system.uc", "design//x.uc", "design/../design/x.uc", "./design/x.uc", "/design/x.uc", "design/x.uc/", "corpus/sub/../x.uc"})
 	return rapid.OneOf(edges, drawn, drawn, drawn)
-}
-
-func TestKindOfFollowsPath(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkKindOfFollowsPath(t, genKindPath().Draw(t, "path"))
-	})
-}
-
-func FuzzKindOfFollowsPath(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkKindOfFollowsPath(t, genKindPath().Draw(t, "path"))
-	}))
 }

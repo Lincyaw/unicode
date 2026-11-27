@@ -2,12 +2,16 @@ package query
 
 import (
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 
 	"github.com/lincyaw/unicode/internal/graph"
 )
+
+//uc:generates query.search-matches-text.kind
+func genSearchKind() *rapid.Generator[*graph.NodeKind] {
+	return rapid.Ptr(rapid.SampledFrom(nodeKinds), true)
+}
 
 //uc:checks query.search-matches-text
 func checkSearchMatchesText(t rapid.TB, question Question, kind *graph.NodeKind) {
@@ -29,16 +33,4 @@ func kindName(kind *graph.NodeKind) string {
 		return "any"
 	}
 	return string(*kind)
-}
-
-func TestSearchMatchesText(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkSearchMatchesText(t, genSearchQuestion().Draw(t, "question"), rapid.Ptr(rapid.SampledFrom(nodeKinds), true).Draw(t, "kind"))
-	})
-}
-
-func FuzzSearchMatchesText(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkSearchMatchesText(t, genSearchQuestion().Draw(t, "question"), rapid.Ptr(rapid.SampledFrom(nodeKinds), true).Draw(t, "kind"))
-	}))
 }

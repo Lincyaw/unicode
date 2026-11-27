@@ -8,7 +8,6 @@ import (
 	"math/rand/v2"
 	"regexp"
 	"slices"
-	"testing"
 
 	"pgregory.net/rapid"
 
@@ -73,6 +72,7 @@ func genNodeWith(t *rapid.T, id string) Node {
 	}
 }
 
+//uc:generates graph.digest-follows-content.first
 func genNode() *rapid.Generator[Node] {
 	return rapid.Custom(func(t *rapid.T) Node { return genNodeWith(t, genWord().Draw(t, "id")) })
 }
@@ -231,18 +231,6 @@ func checkEncodeIgnoresOrder(t rapid.TB, content Fragment, rotation int) {
 	}
 }
 
-func TestEncodeIgnoresOrder(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkEncodeIgnoresOrder(t, genFragment().Draw(t, "content"), rapid.IntRange(0, 1000).Draw(t, "rotation"))
-	})
-}
-
-func FuzzEncodeIgnoresOrder(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkEncodeIgnoresOrder(t, genFragment().Draw(t, "content"), rapid.IntRange(0, 1000).Draw(t, "rotation"))
-	}))
-}
-
 var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 //uc:checks graph.digest-follows-content
@@ -276,58 +264,48 @@ func shuffled[T any](values []T, seed uint64) []T {
 // genSecond draws the second node: an independent one, one with the first's
 // content and other identity, layer, source and origin, or the first with
 // one part of its content changed.
-func genSecond(t *rapid.T, first Node) Node {
-	switch rapid.IntRange(0, 2).Draw(t, "relation") {
-	case 0:
-		return genNode().Draw(t, "second")
-	case 1:
-		other := genNodeWith(t, genWord().Draw(t, "id"))
-		other.Kind, other.Form, other.Summary, other.Attrs = first.Kind, first.Form, first.Summary, map[string][]string{}
-		for _, k := range slices.Sorted(maps.Keys(first.Attrs)) {
-			v := first.Attrs[k]
-			if len(v) == 0 && rapid.Bool().Draw(t, "swapEmpty") {
-				v = nil
+//
+//uc:generates graph.digest-follows-content.second
+func genSecond(first Node) *rapid.Generator[Node] {
+	return rapid.Custom(func(t *rapid.T) Node {
+		switch rapid.IntRange(0, 2).Draw(t, "relation") {
+		case 0:
+			return genNode().Draw(t, "second")
+		case 1:
+			other := genNodeWith(t, genWord().Draw(t, "id"))
+			other.Kind, other.Form, other.Summary, other.Attrs = first.Kind, first.Form, first.Summary, map[string][]string{}
+			for _, k := range slices.Sorted(maps.Keys(first.Attrs)) {
+				v := first.Attrs[k]
+				if len(v) == 0 && rapid.Bool().Draw(t, "swapEmpty") {
+					v = nil
+				}
+				other.Attrs[k] = slices.Clone(v)
 			}
-			other.Attrs[k] = slices.Clone(v)
+			if first.Attrs == nil && rapid.Bool().Draw(t, "nilAttrs") {
+				other.Attrs = nil
+			}
+			return other
 		}
-		if first.Attrs == nil && rapid.Bool().Draw(t, "nilAttrs") {
-			other.Attrs = nil
+		second := first
+		second.Attrs = maps.Clone(first.Attrs)
+		switch rapid.IntRange(0, 4).Draw(t, "change") {
+		case 0:
+			second.Kind = rapid.SampledFrom(nodeKinds).Draw(t, "kind")
+		case 1:
+			second.Form, second.Summary = second.Summary, second.Form
+		case 2:
+			second.Summary += genWord().Draw(t, "more")
+		case 3:
+			if second.Attrs == nil {
+				second.Attrs = map[string][]string{}
+			}
+			second.Attrs[genWord().Draw(t, "key")] = rapid.SliceOfN(genWord(), 0, 2).Draw(t, "values")
+		default:
+			if keys := slices.Sorted(maps.Keys(second.Attrs)); len(keys) > 0 {
+				k := rapid.SampledFrom(keys).Draw(t, "changedKey")
+				second.Attrs[k] = append(slices.Clone(second.Attrs[k]), genWord().Draw(t, "value"))
+			}
 		}
-		return other
-	}
-	second := first
-	second.Attrs = maps.Clone(first.Attrs)
-	switch rapid.IntRange(0, 4).Draw(t, "change") {
-	case 0:
-		second.Kind = rapid.SampledFrom(nodeKinds).Draw(t, "kind")
-	case 1:
-		second.Form, second.Summary = second.Summary, second.Form
-	case 2:
-		second.Summary += genWord().Draw(t, "more")
-	case 3:
-		if second.Attrs == nil {
-			second.Attrs = map[string][]string{}
-		}
-		second.Attrs[genWord().Draw(t, "key")] = rapid.SliceOfN(genWord(), 0, 2).Draw(t, "values")
-	default:
-		if keys := slices.Sorted(maps.Keys(second.Attrs)); len(keys) > 0 {
-			k := rapid.SampledFrom(keys).Draw(t, "changedKey")
-			second.Attrs[k] = append(slices.Clone(second.Attrs[k]), genWord().Draw(t, "value"))
-		}
-	}
-	return second
-}
-
-func TestDigestFollowsContent(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		first := genNode().Draw(t, "first")
-		checkDigestFollowsContent(t, first, genSecond(t, first))
+		return second
 	})
-}
-
-func FuzzDigestFollowsContent(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		first := genNode().Draw(t, "first")
-		checkDigestFollowsContent(t, first, genSecond(t, first))
-	}))
 }

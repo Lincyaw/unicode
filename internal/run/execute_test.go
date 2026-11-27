@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"testing"
 	"time"
 
 	"pgregory.net/rapid"
@@ -221,11 +220,4 @@ func checkExecuteFollowsLanguageRoots(t rapid.TB, sample ExecuteSample) {
 			t.Fatal("Execute accepted missing execution results")
 		}
 	}
-}
-
-func TestExecuteFollowsLanguageRoots(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkExecuteFollowsLanguageRoots(t, genExecuteSample().Draw(t, "sample")) })
-}
-func FuzzExecuteFollowsLanguageRoots(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) { checkExecuteFollowsLanguageRoots(t, genExecuteSample().Draw(t, "sample")) }))
 }

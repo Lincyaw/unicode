@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"testing"
 
 	"github.com/lincyaw/unicode/internal/syntax"
 	"pgregory.net/rapid"
@@ -646,20 +645,4 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]RepoFile, check bool, tar
 	if !maps.Equal(readRepo(t, textRoot), after) {
 		t.Fatalf("--format text and --format json rewrite the same repository differently")
 	}
-}
-
-func TestFlowFormatFiles(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		files := genFormatFiles().Draw(t, "files")
-		checkFlowFormatFiles(t, files, rapid.Bool().Draw(t, "check"), genTargets(files).Draw(t, "targets"),
-			genAt(files).Draw(t, "at"), rapid.Bool().Draw(t, "explicitRoot"))
-	})
-}
-
-func FuzzFlowFormatFiles(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		files := genFormatFiles().Draw(t, "files")
-		checkFlowFormatFiles(t, files, rapid.Bool().Draw(t, "check"), genTargets(files).Draw(t, "targets"),
-			genAt(files).Draw(t, "at"), rapid.Bool().Draw(t, "explicitRoot"))
-	}))
 }

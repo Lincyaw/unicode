@@ -3,7 +3,6 @@ package syntax
 import (
 	"fmt"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 )
@@ -45,21 +44,19 @@ func expressionSource(t *rapid.T, depth int) string {
 	}
 }
 
-func TestExpressionFormatIsStable(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkFormatIsStable(t, expressionSample(t))
-	})
-}
-
-func FuzzExpressionFormatIsStable(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkFormatIsStable(t, expressionSample(t))
-	}))
-}
-
 func expressionSample(t *rapid.T) Sample {
 	text := "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure " + expressionSource(t, 3) + "\n}\n"
 	return Sample{Kind: FileKindComponent, Text: text}
+}
+
+//uc:generates syntax.expression-format-is-stable.sample
+func genExpressionSample() *rapid.Generator[Sample] {
+	return rapid.Custom(expressionSample)
+}
+
+//uc:checks syntax.expression-format-is-stable
+func checkExpressionFormatIsStable(t rapid.TB, sample Sample) {
+	checkFormatIsStable(t, sample)
 }
 
 func brokenContractSyntax(t *rapid.T) Broken {
@@ -112,6 +109,16 @@ func brokenContractSyntax(t *rapid.T) Broken {
 	return Broken{Kind: FileKindComponent, Text: text, Line: line, Column: column, Code: code}
 }
 
+//uc:generates syntax.contract-syntax-rejects-invalid-claims.broken
+func genBrokenContractSyntax() *rapid.Generator[Broken] {
+	return rapid.Custom(brokenContractSyntax)
+}
+
+//uc:checks syntax.contract-syntax-rejects-invalid-claims
+func checkContractSyntaxRejectsInvalidClaims(t rapid.TB, broken Broken) {
+	checkRejectsBrokenText(t, broken)
+}
+
 func brokenObservationSyntax(t *rapid.T) Broken {
 	paths := make([]string, rapid.IntRange(1, 4).Draw(t, "observed paths"))
 	badPath := rapid.IntRange(0, len(paths)-1).Draw(t, "malformed path")
@@ -144,10 +151,12 @@ func brokenObservationSyntax(t *rapid.T) Broken {
 	return Broken{Kind: FileKindComponent, Text: text, Line: line, Column: column, Code: "syntax.invalid-name"}
 }
 
-func TestContractSyntaxRejectsInvalidClaims(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkRejectsBrokenText(t, brokenContractSyntax(t)) })
+//uc:generates syntax.observation-syntax-rejects-malformed-paths.broken
+func genBrokenObservationSyntax() *rapid.Generator[Broken] {
+	return rapid.Custom(brokenObservationSyntax)
 }
 
-func TestObservationSyntaxRejectsMalformedPaths(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkRejectsBrokenText(t, brokenObservationSyntax(t)) })
+//uc:checks syntax.observation-syntax-rejects-malformed-paths
+func checkObservationSyntaxRejectsMalformedPaths(t rapid.TB, broken Broken) {
+	checkRejectsBrokenText(t, broken)
 }

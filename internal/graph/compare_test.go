@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"testing"
 
 	"pgregory.net/rapid"
 )
@@ -321,20 +320,6 @@ func checkCompareFollowsIdentity(t rapid.TB, base Fragment, head Fragment) {
 	}
 }
 
-func TestCompareFollowsIdentity(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		base := genFragment().Draw(t, "base")
-		checkCompareFollowsIdentity(t, base, genEdit(base).Draw(t, "head"))
-	})
-}
-
-func FuzzCompareFollowsIdentity(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		base := genFragment().Draw(t, "base")
-		checkCompareFollowsIdentity(t, base, genEdit(base).Draw(t, "head"))
-	}))
-}
-
 var reversed = map[ChangeKind]ChangeKind{
 	ChangeKindAdded: ChangeKindRemoved, ChangeKindRemoved: ChangeKindAdded, ChangeKindModified: ChangeKindModified,
 }
@@ -382,20 +367,6 @@ func checkCompareReverses(t rapid.TB, base Fragment, head Fragment) {
 	}
 }
 
-func TestCompareReverses(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		base := genFragment().Draw(t, "base")
-		checkCompareReverses(t, base, genEdit(base).Draw(t, "head"))
-	})
-}
-
-func FuzzCompareReverses(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		base := genFragment().Draw(t, "base")
-		checkCompareReverses(t, base, genEdit(base).Draw(t, "head"))
-	}))
-}
-
 //uc:checks graph.compare-with-itself-is-empty
 func checkCompareWithItselfIsEmpty(t rapid.TB, content Fragment, rotation int) {
 	g := build(t, content.Nodes, content.Edges)
@@ -408,16 +379,4 @@ func checkCompareWithItselfIsEmpty(t rapid.TB, content Fragment, rotation int) {
 			t.Fatalf("comparing a graph with %s lists the changes %+v", other.name, c)
 		}
 	}
-}
-
-func TestCompareWithItselfIsEmpty(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkCompareWithItselfIsEmpty(t, genFragment().Draw(t, "content"), rapid.IntRange(0, 1000).Draw(t, "rotation"))
-	})
-}
-
-func FuzzCompareWithItselfIsEmpty(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkCompareWithItselfIsEmpty(t, genFragment().Draw(t, "content"), rapid.IntRange(0, 1000).Draw(t, "rotation"))
-	}))
 }

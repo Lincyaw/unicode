@@ -17,7 +17,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -107,14 +106,6 @@ func checkAnswersFollowContract(t rapid.TB, exchange Exchange) {
 	}
 }
 
-func TestAnswersFollowContract(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkAnswersFollowContract(t, genExchange().Draw(t, "exchange")) })
-}
-
-func FuzzAnswersFollowContract(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) { checkAnswersFollowContract(t, genExchange().Draw(t, "exchange")) }))
-}
-
 // identityKeys are the fields whose string values, or the strings in whose
 // lists, are node identities; details maps identities to counts.
 var identityKeys = map[string]bool{"id": true, "from": true, "to": true, "focus": true, "flow": true, "parent": true,
@@ -174,14 +165,6 @@ func checkIdentitiesResolve(t rapid.TB, exchange Exchange) {
 			}
 		}
 	}
-}
-
-func TestIdentitiesResolve(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkIdentitiesResolve(t, genExchange().Draw(t, "exchange")) })
-}
-
-func FuzzIdentitiesResolve(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) { checkIdentitiesResolve(t, genExchange().Draw(t, "exchange")) }))
 }
 
 // sameNode tells where an answer's node differs from the graph's node; "" when nowhere.
@@ -374,14 +357,6 @@ func cmpOr(whys ...string) string {
 	return ""
 }
 
-func TestQueriesAgree(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkQueriesAgree(t, genQueryExchange().Draw(t, "exchange")) })
-}
-
-func FuzzQueriesAgree(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) { checkQueriesAgree(t, genQueryExchange().Draw(t, "exchange")) }))
-}
-
 //uc:checks serve.answers-are-deterministic
 func checkAnswersAreDeterministic(t rapid.TB, exchange Exchange) {
 	s, root, _ := served(t, exchange)
@@ -399,12 +374,4 @@ func checkAnswersAreDeterministic(t rapid.TB, exchange Exchange) {
 			t.Fatalf("%s, answered after other requests, got %d\n%s\nyet before them it got %d\n%s", req, got.Status, got.Body, first[i].Status, first[i].Body)
 		}
 	}
-}
-
-func TestAnswersAreDeterministic(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkAnswersAreDeterministic(t, genExchange().Draw(t, "exchange")) })
-}
-
-func FuzzAnswersAreDeterministic(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) { checkAnswersAreDeterministic(t, genExchange().Draw(t, "exchange")) }))
 }

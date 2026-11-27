@@ -6,7 +6,6 @@ import (
 	"runtime/debug"
 	"slices"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 
@@ -68,10 +67,13 @@ func inOrder(a, b diag.Diagnostic) bool {
 }
 
 // genPath draws a path of 1 to 64 bytes.
+//
+//uc:generates syntax.parse-is-total.path
 func genPath() *rapid.Generator[string] {
 	return rapid.StringN(1, 64, 64)
 }
 
+//uc:generates syntax.parse-is-total.kind
 func genKind() *rapid.Generator[FileKind] {
 	return rapid.SampledFrom([]FileKind{FileKindSystem, FileKindComponent, FileKindCorpus})
 }
@@ -115,6 +117,8 @@ var splices = append(slices.Clone(fragments), "")
 
 // genSrc draws 0 to 4096 bytes: raw bytes, a soup of fragments, a valid
 // sample with random line and byte edits, or a valid sample cut short.
+//
+//uc:generates syntax.parse-is-total.src
 func genSrc() *rapid.Generator[[]byte] {
 	soup := rapid.Custom(func(t *rapid.T) []byte {
 		parts := rapid.SliceOfN(rapid.SampledFrom(fragments), 0, 300).Draw(t, "fragments")
@@ -157,16 +161,4 @@ func genSrc() *rapid.Generator[[]byte] {
 	return rapid.Map(rapid.OneOf(rapid.SliceOfN(rapid.Byte(), 0, 4096), soup, edited, edited, truncated), func(b []byte) []byte {
 		return b[:min(len(b), 4096)]
 	})
-}
-
-func TestParseIsTotal(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkParseIsTotal(t, genPath().Draw(t, "path"), genKind().Draw(t, "kind"), genSrc().Draw(t, "src"))
-	})
-}
-
-func FuzzParseIsTotal(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkParseIsTotal(t, genPath().Draw(t, "path"), genKind().Draw(t, "kind"), genSrc().Draw(t, "src"))
-	}))
 }

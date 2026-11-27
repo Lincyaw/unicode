@@ -6,7 +6,6 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 
@@ -664,12 +663,4 @@ func checkDeriveMatchesDefinition(t rapid.TB, fragment Fragment) {
 	if !slices.Equal(codes, want.diags) {
 		t.Fatalf("Derive reported %q; a binding to no node and an invalid path pattern each give one diagnostic: %q", codes, want.diags)
 	}
-}
-
-func TestDeriveMatchesDefinition(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkDeriveMatchesDefinition(t, genDeriveFragment().Draw(t, "fragment")) })
-}
-
-func FuzzDeriveMatchesDefinition(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) { checkDeriveMatchesDefinition(t, genDeriveFragment().Draw(t, "fragment")) }))
 }

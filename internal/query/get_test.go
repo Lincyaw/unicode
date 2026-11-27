@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"testing"
 
 	"pgregory.net/rapid"
 
@@ -101,16 +100,4 @@ func checkGetShowsIncidentEdges(t rapid.TB, question Question) {
 			t.Fatalf("Refs of %q does not give exactly the edges that end at it: %s", id, problem)
 		}
 	}
-}
-
-func TestGetShowsIncidentEdges(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkGetShowsIncidentEdges(t, genGetQuestion().Draw(t, "question"))
-	})
-}
-
-func FuzzGetShowsIncidentEdges(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkGetShowsIncidentEdges(t, genGetQuestion().Draw(t, "question"))
-	}))
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
-	"testing"
 	"time"
 
 	"pgregory.net/rapid"
@@ -86,12 +85,4 @@ func checkFlowAnswerRequest(t rapid.TB, exchange Exchange) {
 	if n := snapshotNodes(t, s, "after the snapshot was written again"); int(n) != len(exchange.Fragment.Nodes) {
 		t.Fatalf("after the snapshot was written again with %d nodes, /api/snapshot counts %d", len(exchange.Fragment.Nodes), n)
 	}
-}
-
-func TestFlowAnswerRequest(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) { checkFlowAnswerRequest(t, genExchange().Draw(t, "exchange")) })
-}
-
-func FuzzFlowAnswerRequest(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) { checkFlowAnswerRequest(t, genExchange().Draw(t, "exchange")) }))
 }

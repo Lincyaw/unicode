@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 
@@ -103,18 +102,6 @@ func checkAcceptsValidDesign(t rapid.TB, sample Sample) {
 	}
 }
 
-func TestAcceptsValidDesign(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkAcceptsValidDesign(t, genSample().Draw(t, "sample"))
-	})
-}
-
-func FuzzAcceptsValidDesign(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkAcceptsValidDesign(t, genSample().Draw(t, "sample"))
-	}))
-}
-
 var designCode = regexp.MustCompile(`^design\.[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 
 // wellFormed checks that every diagnostic has a code of the form
@@ -150,18 +137,6 @@ func checkRejectsBrokenDesign(t rapid.TB, broken Broken) {
 	}
 }
 
-func TestRejectsBrokenDesign(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkRejectsBrokenDesign(t, genBroken().Draw(t, "broken"))
-	})
-}
-
-func FuzzRejectsBrokenDesign(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkRejectsBrokenDesign(t, genBroken().Draw(t, "broken"))
-	}))
-}
-
 // genFiles draws the files of a valid design, or of one broken in one place.
 //
 //uc:generates design.load-ignores-file-order.files
@@ -194,16 +169,4 @@ func checkLoadIgnoresFileOrder(t rapid.TB, files map[string]string, rotation int
 		t.Fatalf("the files in another order get other diagnostics (rotated by %d)\nsorted:%s\nrotated:%s",
 			rotation, listDiagnostics(sorted.Diagnostics), listDiagnostics(rotated.Diagnostics))
 	}
-}
-
-func TestLoadIgnoresFileOrder(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkLoadIgnoresFileOrder(t, genFiles().Draw(t, "files"), rapid.IntRange(0, 1000).Draw(t, "rotation"))
-	})
-}
-
-func FuzzLoadIgnoresFileOrder(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkLoadIgnoresFileOrder(t, genFiles().Draw(t, "files"), rapid.IntRange(0, 1000).Draw(t, "rotation"))
-	}))
 }

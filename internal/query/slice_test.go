@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 
@@ -215,16 +214,4 @@ func added(f graph.Fragment, nodes map[string]graph.Node, focus string) map[stri
 		}
 	}
 	return found
-}
-
-func TestSliceIsMinimalContext(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkSliceIsMinimalContext(t, genSliceQuestion().Draw(t, "question"))
-	})
-}
-
-func FuzzSliceIsMinimalContext(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkSliceIsMinimalContext(t, genSliceQuestion().Draw(t, "question"))
-	}))
 }

@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"testing"
 
 	"pgregory.net/rapid"
 
@@ -178,6 +177,13 @@ func readExpected(files map[string]RepoFile) ([]diagnosticJSON, []syntax.File) {
 	return want, trees
 }
 
+//uc:generates cli.check-design.designOnly
+func genDesignOnly() *rapid.Generator[bool] {
+	return rapid.Custom(func(t *rapid.T) bool {
+		return rapid.IntRange(0, 4).Draw(t, "designOnly") > 0
+	})
+}
+
 //uc:checks cli.check-design
 func checkFlowCheckDesign(t rapid.TB, files map[string]RepoFile, designOnly bool) {
 	root := writeRepo(t, files)
@@ -250,18 +256,6 @@ func checkFlowCheckDesign(t rapid.TB, files map[string]RepoFile, designOnly bool
 			t.Fatalf("with --format text, stderr lacks the diagnostic %q", line)
 		}
 	}
-}
-
-func TestFlowCheckDesign(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkFlowCheckDesign(t, genCheckFiles().Draw(t, "files"), rapid.IntRange(0, 4).Draw(t, "designOnly") > 0)
-	})
-}
-
-func FuzzFlowCheckDesign(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkFlowCheckDesign(t, genCheckFiles().Draw(t, "files"), rapid.IntRange(0, 4).Draw(t, "designOnly") > 0)
-	}))
 }
 
 // replace changes the first old in the file at path to new.
@@ -394,16 +388,4 @@ func checkFlowCheckCode(t rapid.TB, files map[string]RepoFile) {
 			t.Fatalf("with --format text, stderr lacks the diagnostic %q", line)
 		}
 	}
-}
-
-func TestFlowCheckCode(t *testing.T) {
-	rapid.Check(t, func(t *rapid.T) {
-		checkFlowCheckCode(t, genCodeRepo().Draw(t, "files"))
-	})
-}
-
-func FuzzFlowCheckCode(f *testing.F) {
-	f.Fuzz(rapid.MakeFuzz(func(t *rapid.T) {
-		checkFlowCheckCode(t, genCodeRepo().Draw(t, "files"))
-	}))
 }
