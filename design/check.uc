@@ -42,3 +42,9 @@ property conforming-result-contract postcondition "合乎约束且已推导的�
   ensure size(result.diagnostics) == 0
   ensure all(id in result.statuses: result.statuses[id] == graph.Status.verified)
 }
+
+property stubs-stay-incomplete invariant "绑定的谓词或生成器还是未实现骨架时，性质与流程为 stub；补齐其余完全一致的实现后恢复 verified，不把未执行的生成器当成已验证" {
+  about conform
+  forall sample: Sample generated "沿用完整一致图的随机生成器，逐个选择实际绑定的谓词与生成器并只改变骨架标记"
+  manual "需要在随机图上改变绑定代码的骨架属性，独立核对诊断为空及设计节点的状态"
+}
