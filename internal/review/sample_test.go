@@ -31,6 +31,7 @@ type sampleRecord struct {
 
 //uc:generates review.evaluation-follows-content.sample
 //uc:generates review.records-preserve-history.sample
+//uc:generates review.recorded-inverts-attach.sample
 func genSample() *rapid.Generator[Sample] {
 	return rapid.Custom(func(t *rapid.T) Sample {
 		value := rapid.IntRange(-20, 20).Draw(t, "value")
@@ -298,4 +299,37 @@ func oracleContent(g *graph.Graph, target Target) any {
 		}
 	}
 	return append(body, links)
+}
+
+// genProjected is the sample's graph without its review layer, as a build
+// has it before attaching, with the review layer that Attach projects from
+// the sample's records.
+//
+//uc:generates review.recorded-inverts-attach.projected
+func genProjected(sample Sample) *rapid.Generator[*graph.Graph] {
+	projected := graph.NewGraph()
+	for _, node := range sample.Graph.Nodes() {
+		if node.Layer == graph.LayerReview {
+			continue
+		}
+		if err := projected.AddNode(node); err != nil {
+			panic(err)
+		}
+	}
+	for _, edge := range sample.Graph.Edges() {
+		if projected.Node(edge.From) == nil || projected.Node(edge.To) == nil {
+			continue
+		}
+		if err := projected.AddEdge(edge); err != nil {
+			panic(err)
+		}
+	}
+	attached := Attach(&projected, sample.Records)
+	if len(attached.Diagnostics) > 0 {
+		panic(fmt.Sprintf("cannot attach the sample's records, which are valid by construction: %v", attached.Diagnostics))
+	}
+	if err := projected.AddFragment(attached.Fragment); err != nil {
+		panic(err)
+	}
+	return rapid.Just(&projected)
 }

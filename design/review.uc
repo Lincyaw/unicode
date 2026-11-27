@@ -79,6 +79,8 @@ op write(root: string, g: graph.Graph, base: optional<graph.Graph>, request: Req
 
 op attach(g: graph.Graph, records: list<Record>) -> Attached pure "为记录生成评审层的节点：目标是节点时用 about 边指向它，目标是边时在属性中保存边的完整标识，并用 about 边指向仍存在的端点"
 
+op recorded(g: graph.Graph) -> Loaded pure "attach 的逆：从 g 的评审层节点还原出评审记录并按记录的标识排序，节点的属性不全或还原出的不是合法记录时给出这个节点的诊断"
+
 property evaluation-follows-content postcondition "evaluate 没有诊断，列出的候选项恰是 sample.targets，待审项恰是 sample.pending，状态为 reviewed 的项带指纹相同的记录" {
   about evaluate
   forall sample: Sample generated "整数 -20 至 20 构造的一张固定的小图，约一半附基准图，以及十四种改动之一：不改、新增节点、删除节点及其边、改性质或观察的摘要、改手写谓词、观察适配器或无关函数的函数体、只移动无关函数的位置、新增、删除或改动边、改生成文件中的函数、把谓词绑定移到另一个函数；改动前和改动后的图中每个目标各以一半机会带按所在图的内容写的 approved 记录，已删除的项另以一半机会带 changes-requested 记录，并附应有的候选和待审目标"
@@ -95,4 +97,14 @@ property records-preserve-history invariant "写过的记录再读出时内容�
   about read, write
   forall sample: Sample generated "整数 -20 至 20 构造的一张固定的小图，约一半附基准图，以及十四种改动之一：不改、新增节点、删除节点及其边、改性质或观察的摘要、改手写谓词、观察适配器或无关函数的函数体、只移动无关函数的位置、新增、删除或改动边、改生成文件中的函数、把谓词绑定移到另一个函数；改动前和改动后的图中每个目标各以一半机会带按所在图的内容写的 approved 记录，已删除的项另以一半机会带 changes-requested 记录，并附应有的候选和待审目标"
   manual "需要在临时目录中写出并读回文件树，表达式不能读写文件"
+}
+
+property recorded-inverts-attach postcondition "把 sample.records 附到 sample.graph 上之后，recorded 从评审层还原出的记录恰是 sample.records 中的记录，没有诊断" {
+  about attach, recorded
+  forall sample: Sample generated "整数 -20 至 20 构造的一张固定的小图，约一半附基准图，以及十四种改动之一：不改、新增节点、删除节点及其边、改性质或观察的摘要、改手写谓词、观察适配器或无关函数的函数体、只移动无关函数的位置、新增、删除或改动边、改生成文件中的函数、把谓词绑定移到另一个函数；改动前和改动后的图中每个目标各以一半机会带按所在图的内容写的 approved 记录，已删除的项另以一半机会带 changes-requested 记录，并附应有的候选和待审目标"
+  forall projected: graph.Graph generated "sample.graph 去掉其中的评审层节点及其边，再加上 attach 对它和 sample.records 生成的评审层节点和边"
+  call recorded(projected)
+  ensure size(result.diagnostics) == 0
+  ensure all(record in sample.records: record in result.records)
+  ensure all(record in result.records: record in sample.records)
 }

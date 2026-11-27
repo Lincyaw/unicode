@@ -5,9 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lincyaw/unicode/internal/diag"
@@ -369,6 +372,68 @@ func Attach(g *graph.Graph, records []Record) Attached {
 	slices.SortFunc(out.Fragment.Nodes, func(a, b graph.Node) int { return cmp.Compare(a.Id, b.Id) })
 	slices.SortFunc(out.Fragment.Edges, func(a, b graph.Edge) int { return cmp.Or(cmp.Compare(a.From, b.From), cmp.Compare(a.To, b.To)) })
 	return out
+}
+
+// Recorded reads back the records that Attach projected into the review
+// layer of g, ordered by identity.
+//
+//uc:realizes review.recorded
+func Recorded(g *graph.Graph) Loaded {
+	out := Loaded{Records: []Record{}, Diagnostics: []diag.Diagnostic{}}
+	for _, node := range g.Nodes() {
+		if node.Layer != graph.LayerReview {
+			continue
+		}
+		record, err := recordOf(node)
+		if err == nil {
+			if why := validateRecord(record); why != "" {
+				err = errors.New(why)
+			}
+		}
+		if err != nil {
+			out.Diagnostics = append(out.Diagnostics, issue("review.invalid-record", node.Origin.Path, node.Id, err.Error(), "run unicode build again to project the review store into the snapshot"))
+			continue
+		}
+		out.Records = append(out.Records, record)
+	}
+	return out
+}
+
+// recordOf is the record a review-layer node carries, as Attach wrote it.
+func recordOf(node graph.Node) (Record, error) {
+	id, ok := strings.CutPrefix(node.Id, "review:")
+	if !ok {
+		return Record{}, fmt.Errorf("the review node %s is not named review:<record id>", node.Id)
+	}
+	value := func(key string) (string, error) {
+		if values := node.Attrs[key]; len(values) == 1 {
+			return values[0], nil
+		}
+		return "", fmt.Errorf("the review node %s does not have exactly one %s", node.Id, key)
+	}
+	text := map[string]string{}
+	for _, key := range []string{"version", "reviewer", "at", "snapshot", "commit", "dirty", "targetNode", "targetEdgeKind", "targetFrom", "targetTo", "removed", "digest", "decision", "comment"} {
+		v, err := value(key)
+		if err != nil {
+			return Record{}, err
+		}
+		text[key] = v
+	}
+	version, err := strconv.Atoi(text["version"])
+	if err != nil {
+		return Record{}, fmt.Errorf("the review node %s has the version %q: %w", node.Id, text["version"], err)
+	}
+	dirty, err := strconv.ParseBool(text["dirty"])
+	if err != nil {
+		return Record{}, fmt.Errorf("the review node %s has dirty %q: %w", node.Id, text["dirty"], err)
+	}
+	removed, err := strconv.ParseBool(text["removed"])
+	if err != nil {
+		return Record{}, fmt.Errorf("the review node %s has removed %q: %w", node.Id, text["removed"], err)
+	}
+	return Record{Version: version, Id: id, Reviewer: text["reviewer"], At: text["at"], Snapshot: text["snapshot"], Commit: text["commit"], Dirty: dirty,
+		Target: Target{Node: text["targetNode"], EdgeKind: text["targetEdgeKind"], From: text["targetFrom"], To: text["targetTo"], Removed: removed},
+		Digest: text["digest"], Decision: text["decision"], Comment: text["comment"]}, nil
 }
 
 func issue(code, path, subject, cause, fix string) diag.Diagnostic {
