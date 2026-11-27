@@ -50,25 +50,31 @@ func sourceContent(t rapid.TB, name, src string) map[diag.Position]map[string]st
 	out := map[diag.Position]map[string]string{}
 	ast.Inspect(file, func(node ast.Node) bool {
 		var at token.Pos
-		var content ast.Node
-		var key string
+		contents := map[string]ast.Node{}
 		switch node := node.(type) {
 		case *ast.FuncDecl:
-			if node.Body == nil {
-				return true
+			at = node.Name.Pos()
+			header := *node
+			header.Body = nil
+			contents["declaration"] = &header
+			if node.Body != nil {
+				contents["body"] = node.Body
 			}
-			at, content, key = node.Name.Pos(), node.Body, "body"
 		case *ast.TypeSpec:
-			at, content, key = node.Name.Pos(), node, "declaration"
+			at, contents["declaration"] = node.Name.Pos(), node
 		default:
 			return true
 		}
-		var canonical bytes.Buffer
-		if err := format.Node(&canonical, token.NewFileSet(), content); err != nil {
-			t.Fatalf("cannot format the fixture declaration: %v", err)
-		}
 		where := positions.Position(at)
-		out[diag.Position{Path: name, Line: where.Line, Column: where.Column}] = map[string]string{key: canonical.String()}
+		values := map[string]string{}
+		for key, content := range contents {
+			var canonical bytes.Buffer
+			if err := format.Node(&canonical, token.NewFileSet(), content); err != nil {
+				t.Fatalf("cannot format the fixture declaration: %v", err)
+			}
+			values[key] = canonical.String()
+		}
+		out[diag.Position{Path: name, Line: where.Line, Column: where.Column}] = values
 		return true
 	})
 	return out
@@ -96,8 +102,11 @@ type Reader interface { Read() int }
 //uc:realizes model.eval
 func Eval() int { read := func() int { return %d }; return read() }
 func (box Box[T]) Count() int { return %d }
-`, constraint, value, method)
+func Generic[T %s](value T) T { return value }
+`, constraint, value, method, constraint)
 	if spaced {
+		source = strings.Replace(source, "func (box Box[T]) Count() int", "func (box /* receiver */ Box[T]) Count( ) int", 1)
+		source = strings.Replace(source, "func Generic[T "+constraint+"](value T) T", "func Generic[\nT /* constraint */ "+constraint+",\n](value /* parameter */ T) T", 1)
 		source = strings.Replace(source, "package subject", "\n\n// A layout-only package comment.\npackage subject", 1)
 		source = strings.Replace(source, "{ Value T; Slots [2]int }", "{\n// A field comment.\nValue T\n\nSlots [2]int // A line comment.\n}", 1)
 		source = strings.Replace(source, "{ read := func() int { return ", "{\n// A body comment.\nread := func() int {\nreturn ", 1)
@@ -119,12 +128,13 @@ func checkImplementationContentIsNormalized(t rapid.TB, sample BodySample) {
 		changed++
 	}
 	files := map[string]string{
-		"go.mod":            "module example.com/content\n\ngo 1.26\n",
-		"base/source.go":    bodyFixture(sample.Value, sample.Value, "~int", false),
-		"layout/source.go":  bodyFixture(sample.Value, sample.Value, "~int", sample.Spaced),
-		"changed/source.go": bodyFixture(changed, sample.Value, "~int", sample.Spaced),
-		"method/source.go":  bodyFixture(sample.Value, sample.Value+1, "~int", sample.Spaced),
-		"typed/source.go":   bodyFixture(sample.Value, sample.Value, "~int64", sample.Spaced),
+		"go.mod":             "module example.com/content\n\ngo 1.26\n",
+		"base/source.go":     bodyFixture(sample.Value, sample.Value, "~int", false),
+		"layout/source.go":   bodyFixture(sample.Value, sample.Value, "~int", sample.Spaced),
+		"changed/source.go":  bodyFixture(changed, sample.Value, "~int", sample.Spaced),
+		"method/source.go":   bodyFixture(sample.Value, sample.Value+1, "~int", sample.Spaced),
+		"typed/source.go":    bodyFixture(sample.Value, sample.Value, "~int64", sample.Spaced),
+		"receiver/source.go": strings.Replace(bodyFixture(sample.Value, sample.Value, "~int", sample.Spaced), "Box[T]) Count", "*Box[T]) Count", 1),
 	}
 	expected := map[string]map[diag.Position]map[string]string{}
 	for name, src := range files {
@@ -157,8 +167,10 @@ func checkImplementationContentIsNormalized(t rapid.TB, sample BodySample) {
 			}
 		}
 		if node.Form == "abstract" {
-			if _, exists := node.Attrs["body"]; exists {
-				t.Fatalf("the abstract operation %s has a body", node.Id)
+			for _, key := range []string{"body", "declaration"} {
+				if _, exists := node.Attrs[key]; exists {
+					t.Fatalf("the abstract operation %s has native %s content", node.Id, key)
+				}
 			}
 		}
 	}
@@ -177,6 +189,30 @@ func checkImplementationContentIsNormalized(t rapid.TB, sample BodySample) {
 		}
 		return values[0]
 	}
+	declaration := func(pkg, name string) string {
+		values := get(pkg, name).Attrs["declaration"]
+		if len(values) != 1 || values[0] == "" {
+			t.Fatalf("%s.%s has no declaration content", pkg, name)
+		}
+		return values[0]
+	}
+	for _, name := range []string{"Eval", "Box.Count", "Generic"} {
+		if declaration("base", name) != declaration("layout", name) {
+			t.Fatalf("layout, comments or positions changed the native header of %s", name)
+		}
+	}
+	if body("base", "Box.Count") != body("receiver", "Box.Count") || declaration("base", "Box.Count") == declaration("receiver", "Box.Count") {
+		t.Fatal("a pointer receiver change was not isolated in the method declaration")
+	}
+	if g.Digest(get("base", "Box.Count").Id) == g.Digest(get("receiver", "Box.Count").Id) {
+		t.Fatal("the fixture's pointer receiver change did not alter its operation digest")
+	}
+	if body("base", "Generic") != body("typed", "Generic") || declaration("base", "Generic") == declaration("typed", "Generic") {
+		t.Fatal("a generic function constraint change was not isolated in its declaration")
+	}
+	if g.Digest(get("base", "Generic").Id) == g.Digest(get("typed", "Generic").Id) {
+		t.Fatal("the fixture's generic function constraint change did not alter its operation digest")
+	}
 	if body("base", "Eval") != body("layout", "Eval") || g.Digest(get("base", "Eval").Id) != g.Digest(get("layout", "Eval").Id) {
 		t.Fatal("layout, comments or source positions changed the normalized operation")
 	}
@@ -188,6 +224,9 @@ func checkImplementationContentIsNormalized(t rapid.TB, sample BodySample) {
 	}
 	if body("base", "Box.Count") == body("method", "Box.Count") {
 		t.Fatal("a changed method body has unchanged content")
+	}
+	if declaration("base", "Box.Count") != declaration("method", "Box.Count") || declaration("base", "Eval") != declaration("changed", "Eval") {
+		t.Fatal("a function body changed its native declaration header")
 	}
 	if !slices.Equal(get("base", "Box").Attrs["declaration"], get("method", "Box").Attrs["declaration"]) || g.Digest(get("base", "Box").Id) != g.Digest(get("method", "Box").Id) {
 		t.Fatal("a method body changed its containing type's own content")

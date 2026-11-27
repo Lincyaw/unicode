@@ -13,8 +13,13 @@ import (
 // comments. Abstract operations have no body; a type's methods are separate ops.
 func (x *extraction) addContent(d declared) {
 	attrs := x.nodes[d.id].Attrs
-	if d.decl != nil && d.decl.Body != nil {
-		attrs["body"] = []string{normalizedContent(d.pkg.Fset, d.decl.Body)}
+	if d.decl != nil {
+		header := *d.decl
+		header.Body = nil
+		attrs["declaration"] = []string{normalizedContent(d.pkg.Fset, &header)}
+		if d.decl.Body != nil {
+			attrs["body"] = []string{normalizedContent(d.pkg.Fset, d.decl.Body)}
+		}
 	}
 	if d.spec != nil {
 		attrs["declaration"] = []string{normalizedContent(d.pkg.Fset, d.spec)}
@@ -35,6 +40,7 @@ func normalizedContent(positions *token.FileSet, node ast.Node) string {
 		prefix += "func content() "
 	case *ast.TypeSpec:
 		prefix += "type "
+	case *ast.FuncDecl:
 	default:
 		panic(fmt.Sprintf("golang: unsupported implementation node %T", node))
 	}
@@ -48,6 +54,8 @@ func normalizedContent(positions *token.FileSet, node ast.Node) string {
 		clean = file.Decls[0].(*ast.FuncDecl).Body
 	case *ast.TypeSpec:
 		clean = file.Decls[0].(*ast.GenDecl).Specs[0].(*ast.TypeSpec)
+	case *ast.FuncDecl:
+		clean = file.Decls[0].(*ast.FuncDecl)
 	}
 	var canonical bytes.Buffer
 	if err := format.Node(&canonical, token.NewFileSet(), clean); err != nil {
