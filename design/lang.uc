@@ -50,7 +50,7 @@ type RunPlan record "一种语言的运行输入；ids 为空时运行全部可�
   field explore: duration
 }
 
-type RunResult record "一条性质的运行结论：有效执行、拒绝候选、观察边界、范围外差异与定位诊断" {
+type RunResult record "一条性质的运行结论：有效执行、拒绝候选、观察边界、范围外差异与业务断言的定位诊断" {
   field id: string
   field passed: bool
   field accepted: int
@@ -60,7 +60,7 @@ type RunResult record "一条性质的运行结论：有效执行、拒绝候选
   field diagnostics: list<diag.Diagnostic>
 }
 
-type RunReport record "一次运行中各性质的结果和工具链诊断" {
+type RunReport record "一次运行中各性质的结果；顶层诊断是工具、观察、前提、输入域或零有效执行等检查环境错误" {
   field results: list<RunResult>
   field diagnostics: list<diag.Diagnostic>
 }
