@@ -78,24 +78,33 @@ export function unfoldedTypeRows(node: ViewNode): CardRow[] {
   return [...memberRows(node), ...opRows(node)];
 }
 
-/** How tall a folded container's card is: its head and its type names, wrapped in its width. */
-export function foldedHeight(names: string[], width = CARD_WIDTH): number {
-  if (names.length === 0) {
-    return 2 * BORDER + 2 * PADDING + HEAD;
-  }
+/**
+ * The lines a folded container's card sets the names it holds on, filled in order within the card's width. The card
+ * draws these lines and no others, so its height holds; a name the face draws wider than measured is cut short in its
+ * line rather than wrapping past the card.
+ */
+export function foldedLines<T extends { title: string }>(names: T[], width = CARD_WIDTH): T[][] {
   const room = width - 2 * (BORDER + PADDING);
-  let lines = 1;
+  const lines: T[][] = [];
   let used = 0;
   for (const name of names) {
-    const item = NAME_ICON + monoWidth(name, MONO_SIZE);
-    if (used > 0 && used + NAMES_GAP + item > room) {
-      lines += 1;
-      used = item;
+    const item = NAME_ICON + monoWidth(name.title, MONO_SIZE);
+    const line = lines.at(-1);
+    if (line !== undefined && used + NAMES_GAP + item <= room) {
+      line.push(name);
+      used += NAMES_GAP + item;
     } else {
-      used += (used > 0 ? NAMES_GAP : 0) + item;
+      lines.push([name]);
+      used = item;
     }
   }
-  return 2 * BORDER + 2 * PADDING + HEAD + GAP + lines * NAMES_ROW + (lines - 1) * GAP;
+  return lines;
+}
+
+/** How tall a folded container's card is: its head and the lines of its names. */
+export function foldedHeight(names: { title: string }[], width = CARD_WIDTH): number {
+  const lines = foldedLines(names, width).length;
+  return 2 * BORDER + 2 * PADDING + HEAD + (lines > 0 ? GAP + lines * NAMES_ROW + (lines - 1) * GAP : 0);
 }
 
 /** How tall an external system's card is. */

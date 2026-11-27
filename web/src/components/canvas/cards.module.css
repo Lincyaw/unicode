@@ -34,14 +34,20 @@
 .field[data-warn="true"] .fieldType { color: var(--accent-warning); }
 .more { position: relative; z-index: 1; width: fit-content; color: var(--text-faint); transition: color var(--duration-fast); }
 .more:hover { color: var(--text-main); }
-.op { display: block; flex: none; width: fit-content; height: calc(var(--space-4) + var(--space-px)); overflow: hidden; color: var(--accent-info); font: var(--type-mono); line-height: calc(var(--space-4) + var(--space-px)); text-overflow: ellipsis; white-space: nowrap; }
+.op { display: block; flex: none; width: fit-content; max-width: 100%; height: calc(var(--space-4) + var(--space-px)); overflow: hidden; color: var(--accent-info); font: var(--type-mono); line-height: calc(var(--space-4) + var(--space-px)); text-overflow: ellipsis; white-space: nowrap; }
 
 /* A folded container: muted, with the names of what it holds. */
 .folded { border-color: var(--border-hairline); border-radius: var(--radius-lg); background: var(--bg-muted); }
 .toggle { display: grid; place-items: center; color: var(--text-muted); }
 .toggle:hover { color: var(--text-main); }
-.names { display: flex; flex-wrap: wrap; gap: var(--space-2) calc(var(--space-2) + var(--space-px)); color: var(--text-muted); }
-.name { display: inline-flex; align-items: center; gap: var(--space-1); max-width: 100%; height: calc(var(--space-4) + var(--space-px)); overflow: hidden; font: var(--type-mono); }
+/*
+ * Each line of names keeps to one line: when the face draws the names wider than measured, the line's last name gives
+ * way and is cut short with an ellipsis; nothing wraps past the card.
+ */
+.names { display: flex; flex: none; gap: calc(var(--space-2) + var(--space-px)); min-width: 0; color: var(--text-muted); }
+.name { display: inline-flex; flex: none; align-items: center; gap: var(--space-1); min-width: 0; height: calc(var(--space-4) + var(--space-px)); font: var(--type-mono); }
+.name:last-child { flex: 0 1 auto; }
+.nameText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* An external system: dashed, outside the system's own components. */
 .external { border-style: dashed; border-color: var(--border-emphasis); background: none; }

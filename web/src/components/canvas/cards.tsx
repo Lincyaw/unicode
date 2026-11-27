@@ -15,7 +15,7 @@ import { NodeRef } from '../marks/NodeRef';
 import { TypeText } from '../marks/Signature';
 import { StatusDot } from '../marks/StatusDot';
 import { useReveal } from './panZoom';
-import type { CardRow } from './sizes';
+import { foldedLines, type CardRow } from './sizes';
 import styles from './cards.module.css';
 
 /*
@@ -98,8 +98,9 @@ function Toggle({ href, open }: { href: string; open: boolean }) {
 }
 
 /**
- * A container drawn folded: its name and the names of what it holds, each a reference to its node; the chevron
- * expands it in place. A count, such as how many edges an edge into it stands for, can follow the card.
+ * A container drawn folded: its name and the names of what it holds, each a reference to its node, on the lines
+ * sizes.ts measured; the chevron expands it in place. A count, such as how many edges an edge into it stands for, can
+ * follow the card.
  */
 export function FoldedCard({ node, names, style }: { node: ViewNode; names: ViewNode[]; style?: CSSProperties }) {
   const links = useLinks();
@@ -115,16 +116,19 @@ export function FoldedCard({ node, names, style }: { node: ViewNode; names: View
           <span className={clsx(styles.title, styles.mutedTitle)}>{node.title}</span>
         </CoverButton>
       </span>
-      {names.length > 0 && (
-        <span className={styles.names}>
-          {names.map(child => (
-            <NodeRef key={child.id} id={child.id} className={styles.name}>
-              <KindIcon node={child} size="tiny" />
-              {child.title}
-            </NodeRef>
+      {foldedLines(names).map(line => (
+        <span key={line[0]?.id} className={styles.names}>
+          {line.map(child => (
+            // A name too long for its line is cut short; its whole text shows while the pointer rests on it.
+            <Hint key={child.id} content={child.title}>
+              <NodeRef id={child.id} className={styles.name}>
+                <KindIcon node={child} size="tiny" />
+                <span className={styles.nameText}>{child.title}</span>
+              </NodeRef>
+            </Hint>
           ))}
         </span>
-      )}
+      ))}
     </div>
   );
 }

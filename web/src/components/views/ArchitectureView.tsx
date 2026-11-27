@@ -103,7 +103,7 @@ export function ArchitectureView({ view: answer }: { view: View }) {
     if (node.kind === 'actor') {
       return { id: node.id, width: CARD_WIDTH, height: externalHeight(node) };
     }
-    return { id: node.id, width: CARD_WIDTH, height: foldedHeight((node.contents ?? []).map(child => child.title)) };
+    return { id: node.id, width: CARD_WIDTH, height: foldedHeight(node.contents ?? []) };
   });
   const edgeLinks: Link[] = view.edges.map(edge => ({ id: edgeKey(edge), from: edge.from, to: edge.to, unranked: edge.status === 'contradicted' }));
   const { rects, bends, width, height } = arrange(boxes, edgeLinks, 'TB', SPACING, externalsBeside(view));

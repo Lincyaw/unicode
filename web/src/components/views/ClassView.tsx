@@ -29,7 +29,7 @@ export function ClassView({ view, toolbar }: { view: View; toolbar: ReactNode })
   const boxes = cards.map(({ node, rows }) => ({
     id: node.id,
     width: CARD_WIDTH,
-    height: folded.has(node.id) ? foldedHeight((node.contents ?? []).map(child => child.title)) : cardHeight(rows.length),
+    height: folded.has(node.id) ? foldedHeight(node.contents ?? []) : cardHeight(rows.length),
   }));
   // A folded component or an error that one card alone refers to stands beside that card.
   const sources = Map.groupBy(edges, edge => edge.to);

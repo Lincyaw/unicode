@@ -58,7 +58,7 @@ export function DddView({ view: answer }: { view: View }) {
   const contexts = new Map(view.nodes.filter(node => !folded.has(node.id)).map(node => [node.id, context(node, view)]));
   const boxes = view.nodes.map(node => {
     const inner = contexts.get(node.id);
-    return inner ? { id: node.id, width: inner.width, height: inner.height } : { id: node.id, width: CARD_WIDTH, height: foldedHeight((node.contents ?? []).map(child => child.title)) };
+    return inner ? { id: node.id, width: inner.width, height: inner.height } : { id: node.id, width: CARD_WIDTH, height: foldedHeight(node.contents ?? []) };
   });
   const outer = componentGraph(answer).edges;
   const outerLinks: Link[] = outer.map(edge => ({ id: edgeKey(edge), from: edge.from, to: edge.to, unranked: edge.status === 'contradicted' }));
