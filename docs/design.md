@@ -94,7 +94,7 @@ type Runner interface {
 ```
 
 - **抽取**：后端读出 `container`、`type`、`op` 节点，以及 `contains`、`imports`、`calls`、`refers`、`extends`、`implements` 边。它同时读出代码中的绑定，写成 `realizes`、`checks`、`generates` 和 `observes` 边；绑定的写法不合格式时，给出诊断。带 `realizes` 绑定的类型，它的每个方法按反向的名称映射（例如 Go 的 `Submit` 对应 `submit`）得到一条到 `<类型的标识>.<操作名>` 的 `realizes` 边，来源为推导；推导时，终点不存在的这类边被丢掉，那些方法是细节。代码层 `op` 的 `signature` 属性按下面的类型映射归一化成设计的写法，引用写成从根起的标识，与设计层的签名直接按字符串比较。后端产出的是代码层的图片段，格式与快照相同。
-- **Go 后端**：在进程内用 `golang.org/x/tools/go/packages` 和 `go/types` 解析源码和类型。调用按静态类型解析，接口方法的调用解析到接口的方法。抽取包括 `_test.go` 文件：谓词、生成器和只供它们使用的类型都在其中，它们的绑定照常读取。
+- **Go 后端**：在进程内用 `golang.org/x/tools/go/packages` 和 `go/types` 解析源码和类型。调用按静态类型解析，接口方法的调用解析到接口的方法。`implements` 按 Go 方法集的类型身份判断，参数名和返回值名不参与比较；包的测试变体仍按同一包路径识别类型，有符号性、整数宽度与可变参数等真实类型差异保留。抽取包括 `_test.go` 文件：谓词、生成器和只供它们使用的类型都在其中，它们的绑定照常读取。
 - **Python 后端**：工具链内嵌一个只用标准库的抽取脚本，以 `python3 -I` 运行。脚本用 `ast` 解析源码，把图片段以 JSON 写到标准输出。调用按名称和导入关系解析，解析不到的调用不成边，只计数。生成在 Go 中按模板完成。
 - **运行**：后端用该语言的测试工具运行驱动，在进程内逐个输入记录覆盖：Go 用 `-cover` 构建，并用 `runtime/coverage` 在每个输入前后清零和读出计数；Python 用标准库的 `sys.monitoring`。覆盖只统计谓词沿 `exercises` 可达的函数，不含生成文件和谓词本身。
 - **测试类别**：Go 中，`func FuzzX(f *testing.F)` 为 `fuzz`，调用了 `rapid.Check` 的 `TestX` 为 `property`，其余 `TestX` 为 `example`。Python 中，带 `hypothesis.given` 的测试为 `property`，用 `atheris` 的为 `fuzz`。后端据此找出生成文件之外的测试函数（[model.md](model.md) §10 第 21 条）。
