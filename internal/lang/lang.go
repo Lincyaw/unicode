@@ -68,8 +68,9 @@ type Backend interface {
 //
 //uc:realizes lang.Edit
 type Edit struct {
-	Path    string `json:"path"`
-	Content []byte `json:"content"`
+	Path       string `json:"path"`
+	Content    []byte `json:"content"`
+	CreateOnly bool   `json:"createOnly"`
 }
 
 // Generation is the output of a backend. Diagnostics prevent applying its edits.

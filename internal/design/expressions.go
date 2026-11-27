@@ -613,7 +613,7 @@ func (l *loader) flowExpressions(e, scope *entity, d *syntax.FlowDecl, steps []s
 						callee = receiver + "." + c.tested.name
 					}
 				}
-				expr := &syntax.Expr{Pos: call.Pos, Kind: "call", Children: []*syntax.Expr{{Pos: call.Pos, Kind: "name", Text: callee}}}
+				expr := &syntax.Expr{Pos: call.Pos, Kind: "call", Children: []*syntax.Expr{refExpression(syntax.Ref{Pos: call.Pos, Segments: strings.Split(callee, ".")})}}
 				if c.tested.parent.kind == graph.NodeKindType {
 					if dot := strings.LastIndexByte(callee, '.'); dot >= 0 {
 						expr.Children[0] = &syntax.Expr{Pos: call.Pos, Kind: "field", Text: callee[dot+1:], Children: []*syntax.Expr{{Pos: call.Pos, Kind: "name", Text: callee[:dot]}}}
