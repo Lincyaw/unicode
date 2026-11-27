@@ -131,7 +131,12 @@ func Execute(root string, g *graph.Graph, backends []lang.Backend, ids []string,
 	}
 	slices.SortFunc(out.Results, func(a, b lang.RunResult) int { return strings.Compare(a.Id, b.Id) })
 	sortDiagnostics(out.Diagnostics)
-	out.Diagnostics = append(out.Diagnostics, evidence.Save(root, out)...)
+	for _, problem := range evidence.Save(root, out) {
+		if problem.Code == "evidence.write-failed" {
+			problem.Code = "run.results-write-failed"
+		}
+		out.Diagnostics = append(out.Diagnostics, problem)
+	}
 	sortDiagnostics(out.Diagnostics)
 	return out
 }
