@@ -68,19 +68,19 @@ op select(g: graph.Graph, kind: ViewKind, id: string, expand: list<string>, laye
 
 op inputs(g: graph.Graph, kind: ViewKind) -> list<string> "kind 这种视图接受的全部输入：作为输入时 select 不抛出 NotApplicable 的节点，按标识排序"
 
-property view-is-folded-subgraph invariant "视图的节点、边、合并的边数以及折叠和隐藏的节点，与按 design.md §7.1、§7.2 的规则直接算出的相同" {
+property view-is-folded-subgraph invariant "视图适用于输入时，视图的节点、边、合并的边数、折叠的节点和未画出的 utility 容器的个数与按 design.md §7.1、§7.2 的规则直接算出的相同，不适用时 select 抛出 NotApplicable" {
   about select
-  forall request: Request generated "一张随机的图，带各种关注度的容器、显著和细节的函数，以及一次视图请求：输入约六分之五是该视图适用的节点，展开的标识约四分之三是视图中能展开的项"
-  manual "需要按 design.md §7.1、§7.2 的规则另行算出视图再比较，表达式不能遍历图的边"
+  forall request: Request generated "一张随机的图（各种关注度的容器、带字段或枚举值的类型、成员与之有同有缺有异有多的代码类型、显著和细节的函数、带调用的依赖），以及一次任意种类的视图请求：输入约六分之五是该视图适用的节点，其余是任意节点或空串，零至四个展开的标识约四分之三是视图中能展开的项，其余是图中的容器、函数或不存在的名称"
+  manual "需要按 design.md §7.1、§7.2 的规则另行算出视图，其中的包含和经由细节函数的调用要沿边追溯任意多层，表达式没有递归"
 }
 
-property sequence-follows-steps invariant "时序视图和活动视图中的步骤，按它们在流程中的序号排列；生命线按首次出现的次序排列" {
+property sequence-follows-steps invariant "流程的时序视图和活动视图恰画出流程中的全部步骤并按序号排列，步骤的发起方、被调用操作的所属者和发布的事件都画成生命线，按首次出现的次序排列" {
   about select
-  forall request: Request generated "一张随机的图，其中有带嵌套步骤的流程，以及一次对某个流程的时序或活动视图请求"
+  forall request: Request generated "一张至少有一个流程的随机图，每个流程有一至十二个步骤，两步以上时第二步嵌套在第一步中，其余随机嵌套，以及一次对其中一个流程的时序或活动视图请求，带零至四个展开的标识"
   manual "需要按步骤的序号和生命线首次出现的次序排列，表达式不能排序"
 }
 
-property view-echoes-its-request postcondition "视图给出请求的种类和展开，类视图另给请求的层，C4 视图另给请求的层级，其余视图两者都不给，请求给出节点时输入就是这个节点，不给时只有架构、事件、DDD 和 C4 视图适用且输入是系统" {
+property view-echoes-its-request postcondition "视图给出请求的种类和展开，类视图只另给请求的层，C4 视图只另给请求的层级，其余视图两者都不给，请求给出节点时输入就是这个节点，不给时只有架构、事件、DDD 和 C4 视图适用且输入是系统" {
   about select
   forall g: graph.Graph generated "一张随机的图，带各种关注度的容器、类型、操作、流程、性质和代码层"
   forall kind: ViewKind
@@ -100,21 +100,21 @@ property view-echoes-its-request postcondition "视图给出请求的种类和�
   ensure raised(NotApplicable) or id != "" or result.input.form == "system" and (kind == ViewKind.architecture or kind == ViewKind.events or kind == ViewKind.ddd or kind == ViewKind.c4)
 }
 
-property inputs-are-what-select-takes relation "inputs(g, kind) 恰是图中作为输入、不带展开时 select 不抛出 NotApplicable 的节点，按标识排序" {
+property inputs-are-what-select-takes relation "对图中每个节点，不带展开时以它为输入的 select 成功当且仅当它在 inputs(g, kind) 中，失败时只抛出 NotApplicable，inputs(g, kind) 按标识排序" {
   about inputs, select
   forall g: graph.Graph generated "一张随机的图，带各种关注度的容器、类型、操作、流程、性质和代码层"
   forall kind: ViewKind
-  manual "需要对图中的每个节点调用 select 并与 inputs 的结果比较，表达式不能遍历图的节点"
+  manual "需要对图中每个节点各调用一次 select 再与 inputs 的结果比较，表达式中只能调用纯操作，而 select 不是纯操作"
 }
 
-property view-names-input-ancestors invariant "视图的输入是图中标识为请求 id 的节点，它的祖先是沿 contains 包含它的各层节点，系统在前" {
+property view-names-input-ancestors invariant "视图适用时，输入是图中标识为请求 id 的节点，不给 id 时是系统，输入的祖先是沿 contains 包含输入的各层节点，最外层在前" {
   about select
-  forall request: Request generated "一张随机的图，以及一次输入取自图中节点的视图请求"
-  manual "需要在图中沿 contains 逐层找出输入的祖先并比较整个节点，表达式不能遍历图的边"
+  forall request: Request generated "一张随机的图（各种关注度的容器、带字段或枚举值的类型、成员与之有同有缺有异有多的代码类型、显著和细节的函数、带调用的依赖），以及一次任意种类的视图请求：输入约六分之五是该视图适用的节点，其余是任意节点或空串，零至四个展开的标识约四分之三是视图中能展开的项，其余是图中的容器、函数或不存在的名称"
+  manual "需要沿 contains 逐层向上找出输入的全部祖先，表达式没有递归，不能沿边追溯任意多层"
 }
 
 property view-cards-show-contents invariant "视图中卡片附带的成员、容器的内容、未画出的细节函数的个数和边上的操作名称，与按 design.md §7.5.1 的定义直接算出的相同" {
   about select, check.members
-  forall request: Request generated "一张随机的图，类型带字段或枚举值，实现它们的代码类型有的字段相同、有的缺少或不同，依赖带调用，以及一次输入取自图中节点的视图请求"
-  manual "需要按定义另行算出每张卡片的内容再比较，表达式不能遍历图的边"
+  forall request: Request generated "一张随机的图（各种关注度的容器、带字段或枚举值的类型、成员与之有同有缺有异有多的代码类型、显著和细节的函数、带调用的依赖），以及一次任意种类的视图请求：输入约六分之五是该视图适用的节点，其余是任意节点或空串，零至四个展开的标识约四分之三是视图中能展开的项，其余是图中的容器、函数或不存在的名称"
+  manual "需要把字段的文本拆成名称和类型再与代码类型的字段逐项比较，表达式不能切分字符串"
 }

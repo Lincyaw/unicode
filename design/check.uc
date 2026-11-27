@@ -41,7 +41,7 @@ op members(g: graph.Graph, ids: list<string>) -> map<string, list<Member>> "ids 
 
 property accepts-conforming-graph postcondition "合乎约束的图推导、检查之后没有诊断，每个声明项和依赖恰有一个 verified 状态" {
   about conform
-  forall sample: Sample generated "一张随机的、合乎 design.md §5.3 全部约束的图：二至四个组件，各有类型、操作、性质、具名观察、流程和实现它们的 Go 代码，有时带外部系统、实现接口的类型和继承"
+  forall sample: Sample generated "一张随机的、合乎 design.md §5.3 全部约束、尚未推导的图：二至四个组件（后两个可以嵌套），各有对象类型及其操作，有时另有记录、事件、错误、枚举或接口及实现接口的类型，各有一条带具名观察（有时带生成器）的性质和一个含调用、发送、发布和分支步骤的流程，以及实现它们的 Go 代码、生成文件中的测试和一个 Python 测试文件，第二个组件另有发布事件的函数和方法，有时带外部系统和类型之间的实现接口与继承"
   forall snapshot: graph.Graph generated "把 sample.fragment 加入一张新图并推导"
   forall declaredIds: list<string> generated "snapshot 中全部声明项和 depends 边的标识，不经 conform 取得"
   call conform(snapshot)
@@ -51,13 +51,13 @@ property accepts-conforming-graph postcondition "合乎约束的图推导、检�
   ensure all(id in declaredIds: id in result.statuses and result.statuses[id] == graph.Status.verified)
 }
 
-property rejects-broken-graph invariant "合乎约束的图做一处违反某条约束的改动之后，检查给出这条约束的诊断，诊断的 subject 是改动的节点或边，改动涉及的声明项的状态不再是 verified" {
+property rejects-broken-graph invariant "合乎约束的图做一处违反某条约束的改动之后，检查给出这条约束的、subject 为改动所在的节点或边的诊断，每条诊断都有 check. 开头的诊断码、subject、原因、修正和位置，这个 subject 有状态时不是 verified" {
   about conform
-  forall broken: Broken generated "一张随机的合乎约束的图，在随机的一处违反了 design.md §5.3 中的某条约束"
-  manual "需要把改动过的片段加入图并推导之后再检查，表达式不能构造图"
+  forall broken: Broken generated "与 accepts-conforming-graph 相同的随机图，在随机的一处做 43 种改动之一，各种改动机会相等，合起来涵盖 check 除运行证据之外的每个诊断码"
+  manual "需要判断每条诊断的码以 check. 开头，表达式没有字符串的前缀判断"
 }
 
-property stubs-stay-incomplete invariant "性质或流程绑定的谓词或生成器是骨架时，这条性质或这个流程的状态是 stub，其余声明项仍是 verified，它不再是骨架时全部为 verified" {
+property stubs-stay-incomplete invariant "性质或流程绑定的谓词或生成器是骨架时，检查没有诊断，这条性质或这个流程的状态是 stub、其余声明项仍是 verified，谓词或生成器不是骨架时检查没有诊断、全部声明项都是 verified" {
   about conform
   forall sample: Sample generated "与 accepts-conforming-graph 相同的随机图，其中每个函数的 stub 属性都为假"
   manual "需要逐个把谓词和生成器的 stub 属性改为真再改回，每次都推导和检查，表达式不能改动图"

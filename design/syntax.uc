@@ -51,7 +51,7 @@ op parseExpr(path: string, text: string) -> ExprParsed pure "解析单条表达�
 
 op exprText(expr: Expr) -> string pure "表达式的规范文本，其中的引用保持源文本的写法，不改写成绝对标识，以免与输入符号同名而改变含义"
 
-flow parse-entry-describes-outcome "用户直接调用 parse：没有诊断时语法树的路径和种类与输入相同，每条诊断都在输入路径上、行列不小于 1；与性质 parse-result-is-described 不同，这里不要求原因和修正不为空" {
+flow parse-entry-describes-outcome "用户直接调用 parse：没有诊断时语法树的路径和种类与输入相同，每条诊断都在输入路径上、行列不小于 1；与性质 parse-result-is-described 不同，本流程不要求原因和修正不为空" {
   forall path: string
   forall kind: FileKind
   forall src: bytes
@@ -69,7 +69,7 @@ flow parse-entry-describes-outcome "用户直接调用 parse：没有诊断时�
 
 property kind-of-follows-path invariant "kindOf 按 language.md §5.1 的分类由路径给出文件的种类，不是本语言源文件的路径得到 NotADesignFile" {
   about kindOf
-  forall path: string generated "相对路径：约四分之一取自固定的边界情形（只叫 .uc 的文件、扩展名大小写不同、含 .、.. 或空段、以 / 开头或结尾），其余由 design、corpus 或其他首段、零至两段目录和带各种扩展名的文件名拼成，其中约四分之一另插入 .、.. 或空段"
+  forall path: string generated "路径：约四分之一取自固定的边界情形（不在 design/ 下或嵌套的 system.uc、只有目录、只叫 .uc 的文件、扩展名大小写不同或相近、含 .、.. 或空段、以 / 开头或结尾），其余由 design、corpus 或其他首段和零至两段目录拼成，约六分之五再接带各种扩展名的文件名，其中约四分之一另插入 .、.. 或空段"
   manual "需要按 / 切分路径并检查每一段，表达式没有字符串切分"
   case system-file {
     path = "design/system.uc"
@@ -91,17 +91,17 @@ property kind-of-follows-path invariant "kindOf 按 language.md §5.1 的分类�
   }
 }
 
-property parse-is-total invariant "解析任何字节都正常返回而不 panic，每条诊断的位置都在文件之内、带修正办法，诊断按行、列和诊断码排序" {
+property parse-is-total invariant "解析任何字节都正常返回而不 panic：没有诊断时给出路径和种类与输入相同的语法树，有诊断时每条的诊断码形如 syntax.<名称>、原因和修正不为空、位置在输入路径的文件之内，并且诊断按行、列和诊断码排序" {
   about parse
   forall path: string generated "1 至 64 个任意字符、不超过 64 字节的路径"
   forall kind: FileKind generated "三种文件种类之一"
   forall src: bytes generated "不超过 4096 字节的输入，来自四种来源之一：任意字节，语法片段（含制表符、CR、NUL 和不完整的 UTF-8）的拼接，对合法文件做一至四处编辑（复制、删除、交换或插入行，或替换几个字节），或合法文件的截断"
-  manual "需要在调用 parse 时捕获 panic，表达式没有这种构造"
+  manual "需要按换行切分源字节，得出行数和每行的长度来判断诊断的位置在文件之内，表达式没有字节切分"
 }
 
 property format-is-stable relation "合法的文本 s 解析后打印得到 t：t 是规范格式，t 解析出的语法树与 s 的相同，t 再解析再打印仍是 t" {
   about parse, File.print
-  forall sample: Sample generated "一个合法的文件：约三分之一是 expression-format-is-stable 的含随机表达式的组件文件，其余是随机种类的随机语法树，以随意而合法的缩进、空格、空行、注释和数的写法写成文本"
+  forall sample: Sample generated "一个合法的文件：约三分之一是 expression-format-is-stable 的含随机表达式的组件文件，其余是随机种类、带随机注释的随机语法树，写成文本时随意取缩进、记号间和行尾的空格、空行、零至两个结尾换行、空的可选块是否写花括号、值是否在项之间换行和带结尾逗号，数的写法可带多余的前导零、小数末尾的零或写成 -0"
   manual "需要比较忽略位置的两棵语法树，表达式不能构造或比较语法树"
 }
 
@@ -115,13 +115,13 @@ property rejects-broken-text postcondition "合法的文件做一处违反某条
   ensure any(d in result.diagnostics: d.code == broken.code and d.position.line == broken.line and d.position.column == broken.column)
 }
 
-property expression-format-is-stable relation "ensure 是随机表达式的组件文件解析后打印，再解析得到相同的语法树、再打印得到相同的文本；与 expression-text-is-stable 不同，表达式经整份文件解析，不经 parseExpr" {
+property expression-format-is-stable relation "ensure 是随机表达式的组件文件解析后打印得到 t：t 是规范格式，t 解析出的语法树与原文件的相同，t 再解析再打印仍是 t；与 expression-text-is-stable 不同，表达式经整份文件解析，不经 parseExpr" {
   about parse, File.print
   forall sample: Sample generated "一份固定的组件文件，其中一条性质的 ensure 是至多四层嵌套的随机表达式，用到全部二元运算符、not、字段和下标访问、两个实参的调用、量化式、old、raised 和 failure，每个复合子表达式都带括号，表达式不必类型正确"
   manual "需要比较忽略位置的两棵语法树，表达式不能构造或比较语法树；谓词复用 format-is-stable 的手写谓词"
 }
 
-property contract-syntax-rejects-invalid-claims postcondition "黑盒契约或流程有一处违反 language.md 的 G0、G13、G15 至 G18 或 L6 时，解析在出错处的行列给出该规则的诊断" {
+property contract-syntax-rejects-invalid-claims postcondition "黑盒契约或流程有一处违反 language.md 的 G0、G13、G15 至 G18 或 L6 时，解析不给出语法树，并在出错处的行列给出所违反规则的诊断" {
   about parse
   forall broken: Broken generated "一条固定的黑盒契约，性质名随机，做十一种改动之一：删去 ensure 或 call，加上 manual、changes none、不是时长的 within 或带运算的 changes，符号改名为 size，== 两边去掉空格，改成以 alt 开头或没有步骤的流程，或改用 observation-syntax-rejects-malformed-paths 的一处改动；附应得的诊断码和行列"
   forall path: string generated "与 broken.kind 相符的一条固定路径"
@@ -131,9 +131,9 @@ property contract-syntax-rejects-invalid-claims postcondition "黑盒契约或�
   ensure any(d in result.diagnostics: d.code == broken.code and d.position.line == broken.line and d.position.column == broken.column)
 }
 
-property observation-syntax-rejects-malformed-paths postcondition "直接观察路径中有一段名称写成大驼峰或带短横线时，解析在这一段的行列给出 syntax.invalid-name" {
+property observation-syntax-rejects-malformed-paths postcondition "直接观察路径中有一段名称写成大驼峰或带短横线时，解析不给出语法树，并在这一段的行列给出 syntax.invalid-name" {
   about parse
-  forall broken: Broken generated "一至四条直接观察路径，每条一至五段小驼峰名称，其中一段换成大驼峰名称或带短横线的名称，附这一段的行列"
+  forall broken: Broken generated "一份固定的组件文件，其中黑盒契约的 observe 列出一至四条直接观察路径，每条一至五段小驼峰名称，其中一段换成大驼峰名称或带短横线的名称，附这一段的行列和诊断码 syntax.invalid-name"
   forall path: string generated "与 broken.kind 相符的一条固定路径"
   forall src: bytes generated "broken.text 的 UTF-8 字节"
   call parse(path, broken.kind, src)

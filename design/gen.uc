@@ -21,19 +21,19 @@ op write(root: string, edits: list<lang.Edit>) -> list<diag.Diagnostic> "先检�
 
 op checkFiles(root: string, edits: list<lang.Edit>) -> list<diag.Diagnostic> "只读地检查生成计划的路径和生成标记，逐字节核对全部文件，缺失或内容不同时给出诊断，不跟随符号链接，也不创建或改写文件"
 
-property write-preserves-unowned-files invariant "write 只改写生成计划中带生成标记的文件：任何一个目标不安全时不写任何文件，同一份生成计划写两次结果不变，其中 createOnly 的文件第二次报冲突且不被改动" {
+property write-preserves-unowned-files invariant "write 把安全的生成计划的每个目标写成计划中的内容，不给诊断，只改写带生成标记的文件并保留其权限，任何一个目标不安全时给出带位置、原因和修正的诊断而不写任何文件，同一份生成计划写两次结果不变，其中有 createOnly 的文件时第二次报冲突" {
   about write
   forall sample: WriteSample generated "一棵含一个带生成标记的文件和一个不带的文件的树，以及新建一个文件的生成计划，十三种情形之一：三种安全（只新建，另改写带生成标记的文件，新建的文件为 createOnly），十种冲突（改写不带生成标记的文件、越出仓库、同一目标两次、经过文件或目录的符号链接、含 . 段、目标是另一目标的父目录、空路径、对已有的文件 createOnly）"
   manual "需要在临时目录中写出文件树和符号链接，表达式不能读写文件"
 }
 
-property plan-follows-language-roots invariant "plan 只调用系统文件中配置的语言的后端，各一次，传入该语言的源码根目录和同一张图；同一语言有两个后端、后端没有生成能力或两份生成计划写同一路径时给出诊断" {
+property plan-follows-language-roots invariant "plan 只调用系统文件中配置的语言的后端，各一次，传入仓库根目录、这种语言的源码根目录和同一张图，返回按路径排序的各后端文件和合并的诊断，不写任何文件；同一语言有两个后端或后端没有生成能力时给出诊断" {
   about plan
-  forall sample: PlanSample generated "只有系统节点的图，go 和 python 各有一半机会配置一至三个源码根目录，以及三种语言（含一种未配置的）的后端替身，各预先给出零至三个文件，一半另带一条诊断"
+  forall sample: PlanSample generated "只有系统节点的图，go 和 python 各有一半机会配置一至三个源码根目录，以及 go、python 和一种未配置的语言各自的生成计划：零至三个路径互不相同、内容任意的文件，一半另带一条诊断"
   manual "需要用记录调用的后端替身观察 plan 调用了哪些后端和传入的参数，表达式不能记录调用"
 }
 
-property check-files-are-current invariant "checkFiles 对 write 拒绝的生成计划同样报错，全部目标存在且内容逐字节相同时通过，缺失或不同时报 gen.stale-file，检查前后文件、目录和链接都不变" {
+property check-files-are-current invariant "checkFiles 对 write 拒绝的生成计划给出与 write 相同的诊断，对其余生成计划，每个缺失或内容不同的目标各报一条 gen.stale-file，全部目标逐字节相同时通过，含 createOnly 的生成计划在写出之后报错，检查前后文件、目录和链接都不变" {
   about checkFiles
   forall sample: WriteSample generated "与 write-preserves-unowned-files 相同的文件树和生成计划"
   manual "需要在临时目录中写出文件树，比较检查前后的内容、权限、修改时间和链接，表达式不能读写文件"

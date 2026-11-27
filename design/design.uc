@@ -50,45 +50,45 @@ property accepts-valid-design invariant "合法的设计载入后没有诊断，
   manual "需要把源文本解析成语法树再载入，表达式不能解析文本"
 }
 
-property rejects-broken-design invariant "合法的设计做一处违反某条约束的改动之后，载入在改动所在的文件和行给出这条约束的诊断" {
+property rejects-broken-design invariant "合法的设计做一处违反某条约束的改动之后，载入在改动所在的文件和行给出这条约束的诊断，并且每条诊断都有 design.<名称> 形式的诊断码、subject、原因和修正，除 design.missing-system-file 外都位于给出的文件之内" {
   about load
-  forall broken: Broken generated "一组随机的合法文件，在随机的一处做了违反 model.md §10 或 language.md 中某条只需设计就能判断的规则的改动；约三分之一是 contract-rejects-invalid-relations 的改动"
+  forall broken: Broken generated "一组含固定骨架的随机合法文件，等概率取三十四个诊断码之一，多在骨架上做一处违反对应约束的改动，附改动所在的路径、行和诊断码；约三分之一改用 contract-rejects-invalid-relations 的改动"
   manual "需要把源文本解析成语法树再载入，表达式不能解析文本"
 }
 
-property load-ignores-file-order relation "同一组文件以任何次序给出，载入得到的设计层的图和诊断都相同" {
+property load-ignores-file-order relation "同一组文件按路径排序和把排序结果轮转 rotation 位之后各载入一次，得到的设计层的图编码相同、诊断相同" {
   about load
-  forall files: map<string, string> generated "一组随机的文件：一半合法，含黑盒契约，一半带一处违反约束的改动"
+  forall files: map<string, string> generated "一组随机的文件：一半是 accepts-valid-design 取的合法设计，一半是 rejects-broken-design 取的带一处违规改动的设计，两者都约有三分之一是黑盒契约"
   forall rotation: int
   where rotation in 0..1000
   manual "需要把同一组文件排成两种次序的列表各载入一次，表达式不能构造列表的排列"
 }
 
-property contract-graph-is-declared invariant "合法的黑盒契约载入后，性质带 symbols、limits、observe、requires、changes、call 和 ensure 属性，具名观察成为带 type 和 inputs 的 observation 节点，子句引用的类型和操作成为带 clauses 和 paths 属性的 refers 边" {
+property contract-graph-is-declared invariant "合法的黑盒契约载入后没有诊断，节点和边恰是列出的那些，性质的 symbols、limits、observe、requires、changes、call 和 ensure 属性逐条保留子句，具名观察成为带 type 和 inputs 的 observation 节点，子句引用的类型和操作成为带 clauses 属性的 refers 边，子句访问了字段时边另带 paths 属性" {
   about load
-  forall sample: Sample generated "一个含完整黑盒契约的组件文件：组件名称和金额区间的上下界随机，契约有直接观察路径、具名观察、两条前提、两条变化路径和六条 ensure，附预期的节点、边和属性"
+  forall sample: Sample generated "一个固定的系统文件和一个含完整黑盒契约的组件文件：组件名称取 domain0 至 domain9999，金额区间的下界取 1 至 100、上界取下界至 1000，契约有直接观察路径、具名观察、两条前提、两条变化路径和六条 ensure，附预期的节点、边和属性"
   manual "谓词复用 accepts-valid-design 的手写谓词，它需要把源文本解析成语法树，表达式不能解析文本"
 }
 
-property returned-value-contract-is-declared invariant "ensure 中可以访问被测调用返回值 result 的字段和纯操作，载入后性质的 call 属性保留这次调用，result 上访问的类型和操作成为 refers 边" {
+property returned-value-contract-is-declared invariant "ensure 访问被测调用返回值 result 的字段和纯操作的黑盒契约载入后没有诊断，节点和边恰是列出的那些，性质的 symbols、call 和 ensure 属性保留子句，result 上访问的类型和操作成为带 clauses 属性的 refers 边，访问的字段记在 paths 属性中" {
   about load
-  forall sample: Sample generated "一个组件名称随机的组件文件，其中的黑盒契约调用 make，并在 ensure 中访问 result.amount() 和 result.value，附预期的节点、边和属性"
+  forall sample: Sample generated "一个固定的系统文件和一个组件文件，组件名称取 result0 至 result9999，其中的黑盒契约调用 make，并在 ensure 中访问 result.amount() 和 result.value，附预期的节点、边和属性"
   manual "谓词复用 accepts-valid-design 的手写谓词，它需要把源文本解析成语法树，表达式不能解析文本"
 }
 
-property contract-rejects-invalid-relations invariant "黑盒契约的前提、变化路径、具名观察、about、调用序列或表达式有一处不合规则时，载入在出错的行给出对应的诊断" {
+property contract-rejects-invalid-relations invariant "黑盒契约的前提、变化路径、具名观察、about、调用序列或表达式有一处不合规则时，载入在出错的文件和行给出对应的诊断，并且每条诊断都有 design.<名称> 形式的诊断码、subject、原因、修正和文件内的位置" {
   about load
-  forall broken: Broken generated "一条固定的黑盒契约做十三种文本替换之一：前提类型不符或用到 result，changes 改成观察范围之外的路径，具名观察的 from 缺失、重复或类型是调用，about 不含被测的操作，多一个调用序列，被测调用或 ensure 的类型不符或误用 old；附应得的诊断码和行，about 与调用序列的改动落在 call 一行"
+  forall broken: Broken generated "一条固定的黑盒契约做十三种文本替换之一：前提类型不符或用到 result，changes 改成观察范围之外的路径，具名观察的 from 列出未声明或重复的符号、观察类型是调用，about 不含被测的操作，多一个调用序列，被测调用的实参类型不符，ensure 调用非纯操作、对整数取下标、误用 old 或约束变量与符号同名；附应得的诊断码和行，about 与调用序列的改动落在 call 一行"
   manual "谓词复用 rejects-broken-design 的手写谓词，它需要把源文本解析成语法树，表达式不能解析文本"
 }
 
-property reply-scripts-are-typed invariant "应答脚本合乎 model.md §10 第 23、26 条时载入没有诊断，有一处不合时载入给出 design.invalid-replies-type 或 design.value-type-mismatch" {
+property reply-scripts-are-typed invariant "应答脚本合乎 model.md §10 第 23、26 条时载入没有诊断，有一处不合时载入给出 design.invalid-replies-type 或 design.value-type-mismatch，每条诊断都有 design.<名称> 形式的诊断码、subject、原因、修正和文件内的位置" {
   about load
   forall sample: ReplySample generated "一至五项应答的脚本，在固定的设计上做十三种改动之一：不改或改用子类型的错误（这两种合法），或者目标不是外部系统的操作、脚本为空、返回值或错误不合、缺字段、同一目标两个脚本、replies 嵌在 list 或操作签名中、接口字段缺操作或应答类型不合、一项同时有 returns 和 raises"
   manual "需要按改动拼出设计文件的文本再解析和载入，表达式不能构造或解析文本"
 }
 
-property inheritance-members-are-resolved invariant "继承的字段和操作按 language.md §4.4 的查找规则解析：在表达式、限定、用例和调用序列中都能访问，子类型的同名成员遮蔽父类型的，调用序列以引用的具体类型为接收者，用例给出记录的值时含继承的字段" {
+property inheritance-members-are-resolved invariant "继承的字段和操作按 language.md §4.4 的查找规则解析：在表达式、限定、用例和调用序列中都能访问，子类型的同名成员遮蔽父类型的，调用序列引用类型时以这个类型为接收者、引用操作时以声明操作的类型为接收者，用例给出记录的值时必须含继承的字段，继承对象类型的枚举和接口不暴露字段，图中类型的 fields 属性只列自己声明的字段，每条诊断都有 design.<名称> 形式的诊断码、subject、原因、修正和文件内的位置" {
   about load
   forall sample: InheritanceSample generated "父类型字段的值取 -20 至 20 的任意整数，overridden 决定子类型是否另声明同名的字段和操作来遮蔽父类型的"
   manual "需要按 sample 拼出设计文件的文本再解析和载入，表达式不能构造或解析文本"

@@ -49,27 +49,27 @@ op slice(g: graph.Graph, ids: list<string>, expand: list<string>) -> Context rai
 
 op impact(g: graph.Graph, ids: list<string>) -> list<Affected> raises NotFound "ids 中变更的节点影响到的显著节点（design.md §7.4）"
 
-property slice-is-minimal-context invariant "切片与按 design.md §7.3 的定义直接算出的相同：输入节点、祖先链、一步可达的显著节点、按种类补充的节点、细节节点的个数和 contains 边" {
+property slice-is-minimal-context invariant "切片与按 design.md §7.3 的定义直接算出的相同：输入节点、祖先链、一步可达的显著或展开的节点、按种类补充的显著或展开的节点、未展开的细节节点的个数，以及两端都在切片中的 contains 边" {
   about slice
-  forall question: Question generated "一张随机的图，输入节点和展开的标识取自图中的节点，约一半的第一个输入节点是操作、性质、观察或流程"
-  manual "需要按定义沿图的边另行算出切片再比较，表达式不能遍历图的边"
+  forall question: Question generated "一张随机的图（一至十二个任意种类、约一半显著的节点，标识是 a、b、. 和汉字“中”组成的一至四个字符，约四分之三挂在可以包含其种类的先前节点下，另有指向类型的 refers 边和零至二十四条多取模型中相应种类的任意边，可有自环和环，部分性质带具名观察和适配器），一至三个输入标识和零至三个展开的标识，都取自图中的节点、可以重复，图中有操作、性质、观察或流程时约一半把第一个输入标识换成其中之一"
+  manual "需要沿 contains 和 refers 边反复扩展到不再增加，表达式没有递归或不定次的迭代"
 }
 
-property impact-is-reverse-reachability relation "影响恰是按 design.md §7.4 的传播规则能到达输入节点的显著节点，每个节点附一条由图中原边首尾相接组成的最短路径" {
+property impact-is-reverse-reachability relation "影响恰是按 design.md §7.4 的传播规则（另沿 publishes 双向传播）能到达输入节点的、输入节点之外的显著节点，按种类分组、组内按标识排序，每个节点附一条由图中原边首尾相接、通到某个输入节点的最短路径" {
   about impact
-  forall question: Question generated "一张随机的图，一至三个输入节点取自图中的节点"
-  manual "需要逐层遍历图算出最短距离，表达式不能遍历图的边"
+  forall question: Question generated "一张随机的图（一至十二个任意种类、约一半显著的节点，标识是 a、b、. 和汉字“中”组成的一至四个字符，约四分之三挂在可以包含其种类的先前节点下，另有指向类型的 refers 边和零至二十四条多取模型中相应种类的任意边，可有自环和环，部分性质带具名观察和适配器），以及取自图中节点、可以重复的一至三个输入标识"
+  manual "需要逐层扩展求出到输入节点的最短距离，表达式没有递归或不定次的迭代"
 }
 
-property get-shows-incident-edges invariant "get 给出的出边和入边恰是起点和终点为该节点的边，refs 恰是终点为它的边，不存在的标识得到 NotFound" {
+property get-shows-incident-edges invariant "get 按标识给出图中的节点，出边和入边恰是以这个节点为起点和为终点的边，refs 恰是以它为终点的边，get 和 refs 对图中没有的标识都抛出带这个标识的 NotFound" {
   about get, refs
-  forall question: Question generated "一张随机的图，一至四个标识，约三分之一换成图中没有的标识"
-  manual "需要按起点和终点筛选图中的全部边，表达式不能遍历图的边"
+  forall question: Question generated "一张随机的图（一至十二个任意种类、约一半显著的节点，标识是 a、b、. 和汉字“中”组成的一至四个字符，约四分之三挂在可以包含其种类的先前节点下，另有指向类型的 refers 边和零至二十四条多取模型中相应种类的任意边，可有自环和环，部分性质带具名观察和适配器），以及一至四个标识，各约三分之一换成以 ? 开头、图中没有的标识"
+  manual "需要对多个标识各调用一次不纯的 get 和 refs，表达式只有一次被测调用"
 }
 
-property search-matches-text invariant "搜索的结果恰是标识或摘要包含这段文字、种类与 kind 相符（给出时）的节点" {
+property search-matches-text invariant "search 的结果恰是标识或摘要包含所给文字、种类与 kind 相符（给出时）的节点，按标识排序" {
   about search
-  forall question: Question generated "一张随机的图，以及零至四个字符的文字，约一半取自某个节点的标识或摘要"
+  forall question: Question generated "一张随机的图（一至十二个任意种类、约一半显著的节点，标识是 a、b、. 和汉字“中”组成的一至四个字符，约四分之三挂在可以包含其种类的先前节点下，另有指向类型的 refers 边和零至二十四条多取模型中相应种类的任意边，可有自环和环，部分性质带具名观察和适配器），以及一段文字：约一半是某个节点的标识或摘要中连续的一段（可以为空），其余是 a、b、. 和汉字“中”组成的零至四个字符"
   forall kind: optional<graph.NodeKind> generated "一半没有种类，另一半是十二种节点种类之一"
   manual "需要判断一段文字是否包含另一段，表达式没有字符串的子串操作"
 }
