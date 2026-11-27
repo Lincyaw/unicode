@@ -89,6 +89,9 @@ func (l *loader) typeOf(from, scope *entity, expr syntax.TypeExpr) *typ {
 	case *syntax.RepliesType:
 		r := x.Target
 		target := l.refer(from, scope, r.Segments, r.Pos, acceptOp)
+		if from.kind != graph.NodeKindProperty && from.kind != graph.NodeKindFlow {
+			l.report(from.file, r.Pos, "design.invalid-replies-type", from.id, "a replies type is only a direct property or flow input", "declare a forall symbol with replies<external.operation>")
+		}
 		if target != nil && !target.parent.is(graph.NodeKindActor, "external") {
 			l.report(from.file, r.Pos, "design.invalid-replies-type", from.id, "a replies type must name an operation directly provided by an external system", "name one external operation in replies<external.operation>")
 		}

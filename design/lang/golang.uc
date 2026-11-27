@@ -110,7 +110,7 @@ property scripted-doubles-follow-inputs invariant "接口及外部客户端的�
   manual "需要构造实际原生接口和客户端安装器，记录调用及清理并比较脚本的独立预期值"
 }
 
-property implementation-content-is-normalized invariant "函数体与类型声明的规范内容忽略排版、注释及源码位置；只改实际函数体包括闭包时，操作的内容哈希改变，依赖它的检查可以被增量选择" {
+property implementation-content-is-normalized invariant "函数体与类型声明的规范内容忽略排版、注释及源码位置；只改实际函数体包括闭包、接收者或原生声明头时，操作的内容哈希改变，依赖它的检查可以被增量选择" {
   about Backend
   forall sample: BodySample generated "有符号整数与是否改变函数返回表达式、注释及空行的组合"
   manual "需要解析和抽取实际 Go AST，比较规范内容与图的哈希，而非手写预期格式"

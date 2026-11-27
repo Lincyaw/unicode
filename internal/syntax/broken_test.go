@@ -788,9 +788,10 @@ func unterminated(t *rapid.T) *rawLines {
 	return rawAt(0, len(word)+1, word+` "`+plain.Draw(t, "text"))
 }
 
-// A character that no token holds, outside strings and comments.
+// A character that no token holds, outside strings and comments: + - * / are
+// punctuation of expressions, and ! starts only !=.
 func strayCharacter(t *rapid.T) *rawLines {
-	c := rapid.SampledFrom([]string{"@", "#", "$", "%", "&", "*", "!", "?", ";", "~", "^", "|", "+", "_", "'", "`", `\`, "中", "é", " ", "　"}).Draw(t, "char")
+	c := rapid.SampledFrom([]string{"@", "#", "$", "%", "&", "!", "?", ";", "~", "^", "|", "_", "'", "`", `\`, "中", "é", " ", "　"}).Draw(t, "char")
 	word := words.Draw(t, "word")
 	return rawAt(0, len(word)+1, word+" "+c+" "+words.Draw(t, "word"))
 }

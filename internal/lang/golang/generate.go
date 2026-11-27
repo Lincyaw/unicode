@@ -78,11 +78,14 @@ func (b *Backend) Generate(plan lang.GenPlan) lang.Generation {
 	if plan.Graph == nil {
 		return lang.Generation{Diagnostics: []diag.Diagnostic{{Code: "lang.golang.invalid-plan", Position: diag.Position{Path: "design/system.uc", Line: 1, Column: 1}, Message: "the generation plan has no graph", Fix: "build and link the graph before generating Go contracts"}}}
 	}
-	var err error
-	c.loaded, err = loadForGeneration(plan.Root, plan.Roots)
-	if err != nil {
-		return lang.Generation{Diagnostics: []diag.Diagnostic{{Code: "lang.golang.generate-failed", Position: diag.Position{Path: "design/system.uc", Line: 1, Column: 1}, Message: err.Error(), Fix: "make the configured Go packages load before generation"}}}
+	var skeletons []lang.Edit
+	var preparationDiagnostics []diag.Diagnostic
+	plan, c.loaded, skeletons, preparationDiagnostics = prepareSkeletons(plan)
+	if len(preparationDiagnostics) > 0 {
+		return lang.Generation{Diagnostics: preparationDiagnostics}
 	}
+	c.plan = plan
+
 	for _, p := range c.loaded.packages {
 		for _, obj := range p.TypesInfo.Defs {
 			switch obj := obj.(type) {
@@ -127,7 +130,7 @@ func (b *Backend) Generate(plan lang.GenPlan) lang.Generation {
 		}
 		files[key].units = append(files[key].units, unit)
 	}
-	generation := lang.Generation{}
+	generation := lang.Generation{Edits: skeletons}
 	outputs := map[string]bool{}
 	for _, key := range slices.Sorted(maps.Keys(files)) {
 		file := files[key]
@@ -158,6 +161,11 @@ func (b *Backend) Generate(plan lang.GenPlan) lang.Generation {
 	}
 	slices.SortFunc(generation.Edits, func(a, b lang.Edit) int { return strings.Compare(a.Path, b.Path) })
 	generation.Diagnostics = c.diagnostics
+	if len(generation.Diagnostics) == 0 && len(generation.Edits) > 0 {
+		if _, err := loadPlannedGo(plan, generation.Edits, false); err != nil {
+			generation.Diagnostics = append(generation.Diagnostics, runDiagnostic("lang.golang.generate-failed", err.Error(), "correct source bindings or unsupported native signatures before writing the generation plan"))
+		}
+	}
 	return generation
 }
 func (c *contractCompiler) diagnostic(n graph.Node, code, message, fix string) {

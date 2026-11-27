@@ -216,6 +216,7 @@ func objectOf(c *comp) string {
 // genSample draws a conforming graph.
 //
 //uc:generates check.accepts-conforming-graph.sample
+//uc:generates check.stubs-stay-incomplete.sample
 func genSample() *rapid.Generator[Sample] {
 	return rapid.Custom(func(t *rapid.T) Sample { return Sample{Fragment: newWorld(t).f} })
 }

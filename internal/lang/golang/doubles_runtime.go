@@ -48,7 +48,7 @@ func ucDrawReplies(t *rapid.T, op ucReplyOperation, types map[string]ucType, lim
 	}
 	n := rapid.IntRange(minSize, maxSize).Draw(t, path+".size")
 	script := make([]map[string]any, n)
-	ids := slices.Sorted(slices.Values(mapKeysReply(op.Errors)))
+	ids := slices.Sorted(slices.Values(ucMapKeysReply(op.Errors)))
 	for i := range script {
 		choice := rapid.IntRange(0, len(ids)).Draw(t, path+".response")
 		if choice == 0 {
@@ -64,7 +64,7 @@ func ucDrawReplies(t *rapid.T, op ucReplyOperation, types map[string]ucType, lim
 	}
 	return script
 }
-func mapKeysReply(m map[string]reflect.Type) []string {
+func ucMapKeysReply(m map[string]reflect.Type) []string {
 	var keys []string
 	for k := range m {
 		keys = append(keys, k)
@@ -89,7 +89,7 @@ func ucDrawDouble(t *rapid.T, typ reflect.Type, model string, types map[string]u
 		return out, true
 	}
 	scripts := map[string][]map[string]any{}
-	for _, key := range slices.Sorted(slices.Values(mapKeysReplyOperations(factory.Operations))) {
+	for _, key := range slices.Sorted(slices.Values(ucMapKeysReplyOperations(factory.Operations))) {
 		scripts[key] = ucDrawReplies(t, factory.Operations[key], types, nil, path+"."+key, depth)
 	}
 	value := factory.New(scripts)
@@ -97,7 +97,7 @@ func ucDrawDouble(t *rapid.T, typ reflect.Type, model string, types map[string]u
 	out.Set(value)
 	return out, true
 }
-func mapKeysReplyOperations(m map[string]ucReplyOperation) []string {
+func ucMapKeysReplyOperations(m map[string]ucReplyOperation) []string {
 	var keys []string
 	for k := range m {
 		keys = append(keys, k)
@@ -126,7 +126,7 @@ func ucReplyValues(op ucReplyOperation, reply map[string]any, types map[string]u
 				}
 			}
 			if value != nil {
-				results[0] = ucNative(ucDetach(ucNormalize(reflect.ValueOf(value), op.Result, types)), op.Signature.Out(0))
+				results[0] = ucAdaptReply(reflect.ValueOf(value), op.Signature.Out(0), op.Result, types)
 			}
 		}
 		return results
@@ -139,9 +139,93 @@ func ucReplyValues(op ucReplyOperation, reply map[string]any, types map[string]u
 	if len(results) == 0 || !op.Signature.Out(len(results)-1).Implements(reflect.TypeFor[error]()) {
 		ucFail("lang.golang.input-outside-domain", "this operation cannot return an error", nil)
 	}
-	value := ucNative(ucDetach(ucNormalize(reflect.ValueOf(reply["fields"]), id, types)), native)
-	results[len(results)-1] = value
+	value := ucAdaptReply(reflect.ValueOf(reply["fields"]), native, id, types)
+	target := reflect.New(op.Signature.Out(len(results) - 1)).Elem()
+	target.Set(value)
+	results[len(results)-1] = target
 	return results
+}
+
+// Reply inputs are copied as native values, rather than observation snapshots:
+// unlike snapshots they may contain scripted interface fields. A fresh double
+// always starts at the first response, and callers cannot change saved inputs.
+func ucAdaptReply(v reflect.Value, target reflect.Type, model string, types map[string]ucType) reflect.Value {
+	if !v.IsValid() {
+		return reflect.Zero(target)
+	}
+	if !v.Type().AssignableTo(target) {
+		return ucNative(ucDetach(ucNormalize(v, model, types)), target)
+	}
+	return ucCloneReply(v, map[ucReplyPointer]reflect.Value{})
+}
+
+type ucReplyPointer struct {
+	typ     reflect.Type
+	pointer uintptr
+}
+
+func ucCloneReply(v reflect.Value, seen map[ucReplyPointer]reflect.Value) reflect.Value {
+	if !v.IsValid() {
+		return v
+	}
+	if v.CanInterface() {
+		if double, ok := v.Interface().(interface{ _unicodeCloneDouble() reflect.Value }); ok {
+			return double._unicodeCloneDouble()
+		}
+	}
+	out := reflect.New(v.Type()).Elem()
+	switch v.Kind() {
+	case reflect.Interface:
+		if !v.IsNil() {
+			out.Set(ucCloneReply(v.Elem(), seen))
+		}
+	case reflect.Pointer:
+		if v.IsNil() {
+			return out
+		}
+		key := ucReplyPointer{v.Type(), v.Pointer()}
+		if prior := seen[key]; prior.IsValid() {
+			return prior
+		}
+		out.Set(reflect.New(v.Type().Elem()))
+		seen[key] = out
+		out.Elem().Set(ucCloneReply(v.Elem(), seen))
+	case reflect.Map:
+		if v.IsNil() {
+			return out
+		}
+		key := ucReplyPointer{v.Type(), v.Pointer()}
+		if prior := seen[key]; prior.IsValid() {
+			return prior
+		}
+		out.Set(reflect.MakeMap(v.Type()))
+		seen[key] = out
+		for _, k := range v.MapKeys() {
+			out.SetMapIndex(ucCloneReply(k, seen), ucCloneReply(v.MapIndex(k), seen))
+		}
+	case reflect.Slice:
+		if v.IsNil() {
+			return out
+		}
+		out.Set(reflect.MakeSlice(v.Type(), v.Len(), v.Len()))
+		for i := 0; i < v.Len(); i++ {
+			out.Index(i).Set(ucCloneReply(v.Index(i), seen))
+		}
+	case reflect.Array:
+		for i := 0; i < v.Len(); i++ {
+			out.Index(i).Set(ucCloneReply(v.Index(i), seen))
+		}
+	case reflect.Struct:
+		out.Set(v)
+		for i := 0; i < v.NumField(); i++ {
+			if out.Field(i).CanSet() && v.Field(i).CanInterface() {
+				out.Field(i).Set(ucCloneReply(v.Field(i), seen))
+			}
+		}
+	default:
+		out.Set(v)
+	}
+	return out
 }
 
 func ucInstallDoubles(s *ucContract, inputs map[string]reflect.Value) func() {

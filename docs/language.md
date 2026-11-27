@@ -155,12 +155,12 @@ NL            = 换行 { 换行 } .
 
 **性质的陈述**
 
-- **G12** `manual` 的字符串写明这条性质为什么不能写成表达式，并遵守 L4。
+- **G12** `manual` 的字符串写明这条性质或流程为什么需要手写谓词，并遵守 L4。
 - **G13** 形式为 `postcondition` 且带 `ensure` 或 `within` 的性质恰有一条 `call` 子句，它调用的操作在 `about` 中；其他形式的性质没有 `call` 子句。`within` 只出现在带 `call` 子句的性质和流程中，它的字符串是一个 `duration` 的值（§3.1）。
 - **G14** 带 `ensure` 的性质至多有一个类型为 `list<call<R1, …, Rk>>` 的符号。有这样的符号时，R1, …, Rk 中的操作都属于同一个类型 T，性质恰有一个类型为 T 的符号，并且没有 `call` 子句。形式为 `transition` 且带 `ensure` 的性质必须有这样的符号。
 - **G15** 表达式的关键字（`implies`、`or`、`and`、`not`、`in`、`old`、`raised`、`failure`、`result`、`all`、`any`、`count`、`sum`、`size`）不能用作符号、具名观察、约束变量，以及容器或外部系统直接提供的操作的名称。
 - **G16** 表达式中二元运算符的两边各有一个空格。`a-b` 是一个短横线名称，`a -1` 是一个名称之后跟一个负数，都不是减法。
-- **G17** 带 `ensure` 或 `within` 的流程，第一个步骤是一个调用。
+- **G17** 自动流程的第一个步骤是同步调用；人工流程保留步骤描述，由有理由的手写谓词执行边界。
 - **G18** `observe` 和 `changes` 成对出现，只用于带 `call`、不带 `manual` 的 `postcondition`。`observe none` 独占观察组，且对应 `changes none`；省略这两组时只检查原有陈述，不产生范围保护的结论。
 - **G19** 直接观察路径从输入符号出发，只访问字段；具名观察的 `from` 恰列出适配器接收的输入符号，次序固定，名称不重复。具名观察不依赖其他观察，名称与本性质的符号、观察和用例互不相同。
 - **G20** `requires` 的类型是 `bool`，只引用输入符号、调用前观察值、枚举和纯操作，不使用 `old`、`result`、`raised` 或 `failure`。多条前提按文本次序求值，前一条为假就停止。
@@ -194,6 +194,8 @@ NL            = 换行 { 换行 } .
 | `optional<T>` | `none` 或 T 的值 |
 | `record`、`object`、`event` | `{field: v, …}`，给出全部字段 |
 | `call<…>` | `操作名(参数: v, …)`，给出全部参数，例如 `reserve(items: [])` |
+| `replies<外部操作>` | 非空应答列表，每项恰为 `{returns: 值}` 或 `{raises: "绝对错误标识", fields: {字段…}}`；无返回值成功写 `none` |
+| 接口字段 | `{操作名: 应答列表, …}`，给出包括继承操作在内的全部非空应答脚本 |
 
 ## 4 语义
 
@@ -280,7 +282,7 @@ NL            = 换行 { 换行 } .
 | 不带小数点的数；带小数点的数；字符串；`true`、`false` | — | `int`；`float`；`string`；`bool` |
 | `none` | 与 `optional<T>` 的值比较 | `optional<T>` |
 | `T.v` | T 是 `enum`，v 是它的枚举值 | T |
-| `e.f` | e : R，R 是 `record`、`object`、`event` 或 `error`，f 是 R 中写出的字段 | f 的类型 |
+| `e.f` | e : R，R 是 `record`、`object`、`event` 或 `error`，f 是 R 本身或经 `extends` 继承的字段 | f 的类型 |
 | `e.o(a1, …)` | e : R，o 是 R 的操作，声明为 `pure`，有返回值，实参的类型与参数一一相同 | o 的返回类型 |
 | `o(a1, …)` | o 是容器或外部系统直接提供的操作，其余同上 | o 的返回类型 |
 | `size(e)` | e 为 `list`、`set`、`map`、`string` 或 `bytes` | `int` |
@@ -299,6 +301,8 @@ NL            = 换行 { 换行 } .
 | `failure(E)` | 与 `raised(E)` 相同；仅匹配的错误返回时有值 | E，只暴露 E 声明的字段 |
 
 类型为 `optional<T>` 的表达式可以用在需要 T 的地方。`int` 与 `float` 不互相转换，与 `float` 比较的常数写作 `0.0`。`ensure` 的类型为 `bool`。
+
+字段与操作先在本类型查找，再沿 `extends` 向上查找；本类型的同名成员遮蔽父成员。记录用例给出解析后可见的全部字段，限定和表达式使用同一查找规则。`call<T>` 包含 T 的可见操作，继承操作仍调用其实际落实；这类类型引用的序列以 T 为接收者类型，直接操作引用则以其声明的所属类型为接收者类型。
 
 **被测的调用**是性质的 `call` 子句，或流程的第一个步骤。`call` 子句写作 `e.o(a1, …)` 或 `o(a1, …)`：o 可以不是纯操作，可以没有返回值；e 是输入符号，或从输入符号出发的字段访问；接收者和实参不依赖具名观察，也不使用 `old`、`result`、`raised` 或 `failure`。
 
@@ -384,14 +388,14 @@ NL            = 换行 { 换行 } .
 
 ## 6 绑定
 
-绑定写在代码中声明的正上方，参数都是字面量，语言后端不执行代码也能读出。绑定有四种：
+绑定写在代码中声明的正上方，参数都是字面量，语言后端不执行代码也能读出。绑定有五种：
 
 - **`realizes <标识>`**：写在类型或自由函数上，表示它落实这个类型，或容器、外部系统直接提供的这个操作。落实外部系统的操作的，是调用该外部系统的客户端函数。方法上不写绑定；方法按名称映射对应到它所在类型落实的那个类型的操作（[design.md](design.md) §4）。
 - **`checks <标识>`**：写在谓词上，表示它检查这条性质或这个流程。谓词的参数就是性质或流程的符号；驱动由 `gen` 生成（[design.md](design.md) §6.2）。一个函数至多带一个 `checks`。
 - **`generates <标识>`**：写在生成器函数上，标识是性质或流程的标识后接 `.` 和一个生成的符号的名称，表示它给出这个符号的生成器。同一个生成器可以用于几个符号，每个符号写一行 `generates`。
 - **`observes <标识>`**：写在只读的观察适配器自由函数上，指向性质内的具名观察。参数按 `from` 的次序，返回快照；Go 可以另带末尾的 `error`，Python 抛出的异常也属于观察失败。这些失败是检查环境错误，不是被测操作的业务错误。
 
-- **`substitutes <标识>`**：写在外部客户端的替身安装自由函数上。目标是外部直接操作；Go 参数是与真实客户端完全同签名的函数，唯一返回值是清理函数 `func()`。脚本通过 `forall answers: replies<外部操作>` 提供；接口字段按操作名给出同形脚本。每项应答是 `{returns: 值}` 或 `{raises: "绝对错误标识", fields: {…}}`，无返回值的成功值为 `none`；脚本非空，末项重复。类型、声明错误及字段均在设计载入时检查。
+- **`substitutes <标识>`**：写在外部客户端的替身安装自由函数上。目标是外部直接操作；Go 参数是与真实客户端完全同签名的函数，唯一返回值是清理函数 `func()`。脚本通过 `forall answers: replies<外部操作>` 提供；`replies` 只作符号的直接类型，同一检查每个目标至多一个脚本；接口字段按操作名给出同形脚本。每项应答是 `{returns: 值}` 或 `{raises: "绝对错误标识", fields: {…}}`，无返回值的成功值为 `none`；脚本非空，末项重复。类型、声明错误及字段均在设计载入时检查。
 
 - **B1** 绑定的动词只有 `realizes`、`checks`、`generates`、`observes` 和 `substitutes`，后接一个空格和一个设计标识；`generates` 指向生成的符号，`observes` 指向具名观察。
 - **B2** 绑定写在类型或函数的文档注释中，独占一行；`checks`、`generates` 只写在函数上，`observes` 和 `substitutes` 只写在自由函数上。
@@ -817,7 +821,7 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 | E12 | `lang.golang.undeclared-error`、`lang.golang.ensure-failed`、`lang.golang.expression-failed`；流程入口与后置陈述由生成驱动执行，内部轨迹核对属于 M6 | `lang.golang.executes-contracts` |
 | E13 | `lang.golang.undeclared-error`、`lang.golang.ensure-failed`、`lang.golang.expression-failed` | `lang.golang.executes-contracts` |
 | E14 | `lang.golang.ensure-failed`、`lang.golang.predicate-failed` | `lang.golang.executes-contracts` |
-| E15 | `lang.golang.ensure-failed`、`lang.golang.frame-violation`、`lang.golang.expression-failed`、`lang.golang.predicate-failed`；接口和外部客户端使用输入中的应答脚本 | `lang.golang.executes-contracts` |
+| E15 | `lang.golang.missing-substitute`、`lang.golang.substitute-failed`、`lang.golang.ensure-failed`、`lang.golang.frame-violation`、`lang.golang.expression-failed`、`lang.golang.predicate-failed`；接口和外部客户端使用输入中的应答脚本 | `lang.golang.executes-contracts` |
 | E16 | `lang.golang.within-exceeded`；并入证据未实现：M6 | `lang.golang.executes-contracts` |
 | E17 | `lang.golang.input-outside-domain`、`lang.golang.expression-failed` | `lang.golang.executes-contracts` |
 | E18 | `lang.golang.observation-failed`、`lang.golang.adapter-failed`、`lang.golang.unsupported-contract` | `lang.golang.executes-contracts` |
