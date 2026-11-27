@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
 	"maps"
 	"os"
 	"path"
@@ -29,6 +32,16 @@ type loaded struct {
 // variants; the one compiled for its own tests holds all its files, and it is
 // the one kept.
 func load(root string, srcRoots []string) (loaded, error) {
+	return loadPackages(root, srcRoots, false)
+}
+
+// loadForGeneration allows stale generated tests to be replaced without first
+// requiring them to compile. All handwritten code still has to load.
+func loadForGeneration(root string, srcRoots []string) (loaded, error) {
+	return loadPackages(root, srcRoots, true)
+}
+
+func loadPackages(root string, srcRoots []string, forGeneration bool) (loaded, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return loaded{}, err
@@ -53,6 +66,12 @@ func load(root string, srcRoots []string) (loaded, error) {
 	// Extraction needs no version control stamps; making them fails in a
 	// checkout whose git status cannot be read.
 	cfg := &packages.Config{Mode: loadMode, Dir: abs, Tests: true, BuildFlags: []string{"-buildvcs=false"}}
+	if forGeneration {
+		cfg.Overlay, err = generatedTestOverlay(abs, srcRoots)
+		if err != nil {
+			return loaded{}, err
+		}
+	}
 	all, err := packages.Load(cfg, patterns...)
 	if err != nil {
 		return loaded{}, err
@@ -79,6 +98,66 @@ func load(root string, srcRoots []string) (loaded, error) {
 		return loaded{}, errors.Join(problems...)
 	}
 	return l, nil
+}
+
+// generatedTestOverlay reads only ordinary files within the configured roots.
+// The overlay retains the package prefix, including build constraints and the
+// ownership marker, while excluding declarations from old generated output.
+func generatedTestOverlay(root string, srcRoots []string) (map[string][]byte, error) {
+	overlay := map[string][]byte{}
+	for _, srcRoot := range srcRoots {
+		if !ordinarySourceRoot(root, srcRoot) {
+			continue
+		}
+		start := filepath.Join(root, srcRoot)
+		err := filepath.WalkDir(start, func(name string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				if name != start && (strings.HasPrefix(entry.Name(), ".") || strings.HasPrefix(entry.Name(), "_") || entry.Name() == "vendor") {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), "_test.go") {
+				return nil
+			}
+			source, err := os.ReadFile(name)
+			if err != nil {
+				return err
+			}
+			set := token.NewFileSet()
+			file, err := parser.ParseFile(set, name, source, parser.PackageClauseOnly|parser.ParseComments)
+			if err != nil || !unicodeGenerated(file) {
+				return nil
+			}
+			prefix := source[:set.Position(file.Package).Offset]
+			empty := append([]byte{}, prefix...)
+			empty = append(empty, "package "+file.Name.Name+"\n"...)
+			overlay[name] = empty
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return overlay, nil
+}
+
+// ordinarySourceRoot rejects symlinks in the configured relative path as well
+// as a symlink used as the repository root. WalkDir never follows child links.
+func ordinarySourceRoot(root, relative string) bool {
+	name := root
+	parts := append([]string{"."}, strings.Split(filepath.Clean(relative), string(filepath.Separator))...)
+	for _, part := range parts {
+		name = filepath.Join(name, part)
+		info, err := os.Lstat(name)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // moreFiles tells whether p is the better variant of the package than other:

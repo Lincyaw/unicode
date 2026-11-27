@@ -13,6 +13,7 @@ const language = "go"
 type Backend struct{}
 
 var _ lang.Backend = (*Backend)(nil)
+var _ lang.GenerationExtractor = (*Backend)(nil)
 
 // NewBackend returns a Go backend.
 //
@@ -26,6 +27,16 @@ func (b *Backend) Language() string { return language }
 // ExtractFailed; bindings that are not well-formed are diagnostics.
 func (b *Backend) Extract(root string, srcRoots []string) (lang.Extracted, error) {
 	loaded, err := load(root, srcRoots)
+	if err != nil {
+		return lang.Extracted{}, lang.ExtractFailed{Language: language, Root: root, Cause: err}
+	}
+	return extract(loaded), nil
+}
+
+// ExtractForGeneration loads the code used to plan generation, omitting only
+// this tool's existing generated tests through an in-memory package overlay.
+func (b *Backend) ExtractForGeneration(root string, srcRoots []string) (lang.Extracted, error) {
+	loaded, err := loadForGeneration(root, srcRoots)
 	if err != nil {
 		return lang.Extracted{}, lang.ExtractFailed{Language: language, Root: root, Cause: err}
 	}
