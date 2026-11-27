@@ -803,23 +803,23 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 | E1 | `design.expression-type` | `design.rejects-broken-design` |
 | E2 | `design.expression-type`、`design.unresolved-reference`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
 | E3 | `design.expression-type` | `design.rejects-broken-design` |
-| E4 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
-| E5 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
-| E6 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
-| E7 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
-| E8 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
-| E9 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
-| E10 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
-| E11 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
-| E12 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
-| E13 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
-| E14 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
-| E15 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
-| E16 | 未实现：M4 测量，M6 并入证据 | — |
-| E17 | 未实现：黑盒契约的前提求值 | — |
-| E18 | 未实现：黑盒契约的快照与适配器 | — |
-| E19 | 未实现：变化路径的调用前定位 | — |
-| E20 | 未实现：范围外不变 | — |
-| E21 | 未实现：类型化的错误视图 | — |
-| E22 | 未实现：域外输入和候选拒绝 | — |
-| E23 | 未实现：有效执行计数 | — |
+| E4 | `lang.golang.expression-failed`、`lang.golang.ensure-failed` | `lang.golang.executes-contracts` |
+| E5 | `lang.golang.ensure-failed`、`lang.golang.frame-violation` | `lang.golang.executes-contracts` |
+| E6 | `lang.golang.expression-failed`、`lang.golang.ensure-failed` | `lang.golang.executes-contracts` |
+| E7 | `lang.golang.expression-failed`、`lang.golang.ensure-failed` | `lang.golang.executes-contracts` |
+| E8 | `lang.golang.ensure-failed` | `lang.golang.executes-contracts` |
+| E9 | `lang.golang.observation-failed`、`lang.golang.unsupported-contract`、`lang.golang.ensure-failed` | `lang.golang.executes-contracts` |
+| E10 | `lang.golang.undeclared-error`、`lang.golang.ensure-failed` | `lang.golang.executes-contracts` |
+| E11 | `lang.golang.expression-failed`、`lang.golang.invalid-result`、`lang.golang.call-panicked` | `lang.golang.executes-contracts` |
+| E12 | `lang.golang.undeclared-error`、`lang.golang.ensure-failed`、`lang.golang.expression-failed`；完整流程执行未实现：M4 后续阶段 | `lang.golang.executes-contracts` |
+| E13 | `lang.golang.unsupported-contract`；调用序列执行未实现：M4 后续阶段 | `lang.golang.executes-contracts` |
+| E14 | `lang.golang.ensure-failed`、`lang.golang.predicate-failed` | `lang.golang.executes-contracts` |
+| E15 | `lang.golang.ensure-failed`、`lang.golang.frame-violation`、`lang.golang.expression-failed`、`lang.golang.predicate-failed`；接口替身未实现：M4 后续阶段 | `lang.golang.executes-contracts` |
+| E16 | `lang.golang.within-exceeded`；并入证据未实现：M6 | `lang.golang.executes-contracts` |
+| E17 | `lang.golang.input-outside-domain`、`lang.golang.expression-failed` | `lang.golang.executes-contracts` |
+| E18 | `lang.golang.observation-failed`、`lang.golang.adapter-failed`、`lang.golang.unsupported-contract` | `lang.golang.executes-contracts` |
+| E19 | `lang.golang.expression-failed`、`lang.golang.frame-violation` | `lang.golang.executes-contracts` |
+| E20 | `lang.golang.frame-violation` | `lang.golang.executes-contracts` |
+| E21 | `lang.golang.expression-failed`、`lang.golang.observation-failed` | `lang.golang.executes-contracts` |
+| E22 | `lang.golang.input-outside-domain`、`lang.golang.expression-failed` | `lang.golang.executes-contracts` |
+| E23 | `lang.golang.no-effective-input` | `lang.golang.executes-contracts` |
