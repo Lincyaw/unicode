@@ -71,6 +71,9 @@ func languages(g *graph.Graph) []languageRoots {
 }
 
 func diagnostic(code, path, cause, fix string) diag.Diagnostic {
+	if path == "" {
+		path = "design/system.uc"
+	}
 	return diag.Diagnostic{Code: code, Subject: path, Position: diag.Position{Path: path, Line: 1, Column: 1}, Message: cause, Fix: fix}
 }
 
