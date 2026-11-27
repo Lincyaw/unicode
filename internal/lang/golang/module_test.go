@@ -48,8 +48,9 @@ const goMod = "module " + modulePath + "\n\ngo 1.26\n\nrequire pgregory.net/rapi
 // genModule draws a random module of up to three packages, some with test
 // files and an external test package, holding types, functions, methods,
 // calls, imports, embedding, interfaces and their implementations,
-// package-level variables holding closures that functions use, and //uc:
-// bindings, some of them not well-formed or misplaced.
+// package-level variables holding closures and references to functions that
+// functions use, and //uc: bindings, some of them not well-formed or
+// misplaced.
 //
 //uc:generates lang.golang.extracts-generated-module.module
 func genModule() *rapid.Generator[Module] {
@@ -191,14 +192,22 @@ type layout struct {
 }
 
 // gvar is a package-level variable: a function literal (func), a map of
-// them (map), or the result of a call made when the package is initialized
+// function literals and references (map), one reference to a function or a
+// method (ref), or the result of a call made when the package is initialized
 // (init).
 type gvar struct {
-	file   *gfile
-	name   string
-	form   string
-	bodies [][]gstmt // each function literal's statements
-	init   *gstmt    // init's call
+	file    *gfile
+	name    string
+	form    string
+	entries []gentry
+	init    *gstmt // init's call
+}
+
+// gentry is a value a variable stores: a function literal with its
+// statements, or a reference, which is a call written without arguments.
+type gentry struct {
+	body []gstmt
+	ref  *gstmt
 }
 
 // scope is what the statements of a body may name: the file they are in,
