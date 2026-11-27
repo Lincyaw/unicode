@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/lincyaw/unicode/internal/check"
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/review"
 	"github.com/lincyaw/unicode/internal/view"
@@ -356,7 +355,7 @@ func (p *page) typeDetail(id string) *TypeDetail {
 // with the code type that realizes it, which a type's card shows too.
 func (p *page) members(id string) []Member {
 	rows := []Member{}
-	for _, m := range check.Members(&p.st.g, []string{id})[id] {
+	for _, m := range p.st.members(id) {
 		rows = append(rows, member(m))
 		for _, r := range m.Refers {
 			p.listed[r] = true

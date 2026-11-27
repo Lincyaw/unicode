@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"pgregory.net/rapid"
 
 	"github.com/lincyaw/unicode/internal/graph"
+	"github.com/lincyaw/unicode/internal/review"
 )
 
 // shrunk is the graph without its last node other than the system, and
@@ -75,5 +77,34 @@ func checkFlowAnswerRequest(t rapid.TB, exchange Exchange) {
 	rewrite(t, root, g, at.Add(time.Hour))
 	if n := snapshotNodes(t, s, "after the snapshot was written again"); int(n) != len(exchange.Fragment.Nodes) {
 		t.Fatalf("after the snapshot was written again with %d nodes, /api/snapshot counts %d", len(exchange.Fragment.Nodes), n)
+	}
+	unrecorded(t, s, root, &g, exchange.Requests)
+}
+
+// unrecorded writes a review record of the system node into the review
+// store of the repository s serves and checks that no answer changes: the
+// server answers from the snapshot alone, and a record reaches the viewer
+// only when unicode build compiles it into a snapshot.
+func unrecorded(t rapid.TB, s *Server, root string, g *graph.Graph, requests []Request) {
+	system := ""
+	for _, n := range g.Nodes() {
+		if n.Form == "system" {
+			system = n.Id
+		}
+	}
+	asked := append(slices.Clone(requests), Request{Path: "/api/reviews", Query: map[string][]string{"id": {system}, "pending": {"false"}}})
+	before := make([]Response, len(asked))
+	for i, req := range asked {
+		before[i] = s.Answer(req)
+	}
+	written := review.Write(root, g, nil, review.Request{Target: review.Target{Node: system}, Reviewer: "reviewer", Decision: "approved"})
+	if written.Record == nil {
+		t.Fatalf("setup failed: review.Write refused a review of the system node %q: %v", system, written.Diagnostics)
+	}
+	for i, req := range asked {
+		if got := s.Answer(req); got.Status != before[i].Status || !bytes.Equal(got.Body, before[i].Body) {
+			t.Fatalf("after a review record was written to the store, with the snapshot unchanged, %s got %d\n%s\nyet before it the answer was %d\n%s",
+				req, got.Status, got.Body, before[i].Status, before[i].Body)
+		}
 	}
 }

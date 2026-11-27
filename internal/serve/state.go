@@ -21,8 +21,9 @@ import (
 )
 
 // state is one snapshot as the server read it: the graph with its edges
-// indexed by end, the result of checking it, and the working tree it was
-// read from. It does not change once loaded.
+// indexed by end, the result of checking it, the review records it
+// carries, and the working tree it was read from. It does not change once
+// loaded.
 type state struct {
 	root              string
 	path              string
@@ -35,16 +36,25 @@ type state struct {
 	files             map[string]string
 	checked           check.Checked
 	head              WorkingTree
-	reviews           []review.Record
+	records           []review.Record
 	reviewDiagnostics []diag.Diagnostic
-	// inputs memoizes the inputs each view kind takes, as a set;
-	// comparisons the comparison with each base commit.
-	inputs      sync.Map
+	// prepare makes, once for the served snapshot, what every page reads:
+	// inputs, the inputs each view kind takes, by identity (view.Inputs);
+	// evaluated, the review evaluation without a base; typeMembers, the
+	// members of every design type compared with the code (check.Members).
+	inputs      map[view.ViewKind][]string
+	evaluated   evaluated
+	typeMembers map[string][]check.Member
+	// comparisons memoizes the comparison with each base commit.
 	comparisons sync.Map
 }
 
 // load reads the snapshot file path of the repository at root, decodes it
-// and checks it as unicode check does.
+// and builds the state that every request reads: it checks the graph as
+// unicode check does, reads back the review records the snapshot carries,
+// and prepares what every page reads. The snapshot is what unicode build
+// compiled, evidence and reviews included; the run and review stores are
+// not read.
 func load(root, path string, builtAt time.Time) (*state, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -54,19 +64,22 @@ func load(root, path string, builtAt time.Time) (*state, error) {
 	if err != nil {
 		return nil, Unreadable{Path: path, Cause: err}
 	}
-	g, err = inputGraph(&g)
-	if err != nil {
-		return nil, Unreadable{Path: path, Cause: err}
-	}
 	st := indexed(root, g)
 	if st.system == "" {
 		return nil, Unreadable{Path: path, Cause: errors.New("the snapshot has no system container, so unicode build did not write it")}
 	}
 	st.path, st.builtAt = path, builtAt.UTC()
-	st.checked = check.Conform(&g)
 	if st.head, err = readHead(root, filepath.Dir(path)); err != nil {
 		return nil, Unreadable{Path: path, Cause: err}
 	}
+	st.checked = check.Conform(&st.g)
+	recorded := review.Recorded(&st.g)
+	st.records, st.reviewDiagnostics = recorded.Records, recorded.Diagnostics
+	st.checked.Diagnostics = append(st.checked.Diagnostics, recorded.Diagnostics...)
+	slices.SortFunc(st.checked.Diagnostics, func(a, b diag.Diagnostic) int {
+		return cmp.Or(cmp.Compare(a.Position.Path, b.Position.Path), cmp.Compare(a.Position.Line, b.Position.Line), cmp.Compare(a.Position.Column, b.Position.Column), cmp.Compare(a.Code, b.Code), cmp.Compare(a.Subject, b.Subject))
+	})
+	st.prepare()
 	return st, nil
 }
 
@@ -384,14 +397,32 @@ func (st *state) viewApplies(kind view.ViewKind, input string) bool {
 }
 
 // inputsOf are the inputs the view of the kind takes, by identity
-// (view.Inputs); they are kept, as the snapshot does not change.
-func (st *state) inputsOf(kind view.ViewKind) []string {
-	if known, ok := st.inputs.Load(kind); ok {
-		return known.([]string)
+// (view.Inputs), as prepare made them.
+func (st *state) inputsOf(kind view.ViewKind) []string { return st.inputs[kind] }
+
+// members are the members of the design type id compared with the code
+// (check.Members), as prepare made them.
+func (st *state) members(id string) []check.Member { return st.typeMembers[id] }
+
+// prepare makes what every page of the served snapshot reads, so that no
+// request pays for it: the inputs of each view kind, the review evaluation
+// without a base, and the members of every design type.
+func (st *state) prepare() {
+	st.inputs = map[view.ViewKind][]string{}
+	for _, kind := range viewKinds {
+		st.inputs[kind] = view.Inputs(&st.g, kind)
 	}
-	ids := view.Inputs(&st.g, kind)
-	st.inputs.Store(kind, ids)
-	return ids
+	st.evaluated = evaluated{Evaluation: review.Evaluate(&st.g, nil, st.records), byTarget: map[review.Target]review.Item{}}
+	for _, item := range st.evaluated.Items {
+		st.evaluated.byTarget[item.Target] = item
+	}
+	var types []string
+	for _, n := range st.nodes {
+		if n.Layer == graph.LayerDesign && n.Kind == graph.NodeKindType {
+			types = append(types, n.Id)
+		}
+	}
+	st.typeMembers = check.Members(&st.g, types)
 }
 
 // relative writes path relative to the repository root when it is under it.

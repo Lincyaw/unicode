@@ -1,7 +1,7 @@
 component serve "查看器的后端：读取 unicode build 写出的快照，载入时按 unicode check 的约束检查，回答 api/openapi.yaml 的只读接口；前端的构建结果嵌入在这个组件中" {
   focus support
   paths "internal/serve/**"
-  uses graph, diag, check, query, view, lang, lang.golang, repo, review, evidence
+  uses graph, diag, check, query, view, lang, lang.golang, repo, review
 }
 
 type Unreadable error "快照文件不存在、读不出、不是 unicode build 写出的快照，或者旁边的 build 记录不合格式"
@@ -18,7 +18,7 @@ type Response record "一次接口请求的应答：状态码和 JSON 正文" {
   field body: bytes
 }
 
-type Server object "查看器的后端：持有读入的快照及其检查结果；快照文件改变后，下一次请求时重新读入" {
+type Server object "查看器的后端：持有读入的快照及其检查结果，每个快照只检查一次；快照文件改变后，下一次请求时重新读入" {
   op answer(request: Request) -> Response "按 api/openapi.yaml 回答一次接口请求；拒绝的请求得到 {code, message, fix}，诊断码为 serve.*"
 }
 
@@ -34,7 +34,7 @@ type Exchange record "serve 的性质和流程 answer-request 的输入：一个
 
 op open(root: string, snapshot: string, builder: Builder) -> Server raises Unreadable "读入仓库 root 的快照文件 snapshot，按 unicode check 的约束检查一遍；比较的基准由 builder 建图"
 
-flow answer-request "查看器发来一次接口请求时，快照文件自上次读入后改变过就先重新读入、解码并检查，之后的应答与只读入新快照的服务给出的逐字节相同，新快照读不出时 /api/snapshot 得到 503 serve.unreadable-snapshot，文件恢复后照常回答" {
+flow answer-request "查看器发来一次接口请求时，快照文件自上次读入后改变过就先重新读入、解码并检查，之后的应答与只读入新快照的服务给出的逐字节相同，评审存储中写入一条记录而快照不变时各个请求的应答逐字节不变，新快照读不出时 /api/snapshot 得到 503 serve.unreadable-snapshot，文件恢复后照常回答" {
   forall exchange: Exchange generated "一个随机小仓库的图和文件（系统、人、外部系统、一至三个组件及其类型、操作、流程、性质、用例和 Go 代码），以及对各个接口和一个不是接口的路径的一至六个请求：标识约七分之一不存在，参数有时不合格式，约五分之一重复前面的请求"
   user -> Server.answer(request) {
     opt "快照文件改变过" {
@@ -93,4 +93,26 @@ property open-refuses-malformed-record invariant "快照旁的 build 记录不�
   forall exchange: Exchange generated "一个随机小仓库的图和文件（系统、人、外部系统、一至三个组件及其类型、操作、流程、性质、用例和 Go 代码），以及对各个接口和一个不是接口的路径的一至六个请求：标识约七分之一不存在，参数有时不合格式，约五分之一重复前面的请求"
   forall record: string generated "不合 {commit, dirty} 的 build 记录文本：不是 JSON 的文本，不是对象的 JSON 值，缺 commit 或 dirty 的对象，多一个字段的对象，或者 commit 或 dirty 的类型不对的对象"
   manual "需要在快照旁写出 record 作为 build 记录再调用 open，表达式不能读写文件"
+}
+
+property pages-answer-within-budget postcondition "对一个与 unicode 自身同等规模的生成仓库，查看器以 200 应答页面的请求，应答耗时的第 95 百分位不超过 within 的时长" {
+  about Server.answer
+  forall seed: int
+  forall server: Server generated "以 seed 为种子构造的一个仓库写成快照后打开的查看器后端，种子相同的用例共用一个：仓库有 18 个组件，各有 7 个类型、4 个操作和 4 条性质（一条人工性质、一条带用例），其中 9 个组件另有一个 4 步的流程，每个组件一个 12 个文件的 Go 包，共 4104 个函数和 1080 个类型，各包按组件的次序分层调用，共 5771 个节点和约三万六千条边，边的种类、出处和显著性的构成与 unicode 自身的图相近"
+  forall request: Request generated "seed 的仓库上的页面请求，在 /api/snapshot、/api/tree、/api/diagnostics、/api/entity、/api/nodes、/api/edge 和 /api/search 中均匀地取：实体页的标识和节点组的一至三个标识取自图中的节点，边取自图中的边，搜索词是某个节点标识中非空的一段"
+  where seed in 1..2
+  call server.answer(request)
+  within "100ms"
+  ensure result.status == 200
+}
+
+property queries-answer-within-budget postcondition "对一个与 unicode 自身同等规模的生成仓库，查看器以 200 应答查询和视图的请求，应答耗时的第 95 百分位不超过 within 的时长" {
+  about Server.answer
+  forall seed: int
+  forall server: Server generated "以 seed 为种子构造的一个仓库写成快照后打开的查看器后端，种子相同的用例共用一个：仓库有 18 个组件，各有 7 个类型、4 个操作和 4 条性质（一条人工性质、一条带用例），其中 9 个组件另有一个 4 步的流程，每个组件一个 12 个文件的 Go 包，共 4104 个函数和 1080 个类型，各包按组件的次序分层调用，共 5771 个节点和约三万六千条边，边的种类、出处和显著性的构成与 unicode 自身的图相近"
+  forall request: Request generated "seed 的仓库上的查询和视图请求，在 /api/node、/api/slice、/api/impact、/api/reviews 和视图中均匀地取：前三者的标识和 /api/reviews 的 id 取自图中的节点，/api/reviews 的 pending 取真或假，视图在十种中均匀地取，输入取自 view.inputs 给出的这种视图的输入"
+  where seed in 1..2
+  call server.answer(request)
+  within "500ms"
+  ensure result.status == 200
 }

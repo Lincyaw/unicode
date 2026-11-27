@@ -66,6 +66,8 @@ func reviewRecordCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Comm
 	var request review.Request
 	command := &cobra.Command{
 		Use: "record [id]", Short: "Record a review of the current content of one node or edge",
+		Long: "record writes an immutable review of the current content of one node or edge to .unicode/reviews.\n" +
+			"The viewer shows it once unicode build compiles it into the snapshot.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(command *cobra.Command, ids []string) error {
 			if len(ids) > 0 {

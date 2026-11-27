@@ -72,9 +72,10 @@ type Response struct {
 	Body   []byte
 }
 
-// Server holds the snapshot it read and the result of checking it; when the
-// snapshot file changes, the next request reads it again. Each request is
-// answered from one snapshot, the one current when it arrived.
+// Server holds the snapshot it read and the state built from it, the
+// result of checking it included; it builds that state once, and again
+// only when the snapshot file changes, which the next request notices. Each
+// request is answered from one snapshot, the one current when it arrived.
 //
 //uc:realizes serve.Server
 type Server struct {
@@ -139,10 +140,7 @@ func (s *Server) current() (*state, error) {
 			s.read = st
 		}
 	}
-	if s.broken != nil {
-		return s.read, s.broken
-	}
-	return liveArtifacts(s.read)
+	return s.read, s.broken
 }
 
 type stateKey struct{}

@@ -27,7 +27,8 @@ func testCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
 			".unicode/results.json. Without --explore it only replays declared and recorded cases;\n" +
 			"--explore gives a positive time budget for generating candidate inputs; --record saves the selected\n" +
 			"replayable inputs and refreshes their generated drivers. With --since REV,\n" +
-			"only checks affected since that commit are selected; no affected checks leaves prior results intact.",
+			"only checks affected since that commit are selected; no affected checks leaves prior results intact.\n" +
+			"The viewer shows the results once unicode build compiles them into the snapshot.",
 		RunE: func(c *cobra.Command, ids []string) error {
 			if c.Flags().Changed("since") && since == "" {
 				return usageError("--since must name a revision")
