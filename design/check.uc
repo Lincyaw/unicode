@@ -37,6 +37,8 @@ type Member record "设计类型的一个字段或枚举值，与落实该类型
 
 op conform(g: graph.Graph) -> Checked "在推导过的图上，检查需要代码才能判断的约束（design.md §5.3）"
 
+op members(g: graph.Graph, ids: list<string>) -> map<string, list<Member>> "每个设计类型的成员：设计中写出的字段按次序，枚举再加它的值和只在代码中有的值；各与恰好一个落实该类型的代码类型比较，没有或有几个时不给状态"
+
 property accepts-conforming-graph invariant "合乎约束的图推导、检查之后没有诊断，每个声明项的状态都是 verified" {
   about conform
   forall sample: Sample generated "一张随机的、合乎 design.md §5.3 全部约束的图"

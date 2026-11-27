@@ -86,28 +86,36 @@ scan:
 	}
 }
 
+// sameType tells whether a type written by the code matches the design's,
+// by the nodes of the checked graph.
+func (c *checker) sameType(design, code string) bool {
+	return sameType(func(id string) (graph.Node, bool) { n, ok := c.byID[id]; return n, ok }, design, code)
+}
+
 // sameType tells whether a type written by the code matches the design's:
 // the same type, except that optional<X> in the code, a Go pointer, also
-// matches X when X is an object type of the design.
-func (c *checker) sameType(design, code string) bool {
+// matches X when X is an object type of the design, as node tells.
+func sameType(node func(string) (graph.Node, bool), design, code string) bool {
 	d, ok := parseType(design)
 	k, ok2 := parseType(code)
 	if !ok || !ok2 {
 		return design == code
 	}
-	return c.typeMatches(d, k)
+	return typeMatches(node, d, k)
 }
 
-func (c *checker) typeMatches(design, code typeExpr) bool {
+func typeMatches(node func(string) (graph.Node, bool), design, code typeExpr) bool {
 	if code.name == "optional" && len(code.args) == 1 && len(code.args[0].args) == 0 && len(design.args) == 0 &&
-		code.args[0].name == design.name && c.is(design.name, graph.LayerDesign, graph.NodeKindType, "object") {
-		return true
+		code.args[0].name == design.name {
+		if n, ok := node(design.name); ok && n.Layer == graph.LayerDesign && n.Kind == graph.NodeKindType && n.Form == "object" {
+			return true
+		}
 	}
 	if design.name != code.name || len(design.args) != len(code.args) {
 		return false
 	}
 	for i := range design.args {
-		if !c.typeMatches(design.args[i], code.args[i]) {
+		if !typeMatches(node, design.args[i], code.args[i]) {
 			return false
 		}
 	}

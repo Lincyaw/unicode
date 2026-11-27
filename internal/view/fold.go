@@ -125,11 +125,11 @@ func (f *folding) edges(sel selection, revealed map[edgeKey]bool) []ViewEdge {
 	}
 	drawn := []ViewEdge{}
 	for _, k := range slices.SortedFunc(maps.Keys(groups), edgeKey.compare) {
-		if !moved[k] {
-			drawn = append(drawn, ViewEdge{Edge: groups[k][0]})
-		} else {
-			drawn = append(drawn, ViewEdge{Edge: merged(k, groups[k]), Count: len(groups[k])})
+		e := ViewEdge{Edge: groups[k][0], Labels: f.ix.labels(k.from, groups[k])}
+		if moved[k] {
+			e.Edge, e.Count = merged(k, groups[k]), len(groups[k])
 		}
+		drawn = append(drawn, e)
 	}
 	return drawn
 }

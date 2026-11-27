@@ -118,6 +118,7 @@ func Select(g *graph.Graph, kind ViewKind, id string, expand []string, layer Cla
 		return View{}, err
 	}
 	v := ix.fold(r, selectors[kind](ix, r), expand)
+	ix.cards(g, &v)
 	v.Input = ix.nodes[r.input]
 	v.Ancestors = []graph.Node{}
 	for _, a := range slices.Backward(ix.containers(r.input)) {

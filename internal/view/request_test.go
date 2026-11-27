@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	"pgregory.net/rapid"
 
@@ -115,12 +116,22 @@ func genGraph(t *rapid.T, minFlows int) graph.Fragment {
 	var types, events, errors []string
 	for i := range rapid.IntRange(0, 6).Draw(t, "types") {
 		parent := b.pick("typeParent", append(append([]string{}, components...), externals...))
-		form := rapid.SampledFrom([]string{"object", "record", "event", "error", "interface"}).Draw(t, "typeForm")
-		var attrs map[string][]string
+		form := rapid.SampledFrom([]string{"object", "record", "event", "error", "interface", "enum"}).Draw(t, "typeForm")
+		id := fmt.Sprintf("%s.T%d", parent, i)
+		attrs := map[string][]string{}
 		if labels := b.subset("typeLabel", []string{"aggregate", "value", "repository"}); labels != nil {
-			attrs = map[string][]string{"labels": labels}
+			attrs["labels"] = labels
 		}
-		id := b.node(fmt.Sprintf("%s.T%d", parent, i), graph.NodeKindType, form, graph.LayerDesign, true, attrs)
+		for j := range rapid.IntRange(0, 3).Draw(t, "members") {
+			if form == "enum" {
+				attrs["values"] = append(attrs["values"], fmt.Sprintf("v%d", j))
+				continue
+			}
+			named := rapid.SampledFrom(append(slices.Clone(types), id)).Draw(t, "fieldType")
+			typ := rapid.SampledFrom([]string{"int", "string", named, "list<" + named + ">", "optional<" + named + ">"}).Draw(t, "fieldTypeForm")
+			attrs["fields"] = append(attrs["fields"], fmt.Sprintf("f%d: %s", j, typ))
+		}
+		b.node(id, graph.NodeKindType, form, graph.LayerDesign, true, attrs)
 		b.edge(graph.EdgeKindContains, parent, id)
 		types = append(types, id)
 		switch form {
@@ -250,8 +261,9 @@ func (b *builder) code(components, types, ops, steps, cases []string) {
 		salient := rapid.Bool().Draw(t, "codeTypeSalient")
 		id := b.node(fmt.Sprintf("%s.CT%d", parent, i), graph.NodeKindType, "struct", graph.LayerCode, salient, nil)
 		b.edge(graph.EdgeKindContains, parent, id)
-		if salient {
-			b.edge(graph.EdgeKindRealizes, id, b.pick("realizedType", types))
+		if realized := b.pick("realizedType", types); salient && realized != "" {
+			b.edge(graph.EdgeKindRealizes, id, realized)
+			b.frag.Nodes[b.at[id]].Attrs = b.codeMembers(b.frag.Nodes[b.at[realized]])
 		}
 		codeTypes = append(codeTypes, id)
 	}
@@ -279,6 +291,14 @@ func (b *builder) code(components, types, ops, steps, cases []string) {
 		b.edge(graph.EdgeKindCalls, b.pick("caller", functions), b.pick("callee", functions))
 	}
 	b.reaches(functions)
+	for i, e := range b.frag.Edges {
+		if e.Kind == graph.EdgeKindDepends {
+			for range rapid.IntRange(0, 2).Draw(t, "dependsCalls") {
+				b.frag.Edges[i].Attrs = map[string][]string{"calls": append(b.frag.Edges[i].Attrs["calls"],
+					b.pick("dependsCaller", functions)+" "+b.pick("dependsCallee", functions))}
+			}
+		}
+	}
 	salientFunctions := b.salient(functions)
 	for _, s := range steps {
 		if f := b.frag.Nodes[b.at[s]].Form; (f == "call" || f == "send") && rapid.Bool().Draw(t, "traced") {
@@ -298,6 +318,40 @@ func (b *builder) code(components, types, ops, steps, cases []string) {
 			}
 		}
 	}
+}
+
+// codeMembers draws the fields or enum values of a code type that realizes
+// the design type t: each of t's kept alike, left out, given another type
+// or, when its type is a name, made optional as Go writes a pointer; now
+// and then one only the code has.
+func (b *builder) codeMembers(t graph.Node) map[string][]string {
+	attrs := map[string][]string{}
+	if t.Form == "enum" {
+		attrs["values"] = b.subset("codeValue", t.Attrs["values"])
+		if rapid.IntRange(0, 3).Draw(b.t, "extraValue") == 0 {
+			attrs["values"] = append(attrs["values"], "extra")
+		}
+		return attrs
+	}
+	for _, f := range t.Attrs["fields"] {
+		name, typ, _ := strings.Cut(f, ": ")
+		switch rapid.IntRange(0, 4).Draw(b.t, "codeField") {
+		case 0:
+		case 1:
+			attrs["fields"] = append(attrs["fields"], name+": bool")
+		case 2:
+			if !strings.Contains(typ, "<") {
+				typ = "optional<" + typ + ">"
+			}
+			attrs["fields"] = append(attrs["fields"], name+": "+typ)
+		default:
+			attrs["fields"] = append(attrs["fields"], f)
+		}
+	}
+	if rapid.IntRange(0, 3).Draw(b.t, "extraField") == 0 {
+		attrs["fields"] = append(attrs["fields"], "extra: int")
+	}
+	return attrs
 }
 
 // parentOfCode returns the container of a code node along the generated contains edges.
@@ -408,6 +462,7 @@ func genExpand(t *rapid.T, f graph.Fragment, kind ViewKind, input string, layer 
 //
 //uc:generates view.view-is-folded-subgraph.request
 //uc:generates view.view-names-input-ancestors.request
+//uc:generates view.view-cards-show-contents.request
 func genRequest() *rapid.Generator[Request] {
 	return rapid.Custom(func(t *rapid.T) Request {
 		f := genGraph(t, 0)

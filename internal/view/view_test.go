@@ -2,7 +2,9 @@ package view
 
 import (
 	"cmp"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -275,4 +277,49 @@ func checkViewNamesInputAncestors(t rapid.TB, request Request) {
 	if !slices.Equal(ancestors, want) {
 		t.Fatalf("the %s view of %q gives the ancestors %q, not the nodes that contain %q, the outermost first: %q", request.Kind, request.Id, ancestors, input, want)
 	}
+}
+
+//uc:checks view.view-cards-show-contents
+func checkViewCardsShowContents(t rapid.TB, request Request) {
+	g := graphOf(t, request.Fragment)
+	w := newWorld(request.Fragment)
+	input, applies := w.applicable(request.Kind, request.Id)
+	if !applies {
+		return
+	}
+	got, err := Select(&g, request.Kind, request.Id, request.Expand, request.Layer, request.Level)
+	if err != nil {
+		t.Fatalf("Select refused the %s view of %q, a node it applies to: %v", request.Kind, request.Id, err)
+	}
+	want := w.expected(asked{request.Kind, input, request.Layer, request.Level}, request.Expand)
+	for _, n := range got.Nodes {
+		if members := w.members(w.cardType(n.Id)); !reflect.DeepEqual(n.Members, members) {
+			t.Fatalf("the %s view of %q gives %q the members %s, not the comparison of its design type %q with the code: %s",
+				request.Kind, request.Id, n.Id, show(n.Members), w.cardType(n.Id), show(members))
+		}
+		if contents := w.contents(request.Kind, n.Id, want.folded[n.Id]); !reflect.DeepEqual(n.Contents, contents) {
+			t.Fatalf("the %s view of %q gives the card of %q the contents %s, not %s", request.Kind, request.Id, n.Id, show(n.Contents), show(contents))
+		}
+		if details := w.details(n.Id, want.nodes); n.Details != details {
+			t.Fatalf("the %s view of %q counts %d detail functions in %q that it does not draw, not %d", request.Kind, request.Id, n.Details, n.Id, details)
+		}
+	}
+	for _, e := range got.Edges {
+		stands := want.edges[edgeKey{e.Kind, e.From, e.To}]
+		if stands == nil {
+			stands = []graph.Edge{e.Edge}
+		}
+		if labels := w.labels(e.From, stands); !slices.Equal(e.Labels, labels) || e.Labels != nil && len(e.Labels) == 0 {
+			t.Fatalf("the %s view of %q labels the edge %s %q %q with the operations %q, not %q", request.Kind, request.Id, e.Kind, e.From, e.To, e.Labels, labels)
+		}
+	}
+}
+
+// show writes a value of a card for a failure message.
+func show(v any) string {
+	out, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("%+v", v)
+	}
+	return string(out)
 }
