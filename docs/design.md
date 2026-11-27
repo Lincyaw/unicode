@@ -116,7 +116,7 @@ type Backend interface {
 2. 每种已配置的语言，由它的后端抽取源码根目录下的代码。
 3. `graph` 合并设计层和代码层，再按 [model.md](model.md) §9 推导出 `owns`、方法的 `realizes`、`depends`、`traces`、`exercises`、显著性和 `reaches`。最近一次运行的结果（`.unicode/results.json`）作为证据并入。
 4. `check` 检查 [model.md](model.md) §10 的约束，把结果写成诊断和声明项的状态。
-5. `build` 把快照写到 `.unicode/graph.json`，搜索索引写到 `.unicode/index.json`。`.unicode/` 不进 Git。
+5. `build` 把快照写到 `.unicode/graph.json`，搜索索引写到 `.unicode/index.json`，仓库所在的提交和工作区是否有改动写到 `.unicode/build.json`。快照中不含提交，相同的输入因此总是得到相同的快照。`.unicode/` 不进 Git。
 
 相同的输入总是得到逐字节相同的输出。M3 起，抽取结果按文件缓存，键为文件内容的 SHA-256 和后端的版本，只重新抽取变了的文件。
 
@@ -449,7 +449,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 | `unicode gen [--dry-run]` | 生成缺少的骨架，重写生成文件 | 新的代码元素和生成文件 |
 | `unicode test [--since REV] [id...]` | 快路径：回放声明的和录制的用例 | `.unicode/results.json` |
 | `unicode test --explore DURATION [--record] [id...]` | 慢路径：在预算内探索，按覆盖挑选；带 `--record` 时写回录制文件 | `.unicode/results.json`、录制文件 |
-| `unicode diff <rev> [<rev>]` | 比较两个快照；只给一个版本时，与工作区比较 | 无 |
+| `unicode diff <rev> [--to REV]` | 比较两个快照：`<rev>` 的与工作区的，带 `--to` 时与 `REV` 的 | 无 |
 | `unicode node get <id>` | 给出一个节点及其边 | 无 |
 | `unicode node search <text> [--kind K]` | 按名称和摘要搜索 | 无 |
 | `unicode node refs <id>` | 给出指向它的边 | 无 |
@@ -462,8 +462,9 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 - **全局参数**：`--root DIR` 指定仓库根目录，缺省为向上找到的第一个含 `design/system.uc` 的目录；`--rev REV` 让查询读一个提交的快照，缺省读工作区。
 - **退出码**：0 成功；1 未知错误；2 参数错误；3 标识不存在；5 冲突（`gen` 要写的位置已有不同的内容）；7 环境错误（找不到 `python3` 或 Go 工具链）；10 存在诊断；11 有谓词未通过。
 - **`check`**：建图并检查全部约束；设计有错时，各阶段照样运行，诊断全部报出。JSON 为 `{"diagnostics": [...], "statuses": {...}}`。代码无法抽取时给出 `cli.extract-failed`，位置在系统文件中该语言的块，退出码为 10；找不到语言的工具链时退出码为 7；尚无后端的语言给出 `cli.unsupported-language` 并跳过。
-- **`build`**：建图有诊断时（不含 `check` 的约束）不写快照，退出码为 10；JSON 为 `{"diagnostics": [...], "snapshot": "路径"}`。`--out DIR` 写到 `DIR/graph.json`。搜索索引 `index.json` 等查看器确定格式后再写。
+- **`build`**：建图有诊断时（不含 `check` 的约束）不写快照，退出码为 10；JSON 为 `{"diagnostics": [...], "snapshot": "路径"}`。快照之外，`build` 在同一目录写出 `build.json`，即 `{"commit": "…", "dirty": false}`：`commit` 是仓库所在提交的完整哈希，`dirty` 表示根目录下有没有未提交的改动或未跟踪的文件，`build` 自己写出的 `graph.json` 和 `build.json` 不算。不在 Git 的工作区中、还没有提交或找不到 `git` 时，写出 `{"commit": null, "dirty": true}`。`--out DIR` 把这两个文件写到 `DIR` 中。搜索索引 `index.json` 等查看器确定格式后再写。
 - **查询**：`node`、`slice`、`impact` 和 `view` 每次都按工作区重新建图；`--rev REV` 只用于这些查询，以 `git archive` 取出该提交的文件到临时目录。查询中的标识（包括 `--expand` 的）不存在时退出码为 3；视图不适用于输入时退出码为 2。`view architecture` 和 `view events` 可以不给标识，表示整个系统。JSON 的字段名是设计中的名称（小驼峰）。
+- **`diff`**：`unicode diff <rev>` 像查询的 `--rev` 一样取出 `<rev>` 并建图，与按工作区建出的图比较；带 `--to REV` 时，与 `REV` 的图比较。两张图按 [model.md](model.md) §8 比较（`graph.Compare`）：节点按标识对齐，内容哈希不同为修改；边按种类、起点、终点对齐，属性不同为修改；只列出新增、删除和修改的项。与查询一样，建图的诊断由 `check` 报出，`diff` 不报。JSON 与 `api/compare.tsp` 的 `Comparison` 相同：`{"base": 提交, "head": 提交, "nodes": [...], "edges": [...]}`。提交是 `{commit, short, branch, subject, time}`，`branch` 只在该提交正是检出的分支所在时给出，`time` 是提交时间（UTC）；`head` 另有 `dirty`，与工作区比较时同 `build.json` 的 `dirty`，与提交比较时为 `false`。`nodes` 中每项是 `{id, change, before, after, attrs}`，`change` 为 `added`、`removed` 或 `modified`，`before`、`after` 是两边的节点（与 `node get` 的节点相同），只在该边有它时给出；`attrs` 按键排序，列出两边的值不同的键，每项 `{key, removed, added}` 是该键上去掉和加上的值，按各自原来的次序，重复的值按出现次数计。`edges` 中每项是 `{kind, from, to, change, before, after}`。文本先写两端的提交，再在 `nodes` 和 `edges` 两节中每项一行，修改的节点之后每个变了的键一行。`<rev>` 或 `REV` 不是提交时退出码为 2，找不到 `git` 时为 7。`diff` 不接受 `--rev`。
 - **`serve`**：`--snapshot` 缺省为根目录下的 `.unicode/graph.json`，`--addr` 缺省为 `127.0.0.1:8765`。前端由 `web/` 构建到 `web/dist`，构建结果用 Go 的 `embed` 嵌入程序；`serve` 在 `/` 下提供页面，在 `/api` 下提供接口。`--web DIR` 改为提供目录 DIR 中的页面，供开发时使用。开始监听后，标准输出写出页面的地址（JSON 为 `{"url": …}`），每个请求的日志写到标准错误；收到中断信号时退出，退出码为 0。快照不存在或读不出时退出码为 7，提示先运行 `unicode build`；地址无法监听时退出码也为 7。`serve` 不接受 `--rev`，比较的基准由接口的 `base` 参数给出。
 - **`check --design-only`**：解析 `design/` 和 `corpus/` 下的全部文件，报出语法、规范格式和 §5.1 的诊断；JSON 为 `{"diagnostics": [...]}`。M2 之前，不带 `--design-only` 的 `check` 是参数错误。
 - **路径参数**：按工作目录解析，必须是根目录下 `design/` 或 `corpus/` 之内的文件或目录。路径不存在、不在这两个目录之内，或者找不到缺省的根目录，都是参数错误。目录会被遍历。`design/` 或 `corpus/` 中 `KindOf` 拒绝的文件给出诊断 `cli.not-a-design-file`，读不出的文件给出 `cli.unreadable-file`，符号链接给出诊断 `cli.symlink`，既不跟随读取，也不改写。全局参数也可以写在命令之后。

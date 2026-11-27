@@ -122,7 +122,7 @@ func rootCommand(stdout, stderr io.Writer) *cobra.Command {
 	flags.StringVar(&g.format, "format", "text", "output format: text or json")
 	flags.StringVar(&g.rev, "rev", "", "let a query read the graph of this commit instead of the working tree")
 	root.AddCommand(fmtCommand(g, stdout, stderr), checkCommand(g, stdout, stderr), buildCommand(g, stdout, stderr),
-		nodeCommand(g, stdout), sliceCommand(g, stdout), impactCommand(g, stdout), viewCommand(g, stdout))
+		diffCommand(g, stdout), nodeCommand(g, stdout), sliceCommand(g, stdout), impactCommand(g, stdout), viewCommand(g, stdout))
 	return root
 }
 
