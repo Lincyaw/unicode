@@ -30,6 +30,7 @@ type ucType struct {
 	Fields []ucField
 	Values []string
 	Parent string
+	Calls  []ucOperation
 }
 type ucObserver struct {
 	Name, Type string
@@ -40,24 +41,27 @@ type ucOperation struct {
 	Name, GoName, Owner, Result string
 	Raises                      []string
 	Params                      []string
+	ParamNames                  []string
+	ParamTypes                  []reflect.Type `json:"-"`
 	receiver                    ucValue
 	Pure                        bool
 	Function                    reflect.Value
 }
 type ucSymbol struct{ Name, Type string }
 type ucContract struct {
-	ID, Path          string
-	Line, Column      int
-	Symbols           []ucSymbol
-	Requires, Ensures []*ucExpr
-	Observe           []string
-	Changes           []*ucExpr
-	Call              *ucExpr
-	Within            time.Duration
-	Types             map[string]ucType
-	Operations        map[string]ucOperation
-	Observers         []ucObserver
-	ErrorTypes        map[string]reflect.Type
+	ID, Path                   string
+	Line, Column               int
+	Symbols                    []ucSymbol
+	Requires, Ensures          []*ucExpr
+	Observe                    []string
+	Changes                    []*ucExpr
+	Call                       *ucExpr
+	Sequence, SequenceReceiver string
+	Within                     time.Duration
+	Types                      map[string]ucType
+	Operations                 map[string]ucOperation
+	Observers                  []ucObserver
+	ErrorTypes                 map[string]reflect.Type
 }
 type ucDiagnostic struct {
 	Code, Subject string
@@ -257,7 +261,30 @@ func ucNormalizeAt(v reflect.Value, t string, types map[string]ucType, seen map[
 		slices.SortFunc(xs, func(a, b ucEntry) int { return strings.Compare(ucKey(a.Key), ucKey(b.Key)) })
 		out.Data = xs
 	case "call":
-		ucFail("lang.golang.unsupported-contract", "call sequence values require the later sequence runtime", nil)
+		name, arguments := ucCallParts(v)
+		var selected *ucOperation
+		for _, op := range types[t].Calls {
+			if op.Name == name {
+				copy := op
+				selected = &copy
+				break
+			}
+		}
+		if selected == nil {
+			ucFail("lang.golang.input-outside-domain", "the call value names an operation outside its model type", nil)
+		}
+		fields := map[string]ucValue{"operation": {Type: "string", Data: name}}
+		if len(arguments) != len(selected.Params) {
+			ucFail("lang.golang.input-outside-domain", "the call value has the wrong parameter set", nil)
+		}
+		for i, param := range selected.ParamNames {
+			arg, ok := arguments[param]
+			if !ok {
+				ucFail("lang.golang.input-outside-domain", "the call value is missing parameter "+param, nil)
+			}
+			fields[param] = ucNormalizeAt(arg, selected.Params[i], types, seen, depth+1)
+		}
+		out.Data = fields
 	default:
 		ty, ok := types[t]
 		if !ok {
@@ -1273,7 +1300,7 @@ func ucDiff(before, after ucValue, path []ucSegment, label string, allowed [][]u
 	}
 	*out = append(*out, fmt.Sprintf("%s changed from %s to %s", label, ucKey(before), ucKey(after)))
 }
-func ucExecute(s *ucContract, inputs map[string]reflect.Value, explore bool) (out ucOutcome) {
+func ucExecuteSingle(s *ucContract, inputs map[string]reflect.Value, explore bool) (out ucOutcome) {
 	phase := "input"
 	defer func() {
 		if p := recover(); p != nil {
@@ -1348,42 +1375,53 @@ func ucExecute(s *ucContract, inputs map[string]reflect.Value, explore bool) (ou
 	}
 	if s.Call != nil {
 		op, fn, args := env.prepare(s.Call)
+		var before, afterFirst []ucValue
+		if op.Pure {
+			before = env.callInputs(op, args)
+		}
 		start := time.Now()
 		phase = "call"
 		values := fn.Call(args)
-		phase = "assertion"
 		out.Duration = time.Since(start)
-		if len(values) > 0 && values[len(values)-1].Type().Implements(reflect.TypeFor[error]()) {
-			v := values[len(values)-1]
-			if !v.IsNil() {
-				env.failure = v.Interface().(error)
+		phase = "assertion"
+		env.captureCall(op, values, s.Call, &out)
+		if op.Pure {
+			afterFirst = env.callInputs(op, args)
+			firstErrorText := ""
+			if env.failure != nil {
+				firstErrorText = env.failure.Error()
 			}
-			values = values[:len(values)-1]
-		}
-		if env.failure != nil {
-			matched := false
-			for id, ty := range s.ErrorTypes {
-				target := reflect.New(ty)
-				if errors.As(env.failure, target.Interface()) {
-					env.failures[id] = ucNormalize(target.Elem(), id, s.Types)
-					if slices.Contains(op.Raises, id) {
-						matched = true
-					}
-					for parent := s.Types[id].Parent; parent != ""; parent = s.Types[parent].Parent {
-						env.failures[parent] = ucNormalize(target.Elem(), parent, s.Types)
-						if slices.Contains(op.Raises, parent) {
-							matched = true
-						}
-					}
+			second := ucEnvironment{spec: s, failures: map[string]ucValue{}}
+			phase = "call"
+			repeated := fn.Call(args)
+			phase = "assertion"
+			var ignored ucOutcome
+			second.captureCall(op, repeated, s.Call, &ignored)
+			afterSecond := env.callInputs(op, args)
+			different := (env.failure == nil) != (second.failure == nil) || !ucEqual(env.result, second.result)
+			if env.failure != nil && second.failure != nil {
+				different = different || reflect.TypeOf(env.failure) != reflect.TypeOf(second.failure) || firstErrorText != second.failure.Error()
+			}
+			if len(env.failures) != len(second.failures) {
+				different = true
+			}
+			for id, value := range env.failures {
+				other, ok := second.failures[id]
+				if !ok || !ucEqual(value, other) {
+					different = true
 				}
 			}
-			if !matched {
-				out.Differences = append(out.Differences, "the call returned an undeclared error: "+env.failure.Error())
-				out.Diagnostics = append(out.Diagnostics, ucDiagnosticOf(s, ucIssue{"lang.golang.undeclared-error", "the call returned an undeclared error: " + env.failure.Error(), s.Call}))
+			for i := range before {
+				if !ucEqual(before[i], afterFirst[i]) || !ucEqual(before[i], afterSecond[i]) {
+					different = true
+				}
 			}
-		}
-		if env.failure == nil && len(values) > 0 {
-			env.result = ucResultValue(values[0], op.Result, s.Types)
+			if different {
+				diagnostic := ucDiagnosticOf(s, ucIssue{"lang.golang.purity-violation", "repeated pure calls changed a result, declared error, receiver or argument", s.Call})
+				diagnostic.Subject = op.Name
+				out.Diagnostics = append(out.Diagnostics, diagnostic)
+				out.Differences = append(out.Differences, diagnostic.Message)
+			}
 		}
 		for _, symbol := range s.Symbols {
 			env.values[symbol.Name] = ucLazyValue(inputs[symbol.Name], symbol.Type, s.Types)
@@ -1487,6 +1525,22 @@ func ucDraw(t *rapid.T, typ reflect.Type, model string, types map[string]ucType,
 		return out
 	}
 	switch kind {
+	case "call":
+		operations := types[model].Calls
+		if len(operations) == 0 {
+			ucFail("lang.golang.unsupported-contract", "the call type has no available operation", nil)
+		}
+		op := rapid.SampledFrom(operations).Draw(t, path+".operation")
+		out.FieldByName("Operation").SetString(op.Name)
+		arguments := out.FieldByName("Arguments")
+		arguments.Set(reflect.MakeMap(arguments.Type()))
+		for i, param := range op.ParamNames {
+			if i >= len(op.ParamTypes) {
+				ucFail("lang.golang.unsupported-contract", "the native parameter type is unavailable", nil)
+			}
+			argument := ucDraw(t, op.ParamTypes[i], op.Params[i], types, limits, path+"."+op.Name[strings.LastIndexByte(op.Name, '.')+1:]+"."+param, depth+1)
+			arguments.SetMapIndex(reflect.ValueOf(param), argument)
+		}
 	case "bool":
 		out.SetBool(rapid.Bool().Draw(t, path))
 	case "int":
@@ -1654,4 +1708,144 @@ func ucFinish(t rapid.TB, s *ucContract, r *ucRunResult) {
 	if !r.Passed {
 		t.Errorf("contract %s failed: %v %v", s.ID, r.Diagnostics, r.Differences)
 	}
+}
+
+// ucCallParts reads the self-contained generated carrier without erasing native
+// argument types. Only the model's declared operation and parameters are used.
+func ucCallParts(value reflect.Value) (string, map[string]reflect.Value) {
+	value = ucDeref(value)
+	if !value.IsValid() || value.Kind() != reflect.Struct {
+		ucFail("lang.golang.input-outside-domain", "a call input is not a generated carrier", nil)
+	}
+	operation, arguments := value.FieldByName("Operation"), value.FieldByName("Arguments")
+	if !operation.IsValid() || operation.Kind() != reflect.String || !arguments.IsValid() || arguments.Kind() != reflect.Map {
+		ucFail("lang.golang.input-outside-domain", "the call carrier has an invalid shape", nil)
+	}
+	out := map[string]reflect.Value{}
+	for _, key := range arguments.MapKeys() {
+		argument := arguments.MapIndex(key)
+		if argument.Kind() == reflect.Interface {
+			if argument.IsNil() {
+				argument = reflect.Value{}
+			} else {
+				argument = argument.Elem()
+			}
+		}
+		out[key.String()] = argument
+	}
+	return operation.String(), out
+}
+func (env *ucEnvironment) callInputs(op ucOperation, args []reflect.Value) []ucValue {
+	var out []ucValue
+	if op.receiver.Native.IsValid() {
+		out = append(out, ucDetach(ucNormalize(op.receiver.Native, op.receiver.Type, env.spec.Types)))
+	}
+	for i, arg := range args {
+		out = append(out, ucDetach(ucNormalize(arg, op.Params[i], env.spec.Types)))
+	}
+	return out
+}
+func (env *ucEnvironment) captureCall(op ucOperation, values []reflect.Value, expr *ucExpr, out *ucOutcome) {
+	if len(values) > 0 && values[len(values)-1].Type().Implements(reflect.TypeFor[error]()) {
+		value := values[len(values)-1]
+		if !value.IsNil() {
+			env.failure = value.Interface().(error)
+		}
+		values = values[:len(values)-1]
+	}
+	if env.failure != nil {
+		matched := false
+		for id, typ := range env.spec.ErrorTypes {
+			target := reflect.New(typ)
+			if errors.As(env.failure, target.Interface()) {
+				env.failures[id] = ucDetach(ucNormalize(target.Elem(), id, env.spec.Types))
+				if slices.Contains(op.Raises, id) {
+					matched = true
+				}
+				for parent := env.spec.Types[id].Parent; parent != ""; parent = env.spec.Types[parent].Parent {
+					env.failures[parent] = ucDetach(ucNormalize(target.Elem(), parent, env.spec.Types))
+					if slices.Contains(op.Raises, parent) {
+						matched = true
+					}
+				}
+			}
+		}
+		if !matched {
+			message := "the call returned an undeclared error: " + env.failure.Error()
+			out.Differences = append(out.Differences, message)
+			out.Diagnostics = append(out.Diagnostics, ucDiagnosticOf(env.spec, ucIssue{"lang.golang.undeclared-error", message, expr}))
+		}
+	}
+	if env.failure == nil && len(values) > 0 {
+		env.result = ucDetach(ucResultValue(values[0], op.Result, env.spec.Types))
+	}
+}
+func ucExecute(s *ucContract, inputs map[string]reflect.Value, explore bool) (out ucOutcome) {
+	if s.Sequence == "" {
+		return ucExecuteSingle(s, inputs, explore)
+	}
+	initial := *s
+	initial.Sequence = ""
+	initial.SequenceReceiver = ""
+	out = ucExecuteSingle(&initial, inputs, explore)
+	if out.Rejected || len(out.Diagnostics) > 0 || len(out.Differences) > 0 {
+		return out
+	}
+	sequence := ucDeref(inputs[s.Sequence])
+	if !sequence.IsValid() || sequence.Kind() != reflect.Slice {
+		out.Infrastructure = true
+		out.Diagnostics = append(out.Diagnostics, ucDiagnosticOf(s, ucIssue{"lang.golang.input-outside-domain", "the sequence input is not a list", nil}))
+		return out
+	}
+	for index := 0; index < sequence.Len(); index++ {
+		step := *s
+		step.Sequence = ""
+		step.SequenceReceiver = ""
+		step.Requires = nil
+		local := map[string]reflect.Value{}
+		for key, value := range inputs {
+			local[key] = value
+		}
+		var prepared ucOutcome
+		func() {
+			defer func() {
+				if problem := recover(); problem != nil {
+					if issue, ok := problem.(ucIssue); ok {
+						prepared.Infrastructure = true
+						prepared.Diagnostics = append(prepared.Diagnostics, ucDiagnosticOf(s, issue))
+					} else {
+						panic(problem)
+					}
+				}
+			}()
+			model := ""
+			for _, symbol := range s.Symbols {
+				if symbol.Name == s.Sequence {
+					_, parts := ucSplitType(symbol.Type)
+					model = parts[0]
+				}
+			}
+			call := sequence.Index(index)
+			ucNormalize(call, model, s.Types)
+			operation, arguments := ucCallParts(call)
+			op := s.Operations[operation]
+			receiver := &ucExpr{Kind: "name", Text: s.SequenceReceiver}
+			step.Call = &ucExpr{Kind: "call", Children: []*ucExpr{{Kind: "field", Text: operation[strings.LastIndexByte(operation, '.')+1:], Children: []*ucExpr{receiver}}}}
+			for i, name := range op.ParamNames {
+				temporary := fmt.Sprintf("#unicodeArgument%d", i)
+				local[temporary] = arguments[name]
+				step.Symbols = append(append([]ucSymbol{}, step.Symbols...), ucSymbol{temporary, op.Params[i]})
+				step.Call.Children = append(step.Call.Children, &ucExpr{Kind: "name", Text: temporary})
+			}
+			prepared = ucExecuteSingle(&step, local, explore)
+		}()
+		out.Duration += prepared.Duration
+		out.Infrastructure = out.Infrastructure || prepared.Infrastructure
+		out.Diagnostics = append(out.Diagnostics, prepared.Diagnostics...)
+		out.Differences = append(out.Differences, prepared.Differences...)
+		if len(prepared.Diagnostics) > 0 || len(prepared.Differences) > 0 {
+			break
+		}
+	}
+	return out
 }

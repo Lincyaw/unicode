@@ -67,6 +67,7 @@ enum EdgeKind {
   checks,
   generates,
   observes,
+  substitutes,
   owns,
   depends,
   traces,
@@ -115,7 +116,7 @@ model Node {
   /** The status `unicode check` gives it; only declared design items have one */
   status?: Status;
 
-  /** A code element: its realizes, checks, generates or observes edges with the design nodes they point at */
+  /** A code element: its realizes, checks, generates, observes or substitutes edges with the design nodes they point at */
   bindings?: Neighbor[];
 
   /** A step: where it stands in its flow */

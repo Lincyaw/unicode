@@ -13,7 +13,7 @@ import (
 // spreading are the edge kinds of docs/design.md §7.4, along which a change spreads backwards.
 var spreading = []graph.EdgeKind{graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindRefers,
 	graph.EdgeKindSubscribes, graph.EdgeKindEmits, graph.EdgeKindRealizes, graph.EdgeKindTraces,
-	graph.EdgeKindExercises, graph.EdgeKindDepends, graph.EdgeKindAbout, graph.EdgeKindChecks, graph.EdgeKindObserves}
+	graph.EdgeKindExercises, graph.EdgeKindDepends, graph.EdgeKindAbout, graph.EdgeKindChecks, graph.EdgeKindObserves, graph.EdgeKindSubstitutes}
 
 //uc:checks query.impact-is-reverse-reachability
 func checkImpactIsReverseReachability(t rapid.TB, question Question) {
@@ -42,7 +42,7 @@ func checkImpactIsReverseReachability(t rapid.TB, question Question) {
 			if _, known := distance[e.From]; (slices.Contains(spreading, e.Kind) || owner) && frontier[e.To] && !known {
 				next[e.From] = true
 			}
-			if _, known := distance[e.To]; e.Kind == graph.EdgeKindObserves && frontier[e.From] && !known {
+			if _, known := distance[e.To]; slices.Contains([]graph.EdgeKind{graph.EdgeKindRealizes, graph.EdgeKindChecks, graph.EdgeKindGenerates, graph.EdgeKindObserves, graph.EdgeKindSubstitutes}, e.Kind) && frontier[e.From] && !known {
 				next[e.To] = true
 			}
 		}
@@ -83,7 +83,7 @@ func checkImpactIsReverseReachability(t rapid.TB, question Question) {
 			k := edgeKey{e.Kind, e.From, e.To}
 			owner := e.Kind == graph.EdgeKindContains && nodes[e.From].Kind == graph.NodeKindProperty && nodes[e.To].Kind == graph.NodeKindObservation
 			forward := e.From == at && (slices.Contains(spreading, e.Kind) || owner)
-			backward := e.To == at && e.Kind == graph.EdgeKindObserves
+			backward := e.To == at && slices.Contains([]graph.EdgeKind{graph.EdgeKindRealizes, graph.EdgeKindChecks, graph.EdgeKindGenerates, graph.EdgeKindObserves, graph.EdgeKindSubstitutes}, e.Kind)
 			switch {
 			case !forward && !backward:
 				t.Fatalf("edge %d of the path for %q cannot explain a change from %q along %s: %+v", i+1, id, at, e.Kind, a.Path)

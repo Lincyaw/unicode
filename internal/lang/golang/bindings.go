@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"go/types"
 	"regexp"
 	"strings"
 
@@ -18,10 +19,11 @@ import (
 const bindingPrefix = "//uc:"
 
 var bindingKinds = map[string]graph.EdgeKind{
-	"realizes":  graph.EdgeKindRealizes,
-	"checks":    graph.EdgeKindChecks,
-	"generates": graph.EdgeKindGenerates,
-	"observes":  graph.EdgeKindObserves,
+	"realizes":    graph.EdgeKindRealizes,
+	"checks":      graph.EdgeKindChecks,
+	"generates":   graph.EdgeKindGenerates,
+	"observes":    graph.EdgeKindObserves,
+	"substitutes": graph.EdgeKindSubstitutes,
 }
 
 // namePattern is a name of the design: kebab, upper or lower camel
@@ -51,6 +53,18 @@ type bindingKey struct{ id, verb, target string }
 func (x *extraction) readBindings(p *packages.Package, f sourceFile, fileID string, docs map[*ast.CommentGroup]bound) {
 	for _, group := range f.syntax.Comments {
 		for _, c := range group.List {
+			if strings.HasPrefix(c.Text, "//uc:model-type ") {
+				valid := false
+				for _, d := range x.declared {
+					if d.file.syntax == f.syntax && d.name != nil && x.carrierModel(d.name.Type().(*types.Named)) != "" && docs[group].id == d.id {
+						valid = true
+						break
+					}
+				}
+				if valid {
+					continue
+				}
+			}
 			if strings.HasPrefix(c.Text, bindingPrefix) {
 				owner, attached := docs[group]
 				x.readBinding(x.position(p, c.Pos()), c.Text, fileID, owner, attached)
@@ -73,8 +87,8 @@ func (x *extraction) readBinding(at diag.Position, text, fileID string, owner bo
 	kind, known := bindingKinds[verb]
 	switch {
 	case !known:
-		report("lang.golang.unknown-binding-verb", fmt.Sprintf("the binding verb %q is not realizes, checks, generates or observes", verb),
-			"write the binding as //uc:realizes, //uc:checks, //uc:generates or //uc:observes, one space and a design identity")
+		report("lang.golang.unknown-binding-verb", fmt.Sprintf("the binding verb %q is not realizes, checks, generates, observes or substitutes", verb),
+			"write the binding as //uc:realizes, //uc:checks, //uc:generates, //uc:observes or //uc:substitutes, one space and a design identity")
 		return
 	case target == "":
 		report("lang.golang.missing-binding-id", fmt.Sprintf("the binding //uc:%s names no design identity", verb),
@@ -96,7 +110,7 @@ func (x *extraction) readBinding(at diag.Position, text, fileID string, owner bo
 		report("lang.golang.misplaced-binding", fmt.Sprintf("a %s binding is on a type, and only a function can carry one", verb),
 			"move it into the doc comment of the function it binds")
 		return
-	case owner.isMethod && kind == graph.EdgeKindObserves:
+	case owner.isMethod && (kind == graph.EdgeKindObserves || kind == graph.EdgeKindSubstitutes):
 		report("lang.golang.misplaced-binding", "an observes binding is on a method, but an observation adapter must be a free function",
 			"move the observes binding to a free function whose explicit parameters are the observation's inputs")
 		return
