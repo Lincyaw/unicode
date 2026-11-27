@@ -443,7 +443,20 @@ func (c *checker) summary(s string, pos lexer.Position) {
 		c.report(pos, "syntax.summary-tab-or-newline", "a summary may not contain a newline or a tab", `write the summary on one line, without \n and \t`)
 	case unicode.IsSpace(first) || unicode.IsSpace(last):
 		c.report(pos, "syntax.summary-surrounding-space", "a summary may not begin or end with white space", "remove the white space at the summary's ends")
+	case !oneSentence(s):
+		c.report(pos, "syntax.summary-not-one-sentence", "a summary is one sentence: it has no 。, ！ or ？ before its end and at most one ；",
+			"join the clauses into one sentence, or split the claims into declarations of their own and move details to the document section the declaration cites")
 	}
+}
+
+// sentenceEnds are the marks that end a Chinese sentence.
+const sentenceEnds = "。！？"
+
+// oneSentence reports whether a summary is one sentence (docs/language.md L8):
+// a mark that ends a sentence stands only at its end, and it has at most one ；.
+func oneSentence(s string) bool {
+	body := strings.TrimRightFunc(s, func(r rune) bool { return strings.ContainsRune(sentenceEnds, r) })
+	return !strings.ContainsAny(body, sentenceEnds) && strings.Count(s, "；") <= 1
 }
 
 // refForm is how the segments of one kind of reference are written: the

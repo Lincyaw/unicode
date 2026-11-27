@@ -31,6 +31,7 @@
   | 小驼峰 | `[a-z][A-Za-z0-9]*` | 操作、字段、参数、枚举值、符号、具名观察 |
 
 - **L7** `true`、`false` 和 `none` 是保留字，不能用作小驼峰的名称；其余关键字都可以用作名称，G15 列出的除外。
+- **L8** 摘要字符串是一句话：句末之前没有 `。`、`！` 或 `？`，`；` 至多一个。
 
 ## 3 语法
 
@@ -149,7 +150,7 @@ NL            = 换行 { 换行 } .
 
 **必需项与取值**
 
-- **G7** 系统、参与者、组件、类型、流程和性质必须有摘要；操作和用例的摘要可以省略。`generated` 之后的取值域说明，以及 `alt`、`opt`、`loop`、`else` 的标签，都遵守 L4；`paths` 和 `root` 的字符串是普通字符串。
+- **G7** 系统、参与者、组件、类型、流程和性质必须有摘要；操作和用例的摘要可以省略。`generated` 之后的取值域说明，以及 `alt`、`opt`、`loop`、`else` 的标签，都遵守 L4 和 L8；`paths` 和 `root` 的字符串是普通字符串。
 - **G8** 顶层组件必须写 `focus`；子组件省略 `focus` 时，取父组件的关注度。
 - **G9** `uses` 只指向容器和外部系统，不指向人。
 - **G10** 区间的下界不大于上界。
@@ -157,7 +158,7 @@ NL            = 换行 { 换行 } .
 
 **性质的陈述**
 
-- **G12** `manual` 的字符串写明这条性质或流程为什么需要手写谓词，并遵守 L4。
+- **G12** `manual` 的字符串写明这条性质或流程为什么需要手写谓词，并遵守 L4 和 L8。
 - **G13** 形式为 `postcondition` 且带 `ensure` 或 `within` 的性质恰有一条 `call` 子句，它调用的操作在 `about` 中；其他形式的性质没有 `call` 子句。`within` 只出现在带 `call` 子句的性质和流程中，它的字符串是一个 `duration` 的值（§3.1）。
 - **G14** 带 `ensure` 的性质至多有一个类型为 `list<call<R1, …, Rk>>` 的符号。有这样的符号时，R1, …, Rk 中的操作都属于同一个类型 T，性质恰有一个类型为 T 的符号，并且没有 `call` 子句。形式为 `transition` 且带 `ensure` 的性质必须有这样的符号。
 - **G15** 表达式的关键字（`implies`、`or`、`and`、`not`、`in`、`old`、`raised`、`failure`、`result`、`all`、`any`、`count`、`sum`、`size`）不能用作符号、具名观察、约束变量，以及容器或外部系统直接提供的操作的名称。
@@ -245,7 +246,7 @@ NL            = 换行 { 换行 } .
 
 摘要、取值域说明和 `manual` 的原因在查看器中单独显示，按下列规则书写：
 
-- **摘要**是一句话，只说一件事，单独显示时也能读懂："这""该""它"只指本条字符串中出现过的名词。摘要提到声明的关键字段或参数，不提声明中没有的东西，不用自造的缩略语。性质的摘要说明它的陈述。只作为性质或流程输入的类型，摘要以"X 的输入："开头，X 是用到它的性质、流程或组件。
+- **摘要**是一句话（L8），只说一件事，单独显示时也能读懂："这""该""它"只指本条字符串中出现过的名词。摘要提到声明的关键字段或参数，不提声明中没有的东西，不用自造的缩略语。性质的摘要说明它的陈述。只作为性质或流程输入的类型，摘要以"X 的输入："开头，X 是用到它的性质、流程或组件。
 - **取值域说明**写取哪些值：范围、组成，以及特意加入的边界情形；不写生成器的来历。
 - **`manual` 的原因**写这条性质或这个流程需要、而表达式没有的那一项构造。它针对这一条，不是它所在的一组。
 - 两条声明的陈述相近时，各自的摘要写出两者的区别。
@@ -792,6 +793,7 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 | L5 | `syntax.not-an-integer`、`cli.not-canonical` | `syntax.rejects-broken-text`、`syntax.format-is-stable` |
 | L6 | `syntax.invalid-name`、`syntax.invalid-reference` | `syntax.rejects-broken-text` |
 | L7 | `syntax.reserved-name` | `syntax.rejects-broken-text` |
+| L8 | `syntax.summary-not-one-sentence` | `syntax.rejects-broken-text` |
 | G0 | `syntax.unexpected-token`、`syntax.unexpected-end`、`syntax.missing-member`、`syntax.declaration-order`、`syntax.missing-claim`、`syntax.mixed-claim` | `syntax.rejects-broken-text` |
 | G1 | `syntax.declaration-order` | `syntax.rejects-broken-text` |
 | G2 | `syntax.member-order`、`syntax.value-outside-enum`、`syntax.field-not-allowed` | `syntax.rejects-broken-text` |
@@ -799,12 +801,12 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 | G4 | `syntax.brace-position`、`syntax.misplaced-else`、`syntax.unexpected-token` | `syntax.rejects-broken-text` |
 | G5 | `syntax.unexpected-token` | `syntax.rejects-broken-text` |
 | G6 | `syntax.on-without-call` | `syntax.rejects-broken-text` |
-| G7 | `syntax.unexpected-token`、`syntax.empty-summary`、`syntax.summary-tab-or-newline`、`syntax.summary-surrounding-space` | `syntax.rejects-broken-text` |
+| G7 | `syntax.unexpected-token`、`syntax.empty-summary`、`syntax.summary-tab-or-newline`、`syntax.summary-surrounding-space`、`syntax.summary-not-one-sentence` | `syntax.rejects-broken-text` |
 | G8 | `design.missing-focus` | `design.rejects-broken-design` |
 | G9 | `design.uses-person`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
 | G10 | `design.empty-interval` | `design.rejects-broken-design` |
 | G11 | `syntax.comment-in-value`、`syntax.unexpected-token` | `syntax.rejects-broken-text` |
-| G12 | `syntax.empty-summary`、`syntax.summary-tab-or-newline`、`syntax.summary-surrounding-space` | `syntax.rejects-broken-text` |
+| G12 | `syntax.empty-summary`、`syntax.summary-tab-or-newline`、`syntax.summary-surrounding-space`、`syntax.summary-not-one-sentence` | `syntax.rejects-broken-text` |
 | G13 | `syntax.invalid-tested-call`、`syntax.invalid-time-budget`、`design.call-not-about` | `syntax.rejects-broken-text`、`design.rejects-broken-design` |
 | G14 | `design.invalid-call-sequence` | `design.rejects-broken-design` |
 | G15 | `syntax.expression-keyword-name` | `syntax.rejects-broken-text` |

@@ -61,7 +61,7 @@ func genString(t *rapid.T, label string) Text {
 func genSummary(t *rapid.T, label string) Summary {
 	return Summary(rapid.StringOfN(genRune(), 1, 24, -1).Filter(func(s string) bool {
 		r := []rune(s)
-		return !unicode.IsSpace(r[0]) && !unicode.IsSpace(r[len(r)-1])
+		return !unicode.IsSpace(r[0]) && !unicode.IsSpace(r[len(r)-1]) && oneSentence(s)
 	}).Draw(t, label))
 }
 

@@ -552,6 +552,15 @@ func summary(change func(t *rapid.T, s string) string) func(f *File) []edit {
 // spaces are white space by Unicode that is neither a tab nor a newline.
 var spaces = rapid.SampledFrom([]string{" ", " ", " ", "　"})
 
+// twoSentences makes a summary of two sentences: a mark that ends a sentence
+// before its end, or a second ；.
+func twoSentences(t *rapid.T, s string) string {
+	if rapid.Bool().Draw(t, "semicolons") {
+		return s + "；" + s + "；" + s
+	}
+	return s + rapid.SampledFrom([]string{"。", "！", "？"}).Draw(t, "end") + s
+}
+
 func withTabOrNewline(t *rapid.T, s string) string {
 	r := []rune(s)
 	i := rapid.IntRange(0, len(r)).Draw(t, "at")
@@ -940,6 +949,7 @@ var breakages = []breakage{
 	edited("syntax.summary-surrounding-space", designKinds, summary(func(t *rapid.T, s string) string { return s + spaces.Draw(t, "space") })),
 	oneOf(edited("syntax.empty-summary", designKinds, summary(func(*rapid.T, string) string { return "" })),
 		edited("syntax.summary-tab-or-newline", designKinds, summary(withTabOrNewline))),
+	edited("syntax.summary-not-one-sentence", designKinds, summary(twoSentences)),
 
 	edited("syntax.field-not-allowed", designKinds, member([]string{"enum"}, newField)),
 	edited("syntax.field-not-allowed", designKinds, member([]string{"interface"}, newField)),
