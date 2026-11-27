@@ -388,7 +388,7 @@ func checkExecutionOwnerPaths(t rapid.TB, sample ExecutionSample, initial int) {
 	original := executionCompleteChild{ExecutionFirst: ExecutionFirst{Value: initial}, ExecutionFlag: ExecutionFlag{Flag: sample.Impure}}
 	detached := ucDetach(ucNormalize(reflect.ValueOf(original), "Child", complete))
 	reconstructed := ucNative(detached, reflect.TypeFor[executionCompleteChild]()).Interface().(executionCompleteChild)
-	if reconstructed.ExecutionFirst.Value != initial || reconstructed.ExecutionFlag.Flag != sample.Impure {
+	if reconstructed.Value != initial || reconstructed.ExecutionFlag.Flag != sample.Impure {
 		t.Fatalf("native reconstruction used different owner paths: %+v", reconstructed)
 	}
 	checkExecutionOrderedLiteral(t, sample)
