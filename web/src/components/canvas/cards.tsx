@@ -5,13 +5,13 @@ import { Link } from 'react-router';
 import type { Node, ViewNode } from '../../api/types';
 import { ABOUT, CONTROLS, kindWord } from '../../terms';
 import { ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
-import type { TypePart } from '../marks/format';
 import { opLine } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks, useSelectedBox } from '../marks/links';
 import { Above } from '../marks/Above';
 import { CoverButton } from '../marks/CoverButton';
 import { NodeRef } from '../marks/NodeRef';
+import { TypeText } from '../marks/Signature';
 import { StatusDot } from '../marks/StatusDot';
 import { useReveal } from './panZoom';
 import type { CardRow } from './sizes';
@@ -36,11 +36,6 @@ function NodeHint({ node }: { node: Node }) {
   );
 }
 
-/** A written type with each node it names as a reference. */
-export function TypeRefs({ parts }: { parts: TypePart[] }) {
-  return parts.map((part, index) => (part.id === undefined ? part.text : <NodeRef key={index} id={part.id}>{part.text}</NodeRef>));
-}
-
 function Rows({ rows, onUnfold }: { rows: CardRow[]; onUnfold?: () => void }) {
   return rows.map((row, index) => {
     switch (row.kind) {
@@ -48,7 +43,7 @@ function Rows({ rows, onUnfold }: { rows: CardRow[]; onUnfold?: () => void }) {
         return (
           <span key={index} className={styles.field} data-warn={row.warn}>
             <span>{row.name}</span>
-            <span className={styles.fieldType}><TypeRefs parts={row.type} /></span>
+            <span className={styles.fieldType}><TypeText parts={row.type} references="preview" /></span>
           </span>
         );
       case 'value':

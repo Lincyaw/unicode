@@ -6,7 +6,8 @@ import { messageOf, placeOf, stepName } from '../marks/format';
 import { useLinks } from '../marks/links';
 import { StatusDot } from '../marks/StatusDot';
 import { statusWord } from './nodeWords';
-import { DiagnosticTag, NodeLink, NodeRow, Section } from './sections';
+import { NodeLink } from '../marks/NodeLink';
+import { DiagnosticTag, NodeRow, Section } from './sections';
 import styles from './details.module.css';
 import { ICON_SIZE, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
 

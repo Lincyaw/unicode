@@ -7,7 +7,7 @@
 .identity { color: var(--text-main); font: var(--type-mono-strong); }
 .statement { font: var(--type-heading); font-weight: 600; }
 .about { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.signature { color: var(--text-muted); font: var(--type-code); }
+.signature { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); color: var(--text-muted); font: var(--type-code); }
 
 .predicate { display: flex; align-items: center; gap: var(--space-2); }
 .code { color: var(--text-main); font: var(--type-code); text-align: left; }

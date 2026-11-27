@@ -8,12 +8,12 @@ import table from '../../ui/table.module.css';
 import { caseSource } from '../details/nodeWords';
 import { CodePanel, Section, SymbolLine } from '../details/sections';
 import { Badge } from '../marks/Badge';
-import { placeOf, relative, scopeOf, signatureTypes, statusOf } from '../marks/format';
+import { placeOf, relative, scopeOf, statusOf } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks, useNodeActions } from '../marks/links';
 import { NodeRef } from '../marks/NodeRef';
+import { Signature } from '../marks/Signature';
 import { NodeChip } from '../marks/NodeChip';
-import { TypeRefs } from '../canvas/cards';
 import { StatusDot } from '../marks/StatusDot';
 import styles from './property.module.css';
 
@@ -26,14 +26,7 @@ function predicateLine(predicate: ViewNode, scope: string): string {
 
 /** An operation the property constrains, as its line reads: its name and signature, the operation and each type a reference. */
 function AboutSignature({ op }: { op: ViewNode }) {
-  const { call, raises } = signatureTypes(op);
-  return (
-    <span className={styles.signature}>
-      <NodeRef id={op.id}>{op.title}</NodeRef>
-      <TypeRefs parts={call} />
-      {raises && <> raises <TypeRefs parts={raises} /></>}
-    </span>
-  );
+  return <span className={styles.signature}><Signature op={op} references="preview" /></span>;
 }
 
 /** A case's name in the case table, which previews the case. */

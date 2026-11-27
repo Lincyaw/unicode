@@ -7,9 +7,12 @@ import { ABOUT, kindWord, MEMBER_COLUMNS, OP_COLUMNS, SECTIONS } from '../../ter
 import { ICON_SIZE, ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
 import table from '../../ui/table.module.css';
 import { CaseSections, CheckedSections, CodeSections, ContainerSections, StepSections, TypeSections } from '../details/kindSections';
-import { CodePanel, DiagnosticTag, NodeLink, NodeRow, Section, SourcePanel, TypeLinks, ViaBadge } from '../details/sections';
+import { DiagnosticTag, NodeRow, Section, SourcePanel, ViaBadge } from '../details/sections';
+import detailStyles from '../details/details.module.css';
+import { NodeLink } from '../marks/NodeLink';
+import { Signature } from '../marks/Signature';
 import { Badge } from '../marks/Badge';
-import { displayName, fileOf, opLine, placeOf, relative, scopeOf, signatureTypes, statusOf, stepLine, stepName } from '../marks/format';
+import { displayName, fileOf, opLine, placeOf, relative, scopeOf, statusOf, stepLine, stepName } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
@@ -52,9 +55,7 @@ function Head({ entity }: { entity: Entity }) {
 
 /** An operation's signature as its page shows it: the call in the link colour, then what it raises; each type a link to its page. */
 function OpSignature({ op }: { op: Node }) {
-  const { call, raises } = signatureTypes(op);
-  const line = <span key="call" className={styles.call}>{op.title}<TypeLinks parts={call} /></span>;
-  return <CodePanel lines={raises === undefined ? [line] : [line, <span key="raises">raises <TypeLinks parts={raises} /></span>]} />;
+  return <pre className={detailStyles.panel}><Signature op={op} references="link" callClassName={clsx(detailStyles.panelLine, styles.call)} raisesClassName={detailStyles.panelLine} /></pre>;
 }
 
 /** The fields: the type's fields or values, the code's counterpart of each, and the status of the comparison. */

@@ -28,11 +28,6 @@
 .row[data-tone="warning"] { color: var(--accent-warning); }
 .row[data-tone="success"] { color: var(--accent-success); }
 .row[data-tone="success"] .code { color: var(--text-main); }
-.nodeLink { min-width: 0; overflow: hidden; color: var(--accent-info); font: var(--type-code); text-overflow: ellipsis; white-space: nowrap; }
-.nodeLink[data-tone="main"] { color: var(--text-main); }
-.nodeLink[data-tone="muted"] { color: var(--text-muted); }
-.nodeLink[data-tone="inherit"] { color: inherit; font: inherit; }
-.nodeLink:hover { text-decoration: underline; text-underline-offset: var(--space-px); }
 .code { font: var(--type-code); }
 /* The two ends of an edge with the arrow between them, in the code face. */
 .ends { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); min-width: 0; font: var(--type-code); }

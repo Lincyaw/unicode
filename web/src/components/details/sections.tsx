@@ -7,10 +7,12 @@ import type { CodeExcerpt, Diagnostic, Node, ViewRequest } from '../../api/types
 import { ABOUT, CONTROLS, kindWord, SECTIONS, VIEW_NAMES } from '../../terms';
 import { ICON_SIZE, ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
 import { Badge } from '../marks/Badge';
-import { displayName, signatureTypes, statusOf, typeParts, type TypePart } from '../marks/format';
+import { displayName, statusOf, typeParts } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
+import { NodeLink, type LinkTone } from '../marks/NodeLink';
+import { Signature, TypeText } from '../marks/Signature';
 import { StatusDot } from '../marks/StatusDot';
 import { useFolded } from './folded';
 import styles from './details.module.css';
@@ -47,15 +49,6 @@ export function Facts({ rows }: { rows: { label: string; value: ReactNode }[] })
   );
 }
 
-/** How a link to a node reads: in the text colour, as a link, muted like a path, or as the text around it. */
-export type LinkTone = 'main' | 'link' | 'muted' | 'inherit';
-
-/** A link to a node's page, set in the code face. */
-export function NodeLink({ node, label, tone = 'link', className }: { node: Pick<Node, 'id' | 'title'>; label?: ReactNode; tone?: LinkTone; className?: string }) {
-  const links = useLinks();
-  return <Link className={clsx(styles.nodeLink, className)} data-tone={tone} to={links.entityHref(node.id)}>{label ?? node.title}</Link>;
-}
-
 /** One node in a list: its status, optionally its kind, the link to it, and what follows it on the right. */
 export function NodeRow({ node, label, icon = false, dot = true, tone = 'main', trailing }: {
   node: Node; label?: ReactNode; icon?: boolean; dot?: boolean; tone?: LinkTone; trailing?: ReactNode;
@@ -70,15 +63,10 @@ export function NodeRow({ node, label, icon = false, dot = true, tone = 'main', 
   );
 }
 
-/** A written type with each node it names as a link to that node's page, in the face of the text around it. */
-export function TypeLinks({ parts }: { parts: TypePart[] }) {
-  return parts.map((part, index) => (part.id === undefined ? part.text : <NodeLink key={index} node={{ id: part.id, title: part.text }} tone="inherit" />));
-}
-
 /** A property's symbol as its inputs read it, `forall name: type`, each type it names a link to its page. */
 export function SymbolLine({ symbol, scope }: { symbol: string; scope?: string }) {
   const at = symbol.indexOf(':');
-  return at < 0 ? <>forall {symbol}</> : <>forall {symbol.slice(0, at + 1)}<TypeLinks parts={typeParts(symbol.slice(at + 1), scope)} /></>;
+  return at < 0 ? <>forall {symbol}</> : <>forall {symbol.slice(0, at + 1)}<TypeText parts={typeParts(symbol.slice(at + 1), scope)} references="link" /></>;
 }
 
 /** The +n that unfolds a list in place. */
@@ -108,9 +96,7 @@ export function CodePanel({ lines, className }: { lines: ReactNode[]; className?
 
 /** An operation's signature as a panel: the call and result, then what it raises; the operation and each type a link to its page. */
 export function SignaturePanel({ op }: { op: Node }) {
-  const { call, raises } = signatureTypes(op);
-  const line = <><NodeLink node={op} tone="inherit" /><TypeLinks parts={call} /></>;
-  return <CodePanel lines={raises === undefined ? [line] : [line, <span key="raises" className="c-muted">raises <TypeLinks parts={raises} /></span>]} />;
+  return <pre className={styles.panel}><Signature op={op} references="link" callClassName={styles.panelLine} raisesClassName={clsx(styles.panelLine, 'c-muted')} /></pre>;
 }
 
 /** Lines of a file, as the code section shows them. */

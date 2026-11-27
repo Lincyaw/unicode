@@ -8,7 +8,9 @@ import { KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { caseSource } from './nodeWords';
 import { useFolded } from './folded';
-import { ChipList, CodePanel, DiagnosticTag, Facts, MoreBadge, NodeLink, NodeRow, Section, SignaturePanel, SymbolLine, TypeLinks, ViaBadge } from './sections';
+import { NodeLink } from '../marks/NodeLink';
+import { TypeText } from '../marks/Signature';
+import { ChipList, CodePanel, DiagnosticTag, Facts, MoreBadge, NodeRow, Section, SignaturePanel, SymbolLine, ViaBadge } from './sections';
 import styles from './details.module.css';
 
 /*
@@ -175,7 +177,7 @@ export function TypeSections({ entity, preview }: { entity: Entity; preview: boo
           {members.map(member => (
             <div key={member.name} className={styles.field} data-warn={member.status === 'contradicted' || member.status === 'missing'}>
               <span>{member.name}</span>
-              <span className={styles.fieldType}><TypeLinks parts={typeParts(member.type ?? member.codeType ?? '', scope, member.refers)} /></span>
+              <span className={styles.fieldType}><TypeText parts={typeParts(member.type ?? member.codeType ?? '', scope, member.refers)} references="link" /></span>
             </div>
           ))}
         </Section>
