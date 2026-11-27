@@ -24,6 +24,11 @@ type Broken record "一组合法的文件做了一处违反某条约束的改动
   field code: string
 }
 
+type ReplySample record "应答脚本类型检查的样本：脚本长度及合法或单处非法变体" {
+  field count: int
+  field variant: int
+}
+
 op load(files: list<syntax.File>) -> Loaded "解析引用，建出设计层的节点和边，检查只需设计就能判断的约束"
 
 property accepts-valid-design invariant "合法的设计载入之后没有诊断，图中恰有它声明的节点和边，标识按 model.md §7 写出；attrs 和 edgeAttrs 中列出的节点与边，属性恰是列出的那些；边的键为种类、起点、终点以空格连接" {
@@ -62,4 +67,10 @@ property contract-rejects-invalid-relations invariant "黑盒契约的引用、�
   about load
   forall broken: Broken generated "沿用非法契约关系的十三个替换变体及其预期诊断和调用行重定位"
   manual "需要构造非法设计并核对准确的诊断与源位置，沿用错误设计的独立判定"
+}
+
+property reply-scripts-are-typed invariant "成功与声明错误的应答、接口操作及继承字段逐一匹配类型；拒绝空脚本、重复目标、错误字段、未声明错误及不是外部直接操作的 replies 目标" {
+  about load
+  forall sample: ReplySample generated "一至五个应答，以及合法脚本或只改一处类型、目标、字段、基数与归属的变体"
+  manual "需要生成完整设计程序并比较载入诊断与位置，表达式没有源文本构造与编译操作"
 }

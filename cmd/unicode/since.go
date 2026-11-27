@@ -1,6 +1,7 @@
 package main
 
 import (
+	"maps"
 	"slices"
 
 	"github.com/lincyaw/unicode/internal/graph"
@@ -18,6 +19,9 @@ func AffectedChecks(base, head *graph.Graph, selected []string) []string {
 		seeds[change.Id] = true
 	}
 	for _, change := range changes.Edges {
+		if sinceCallLocationsOnly(change) {
+			continue
+		}
 		seeds[change.From], seeds[change.To] = true, true
 	}
 	affected := map[string]bool{}
@@ -67,4 +71,15 @@ func AffectedChecks(base, head *graph.Graph, selected []string) []string {
 
 func sinceCheck(node graph.Node) bool {
 	return node.Layer == graph.LayerDesign && (node.Kind == graph.NodeKindProperty || node.Kind == graph.NodeKindFlow)
+}
+
+// Call-site coordinates locate evidence without changing an existing dependency.
+func sinceCallLocationsOnly(change graph.EdgeChange) bool {
+	if change.Kind != graph.EdgeKindCalls || change.Change != graph.ChangeKindModified || change.Before == nil || change.After == nil {
+		return false
+	}
+	before, after := maps.Clone(change.Before.Attrs), maps.Clone(change.After.Attrs)
+	delete(before, "sites")
+	delete(after, "sites")
+	return maps.EqualFunc(before, after, slices.Equal[[]string])
 }

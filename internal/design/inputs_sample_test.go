@@ -458,6 +458,7 @@ func (d *designer) newFlow(c *gNode, skeleton bool) *gNode {
 	for _, s := range g.list(fl.id, nil, 3) {
 		decl.Lines = append(decl.Lines, s.(syntax.FlowLine))
 	}
+	decl.Lines = append(decl.Lines, &syntax.Manual{Reason: "Generated graph fixture with descriptive internal arguments"})
 	for _, cd := range d.cases(fl, 0) {
 		decl.Lines = append(decl.Lines, cd)
 	}
