@@ -351,7 +351,7 @@
 | D3 | 由性质验证 | `graph.derive-matches-definition` |
 | D4 | 由性质验证 | `graph.derive-matches-definition` |
 | D5 | 由性质验证 | `graph.derive-matches-definition` |
-| D6 | 由性质验证 | `graph.derive-matches-definition` |
+| D6 | 由性质验证 | `graph.derive-matches-definition`、`lang.golang.extracts-generated-module` |
 | D7 | 由性质验证 | `graph.derive-matches-definition` |
 | 1 | `design.unresolved-reference`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
 | 2 | `design.duplicate-name` | `design.rejects-broken-design` |
@@ -373,7 +373,7 @@
 | 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value` | `check.rejects-broken-graph` |
 | 19 | `check.missing-implements`、`check.missing-extends` | `check.rejects-broken-graph` |
 | 20 | `check.missing-predicate`、`check.multiple-predicates`、`check.predicate-signature`；带陈述的性质和流程的谓词在生成文件中：未实现：M4，此前手写 | `check.rejects-broken-graph` |
-| 21 | 未实现：M4，要等 `gen` 区分生成文件 | — |
+| 21 | 未实现：M4 后续阶段；对应生成驱动保留原有分布之前，继续保留过渡手写驱动 | — |
 | 22 | `check.untraced-step`、`check.unreachable-step`、`check.unreferenced-event` | `check.rejects-broken-graph` |
 | 23 | `design.ungenerable-symbol` | `design.rejects-broken-design` |
 | 24 | `design.limited-generated-symbol`、`lang.golang.duplicate-binding`、`check.missing-generator`、`check.multiple-generators`、`check.not-generated-symbol` | `design.rejects-broken-design`、`lang.golang.extracts-generated-module`、`check.rejects-broken-graph` |
