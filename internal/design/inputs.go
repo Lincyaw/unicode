@@ -95,7 +95,19 @@ func (l *loader) inputs(e, scope *entity, symbols []*syntax.Symbol, limits []any
 		e.setAttr("symbols", texts)
 	})
 	l.domains = append(l.domains, func() {
+		replyTargets := map[string]bool{}
 		for _, s := range e.symbols {
+			if containsReplies(s.typ) {
+				if s.typ.kind != "replies" {
+					l.report(e.file, s.pos, "design.invalid-replies-type", e.id, "a response script must be a direct input type, not nested in another type", "declare forall answers: replies<external.operation>")
+				} else if len(s.typ.refs) > 0 {
+					target := s.typ.refs[0].text()
+					if replyTargets[target] {
+						l.report(e.file, s.pos, "design.invalid-replies-type", e.id, "two response symbols target the same external operation", "keep exactly one response symbol for each external operation")
+					}
+					replyTargets[target] = true
+				}
+			}
 			if why := generable(s.typ, map[*entity]bool{}, map[*entity]bool{}); !s.generated && why != "" {
 				l.report(e.file, s.pos, "design.ungenerable-symbol", e.id,
 					fmt.Sprintf("the symbol %s cannot be generated: %s", s.name, why),
