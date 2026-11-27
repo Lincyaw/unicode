@@ -1161,7 +1161,7 @@ type Snapshot struct {
 // Source Where a node or an edge comes from (docs/model.md §2).
 type Source string
 
-// Status How a declared item compares with the code (docs/model.md §6): 已验证、缺失、未实现、不一致.
+// Status How a declared item compares with the code (docs/model.md §6): 已验证、缺失、骨架、不一致.
 type Status string
 
 // StepDetail The sections of a step's page. Its own one-line form is `node.step`.

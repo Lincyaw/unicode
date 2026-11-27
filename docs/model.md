@@ -68,7 +68,7 @@
 - `op` 至多订阅一个事件：该事件每发布一次，它就被调用一次。
 - `actor`：`person` 是人，只能发起调用；`external` 是外部系统，可以包含 `type` 和 `op`，描述本系统用到的接口。外部系统的类型和操作由本仓库中的客户端代码实现。
 - 关注度 focus(c) ∈ {core, support, utility}，是设计层 `container` 的属性，只影响视图（[design.md](design.md) §7.2）。
-- 代码层 `op`：签名是语言无关的归一化形式（[design.md](design.md) §4）；测试类别 testKind ∈ {none, example, property, fuzz}，由后端按该语言的测试约定判定；骨架指函数体恰为 `gen` 生成的未实现标记。
+- 代码层 `op`：签名是语言无关的归一化形式（[design.md](design.md) §4）；测试类别 testKind ∈ {none, example, property, fuzz}，由后端按该语言的测试约定判定；骨架指函数体恰为 `gen` 生成的占位标记。
 
 ### 3.2 流程
 
@@ -107,7 +107,7 @@
 
 ### 3.4 黑盒契约与观察
 
-- 带 `call` 的 `postcondition` 约束一次操作的可观测行为，称为**黑盒契约**。其输入是符号，被测调用给出返回值或错误，`ensure` 声明结果与调用前后值的关系；操作内部的算法不进入契约。
+- 带 `call` 的 `postcondition` 约束一次操作的可观测行为，称为**黑盒契约**。其输入是符号，被测调用给出返回值或错误，`ensure` 声明结果与调用前后值的关系；操作内部的算法不进入黑盒契约。
 - **前提**是全部 `requires` 表达式的合取，在调用之前、取得调用前观察值之后求值。各符号满足类型和限定，且前提成立时，这组输入适用于该性质。前提可以关联多个符号和调用前观察值；它不改变各符号单独的 Dom(x)。
 - **观察范围**由 `observe` 给出，包括直接读取的输入字段，即**直接观察路径**，以及**具名观察**：`observe x: T from …` 声明的、由观察适配器取得的一个值，T 称为它的**观察类型**。直接观察路径是性质的属性；只有具名观察产生 `observation` 节点。调用前后从观察范围读出的值称为**观察值**（调用前观察值、调用后观察值）。观察值不是生成的输入，不增加谓词的参数，也不写进用例赋值。
 - **允许变化的范围**由 `changes` 给出，路径在调用前固定。正常返回和错误返回都要求：观察范围中，允许变化的部分之外的值，前后结构相等；前后不相等的这类值称为**范围外的差异**。范围按模型路径判定；不同路径即使对应共享对象，也各自受约束。
@@ -252,7 +252,7 @@
 1. 每个引用都解析到一个声明的节点，节点的种类与引用的位置相符。
 2. 名称互不相同：同一父节点的各子节点；参与者与顶层容器；同一条性质或同一个流程中的符号、具名观察与用例。
 3. 设计层的 `contains` 构成以 `system` 为根的树。
-4. 跨容器的引用，即字段、参数、返回值、错误、订阅的事件、`extends`、`implements`、符号和观察的类型所引用的类型，以及契约子句中引用的操作、枚举和错误类型 t，满足 allowed(container(x), container(t))，其中 x 是引用所在的节点。t 属于外部系统时，用该外部系统代替 container(t)。
+4. 跨容器的引用，即字段、参数、返回值、错误、订阅的事件、`extends`、`implements`、符号和观察的类型所引用的类型，以及黑盒契约子句中引用的操作、枚举和错误类型 t，满足 allowed(container(x), container(t))，其中 x 是引用所在的节点。t 属于外部系统时，用该外部系统代替 container(t)。
 5. 元素的每个标签都属于系统文件声明的记法，并适用于该元素的种类（§5）。
 6. subscribes(o, E) 时，form(E) = `event`，并且 o 恰有一个参数，其类型为 E。
 
@@ -302,7 +302,7 @@
     2. s 在最外层、发起方是类型或容器时，从实现发起方的代码（类型的方法，或容器拥有的函数）中的某个函数能到达 f；
     3. 发起方是人时，不检查。
 
-    s₀ 调用的是接口的操作时，第 1 项的起点改为实现接口的那些代码层类型中的同名方法；发起方是接口类型时，第 2 项的起点改为实现接口的各代码层类型的方法；有一个能到达即可。
+    s₀ 调用的是接口的操作时，第 1 项的起点改为实现 s₀ 所调用操作所属接口的那些代码层类型中的同名方法；发起方是接口类型时，第 2 项的起点改为实现发起方这个接口的各代码层类型的方法；有一个能到达即可。
 
     对每个 `emit` 步骤 s，设 emits(s, E)：实现发起方的代码 `refers` 实现 E 的代码层类型。
 
@@ -341,7 +341,7 @@
 - **记法不进入结构。** DDD、UML、时序图、事件风暴和 C4 都只是从同一张图中选取并绘制，因此换一种记法不改设计文件，也不改约束。
 - **显著性由设计决定（D6）。** 人在设计中写下的就是他要关注的，不需要另外标注。
 - **外部系统由客户端实现（第 16、17 条）。** 外部系统在本仓库中没有自己的代码，本仓库能检查的是调用它的客户端。
-- **签名不比较参数名（第 18 条）。** 参数名是给人读的说明；各语言的习惯常要求换名字，例如 Go 中参数不能遮住包名。契约是参数的类型、次序、返回值和错误。
+- **签名不比较参数名（第 18 条）。** 参数名是给人读的说明；各语言的习惯常要求换名字，例如 Go 中参数不能遮住包名。签名比较的是参数的类型、次序、返回值和错误。
 - **枚举值必须相等（第 18 条）。** 字段多出来是细节；枚举多出一个值，就是设计没有声明的状态。
 - **按分派检查接口（第 22 条）。** 接口中的 `abstract` 方法没有函数体，本身不调用任何函数，可达性只能从实现接口的类型出发。
 - **运行时核对的部分（第 22 条）。** 静态可达只说明调用可能发生。调用的先后和事件的投递，由流程的驱动在运行时核对（[design.md](design.md) §6.3）。
@@ -382,7 +382,7 @@
 | 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value` | `check.rejects-broken-graph` |
 | 19 | `check.missing-implements`、`check.missing-extends` | `check.rejects-broken-graph` |
 | 20 | `check.missing-predicate`、`check.multiple-predicates`、`check.predicate-signature`；Go 生成带陈述的性质和自动流程的谓词 | `check.rejects-broken-graph`、`lang.golang.executes-contracts` |
-| 21 | `check.handwritten-test`；Go 已启用，Python 未实现：M5 | `check.rejects-broken-graph` |
+| 21 | `check.handwritten-test`；Go 已启用，Python 待做：M5 | `check.rejects-broken-graph` |
 | 22 | `check.untraced-step`、`check.unreachable-step`、`check.unreferenced-event` | `check.rejects-broken-graph` |
 | 23 | `design.ungenerable-symbol`、`design.invalid-replies-type` | `design.rejects-broken-design`、`design.reply-scripts-are-typed` |
 | 24 | `design.limited-generated-symbol`、`lang.golang.duplicate-binding`、`check.missing-generator`、`check.multiple-generators`、`check.not-generated-symbol` | `design.rejects-broken-design`、`lang.golang.extracts-generated-module`、`check.rejects-broken-graph` |
@@ -391,7 +391,7 @@
 | 27 | `design.recorded-case-name` | `design.rejects-broken-design` |
 | 28 | `gen.stale-file`、`lang.golang.stale-contracts` | `gen.check-files-are-current`、`lang.golang.executes-contracts` |
 | 29 | `design.unresolved-reference`、`design.wrong-reference-kind`、`cli.not-canonical` | `design.rejects-broken-design`、`cli.check-design` |
-| 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5；自定义生成器按绑定命名，骨架默认命名与撞名检查见 [design.md](design.md) §6.1 | `design.rejects-broken-design` |
+| 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射待做：M5；自定义生成器按绑定命名，骨架默认命名与撞名检查见 [design.md](design.md) §6.1 | `design.rejects-broken-design` |
 | 31 | `design.expression-type` | `design.rejects-broken-design` |
 | 32 | `lang.golang.purity-violation`，核对表达式和被测调用的纯性；证据并图后的状态传播属于 M6 | `lang.golang.executes-contracts` |
 | 33 | 由性质验证：评审指纹决定待审状态 | `review.evaluation-follows-content` |

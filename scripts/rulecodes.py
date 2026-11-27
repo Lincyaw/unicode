@@ -15,7 +15,7 @@ DESIGN_DOC = ROOT / "docs" / "design.md"
 
 RULE_HEADER = "| 规则 | 诊断码 | 验证的性质 |"
 OTHER_HEADER = "| 诊断码 | 原因 |"
-UNIMPLEMENTED = "未实现："
+UNIMPLEMENTED = "待做："
 BY_PROPERTY = "由性质验证"
 
 KEBAB = r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*"

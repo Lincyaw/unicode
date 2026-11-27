@@ -42,7 +42,7 @@ export const NAME_SEPARATOR = ' · ';
 export const STATUS_NAMES: Record<Status, string> = {
   verified: '已验证',
   missing: '缺失',
-  stub: '未实现',
+  stub: '骨架',
   contradicted: '不一致',
 };
 
@@ -133,7 +133,7 @@ const CODE_OP_FORMS: Record<string, string | null> = {
 
 /** The forms of an observation. */
 const OBSERVATION_FORMS: Record<string, string | null> = {
-  snapshot: '快照',
+  snapshot: null,
 };
 
 /**
@@ -230,7 +230,7 @@ const ATTRIBUTE_NAMES: Record<string, string> = {
   requires: '前提',
   observe: '观察范围',
   changes: '允许变化的范围',
-  type: '快照类型',
+  type: '观察类型',
   inputs: '输入',
   index: '序号',
   label: '分支标签',
@@ -283,7 +283,7 @@ export const SECTIONS = {
   refers: '引用',
   referredBy: '被引用',
   relations: '关联',
-  supertypes: '继承与实现',
+  supertypes: '继承与实现接口',
   properties: '相关性质',
   flows: '参与的流程',
   emittedBy: '发布',
@@ -465,7 +465,7 @@ export const MARKS = {
 /** The explanations behind the ⓘ marks; the pages show data only (CLAUDE.md principle 10). */
 export const ABOUT = {
   tree: '设计层的节点按包含关系组成的树：系统，各组件按关注级别排列，然后是外部系统、参与者与工具组件。圆点是声明项与代码比较的状态。',
-  statusLegend: '圆点表示声明项与代码比较的状态：绿色为已验证，黄色为缺失，空心为未实现，红色为不一致。',
+  statusLegend: '圆点表示声明项与代码比较的状态：绿色为已验证，黄色为缺失，空心为骨架，红色为不一致。',
   hidden: '未画出的工具与基础服务组件的个数，以及指向它们的依赖。',
   undeclared: '实际存在、但设计中没有声明的依赖；计数是其中的导入与调用。',
   merged: '指向折叠组件的边合并为一条，计数是它代表的边数。',
@@ -480,14 +480,14 @@ export const ABOUT = {
   adequacy: '代码覆盖率按测量范围内的 Go 基本块计数，源码位置标出块的范围；分支覆盖率按明确匹配的流程分支计数；错误覆盖率按实际抛出的声明错误计数。未测量的指标不显示。',
   history: '该用例在各次运行中的结果，最新的在下。',
   covers: '该用例执行到的函数及其所在的行。',
-  details: '未画出的细节函数：它们不落实设计节点，也没有检查或生成的绑定。',
-  fields: '设计中写出的字段与落实它的代码类型逐项比较；代码中多出的字段算细节，不列出。',
+  details: '未画出的细节函数：它们不实现设计节点，也没有检查或生成的绑定。',
+  fields: '设计中写出的字段与实现它的代码类型逐项比较；代码中多出的字段算细节，不列出。',
   calls: '调用方与被调用方；只经过细节函数的调用画成虚线，标出经过的细节函数个数。',
-  code: '落实它的代码元素的源码。',
+  code: '实现它的代码元素的源码。',
   diagnostics: '检查快照得到的诊断；每一条都是错误。',
   compare: '与所选提交的快照比较，列出新增、删除和修改的节点与边。',
   architecture: '核心组件展开，显示其中的类型、流程、性质与错误；支撑组件折叠；工具组件不画出。边是实际的依赖，红色虚线为设计中没有声明的依赖。',
-  ddd: '带限界上下文标签的组件，其中带领域标签的类型，以及它们之间的引用、继承与实现。',
+  ddd: '带限界上下文标签的组件，其中带领域标签的类型，以及它们之间的引用、继承与实现接口。',
   class: '类型及其字段与操作；实线来自字段，虚线来自操作签名；其他组件中被引用的类型画在折叠的组件中。',
   sequence: '生命线按首次出现排列；每一步标出序号与状态，片段画成框。',
   activity: '同一个流程按控制结构画出：调用嵌套成框，错误处理画成分支，异步片段单独画出。',

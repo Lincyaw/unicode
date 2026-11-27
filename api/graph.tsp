@@ -25,7 +25,7 @@ enum Source {
   produced,
 }
 
-/** How a declared item compares with the code (docs/model.md §6): 已验证、缺失、未实现、不一致. */
+/** How a declared item compares with the code (docs/model.md §6): 已验证、缺失、骨架、不一致. */
 enum Status {
   verified,
   missing,

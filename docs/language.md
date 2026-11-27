@@ -333,7 +333,7 @@ NL            = 换行 { 换行 } .
 - **E12** 有被测的调用时，先取得调用前观察值并检查全部前提；只有前提成立，才固定变化路径、求值全部 `old(e)` 和被测调用的接收者与实参，再执行一次调用，冻结返回值或错误的数据，取得调用后观察值，最后检查全部 `ensure`，以及没有范围外的差异。拒绝输入时不执行调用，也不预先求值 `old(e)`。被测调用抛出不在其操作的 `raises` 中的错误时，这个用例是反例。流程的被测调用由流程的驱动执行，M4 执行入口并检查后置陈述，M6 再核对内部步骤的调用先后（[design.md](design.md) §6.3）。自动流程入口实参必须是已声明且类型匹配的输入符号；方法入口须有唯一的所属类型输入作为接收者。需要额外环境准备的流程声明 `manual` 理由。
 - **E13** 有调用序列的符号时（G14），先检查前提，初态的 `old(e)` 取初态副本，求值一次全部 `ensure`；再把调用依次作用到类型为 T 的符号上，每次调用之前求值 `old(e)`，之后求值全部 `ensure`。调用抛出它的 `raises` 中的错误时，接着执行下一个调用；抛出其他错误时，这个用例是反例。
 - **E14** 其余的性质，前提成立时求值全部 `ensure`；人工性质的前提成立时调用手写谓词。
-- **E15** 任一 `ensure` 为假、有范围外的差异，或陈述出现求值错误，这个用例就是反例。前提求值错误、域外输入、观察失败和没有有效执行（E23）称为**检查错误**：它们分别报告，不算反例。外部系统的应答和类型为接口的字段由替身给出，也是生成的输入（[design.md](design.md) §6.2）。
+- **E15** 任一 `ensure` 为假、有范围外的差异，或陈述出现求值错误，这个用例就是反例。使用例得不出结论、又不是反例的错误称为**检查错误**：前提求值错误、域外输入、观察失败、没有有效执行（E23），以及替身安装失败和运行时测量（覆盖、轨迹）的采集失败（[design.md](design.md) §6.2、§6.4）；它们分别报告，不算反例。工具链本身不能运行（找不到或编译不了）是工具失败，不是检查错误。外部系统的应答和类型为接口的字段由替身给出，也是生成的输入（[design.md](design.md) §6.2）。
 - **E16** 带 `within` 的性质或流程，记下一次运行中每个用例的被测调用的耗时；这些耗时的第 95 百分位超过 `within` 的时长时，这条性质或流程不通过。
 
 人工性质没有可求值的陈述，由手写的谓词检查（[model.md](model.md) §10 第 20 条）。
@@ -358,7 +358,7 @@ NL            = 换行 { 换行 } .
 全部合法的语法树 ─载入─▶ 设计层 ─链接─▶ 图、诊断与状态
 ```
 
-| 阶段 | 实现 | 输入 → 输出 | 诊断 |
+| 阶段 | 代码 | 输入 → 输出 | 诊断 |
 | --- | --- | --- | --- |
 | 分类 | `syntax.KindOf` | 路径 → 文件种类 | `cli.not-a-design-file` |
 | 词法分析 | `internal/syntax/lex.go` | 字节 → 记号 | `syntax.tab`、`syntax.control-character`、`syntax.invalid-escape` 等 |
@@ -377,14 +377,14 @@ NL            = 换行 { 换行 } .
 ### 5.2 静态规则与规范格式
 
 - **静态规则**：文法表达不了的 L、G 规则在语法树上检查，例如声明和成员的次序、名称的写法、保留字、摘要的形式、同一块中重复的成员。违反的规则全部报告。语法树只有在没有任何诊断时才进入下一阶段。
-- **规范格式**：打印器把语法树写成规范文本，它实现 P 规则。`unicode fmt` 用它改写文件；`unicode check` 把它与源文本逐字节比较，不同时报 `cli.not-canonical`。规范文本再经分析和打印，结果不变。
+- **规范格式**：打印器把语法树写成规范文本，P 规则由它保证。`unicode fmt` 用它改写文件；`unicode check` 把它与源文本逐字节比较，不同时报 `cli.not-canonical`。规范文本再经分析和打印，结果不变。
 
 ### 5.3 载入
 
 `design.Load` 接收全部合法的语法树，产出设计层和诊断（`design.Loaded`），分三步：
 
 1. **声明**：按固定次序读取声明，为每条声明建一个节点并给出标识。次序是系统文件、由浅到深的组件文件、组件中的成员、录制文件，同组之内按路径。两条声明得到同一标识时，后读到的报 `design.duplicate-name`；读取次序固定，所以哪一条算重复与文件次序无关。
-2. **解析引用**：全部节点建好之后，按依赖分批解析引用：先是组件的 `uses`；再是类型和操作的签名、符号和观察的类型；再是符号的取值域与观察输入；最后是步骤、用例和全部契约子句。解析成功即按 §4.3 建边；失败时报 `design.unresolved-reference` 或 `design.wrong-reference-kind`。
+2. **解析引用**：全部节点建好之后，按依赖分批解析引用：先是组件的 `uses`；再是类型和操作的签名、符号和观察的类型；再是符号的取值域与观察输入；最后是步骤、用例和黑盒契约的全部子句。解析成功即按 §4.3 建边；失败时报 `design.unresolved-reference` 或 `design.wrong-reference-kind`。
 3. **设计约束**：检查只需设计就能判断的约束（[design.md](design.md) §5.1），包括表达式的类型（§4.4），以及用例的值是否属于符号的类型并落在限定之内。
 
 有语法错误的文件不参与载入；其余文件照常载入，指向缺失声明的引用报为未解析。
@@ -412,7 +412,7 @@ NL            = 换行 { 换行 } .
 - **`generates <标识>`**：写在生成器函数上，标识是性质或流程的标识后接 `.` 和一个生成的符号的名称，表示它给出这个符号的生成器。同一个生成器可以用于几个符号，每个符号写一行 `generates`。
 - **`observes <标识>`**：写在只读的观察适配器自由函数上，指向性质内的具名观察。参数按 `from` 的次序，返回观察类型的值；Go 可以另带末尾的 `error`，Python 抛出的异常也属于观察失败。这些失败是检查错误（E15），不是被测操作声明的错误。
 
-- **`substitutes <标识>`**：写在安装器上（[model.md](model.md) §4），安装器是自由函数。目标是外部系统直接提供的操作；Go 参数是与真实客户端完全同签名的函数，唯一返回值是清理函数 `func()`。脚本通过 `forall answers: replies<外部操作>` 提供；`replies` 只作符号的直接类型，同一检查每个目标至多一个脚本；接口字段按操作名给出同形脚本。每项应答是 `{returns: 值}` 或 `{raises: "绝对错误标识", fields: {…}}`，无返回值的成功值为 `none`；脚本非空，末项重复。应答的类型、声明的错误和字段都在设计载入时检查。
+- **`substitutes <标识>`**：写在安装器上（[model.md](model.md) §4），安装器是自由函数。目标是外部系统直接提供的操作；Go 参数是与真实客户端完全同签名的函数，唯一返回值是清理函数 `func()`。脚本通过 `forall answers: replies<外部操作>` 提供；`replies` 只作符号的直接类型，同一条性质或同一个流程对每个目标至多一个脚本；接口字段按操作名给出同形脚本。每项应答是 `{returns: 值}` 或 `{raises: "绝对错误标识", fields: {…}}`，无返回值的成功值为 `none`；脚本非空，末项重复。应答的类型、声明的错误和字段都在设计载入时检查。
 
 - **`publishes <事件标识>`**：写在发布函数上（[model.md](model.md) §4），发布函数是事件实际发布处的函数或方法，恰接收该事件的一个参数且没有返回值；多个发布函数可以指向同一事件，每个函数只声明一个。发布函数正常返回时记一次发布，panic 或没有返回时不算发布；构造事件或进入订阅者都不算发布。
 
@@ -684,7 +684,7 @@ case r-3f9a2c1d coverage {
 
 ### 7.1 单次转账的黑盒契约
 
-`bank` 组件的操作实现、凭据和错误都由代码绑定；具名观察的适配器另带 `//uc:observes bank.declined-keeps-state.state`，接收 `Bank`，返回 `BankSnapshot` 或 `(BankSnapshot, error)`。
+`bank` 组件的类型和操作都由代码中带绑定的类型和函数实现；具名观察的适配器另带 `//uc:observes bank.declined-keeps-state.state`，接收 `Bank`，返回 `BankSnapshot` 或 `(BankSnapshot, error)`。
 
 ```uc
 component bank "账户转账" {
@@ -778,13 +778,13 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 
 ## 附录 B 规则与诊断码
 
-每条规则一行，列出违反它时报出的诊断码，以及生成器违反它的性质或流程（`design/*.uc` 中的标识）。P 规则由打印器实现，违反时报 `cli.not-canonical`。不属于任何规则的诊断码列在 [design.md](design.md) §8。`make rule-check`（`scripts/rulecodes.py`）检查本表、[model.md](model.md) 附录 B 和 [design.md](design.md) §8 合起来恰好列出代码中的全部诊断码。
+每条规则一行，列出违反它时报出的诊断码，以及生成器违反它的性质或流程（`design/*.uc` 中的标识）。P 规则由打印器保证，违反时报 `cli.not-canonical`。不属于任何规则的诊断码列在 [design.md](design.md) §8。`make rule-check`（`scripts/rulecodes.py`）检查本表、[model.md](model.md) 附录 B 和 [design.md](design.md) §8 合起来恰好列出代码中的全部诊断码。
 
 | 规则 | 诊断码 | 验证的性质 |
 | --- | --- | --- |
 | F1 | `cli.not-a-design-file` | `syntax.kind-of-follows-path`、`cli.format-files`、`cli.check-design` |
 | F2 | `syntax.missing-header`、`syntax.unknown-declaration`、`syntax.duplicate-member`、`syntax.missing-member`、`design.missing-system-file`、`design.component-path-mismatch` | `syntax.rejects-broken-text`、`design.rejects-broken-design` |
-| F3 | `cli.not-a-design-file`、`syntax.missing-header`、`syntax.unknown-declaration`、`syntax.duplicate-member`、`design.corpus-path-mismatch`；"只由 `unicode test --record` 写入"未实现：M6 | `cli.format-files`、`syntax.rejects-broken-text`、`design.rejects-broken-design` |
+| F3 | `cli.not-a-design-file`、`syntax.missing-header`、`syntax.unknown-declaration`、`syntax.duplicate-member`、`design.corpus-path-mismatch`；"只由 `unicode test --record` 写入"待做：M6 | `cli.format-files`、`syntax.rejects-broken-text`、`design.rejects-broken-design` |
 | F4 | `cli.not-canonical` | `syntax.format-is-stable`、`cli.format-files`、`cli.check-design` |
 | L1 | `syntax.invalid-utf8`、`syntax.tab`、`syntax.carriage-return`、`syntax.control-character`、`syntax.unexpected-character` | `syntax.rejects-broken-text` |
 | L2 | `syntax.trailing-comment` | `syntax.rejects-broken-text` |
