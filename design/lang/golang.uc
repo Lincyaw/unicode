@@ -62,6 +62,11 @@ type BodySample record "操作内容哈希的样本：原有常数、变化与�
   field spaced: bool
 }
 
+type MeasurementSample record "可重建临时仓库的模型数据：数值、输入域、codec 状态及同步异步轨迹变体，不保存临时绝对路径" {
+  field value: int
+  field variant: int
+}
+
 op newBackend() -> Backend "一个 Go 后端"
 
 op declaration(src: bytes, line: int, column: int) -> optional<Lines> "Go 源码中包含这一位置的顶层声明所占的行，从它的文档注释起；分组的类型声明中，取包含这一位置的那个类型；源码解析不了，或者这一位置不在任何声明之中时没有"
@@ -82,6 +87,12 @@ property driver-modes-preserve-claims invariant "普通测试回放后完整执�
   about Backend
   forall sample: DriverSample generated "合法的完整性质标识，零到三个整数符号，以及自动或人工谓词；覆盖名称和符号次序的改变"
   manual "需要编译驱动并检查测试入口、原生 fuzz、输入调度和运行上下文，模型值的关系不能直接表达 Go 代码生成"
+}
+
+property measured-execution-keeps-real-evidence invariant "通过真实生成和隔离 worker 运行模型输入；探索拒绝继续计数，完整保留有效输入，基本块映射到原始源码；codec 保持表示，别名错误不静默复制；同步与异步轨迹须恰符合流程，额外调用不被忽略" {
+  about Backend
+  forall sample: MeasurementSample generated "可重建的合法回放、输入域拒绝、codec 私有状态、共享别名，以及同步、发布和额外异步调用的原始变体"
+  manual "从模型数据重建临时 Go 仓库并运行真实编译器和隔离进程，读取原始 profile、轨迹及报告逐项比较；这些环境生命周期尚不在表达式中，不提交手写 Test/Fuzz 或固定例子"
 }
 
 property generation-extraction-is-read-only invariant "普通抽取严格检查生成测试；生成模式仅排除本工具拥有的常规生成测试，手写错误和符号链接不作为可修复输出；两种抽取均不改变磁盘文件" {
