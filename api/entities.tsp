@@ -242,6 +242,9 @@ model CodeDetail {
 
 /** The preview of one edge that a view draws, such as a reaches or a depends edge. */
 model EdgeEntity {
+  /** The edge review, evaluated against its identity and content. */
+  review?: Review;
+
   /** The edge, with its status */
   edge: Edge;
 

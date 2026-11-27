@@ -86,6 +86,10 @@ enum ReviewState {
 /** M7: the review record of a node. */
 model Review {
   state: ReviewState;
+  target?: ReviewTarget;
+  recordId?: string;
+  snapshot?: string;
+  decision?: "approved" | "changes-requested";
   reviewer?: string;
   at?: utcDateTime;
 

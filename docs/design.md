@@ -522,7 +522,7 @@ Go 先以只读源码覆盖插入 `runtime/trace.Log`，编译一次带 `atomic`
 
 建图时加入 review 层记录节点和指向仍存在目标的 `about` 边；边目标的完整身份保存在节点属性中，删除项不生成悬空边。查询、评审计算及执行输入摘要排除这些运行产物，避免记录使自身失效。`graph.inputDigest` 对执行输入图做确定编码，排除 evidence/review、case、本工具生成代码及其关联边，保留其余节点、边和位置；用例另以输入摘要锚定。录制后新增用例及重新生成驱动不会立即使刚产生的证据过期。
 
-命令行写记录，查看器接口仍只读。实体和边的预览使用现有评审位置展示真实状态、结论和意见；待审列表支持比较基准与删除项。服务端把评审存储与结果文件的内容变化纳入读取条件，写完后下一次请求可见，不要求重启服务。界面沿用已有 Figma 原型的评审与证据位置；新增交互须先更新原型。
+命令行写记录，查看器接口仍只读。实体和边的预览使用现有评审位置展示真实状态、结论和意见；待审列表支持比较基准与删除项。`GET /api/reviews` 缺省 pending=true，可给 base 和重复 id 参数；实体和边预览的 review 字段给出当前指纹对应的最新记录，接口契约见 api/reviews.tsp。服务端把评审存储与结果文件的内容变化纳入读取条件，写完后下一次请求可见，不要求重启服务。界面沿用已有 Figma 原型的评审与证据位置；新增交互须先更新原型。
 
 ## 8 命令行
 
@@ -543,7 +543,7 @@ Go 先以只读源码覆盖插入 `runtime/trace.Log`，编译一次带 `atomic`
 | `unicode slice <id>... [--expand ID]... [--with-code]` | 切片 | 无 |
 | `unicode impact <id>...` | 影响 | 无 |
 | `unicode view <kind> [<id>] [--expand ID]... [--layer design\|code] [--level context\|container]` | 视图的数据 | 无 |
-| `unicode review list [ID...] [--base REV] [--pending]` | 列出评审候选或待审项；带基准时包括删除项 | 无 |
+| `unicode review list [ID...] [--base REV] [--pending]` | 缺省列出待审项，--pending=false 列出全部候选；带基准时包括删除项 | 无 |
 | `unicode review record [ID] [--edge KIND --from ID --to ID] [--base REV] [--removed] --reviewer NAME --decision approved\|changes-requested [--comment TEXT] [--expect-digest HASH]` | 对节点或边的当前内容记录评审；删除项须给出基准 | `.unicode/reviews/` |
 | `unicode schema` | 输出命令、参数和各命令输出的 JSON Schema | 无 |
 | `unicode serve [--snapshot FILE] [--addr HOST:PORT] [--web DIR]` | 启动查看器：读取快照，回答 §7.5.1 的接口，并提供前端页面 | 无 |

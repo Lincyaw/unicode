@@ -11,8 +11,8 @@ info:
     parameter, never in a path segment. JSON field names are the design's, in lower camel case, as the command line's
     JSON already writes them.
 
-    Fields marked M6 (evidence: runs, results, coverage) and M7 (review records) are optional: the graph does not hold
-    them yet, and the server leaves them out until it does.
+    Evidence and review fields are optional until a measurement or a matching review exists; unmeasured data is
+    absent rather than reported as a successful or complete check.
 tags: []
 paths:
   /code:
@@ -421,6 +421,66 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Node'
+        '400':
+          description: |-
+            The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
+            revision that git cannot read (`serve.bad-revision`), a path outside the repository (`serve.bad-path`), or a
+            parameter that is missing, not of its type, or not read by the view it is given to (`serve.bad-parameter`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /reviews:
+    get:
+      operationId: listReviews
+      description: Pending items by default; a base includes additions, modifications and deletions.
+      parameters:
+        - name: pending
+          in: query
+          required: false
+          schema:
+            type: boolean
+          explode: false
+        - name: base
+          in: query
+          required: false
+          schema:
+            type: string
+          explode: false
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewCollection'
         '400':
           description: |-
             The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
@@ -1194,6 +1254,10 @@ components:
         - diagnostics
         - views
       properties:
+        review:
+          allOf:
+            - $ref: '#/components/schemas/Review'
+          description: The edge review, evaluated against its identity and content.
         edge:
           allOf:
             - $ref: '#/components/schemas/Edge'
@@ -1757,6 +1821,17 @@ components:
       properties:
         state:
           $ref: '#/components/schemas/ReviewState'
+        target:
+          $ref: '#/components/schemas/ReviewTarget'
+        recordId:
+          type: string
+        snapshot:
+          type: string
+        decision:
+          type: string
+          enum:
+            - approved
+            - changes-requested
         reviewer:
           type: string
         at:
@@ -1768,12 +1843,96 @@ components:
         comment:
           type: string
       description: 'M7: the review record of a node.'
+    ReviewCollection:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewItem'
+    ReviewItem:
+      type: object
+      required:
+        - target
+        - digest
+        - state
+      properties:
+        target:
+          $ref: '#/components/schemas/ReviewTarget'
+        digest:
+          type: string
+        state:
+          $ref: '#/components/schemas/ReviewState'
+        record:
+          $ref: '#/components/schemas/ReviewRecord'
+      description: The current fingerprint and latest matching record, independently of approval.
+    ReviewRecord:
+      type: object
+      required:
+        - version
+        - id
+        - reviewer
+        - at
+        - snapshot
+        - commit
+        - dirty
+        - target
+        - digest
+        - decision
+        - comment
+      properties:
+        version:
+          type: integer
+          format: int32
+        id:
+          type: string
+        reviewer:
+          type: string
+        at:
+          type: string
+          format: date-time
+        snapshot:
+          type: string
+        commit:
+          type: string
+        dirty:
+          type: boolean
+        target:
+          $ref: '#/components/schemas/ReviewTarget'
+        digest:
+          type: string
+        decision:
+          type: string
+          enum:
+            - approved
+            - changes-requested
+        comment:
+          type: string
+      description: One immutable review record from .unicode/reviews.
     ReviewState:
       type: string
       enum:
         - pending
         - reviewed
       description: 'M7: 评审：未评审、已评审.'
+    ReviewTarget:
+      type: object
+      required:
+        - removed
+      properties:
+        node:
+          type: string
+        edgeKind:
+          $ref: '#/components/schemas/EdgeKind'
+        from:
+          type: string
+        to:
+          type: string
+        removed:
+          type: boolean
+      description: Exactly one node or one edge; removed identifies a deletion relative to base.
     Revision:
       type: object
       required:

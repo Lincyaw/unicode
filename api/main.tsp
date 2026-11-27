@@ -9,6 +9,7 @@ import "./diagnostics.tsp";
 import "./code.tsp";
 import "./compare.tsp";
 import "./evidence.tsp";
+import "./reviews.tsp";
 
 using Http;
 using OpenAPI;
@@ -22,8 +23,8 @@ using OpenAPI;
  * parameter, never in a path segment. JSON field names are the design's, in lower camel case, as the command line's
  * JSON already writes them.
  *
- * Fields marked M6 (evidence: runs, results, coverage) and M7 (review records) are optional: the graph does not hold
- * them yet, and the server leaves them out until it does.
+ * Evidence and review fields are optional until a measurement or a matching review exists; unmeasured data is
+ * absent rather than reported as a successful or complete check.
  */
 @service(#{ title: "unicode viewer API" })
 @info(#{ version: "0.1.0" })
