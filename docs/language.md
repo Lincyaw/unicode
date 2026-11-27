@@ -8,7 +8,7 @@
 
 ## 1 文件
 
-规则按前缀分组：F（源文件）、L（词法）、G（语法）、P（排版）、R（引用）。违反 F、L、G、R 规则是错误，`unicode fmt` 不改动这样的文件；违反 P 规则的文件，`unicode fmt` 改写成规范格式，`unicode check` 报 `cli.not-canonical`。理由见附录 A。
+规则按前缀分组：F（源文件）、L（词法）、G（语法）、P（排版）、R（引用）、E（表达式）、B（绑定）。违反 F、L、G、R、B 规则是错误，`unicode fmt` 不改动这样的文件；违反 P 规则的文件，`unicode fmt` 改写成规范格式，`unicode check` 报 `cli.not-canonical`。E 规则中，名称和类型的规则在载入时检查，求值和检查的规则在运行谓词时适用。理由见附录 A。
 
 - **F1** 设计文件在仓库根目录的 `design/` 中，扩展名为 `.uc`；`design/` 中没有其他文件。
 - **F2** `design/system.uc` 是系统文件，声明系统、记法、各语言的源码根目录和参与者。其余每个设计文件声明一个组件，路径由组件的标识决定：组件 `order` 在 `design/order.uc`，组件 `order.pricing` 在 `design/order/pricing.uc`。顶层组件不能叫 `system`。
@@ -30,7 +30,7 @@
   | 大驼峰 | `[A-Z][A-Za-z0-9]*` | 类型 |
   | 小驼峰 | `[a-z][A-Za-z0-9]*` | 操作、字段、参数、枚举值、符号 |
 
-- **L7** `true`、`false` 和 `none` 是保留字，不能用作小驼峰的名称；其余关键字都可以用作名称。
+- **L7** `true`、`false` 和 `none` 是保留字，不能用作小驼峰的名称；其余关键字都可以用作名称，G15 列出的除外。
 
 ## 3 语法
 
@@ -67,7 +67,7 @@ TypeExpr      = Builtin | TypeRef
               | "call" "<" Ref { "," Ref } ">" .
 Builtin       = "bool" | "int" | "float" | "string" | "bytes" | "time" | "duration" .
 
-FlowDecl      = "flow" Kebab String "{" NL { Symbol } { Limit } { Step } { CaseDecl } "}" NL .
+FlowDecl      = "flow" Kebab String "{" NL { Symbol } { Limit } { Step } [ Within ] { Ensure } { CaseDecl } "}" NL .
 Step          = Call { OnBlock } | Send | Emit | Async | Fragment .
 Call          = Participant "->" OpRef Args [ "{" NL { Step } "}" ] NL .
 Send          = Participant "->>" OpRef Args NL .
@@ -81,9 +81,10 @@ Fragment      = "alt" String "{" NL { Step } { "}" "else" String "{" NL { Step }
 PropertyDecl  = "property" Kebab PropertyForm String "{" NL
                 "about" Ref { "," Ref } NL
                 { Symbol } { Limit } [ Act ]
-                ( Ensure { Ensure } | Manual ) { CaseDecl }
+                ( Within { Ensure } | Ensure { Ensure } | Manual ) { CaseDecl }
                 "}" NL .
 Act           = "call" Expr NL .
+Within        = "within" String NL .
 Ensure        = "ensure" Expr NL .
 Manual        = "manual" String NL .
 PropertyForm  = "invariant" | "postcondition" | "relation" | "transition" .
@@ -105,16 +106,15 @@ And           = Not { "and" Not } .
 Not           = "not" Not | Comparison .
 Comparison    = Sum [ ( "==" | "!=" | "<" | "<=" | ">" | ">=" | "in" ) Sum ] .
 Sum           = Product { ( "+" | "-" ) Product } .
-Product       = Unary { ( "*" | "/" ) Unary } .
-Unary         = "-" Unary | Postfix .
-Postfix       = Atom { "." Lower [ Arguments ] } .
+Product       = Postfix { ( "*" | "/" ) Postfix } .
+Postfix       = Atom { "." Name [ Arguments ] | "[" Expr "]" } .
 Arguments     = "(" [ Expr { "," Expr } ] ")" .
 Atom          = Number | String | "true" | "false" | "none" | "result"
-              | Ref [ Arguments ]
+              | Name [ Arguments ]
               | "old" "(" Expr ")" | "raised" "(" TypeRef ")"
               | Each "(" Lower "in" Expr ":" Expr ")"
               | "(" Expr ")" .
-Each          = "all" | "any" | "sum" .
+Each          = "all" | "any" | "count" | "sum" .
 
 CorpusFile    = "corpus" Ref NL { RecordedCase } .
 RecordedCase  = "case" Kebab ( "coverage" | "counterexample" ) "{" NL { Lower "=" Value NL } "}" NL .
@@ -133,7 +133,7 @@ NL            = 换行 { 换行 } .
 - **G0** 每个文件合乎 §3 中它的种类的产生式，包括产生式规定的声明次序、块的成员和只出现一次的子句。
 - **G1** 组件文件中的声明按组件、类型、操作、流程、性质分组，各组内部保持作者写的次序。
 - **G2** 类型的成员按 `label`、`extends`、`implements`、`field` 或 `value`、`op` 的次序排列。`value` 只出现在 `enum` 中；`field` 不出现在 `enum` 和 `interface` 中。
-- **G3** 流程的成员按 `forall`、`where`、步骤、`case` 的次序排列；性质的成员按 `about`、`forall`、`where`、`call`、`ensure` 或 `manual`、`case` 的次序排列。
+- **G3** 流程的成员按 `forall`、`where`、步骤、`case` 的次序排列；性质的成员按 `about`、`forall`、`where`、`call`、`within`、`ensure` 或 `manual`、`case` 的次序排列；流程的 `within` 和 `ensure` 在步骤之后、`case` 之前。
 - **G4** `{` 总在行尾，`}` 总在行首；同一行中 `{` 之后或 `}` 之前不能有别的内容。`alt` 的分支写作一行 `} else "标签" {`。
 - **G5** 在流程中，一行的第一个词之后是 `->`、`->>` 或 `.`，或是 `emits` 再接一个大驼峰的词或带 `.` 的引用时，这一行是一个步骤；否则第一个词是关键字。
 - **G6** 调用后面的 `{ … }` 是这次调用的子步骤。`on` 紧跟在一个调用之后，调用带子步骤时在它的 `}` 之后；一个调用之后可以有几个 `on`。调用与 `on` 之间的注释属于 `on`。
@@ -148,11 +148,12 @@ NL            = 换行 { 换行 } .
 
 **性质的陈述**
 
-- **G12** 性质恰有两者之一：一条或多条 `ensure`，或一条 `manual`。`manual` 的字符串写明这条性质为什么不能写成表达式，并遵守 L4。
-- **G13** `call` 子句至多一条。形式为 `postcondition` 且带 `ensure` 的性质恰有一条；其他形式的性质没有。
-- **G14** 形式为 `transition` 且带 `ensure` 的性质，恰有一个类型为 `list<call<T>>` 的符号，并恰有一个类型为 T 的符号。
-- **G15** 表达式的关键字（`implies`、`or`、`and`、`not`、`in`、`old`、`raised`、`result`、`all`、`any`、`sum`、`size`）不能用作符号或约束变量的名称。
-- **G16** 一个表达式写在一行之内。
+- **G12** `manual` 的字符串写明这条性质为什么不能写成表达式，并遵守 L4。
+- **G13** 形式为 `postcondition` 且带 `ensure` 或 `within` 的性质恰有一条 `call` 子句，它调用的操作在 `about` 中；其他形式的性质没有 `call` 子句。`within` 只出现在带 `call` 子句的性质和流程中，它的字符串是一个 `duration` 的值（§3.1）。
+- **G14** 带 `ensure` 的性质至多有一个类型为 `list<call<R1, …, Rk>>` 的符号。有这样的符号时，R1, …, Rk 中的操作都属于同一个类型 T，性质恰有一个类型为 T 的符号，并且没有 `call` 子句。形式为 `transition` 且带 `ensure` 的性质必须有这样的符号。
+- **G15** 表达式的关键字（`implies`、`or`、`and`、`not`、`in`、`old`、`raised`、`result`、`all`、`any`、`count`、`sum`、`size`）不能用作符号、约束变量，以及容器或外部系统直接提供的操作的名称。
+- **G16** 表达式中二元运算符的两边各有一个空格。`a-b` 是一个短横线名称，`a -1` 是一个名称之后跟一个负数，都不是减法。
+- **G17** 带 `ensure` 或 `within` 的流程，第一个步骤是一个调用。
 
 标签的约束见 [model.md](model.md) §10 第 5 条。
 
@@ -160,7 +161,7 @@ NL            = 换行 { 换行 } .
 
 - **P1** `NL` 是一个或多个换行；空行属于排版。
 - **P2** 顶层声明之间恰好空一行，块内不空行，文件末尾恰有一个换行。
-- **P3** 逗号之后一个空格；`:` 之前没有空格、之后一个空格；`->`、`->>`、`=`、`emits` 以及表达式的二元运算符两边各一个空格，一元的 `-` 之后没有空格；`<` `>` `(` `)` `[` `]` 和值的 `{` `}` 内侧没有空格；区间写作 `1..10`。
+- **P3** 逗号之后一个空格；`:` 之前没有空格、之后一个空格；`->`、`->>`、`=`、`emits` 两边各一个空格；类型的 `<` `>`，以及 `(` `)` `[` `]` 和值的 `{` `}`，内侧没有空格；区间写作 `1..10`。
 - **P4** 可选的块为空时（类型、外部系统、调用的子步骤）不写花括号；必需的块为空时写成 `{` 和 `}` 两行。
 - **P5** 注释的归属：一组注释（其间可以有空行）属于紧随其后的声明、成员或步骤，紧贴在它之上，缩进与它相同；`}` 之前的注释留在块的末尾；`} else` 之前的注释属于前一个分支；最后一个声明之后的注释，空一行之后打印。
 - **P6** 值的宽度按显示宽度计（东亚的宽字符算两列），包括缩进、前面的 `name = ` 或 `key: `，以及结尾的逗号。值能在 100 列之内写完时写在一行，元素之间用逗号分隔，最后一项之后没有逗号；写不完时，每个元素、字段或参数各占一行，缩进一级，每一项之后都有逗号。这条规则逐层适用。不能再拆的值写不完时，仍写在一行。
@@ -219,9 +220,9 @@ NL            = 换行 { 换行 } .
 - `field`、`value`：类型的字段和枚举值；
 - `forall`、`where`：性质或流程的符号和限定；
 - 用例中的赋值：用例对各符号的取值，按 §3.1 解读，并且必须落在限定之内；
-- 摘要：节点的摘要。性质的摘要用一句话说明它的陈述；陈述本身是 `ensure` 表达式（§4.4）；
-- `pure`：操作是纯的，可以在表达式中调用；
-- `call`、`ensure`、`manual`：性质的陈述，或不能写成表达式的声明。
+- 摘要：节点的摘要。性质的摘要用一句话说明它的陈述；
+- `pure`：操作是纯操作（[model.md](model.md) §3.3），可以在表达式中调用；
+- `call`、`within`、`ensure`：性质或流程的陈述；`manual`：人工性质的原因。
 
 字符串，即摘要、生成符号的取值域说明、`alt`、`opt`、`loop` 和 `else` 的标签，以及 `manual` 的原因，不参与约束的检查。它们计入节点的内容哈希，所以改动会出现在快照的比较和评审中（[model.md](model.md) §8）。
 
@@ -236,6 +237,7 @@ NL            = 换行 { 换行 } .
 | `handles E` | `subscribes` 操作 → E |
 | `forall x: E` | E 中每个命名类型 T：`refers` 性质或流程 → T |
 | `about R` | `about` 性质 → R |
+| `call`、`ensure` 中引用的操作 o 和枚举值 `T.v` | `refers` 性质或流程 → o、T |
 | `P -> R(…)`、`P ->> R(…)` | `call`、`send` 步骤；`calls` 步骤 → R，`from` 步骤 → P |
 | `P emits E(…)` | `emit` 步骤；`emits` 步骤 → E，`from` 步骤 → P |
 | `async R { … }` | `async` 步骤；`calls` 步骤 → R |
@@ -245,52 +247,64 @@ NL            = 换行 { 换行 } .
 
 ### 4.4 表达式
 
-性质的 `call` 和 `ensure` 中写表达式。表达式只陈述已声明的结构之间的关系，不是一门编程语言：它是纯的，求值不改变任何状态（`call` 子句除外），并且必然终止。表达不了的陈述，先拆成几条原子性质；仍然表达不了的，声明为 `manual`。
+性质和流程的 `call`、`ensure` 中写表达式。表达式的求值不改变任何值（`call` 子句除外），表达式的构造本身必然终止。
 
 **名称。**
 
-- **E1** `a.b.c` 中，若 `a` 是约束变量或符号，其余各段依次是字段访问；最后一段带实参时，是对该段之前那个值的类型的操作的调用。
-- **E2** 否则，`size` 是唯一的内置函数；其余的引用按 R1–R3 解析，只能指向枚举值 `T.v` 或操作。
+- **E1** 链 `a.s1.….sk` 中，`a` 是符号或约束变量时，带实参表的段是对前一个值的类型的操作的调用，其余的段是字段访问。
+- **E2** `a` 不是符号或约束变量时，取链中按 R1–R3 能解析为枚举值或操作的最长前缀作为引用，其后的段按 E1 读。`size` 是唯一的内置函数。
+- **E3** 量化式 `all(x in c: p)`、`any`、`count`、`sum` 中的 x 称为**约束变量**，作用域是冒号之后的表达式；约束变量与所在性质或流程的符号、外层的约束变量互不同名。
 
 **类型。** 每个表达式有一个类型，记作 e : T。未列出的组合都是类型错误：
 
 | 表达式 | 条件 | 类型 |
 | --- | --- | --- |
-| 整数字面量；带小数点的数；字符串；`true`、`false` | — | `int`；`float`；`string`；`bool` |
+| 符号 x | — | x 的类型 |
+| 约束变量 x | 见量化式的行 | 见该行 |
+| 不带小数点的数；带小数点的数；字符串；`true`、`false` | — | `int`；`float`；`string`；`bool` |
 | `none` | 与 `optional<T>` 的值比较 | `optional<T>` |
 | `T.v` | T 是 `enum`，v 是它的枚举值 | T |
 | `e.f` | e : R，R 是 `record`、`object` 或 `event`，f 是 R 中写出的字段 | f 的类型 |
-| `e.o(a1, …)`、`o(a1, …)` | o 是声明为 `pure` 的操作，有返回值，实参的类型与参数一一相同 | o 的返回类型 |
+| `e.o(a1, …)` | e : R，o 是 R 的操作，声明为 `pure`，有返回值，实参的类型与参数一一相同 | o 的返回类型 |
+| `o(a1, …)` | o 是容器或外部系统直接提供的操作，其余同上 | o 的返回类型 |
 | `size(e)` | e 为 `list`、`set`、`map`、`string` 或 `bytes` | `int` |
-| `-e`；`e1 + e2`、`e1 - e2`、`e1 * e2`、`e1 / e2` | 操作数同为 `int` 或同为 `float` | 操作数的类型 |
+| `e[k]` | e : `map<K, V>`，k : K | V |
+| `e1 + e2`、`e1 - e2`、`e1 * e2`、`e1 / e2` | 操作数同为 `int` 或同为 `float` | 操作数的类型 |
 | `e1 == e2`、`e1 != e2` | 操作数同一类型，不是 `call<…>` | `bool` |
 | `e1 < e2`、`<=`、`>`、`>=` | 操作数同为 `int`、`float`、`string`、`time` 或 `duration` | `bool` |
-| `e1 in e2` | e2 : `list<T>` 或 `set<T>`，e1 : T | `bool` |
+| `e1 in e2` | e2 : `list<T>` 或 `set<T>` 且 e1 : T；或 e2 : `map<K, V>` 且 e1 : K | `bool` |
 | `not e`；`e1 and e2`、`e1 or e2`、`e1 implies e2` | 操作数都是 `bool` | `bool` |
-| `all(x in c: p)`、`any(x in c: p)` | c : `list<T>`、`set<T>` 或 `map<K, T>`，x : T 时 p : `bool` | `bool` |
-| `sum(x in c: e)` | c 同上，x : T 时 e : `int` 或 `float` | e 的类型 |
-| `old(e)` | 性质有 `call` 子句或调用序列 | e 的类型 |
-| `result` | `call` 子句调用的操作有返回值 | 返回类型 |
-| `raised(E)` | E 在 `call` 子句调用的操作的 `raises` 中 | `bool` |
+| `all(x in c: p)`、`any(x in c: p)` | c : `list<T>` 或 `set<T>` 时 x : T，c : `map<K, V>` 时 x : K；p : `bool` | `bool` |
+| `count(x in c: p)` | 同上 | `int` |
+| `sum(x in c: e)` | x 同上；e : `int` 或 `float` | e 的类型 |
+| `old(e)` | 有被测的调用或调用序列；e 中没有约束变量、`old`、`result` 和 `raised` | e 的类型 |
+| `result` | 被测的调用有返回值 | 返回类型 |
+| `raised(E)` | E 在被测调用的操作的 `raises` 中 | `bool` |
 
-`call` 子句是一次操作调用；`ensure` 的表达式为 `bool`。
+类型为 `optional<T>` 的表达式可以用在需要 T 的地方。`int` 与 `float` 不互相转换，与 `float` 比较的常数写作 `0.0`。`ensure` 的类型为 `bool`。
+
+**被测的调用**是性质的 `call` 子句，或流程的第一个步骤。`call` 子句写作 `e.o(a1, …)` 或 `o(a1, …)`：o 可以不是纯操作，可以没有返回值；e 是符号，或从符号出发的字段访问；实参中没有 `old`、`result` 和 `raised`。
 
 **求值。**
 
-- **E3** `int` 是数学上的整数，没有溢出；`float` 是 IEEE 754 的双精度数；`int` 的 `/` 向零截断。
-- **E4** `==` 是结构相等：记录逐字段比较，`list` 按次序比较，`set` 和 `map` 不计次序。
-- **E5** `and`、`or` 和 `implies` 只求值需要的操作数，其余运算先求值全部操作数。
-- **E6** 除以零是求值错误。
+- **E4** `int` 是数学上的整数，没有溢出；`int` 的 `/` 向零截断。`float` 是有限的 IEEE 754 双精度数，运算得到 NaN 或无穷是求值错误；`float` 的 `sum` 是各项的精确和舍入到最近的双精度数，与次序无关。
+- **E5** `==` 是结构相等：`record`、`object` 和 `event` 逐个比较设计中写出的字段，`list` 按次序比较，`set` 和 `map` 不计次序。
+- **E6** `and`、`or` 和 `implies` 只求值需要的操作数；其余运算先求值全部操作数。
+- **E7** 量化式对 c 的每个元素都求值，不短路。c 为空时，`all` 为真，`any` 为假，`count` 为 `0`，`sum` 为 `0` 或 `0.0`。
+- **E8** `size` 对 `string` 计码位的个数，对 `bytes` 计字节数；`string` 的 `<` 按码位的字典序比较。
+- **E9** `old(e)` 的值是被测调用之前 e 的值的副本，此后的调用不改变它。
+- **E10** `raised(E)` 为真，当且仅当被测调用抛出的错误是 E，或经 `extends` 以 E 为祖先。
+- **E11** 以下是求值错误：除以零；`map` 中不存在的键；用在需要 T 的地方的 `optional<T>` 的值为 `none`；纯操作在表达式中抛出错误；被测调用抛出错误时求值 `result`。
 
-**检查。** 一条带 `ensure` 的性质，对每个用例（声明的、录制的和生成的）：
+**检查。** 一条带陈述的性质或流程，对每个用例（声明的、录制的和生成的）：
 
-1. 有 `call` 子句时，先求值全部 `old(e)`，再执行这次调用，记下 `result` 或抛出的错误，然后求值全部 `ensure`；
-2. 有类型为 `list<call<T>>` 的符号时，把其中的调用依次作用到类型为 T 的符号上，每次调用之前求值 `old(e)`，之后求值全部 `ensure`；
-3. 否则求值全部 `ensure`。
+- **E12** 有被测的调用时，先求值全部 `old(e)`，再执行这次调用，记下返回值或抛出的错误，然后求值全部 `ensure`。被测调用抛出不在其操作的 `raises` 中的错误时，这个用例是反例。流程的被测调用由流程的驱动执行，执行时按步骤核对调用的先后（[design.md](design.md) §6.3）。
+- **E13** 有调用序列的符号时（G14），先求值一次全部 `ensure`；再把调用依次作用到类型为 T 的符号上，每次调用之前求值 `old(e)`，之后求值全部 `ensure`。调用抛出它的 `raises` 中的错误时，接着执行下一个调用；抛出其他错误时，这个用例是反例。
+- **E14** 其余的性质，求值全部 `ensure`。
+- **E15** 任一 `ensure` 为假，或出现求值错误，这个用例就是反例。外部系统的应答和类型为接口的字段由替身给出，也是生成的输入（[design.md](design.md) §6.2）。
+- **E16** 带 `within` 的性质或流程，记下一次运行中每个用例的被测调用的耗时；这些耗时的第 95 百分位超过 `within` 的时长时，这条性质或流程不通过。
 
-任一 `ensure` 为假，或出现求值错误，这个用例就是反例。外部系统的应答由替身给出，也是生成的输入（[design.md](design.md) §6.2）。
-
-带 `manual` 的性质没有可求值的陈述，由手写的谓词检查（[model.md](model.md) §10 第 20 条）。
+人工性质没有可求值的陈述，由手写的谓词检查（[model.md](model.md) §10 第 20 条）。
 
 ## 5 编译
 
@@ -315,7 +329,7 @@ NL            = 换行 { 换行 } .
 ### 5.1 分类、词法分析与语法分析
 
 - **分类**：路径决定文件的种类，种类决定使用哪个起始符号。`design/system.uc` 是系统文件，`design/` 中的其他 `.uc` 文件是组件文件，`corpus/` 中的 `.uc` 文件是录制文件；其他路径不是本语言的源文件。
-- **词法分析**：先拒绝 §2 禁止的字符，即制表符、CR、其他控制字符和非 UTF-8 的字节，每处一条诊断；再切分记号：注释、字符串、数、名称、`->>`、`->`、`..` 和标点。字符串和注释各自整体作为一个记号，因此不会被当作关键字。
+- **词法分析**：先拒绝 §2 禁止的字符，即制表符、CR、其他控制字符和非 UTF-8 的字节，每处一条诊断；再按最长匹配切分记号：注释、字符串、数、名称、`->>`、`->`、`..`、`==`、`!=`、`<=`、`>=`，以及标点 `{ } ( ) [ ] < > , : . = + - * /`。关键字与名称是同一种记号，按所在的位置区分。字符串和注释各自整体作为一个记号，因此不会被当作关键字。
 - **语法分析**：§3 的文法以 participle 的结构体标签写在 `internal/syntax/grammar.go` 中，与 §3 的产生式逐条对应。分析得到语法树 `syntax.File`；遇到第一个不合文法的记号即停止，报告一条诊断。
 
 ### 5.2 静态规则与规范格式
@@ -328,7 +342,7 @@ NL            = 换行 { 换行 } .
 `design.Load` 接收全部合法的语法树，产出设计层和诊断（`design.Loaded`），分三步：
 
 1. **声明**：按固定次序读取声明，为每条声明建一个节点并给出标识。次序是系统文件、由浅到深的组件文件、组件中的成员、录制文件，同组之内按路径。两条声明得到同一标识时，后读到的报 `design.duplicate-name`；读取次序固定，所以哪一条算重复与文件次序无关。
-2. **解析引用**：全部节点建好之后，按依赖分批解析引用：先是组件的 `uses`；再是类型和操作的签名、符号的类型；再是符号的取值域，它要读类型的字段；最后是步骤和用例，它们要读前面的全部结果。解析成功即按 §4.3 建边；失败时报 `design.unresolved-reference` 或 `design.wrong-reference-kind`。
+2. **解析引用**：全部节点建好之后，按依赖分批解析引用：先是组件的 `uses`；再是类型和操作的签名、符号的类型；再是符号的取值域，它要读类型的字段；最后是步骤、用例和表达式，它们要读前面的全部结果。解析成功即按 §4.3 建边；失败时报 `design.unresolved-reference` 或 `design.wrong-reference-kind`。
 3. **设计约束**：检查只需设计就能判断的约束（[design.md](design.md) §5.1），包括表达式的类型（§4.4），以及用例的值是否属于符号的类型并落在限定之内。
 
 有语法错误的文件不参与载入；其余文件照常载入，指向缺失声明的引用报为未解析。
@@ -371,7 +385,7 @@ func Charge(amount int) (string, error) {
 
 //uc:checks order.total-is-sum
 func checkTotalIsSum(t rapid.TB, order Order) {
-	// 断言 order.Total() 等于各行数量乘单价之和
+	// 由 gen 从 ensure 生成，在生成文件中：断言 order.Total() 等于各行数量乘单价之和
 }
 
 //uc:generates syntax.format-is-stable.sample
@@ -392,6 +406,7 @@ class OrderService:
     def submit(self, cart: Cart) -> Order: ...
     def on_paid(self, event: Paid) -> None: ...
 
+# 由 gen 从 ensure 生成，在生成文件中
 @uc.checks("order.total-is-sum")
 def check_total_is_sum(order: Order) -> None:
     expected = sum(line.quantity * line.unit_price for line in order.lines)
@@ -457,7 +472,7 @@ property available-never-negative invariant "任意一串预留和释放之后�
   where steps size 0..30
   where steps.reserve.items.quantity in 1..10
   where steps.release.items.quantity in 1..10
-  ensure all(n in stock.available: n >= 0)
+  ensure all(sku in stock.available: stock.available[sku] >= 0)
   case reserve-then-release {
     stock = {available: {"a": 5}}
     steps = [reserve(items: [{sku: "a", quantity: 3}]), release(items: [{sku: "a", quantity: 3}])]
@@ -531,8 +546,10 @@ type OrderRepository interface "订单的持久化" {
 }
 
 type OrderService object "下单：预留库存、保存订单、扣款" {
-  field stock: inventory.Stock
   label domain-service
+  field stock: inventory.Stock
+  field payments: payment.Payments
+  field orders: OrderRepository
   op submit(cart: Cart) -> Order raises EmptyCart, inventory.OutOfStock, payment.Declined "从购物车生成订单"
   op onPaid(event: payment.Paid) handles payment.Paid "扣款成功后把订单记为已支付"
 }
@@ -556,6 +573,7 @@ flow submit-order "顾客提交购物车：预留库存、保存订单并扣款�
   async OrderService.onPaid {
     OrderService -> OrderRepository.save(order)
   }
+  within "500ms"
 }
 
 property total-is-sum invariant "订单总额等于各行数量乘单价之和" {
@@ -602,7 +620,7 @@ case r-3f9a2c1d coverage {
 - **UML 类图**：各个类型及其字段和操作。`refers` 边来自字段类型（`Order` → `OrderLine`、`OrderStatus`）和操作签名。类图不需要标签。
 - **时序图和活动图**：同一个流程 `submit-order` 的两种画法。时序图中，`submit` 的激活里嵌着 `charge` 的激活，`charge` 里又有对外部系统 `payment-gateway` 的调用和对 `Paid` 的发布；之后 `onPaid` 异步地被激活。活动图把 `on payment.Declined` 画成扣款之后的一个分支。
 - **事件图**：`Paid` 由 `Payments` 发布，被 `OrderService.onPaid` 订阅。
-- **性质视图**：`total-is-sum` 约束 `Order.total`，带一个符号 `order`、三条限定、两个声明的用例和一个录制的用例。它的检查是谓词 `check_total_is_sum`，驱动由 `gen` 生成，视图中还显示这些用例覆盖到的代码。
+- **性质视图**：`total-is-sum` 约束 `Order.total`，带一个符号 `order`、三条限定、两个声明的用例和一个录制的用例。它的谓词 `check_total_is_sum` 和驱动都由 `gen` 从 `ensure` 生成，视图中还显示这些用例覆盖到的代码。
 
 写好代码之后，`unicode check` 检查的内容包括：
 
@@ -619,10 +637,13 @@ case r-3f9a2c1d coverage {
 - **名称的写法由种类决定（L6）。** 看到名称就知道种类，也让名称能与各语言的代码名称双向映射（[model.md](model.md) §10 第 30 条）。
 - **关键字可以用作名称（L7、G5）。** 步骤由行首的形状识别，参与者和符号因此可以与关键字同名；只有 `true`、`false`、`none` 会与值混淆，所以保留。
 - **组内保持作者的次序（G1）。** 分组固定了查找的位置，组内的次序留给作者安排阅读顺序。
-- **性质用表达式书写（§4.4）。** 陈述写成表达式，工具链才能检查它的类型、由它生成谓词，并在以后交给求解器验证；谓词就是陈述的翻译，二者不会不一致。表达式只引用声明过的类型、字段和纯操作，因此性质用到的状态必须先进入设计。
-- **表达式保持最小（§4.4）。** 本语言做的是抽象层面的声明，不描述具体的计算，所以表达式只有陈述关系所需的最少构造，唯一的内置函数是 `size`。不为写某条性质而增加内置函数或辅助操作；新增任何构造都要有一条决定记录。
-- **写不成表达式的性质要声明出来（G12）。** 先把它拆成几条原子性质，能写成表达式的写成表达式；剩下拆不开的才写 `manual`，并写明原因。这样的性质由手写的谓词检查，它的含义只能靠评审保证，所以每次改动都列为待审。
-- **整数没有溢出（E3）。** 陈述描述的是数学上的结果；代码中的溢出因此表现为反例，而不会被陈述本身掩盖。
+- **性质用表达式书写（§4.4）。** 陈述写成表达式，工具链才能检查它的类型、由它生成谓词，并在以后交给求解器验证；谓词就是陈述的翻译，二者不会不一致。表达式只引用声明过的类型、字段和纯操作，因此陈述用到的数据必须先进入设计。
+- **表达式保持最小（§4.4）。** 本语言做的是抽象层面的声明，不描述具体的计算，所以表达式只有陈述关系所需的构造，唯一的内置函数是 `size`。按键取值、计数和可选值的使用是原子的：没有它们，按键存放的值、唯一性和可选字段上的性质都写不出来，拆分也绕不过去。
+- **写不成表达式的性质要声明出来（G12）。** 一条性质写不成表达式时，先拆成几条只陈述一件事的性质；仍写不成的才写 `manual`，并写明原因。它的含义只能靠评审保证，所以谓词一变就列为待审（[model.md](model.md) §10 第 33 条）。
+- **整数没有溢出（E4）。** 陈述描述的是数学上的结果；代码中的溢出因此表现为反例，而不会被陈述本身掩盖。
+- **没有一元的负号（G16）。** 负数是一个记号；`-` 只有减法一种读法，排版也就不会改变表达式的含义。
+- **流程也可以写陈述（G17）。** 流程的结果是端到端的陈述；它复用流程的符号，以第一次调用作为被测的调用。
+- **耗时是陈述的一种（E16）。** 耗时的预算复用性质的符号、生成器和被测的调用，测量与正确性检查用同一批输入；取第 95 百分位，偶然一次的慢不会判为不通过。
 
 ## 附录 B 规则与诊断码
 
@@ -658,6 +679,7 @@ case r-3f9a2c1d coverage {
 | G14 | 未实现：表达式的语法尚未实现 | — |
 | G15 | 未实现：表达式的语法尚未实现 | — |
 | G16 | 未实现：表达式的语法尚未实现 | — |
+| G17 | 未实现：表达式的语法尚未实现 | — |
 | P1 | `cli.not-canonical` | `syntax.format-is-stable` |
 | P2 | `cli.not-canonical` | `syntax.format-is-stable` |
 | P3 | `cli.not-canonical` | `syntax.format-is-stable` |
@@ -671,7 +693,17 @@ case r-3f9a2c1d coverage {
 | B2 | `lang.golang.misplaced-binding` | `lang.golang.extracts-generated-module` |
 | E1 | 未实现：表达式的载入尚未实现 | — |
 | E2 | 未实现：表达式的载入尚未实现 | — |
-| E3 | 未实现：M4，求值由 `gen` 生成的谓词完成 | — |
-| E4 | 未实现：M4，求值由 `gen` 生成的谓词完成 | — |
-| E5 | 未实现：M4，求值由 `gen` 生成的谓词完成 | — |
-| E6 | 未实现：M4，求值由 `gen` 生成的谓词完成 | — |
+| E3 | 未实现：表达式的载入尚未实现 | — |
+| E4 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
+| E5 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
+| E6 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
+| E7 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
+| E8 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
+| E9 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
+| E10 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
+| E11 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
+| E12 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
+| E13 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
+| E14 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
+| E15 | 未实现：M4，由 `gen` 生成的谓词和驱动实现 | — |
+| E16 | 未实现：M4 测量，M6 并入证据 | — |

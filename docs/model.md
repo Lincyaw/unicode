@@ -45,9 +45,9 @@
 | `type` | `object`、`record`、`interface`、`enum`、`error`、`event` | 各语言的命名类型，例如 `class`、`struct`、`interface` | 名称、摘要、标签、字段、枚举值 |
 | `op` | `op` | `func`、`method`、`abstract`（接口中声明的方法） | 名称、摘要、签名、订阅的事件；设计层另有是否为纯操作，代码层另有测试类别、是否为骨架 |
 | `actor` | `person`、`external` | — | 名称、摘要 |
-| `flow` | `flow` | — | 名称、摘要、符号、限定 |
+| `flow` | `flow` | — | 名称、摘要、符号、限定；陈述（`within`、`ensure`） |
 | `step` | `call`、`send`、`emit`、`async`、`alt`、`opt`、`loop`、`on` | — | 序号、分支标签、实参 |
-| `property` | `invariant`、`postcondition`、`relation`、`transition` | — | 名称、摘要、符号、限定；陈述（`call`、`ensure`），或人工声明（`manual` 及其原因） |
+| `property` | `invariant`、`postcondition`、`relation`、`transition` | — | 名称、摘要、符号、限定；陈述（`call`、`within`、`ensure`），或人工性质的原因（`manual`） |
 | `case` | `declared`、`recorded` | — | 名称、摘要、每个符号的取值；录制的用例另有录制原因 |
 
 ### 3.1 元素
@@ -56,7 +56,7 @@
 
   | 形式 | 定义 |
   | --- | --- |
-  | `object` | 有状态和操作 |
+  | `object` | 有字段和操作，操作可以改变字段的值 |
   | `record` | 只有字段 |
   | `interface` | 只有操作，由其他类型实现 |
   | `enum` | 只有枚举值 |
@@ -90,15 +90,15 @@
 
   | 形式 | 陈述成立的范围 |
   | --- | --- |
-  | `invariant` | 每个取值或状态 |
-  | `postcondition` | 操作返回之后 |
+  | `invariant` | 每个取值 |
+  | `postcondition` | 操作返回或抛出错误之后 |
   | `relation` | 几次调用的结果之间，例如往返、幂等、变形关系 |
-  | `transition` | 状态的每次变化，只按允许的转移 |
+  | `transition` | 值的每次变化，只按允许的转移 |
 
 - **符号** x 有名称和设计中的类型 type(x)。性质的陈述对符号的每一组取值都成立。
-- type(x) = `call<R1, …, Rk>` 时，x 的一个值是对 R1, …, Rk 中某个操作的一次调用，带全部实参；Ri 是类型时指它的全部操作。有状态的性质写成一串调用，`forall steps: list<call<Stock>>`；谓词依次执行这些调用，每一步之后检查陈述。
-- **陈述**是性质的 `ensure` 表达式，后置条件另带一个 `call` 子句；类型规则和检查步骤见 [language.md](language.md) §4.4。不能写成表达式的性质改带 `manual`，称为**人工性质**，由手写的谓词检查。
-- **纯操作**是声明为 `pure` 的操作：同样的实参调用两次，结果相同，接收者不变。表达式中只能调用纯操作，`call` 子句除外。
+- type(x) = `call<R1, …, Rk>` 时，x 的一个值是对 R1, …, Rk 中某个操作的一次调用，带全部实参；Ri 是类型时指它的全部操作。关于一串调用的性质写成 `forall steps: list<call<Stock>>`；检查时先检查一次陈述，再依次执行这些调用，每一步之后检查陈述（[language.md](language.md) §4.4 E13）。
+- **陈述**是性质或流程的全部 `ensure` 表达式，连同性质的 `call` 子句和 `within` 的时长；类型规则和检查步骤见 [language.md](language.md) §4.4。流程的被测调用是它的第一个步骤。不能写成表达式的性质改带 `manual`，称为**人工性质**，由手写的谓词检查。
+- **纯操作**是声明为 `pure` 的操作：结果只由接收者和实参决定，调用不改变接收者、实参或其他任何值。
 - **限定**缩小符号的取值。x 的**取值域** Dom(x) 是 type(x) 的全部取值中满足 x 的全部限定的部分。
 - **生成的符号**的取值域不由类型和限定给出，而由 `generates` 绑定的生成器给出（[language.md](language.md) §6）。生成的符号附一句取值域的说明，不带限定。
 - **用例** c 对每个符号 x 给出一个值 c(x) ∈ Dom(x)，只给输入，不给期望结果。form(c) = `declared` 的用例写在设计文件中；form(c) = `recorded` 的用例由探索选出，写在录制文件中（[design.md](design.md) §6.3），另有录制原因 ∈ {coverage, counterexample}。
@@ -118,7 +118,7 @@
 | `uses` | container → container、actor | 声明 | 允许的依赖 |
 | `extends` | type → type | 声明；抽取 | 继承或嵌入 |
 | `implements` | type → type | 声明；抽取 | 实现接口 |
-| `refers` | type → type；op → type；property、flow → type | 声明；抽取 | 字段、参数、返回值、错误或符号引用的类型；代码层的 op 另有函数体中构造或使用的类型 |
+| `refers` | type → type；op → type；property、flow → type、op | 声明；抽取 | 字段、参数、返回值、错误或符号引用的类型；陈述中引用的操作和枚举类型；代码层的 op 另有函数体中构造或使用的类型 |
 | `subscribes` | op → type | 声明 | 操作订阅的事件 |
 | `imports` | container → container | 抽取 | 文件导入包 |
 | `calls` | op → op | 抽取 | 静态解析到的调用；属性列出每个调用位置 |
@@ -174,7 +174,7 @@
 | 出处 | 写出它的位置：设计文件、录制文件或代码文件的路径和行号。推导项的出处是推出它的那些边 |
 | 内容哈希 | 自身内容的 SHA-256，不含子节点。节点的内容是种类、形式、摘要和属性（[design.md](design.md) §5.2）的确定编码；代码层 `op` 另含归一化的函数体，代码层 `type` 另含不含方法体的声明 |
 | 显著性 | 显著或细节，见 §9 |
-| 状态 | 只有设计层的声明项才有，status ∈ {verified, missing, stub, contradicted}，由 §10 的约束算出 |
+| 状态 | 只有设计层的声明项和 `depends` 边才有，status ∈ {verified, missing, stub, contradicted}，由 §10 的约束算出 |
 
 状态的含义：`verified` 与代码一致；`missing` 代码中没有对应项；`stub` 对应的函数还是骨架；`contradicted` 代码与声明不符。
 
@@ -227,14 +227,14 @@
 
 ## 10 约束
 
-违反一条约束得到一条诊断，诊断都是错误。标【状态】的约束同时决定相关声明项的状态。
+违反一条约束得到一条诊断，诊断都是错误。标【状态】的约束同时决定相关声明项的状态；标【评审】的约束决定哪些项列为待审（§8）。
 
 **设计内部**
 
 1. 每个引用都解析到一个声明的节点，节点的种类与引用的位置相符。
 2. 名称互不相同：同一父节点的各子节点；参与者与顶层容器；同一条性质或同一个流程中的符号与用例。
 3. 设计层的 `contains` 构成以 `system` 为根的树。
-4. 跨容器的类型引用，即字段、参数、返回值、错误、订阅的事件、`extends` 和 `implements` 引用的类型 t，满足 allowed(container(x), container(t))，其中 x 是引用所在的节点。t 属于外部系统时，用该外部系统代替 container(t)。
+4. 跨容器的引用，即字段、参数、返回值、错误、订阅的事件、`extends`、`implements` 和符号的类型所引用的类型，以及陈述中引用的操作和枚举类型 t，满足 allowed(container(x), container(t))，其中 x 是引用所在的节点。t 属于外部系统时，用该外部系统代替 container(t)。
 5. 元素的每个标签都属于系统文件声明的记法，并适用于该元素的种类（§5）。
 6. subscribes(o, E) 时，form(E) = `event`，并且 o 恰有一个参数，其类型为 E。
 
@@ -274,7 +274,7 @@
 
 **可执行**
 
-20. 每条 `property` 和每个 `flow` 都恰有一个 `checks` 绑定。绑定的函数称为**谓词**；除语言要求的测试句柄（[design.md](design.md) §4）外，谓词的参数恰为它的符号（可以没有），按名称映射一一对应，类型一致。带 `ensure` 的性质，谓词在生成文件中，由 `gen` 产生；人工性质和流程的谓词是手写的。
+20. 每条 `property` 和每个 `flow` 都恰有一个 `checks` 绑定。绑定的函数称为**谓词**；除语言要求的测试句柄（[design.md](design.md) §4）外，谓词的参数恰为它的符号（可以没有），按名称映射一一对应，类型一致。带陈述的性质和全部流程，谓词在生成文件中，由 `gen` 产生；人工性质的谓词是手写的。
 21. 生成文件之外的代码中没有测试函数：其中每个代码层 `op` 的 testKind 都是 `none`。
 22. 【状态】对每个 `call` 和 `send` 步骤 s，存在 traces(s, f)，并且 f 可达：
     1. s 是调用 s₀ 的子步骤时，从落实 s₀ 所调用操作的函数沿 `calls` 能到达 f；
@@ -286,7 +286,7 @@
     对每个 `emit` 步骤 s，设 emits(s, E)：落实发起方的代码 `refers` 落实 E 的代码层类型。
 
     不满足时，s 为 `missing`。
-23. 不是生成的符号 x，其类型能够生成：type(x) 不是 `interface` 或 `error`，不经由必填字段递归引用自身；type(x) 为 `call<…>` 时，其中各操作的参数都能生成，操作名互不相同。
+23. 不是生成的符号 x，其类型能够生成：type(x) 不是 `interface` 或 `error`，不经由必填字段递归引用自身；type(x) 为 `call<…>` 时，其中各操作的参数都能生成，操作名互不相同。类型为 `interface` 的字段不受此限，由替身填充（[design.md](design.md) §6.2）。
 24. 每个生成的符号恰有一个 `generates` 绑定，并且不带限定；不是生成的符号没有 `generates` 绑定。
 25. 限定的路径从一个符号出发逐段解析：经过 `list`、`set` 时作用于每个元素，经过 `map` 时作用于每个值，经过 `call` 时下一段是操作名、再下一段是参数名。区间只用于 `int` 和 `float`；枚举子集只用于 `enum`；大小只用于 `list`、`set`、`map`、`string` 和 `bytes`。
 26. 每个用例 c，包括声明的和录制的，对每个符号 x 恰给出一个值，且 c(x) ∈ Dom(x)：记录给出全部字段，枚举值存在，只有 `optional` 取 `none`，调用给出该操作的全部参数，并满足全部限定。
@@ -305,10 +305,9 @@
 
 **表达式**
 
-31. 每个表达式都合乎 [language.md](language.md) §4.4 的类型规则：名称都能解析，运算的操作数类型相符，`ensure` 的类型为 `bool`。
-32. 表达式中调用的操作都是纯操作，`call` 子句调用的操作除外。
-33. `old` 只出现在带 `call` 子句或调用序列的性质中；`result` 和 `raised` 只出现在带 `call` 子句的性质中。
-34. 【评审】纯操作由驱动在运行时核对：同样的实参调用两次，结果相同，接收者不变；不满足时，该操作的状态为 `contradicted`。人工性质的谓词或陈述的内容哈希变了，就列为待审。
+31. 每个表达式都合乎 [language.md](language.md) §4.4 的名称与类型规则。
+32. 【状态】纯操作由驱动在运行时核对：同样的实参调用两次，结果相同，接收者和实参不变；不满足时，该操作为 `contradicted`。
+33. 【评审】人工性质的谓词的内容哈希变了，这条性质也列为待审。
 
 ## 附录 A 理由
 
@@ -321,7 +320,7 @@
 - **按分派检查接口（第 22 条）。** 接口中的 `abstract` 方法没有函数体，本身不调用任何函数，可达性只能从实现它的类型出发。
 - **运行时核对的部分（第 22 条）。** 静态可达只说明调用可能发生。调用的先后和事件的投递，由流程的驱动在运行时核对（[design.md](design.md) §6.3）。
 - **名称映射可逆（第 30 条）。** 谓词的名称由性质或流程的名称映射而来；`flow-` 开头的性质会与流程的谓词同名。Go 的映射会丢掉短横线，短横线后紧跟数字时无法还原。例如在 Go 中，类型 `Slice` 和操作 `slice` 都映射成 `Slice`，不能放在同一个容器中。
-- **陈述是表达式（§3.3）。** 陈述写成表达式，工具链才能检查它的类型、由它生成谓词，并在以后交给求解器验证。写不成表达式的性质先拆成原子性质；剩下的声明为人工性质，靠评审保证含义（第 34 条）。
+- **陈述是表达式（§3.3）。** 陈述写成表达式，工具链才能检查它的类型、由它生成谓词，并在以后交给求解器验证。写不成表达式的性质先拆成原子性质；剩下的声明为人工性质，靠评审保证含义（第 33 条）。
 
 ## 附录 B 规则与诊断码
 
@@ -355,7 +354,7 @@
 | 17 | `check.realization-outside-container` | `check.rejects-broken-graph` |
 | 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value` | `check.rejects-broken-graph` |
 | 19 | `check.missing-implements`、`check.missing-extends` | `check.rejects-broken-graph` |
-| 20 | `check.missing-predicate`、`check.multiple-predicates`、`check.predicate-signature` | `check.rejects-broken-graph` |
+| 20 | `check.missing-predicate`、`check.multiple-predicates`、`check.predicate-signature`；带陈述的性质和流程的谓词在生成文件中：未实现：M4，此前手写 | `check.rejects-broken-graph` |
 | 21 | 未实现：M4，要等 `gen` 区分生成文件 | — |
 | 22 | `check.untraced-step`、`check.unreachable-step`、`check.unreferenced-event` | `check.rejects-broken-graph` |
 | 23 | `design.ungenerable-symbol` | `design.rejects-broken-design` |
@@ -367,6 +366,5 @@
 | 29 | `design.unresolved-reference`、`design.wrong-reference-kind`、`cli.not-canonical` | `design.rejects-broken-design`、`cli.check-design` |
 | 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5；生成器的 map 名称未实现：[design.md](design.md) §4 没有给出生成器的名称映射 | `design.rejects-broken-design` |
 | 31 | 未实现：表达式的载入尚未实现 | — |
-| 32 | 未实现：表达式的载入尚未实现 | — |
-| 33 | 未实现：表达式的载入尚未实现 | — |
-| 34 | 未实现：M4（驱动核对纯操作）与 M7（人工性质列为待审） | — |
+| 32 | 未实现：M4，驱动核对纯操作 | — |
+| 33 | 未实现：M7，评审 | — |
