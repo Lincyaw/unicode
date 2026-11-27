@@ -30,6 +30,18 @@ import (
 //go:embed contract_runtime.go
 var contractRuntime string
 
+//go:embed case_runtime.go
+var contractCaseRuntime string
+
+//go:embed worker_runtime.go
+var contractWorkerRuntime string
+
+//go:embed alias_runtime.go
+var contractAliasRuntime string
+
+var _ = ucCandidateWorker
+var _ = ucEncodedLiteral
+
 var _ lang.Generator = (*Backend)(nil)
 var _ = ucManual
 var _ = ucCheck
@@ -62,6 +74,7 @@ type contractUnit struct {
 	spec          ucContract
 	predicate     *types.Func
 	cases         [][]string
+	caseNodes     []graph.Node
 	generators    map[string]*types.Func
 	generatorArgs map[string][]string
 	limits        []string
@@ -485,7 +498,8 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 			unit.spec.Observers = append(unit.spec.Observers, ucObserver{Name: lastName(node.Id), Type: first(node.Attrs["type"]), Inputs: node.Attrs["inputs"]})
 		}
 	}
-	if !c.configureSequences(unit) || !c.configureDoubles(unit) {
+	c.configureCodecs(unit)
+	if !c.configureSequences(unit) || !c.configureDoubles(unit) || !c.measuredFlow(unit) {
 		return nil
 	}
 	earlier := map[string]string{}
@@ -532,6 +546,7 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 			expressions = append(expressions, values[symbol.Name])
 		}
 		unit.cases = append(unit.cases, expressions)
+		unit.caseNodes = append(unit.caseNodes, node)
 	}
 	return unit
 }
@@ -641,6 +656,9 @@ func (c *contractCompiler) literal(text, goType string, pkg *packages.Package) (
 	return c.valueLiteral(value, goType, pkg)
 }
 func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packages.Package) (string, error) {
+	if encoded, ok := value.(*syntax.EncodedValue); ok {
+		return c.encodedLiteral(encoded, t, pkg)
+	}
 	if text, ok, err := c.doubleLiteral(value, t, pkg); ok {
 		return text, err
 	}
@@ -855,6 +873,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 			d, _ := c.bound(graph.EdgeKindObserves, unit.node.Id+"."+o.Name)
 			fmt.Fprintf(&body, "s.Observers[%d].Read=reflect.ValueOf(%s);", i, c.qualify(d.obj, file.pkg, file.imports))
 		}
+		c.renderCodecs(&body, file, unit)
 		c.renderCallSpec(&body, file, unit)
 		c.renderDoubleSpec(&body, file, unit)
 		body.WriteString("return &s }\n")
@@ -963,7 +982,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		fmt.Fprintf(&body, "if mode!=\"replay\" { restoreRandom:=ucContext(r,true); defer restoreRandom(); start:=time.Now(); rapid.Check(t,func(rt *rapid.T){if mode==\"explore\"&&time.Since(start)>budget{return};ucRandom%s(rt,s)})} }\n", id)
 		fmt.Fprintf(&body, "// FuzzUnicode_%x checks %s.\nfunc FuzzUnicode_%x(f *testing.F){f.Fuzz(rapid.MakeFuzz(func(rt *rapid.T){restore:=ucContext(nil,true);defer restore();ucRandom%s(rt,%s())}))}\n", sha256.Sum256([]byte(unit.node.Id)), unit.node.Id, sha256.Sum256([]byte(unit.node.Id)), id, specName)
 	}
-	body.WriteString("func TestUnicodeContracts(t *testing.T){ var selected []string; _=json.Unmarshal([]byte(os.Getenv(\"UNICODE_CONTRACT_IDS\")),&selected); mode:=\"test\";if os.Getenv(\"UNICODE_CONTRACT_RESULTS\")!=\"\" {mode=\"replay\"};if os.Getenv(\"UNICODE_CONTRACT_EXPLORE\")!=\"\"{mode=\"explore\"}; budget,_:=time.ParseDuration(os.Getenv(\"UNICODE_CONTRACT_EXPLORE\")); results:=[]ucRunResult{}; defer func(){if path:=os.Getenv(\"UNICODE_CONTRACT_RESULTS\");path!=\"\"{data,err:=json.Marshal(results);if err!=nil{t.Error(err);return};if err=os.WriteFile(path,data,0600);err!=nil{t.Error(err)}}}();")
+	body.WriteString("func TestUnicodeContracts(t *testing.T){if ucCandidateWorker(t," + c.renderWorkerUnits(file) + "){return}; var selected []string; _=json.Unmarshal([]byte(os.Getenv(\"UNICODE_CONTRACT_IDS\")),&selected); mode:=\"test\";if os.Getenv(\"UNICODE_CONTRACT_RESULTS\")!=\"\" {mode=\"replay\"};if os.Getenv(\"UNICODE_CONTRACT_EXPLORE\")!=\"\"{mode=\"explore\"}; budget,_:=time.ParseDuration(os.Getenv(\"UNICODE_CONTRACT_EXPLORE\")); results:=[]ucRunResult{}; defer func(){if path:=os.Getenv(\"UNICODE_CONTRACT_RESULTS\");path!=\"\"{data,err:=json.Marshal(results);if err!=nil{t.Error(err);return};if err=os.WriteFile(path,data,0600);err!=nil{t.Error(err)}}}();")
 	for i, unit := range file.units {
 		fmt.Fprintf(&body, "if len(selected)==0||slices.Contains(selected,%s){t.Run(%s,func(t *testing.T){var result ucRunResult;defer func(){if result.Id==\"\"{result=ucRunResult{Id:%s,Passed:false}};result.Passed=result.Passed&&!t.Failed();results=append(results,result)}();ucDrive%d(t,mode,budget,&result)})};", strconv.Quote(unit.node.Id), strconv.Quote(unit.node.Id), strconv.Quote(unit.node.Id), i)
 	}
@@ -978,13 +997,43 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 			doubleStart = int(gen.End())
 		}
 	}
-	runtimeSource := contractRuntime + "\n" + contractDoubleRuntime[doubleStart:]
+	caseFile, err := parser.ParseFile(token.NewFileSet(), "case_runtime.go", contractCaseRuntime, 0)
+	if err != nil {
+		panic(err)
+	}
+	caseStart := 0
+	for _, decl := range caseFile.Decls {
+		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
+			caseStart = int(gen.End())
+		}
+	}
+	workerFile, err := parser.ParseFile(token.NewFileSet(), "worker_runtime.go", contractWorkerRuntime, 0)
+	if err != nil {
+		panic(err)
+	}
+	workerStart := 0
+	for _, decl := range workerFile.Decls {
+		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
+			workerStart = int(gen.End())
+		}
+	}
+	aliasFile, err := parser.ParseFile(token.NewFileSet(), "alias_runtime.go", contractAliasRuntime, 0)
+	if err != nil {
+		panic(err)
+	}
+	aliasStart := 0
+	for _, decl := range aliasFile.Decls {
+		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
+			aliasStart = int(gen.End())
+		}
+	}
+	runtimeSource := contractRuntime + "\n" + contractDoubleRuntime[doubleStart:] + "\n" + contractCaseRuntime[caseStart:] + "\n" + contractWorkerRuntime[workerStart:] + "\n" + contractAliasRuntime[aliasStart:]
 	runtimeFile, err := parser.ParseFile(token.NewFileSet(), "runtime.go", runtimeSource, 0)
 	if err != nil {
 		panic(err)
 	}
 	imports := map[string]string{"testing": "", "os": ""}
-	for _, spec := range append(append([]*ast.ImportSpec{}, runtimeFile.Imports...), doubleFile.Imports...) {
+	for _, spec := range append(append([]*ast.ImportSpec{}, runtimeFile.Imports...), append(append(doubleFile.Imports, caseFile.Imports...), append(workerFile.Imports, aliasFile.Imports...)...)...) {
 		path, _ := strconv.Unquote(spec.Path.Value)
 		imports[path] = ""
 	}

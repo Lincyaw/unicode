@@ -278,6 +278,7 @@ func (c *contractCompiler) renderDoubles(file *contractFile) string {
 			}
 			name := doubleName(model)
 			fmt.Fprintf(&out, "type %s struct{_scripts map[string][]map[string]any;_cursor map[string]int;_types map[string]ucType;_ops map[string]ucReplyOperation}\n", name)
+			fmt.Fprintf(&out, "func(d *%s)_unicodeInputScripts()map[string][]map[string]any{return d._scripts}\n", name)
 			fmt.Fprintf(&out, "func(d *%s)_unicodeCloneDouble()reflect.Value{return reflect.ValueOf(&%s{_scripts:d._scripts,_cursor:map[string]int{},_types:d._types,_ops:d._ops})}\n", name, name)
 			ops, sigs := c.replySignature(unit, model)
 			for _, key := range slices.Sorted(maps.Keys(ops)) {

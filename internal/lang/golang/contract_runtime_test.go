@@ -1,6 +1,7 @@
 package golang
 
 import (
+	"encoding/json"
 	"errors"
 	"go/ast"
 	goParser "go/parser"
@@ -98,6 +99,22 @@ func transferInputs(sample ContractSample, bank *contractBank) map[string]reflec
 
 //uc:checks lang.golang.executes-contracts
 func checkExecutesContracts(t rapid.TB, sample ContractSample) {
+	rawString := string([]byte{0xff, byte(sample.Amount), 0xc0})
+	specText := &ucContract{Symbols: []ucSymbol{{Name: "text", Type: "string"}}, Types: map[string]ucType{}}
+	frozenText := ucFreezeInputs(specText, map[string]reflect.Value{"text": reflect.ValueOf(rawString)})
+	rawJSON, err := json.Marshal(frozenText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decodedText ucWireInput
+	if err = json.Unmarshal(rawJSON, &decodedText); err != nil {
+		t.Fatal(err)
+	}
+	restoredText := ucThawInputs(decodedText, []reflect.Type{reflect.TypeFor[string]()}, specText)
+	if restoredText["text"].String() != rawString || ucWireHash(decodedText) != ucWireHash(frozenText) {
+		t.Fatal("recording changed invalid UTF-8 input bytes")
+	}
+
 	checkIntegerRanges(t, sample)
 	from, hasFrom := sample.Balances[sample.FromId]
 	_, hasTo := sample.Balances[sample.ToId]

@@ -66,7 +66,8 @@ type ucContract struct {
 	Observers                  []ucObserver
 	ErrorTypes                 map[string]reflect.Type
 	Installers                 map[string]reflect.Value `json:"-"`
-	SkipInstall                bool                     `json:"-"`
+	Codecs                     map[string]ucCodec
+	SkipInstall                bool `json:"-"`
 }
 type ucDiagnostic struct {
 	Code, Subject string
@@ -1445,7 +1446,7 @@ func ucExecuteSingle(s *ucContract, inputs map[string]reflect.Value, explore boo
 		}
 		start := time.Now()
 		phase = "call"
-		values := fn.Call(args)
+		values := func() []reflect.Value { finish := ucBusinessTrace(); defer finish(); return fn.Call(args) }()
 		out.Duration = time.Since(start)
 		phase = "assertion"
 		env.captureCall(op, values, s.Call, &out)

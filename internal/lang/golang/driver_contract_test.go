@@ -61,6 +61,14 @@ func driverImports(t rapid.TB) driverImporter {
 			return
 		}
 		paths := []string{"testing", "os"}
+		for _, source := range []string{contractCaseRuntime, contractWorkerRuntime, contractAliasRuntime} {
+			extra, err := parser.ParseFile(token.NewFileSet(), "runtime-part.go", source, parser.ImportsOnly)
+			if err != nil {
+				driverDependencies.err = err
+				return
+			}
+			file.Imports = append(file.Imports, extra.Imports...)
+		}
 		for _, spec := range file.Imports {
 			path, _ := strconv.Unquote(spec.Path.Value)
 			paths = append(paths, path)
@@ -137,6 +145,7 @@ func driverFixture(sample DriverSample) (*contractCompiler, *contractFile, strin
 			values = append(values, strconv.Itoa(i+j))
 		}
 		unit.cases = append(unit.cases, values)
+		unit.caseNodes = append(unit.caseNodes, graph.Node{Id: sample.Name + ".case" + strconv.Itoa(i), Form: "declared"})
 	}
 	// Simulate protected-name state left by a previously emitted package.
 	c := &contractCompiler{foreignNames: map[string]string{"other.package.ucCheck": "unicodeContractForeign0"}, foreignOriginal: map[string]string{"unicodeContractForeign0": "wrongPackageName"}, bindings: map[graph.EdgeKind]map[string][]string{}}

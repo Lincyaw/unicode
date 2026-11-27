@@ -106,6 +106,8 @@ func ucMapKeysReplyOperations(m map[string]ucReplyOperation) []string {
 }
 
 func ucReplyValues(op ucReplyOperation, reply map[string]any, types map[string]ucType) []reflect.Value {
+	finish := ucTraceOperation(op.Name)
+	defer finish()
 	results := make([]reflect.Value, op.Signature.NumOut())
 	for i := range results {
 		results[i] = reflect.Zero(op.Signature.Out(i))
@@ -132,6 +134,9 @@ func ucReplyValues(op ucReplyOperation, reply map[string]any, types map[string]u
 		return results
 	}
 	id, ok := reply["raises"].(string)
+	if ok {
+		ucTraceError(id)
+	}
 	native, declared := op.Errors[id]
 	if !ok || !declared || len(reply) != 2 || reply["fields"] == nil {
 		ucFail("lang.golang.input-outside-domain", "a failed response must provide a declared error identity and its fields", nil)
