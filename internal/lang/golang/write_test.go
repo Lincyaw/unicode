@@ -258,14 +258,22 @@ func (r *writer) goSig(sig *gsig) string {
 	for _, p := range sig.params {
 		params = append(params, strings.TrimPrefix(p.name+" "+r.goType(p.typ), " "))
 	}
-	for _, res := range sig.results {
-		results = append(results, r.goType(res))
+	for i, res := range sig.results {
+		written := r.goType(res)
+		if len(sig.resultNames) > 0 {
+			written = sig.resultNames[i] + " " + written
+		}
+		results = append(results, written)
 	}
 	out := "(" + strings.Join(params, ", ") + ")"
 	switch len(results) {
 	case 0:
 	case 1:
-		out += " " + results[0]
+		if len(sig.resultNames) > 0 {
+			out += " (" + results[0] + ")"
+		} else {
+			out += " " + results[0]
+		}
 	default:
 		out += " (" + strings.Join(results, ", ") + ")"
 	}

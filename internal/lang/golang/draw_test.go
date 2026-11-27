@@ -70,7 +70,19 @@ func (w *world) drawSig(from *gfile, name string) *gsig {
 	if rapid.Bool().Draw(w.t, "raises") {
 		sig.results = append(sig.results, &gexpr{kind: "error"})
 	}
+	sig.resultNames = w.drawResultNames(len(sig.results))
 	return sig
+}
+
+func (w *world) drawResultNames(count int) []string {
+	if count == 0 || !rapid.Bool().Draw(w.t, "namedResults") {
+		return nil
+	}
+	names := make([]string, count)
+	for i := range names {
+		names[i] = w.fresh("result", false)
+	}
+	return names
 }
 
 func (w *world) drawType() {
@@ -211,6 +223,38 @@ func (w *world) drawConsts(ty *gtype) {
 }
 
 func (w *world) addMethod(ty *gtype, file *gfile, sig *gsig) {
+	// Implementation names vary independently from the interface's names.
+	copy := *sig
+	copy.pkg = file.pkg
+	copy.params = slices.Clone(sig.params)
+	copy.results = slices.Clone(sig.results)
+	named := rapid.Bool().Draw(w.t, "methodNamedParams")
+	for i := range copy.params {
+		copy.params[i].name = ""
+		if named {
+			copy.params[i].name = w.fresh("methodParam", false)
+		}
+	}
+	copy.resultNames = w.drawResultNames(len(copy.results))
+	// A changed native type or arity must not become an implementation.
+	if rapid.IntRange(0, 5).Draw(w.t, "methodTypeMismatch") == 0 {
+		replacement := func(before *gexpr) *gexpr {
+			basic := "int"
+			if before.kind == "basic" && before.basic == "int" {
+				basic = "string"
+			}
+			return &gexpr{kind: "basic", basic: basic}
+		}
+		switch {
+		case len(copy.params) > 0:
+			copy.params[0].typ = replacement(copy.params[0].typ)
+		case len(copy.results) > 0:
+			copy.results[0] = replacement(copy.results[0])
+		default:
+			copy.params = append(copy.params, gparam{typ: &gexpr{kind: "basic", basic: "int"}})
+		}
+	}
+	sig = &copy
 	fn := &gfunc{file: file, recv: ty, ptrRecv: rapid.Bool().Draw(w.t, "ptrRecv"), sig: sig}
 	fn.doc = w.drawDoc(sig.name, "method")
 	ty.methods = append(ty.methods, fn)
