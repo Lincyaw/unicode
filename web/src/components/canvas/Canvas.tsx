@@ -28,7 +28,7 @@ const EDGE_ROOM = 24;
 function selectedBox(drawing: HTMLElement, selected: string): HTMLElement | null {
   const id = CSS.escape(selected);
   const mark = drawing.querySelector<HTMLElement>(`[data-node="${id}"]:not([data-ref])`) ?? drawing.querySelector<HTMLElement>(`[data-node="${id}"]`);
-  return mark && (mark.closest<HTMLElement>('[data-selected]') ?? mark);
+  return mark && (mark.closest<HTMLElement>('[data-selected="true"]') ?? mark);
 }
 
 /** The pan along one axis that brings a box into the room: to the middle when it fits, else to its start; none when it is in sight. */
