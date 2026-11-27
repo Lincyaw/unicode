@@ -289,7 +289,7 @@ func (w *world) addMethod(ty *gtype, file *gfile, sig *gsig) {
 		}
 	}
 	sig = &copy
-	fn := &gfunc{file: file, recv: ty, ptrRecv: rapid.Bool().Draw(w.t, "ptrRecv"), sig: sig}
+	fn := &gfunc{file: file, recv: ty, ptrRecv: rapid.Bool().Draw(w.t, "ptrRecv"), sig: sig, varFree: rapid.Bool().Draw(w.t, "varFree")}
 	fn.doc = w.drawDoc(sig.name, "method")
 	ty.methods = append(ty.methods, fn)
 	w.funcs = append(w.funcs, fn)
@@ -329,7 +329,7 @@ func (w *world) drawFunc(file *gfile, testName string) {
 	case "Testlower":
 		sig.name = "Test" + w.fresh("testName", false)
 	}
-	fn := &gfunc{file: file, sig: sig, testName: testName}
+	fn := &gfunc{file: file, sig: sig, testName: testName, varFree: rapid.Bool().Draw(w.t, "varFree")}
 	fn.doc = w.drawDoc(sig.name, "func")
 	w.funcs = append(w.funcs, fn)
 	file.decls = append(file.decls, fn)
@@ -346,23 +346,73 @@ func (w *world) drawBody(fn *gfunc) {
 		fn.terminal = marker
 		return
 	}
-	for range rapid.IntRange(0, 3).Draw(w.t, "stmts") {
-		if stmt, ok := w.drawStmt(fn, 0); ok {
-			fn.body = append(fn.body, stmt)
-		}
-	}
+	fn.body = w.drawStmts(w.scopeOf(fn))
 	if len(fn.sig.results) > 0 || rapid.Bool().Draw(w.t, "terminal") {
 		fn.terminal = rapid.SampledFrom([]string{marker, "done"}).Draw(w.t, "panic")
 	}
 }
 
+// scopeOf is what a function's body may name: a var-free function calls
+// only var-free functions and uses no variable.
+func (w *world) scopeOf(fn *gfunc) scope {
+	sc := scope{file: fn.file, freeOnly: fn.varFree, tests: fn.testName == "Test" || fn.testName == "Testlower"}
+	if !fn.varFree {
+		sc.vars = w.vars
+	}
+	return sc
+}
+
+func (w *world) drawStmts(sc scope) []gstmt {
+	var stmts []gstmt
+	for range rapid.IntRange(0, 3).Draw(w.t, "stmts") {
+		if stmt, ok := w.drawStmt(sc, 0); ok {
+			stmts = append(stmts, stmt)
+		}
+	}
+	return stmts
+}
+
+// drawVar draws a package-level variable in any file: closures with
+// statements of their own, or a call that runs when the package is
+// initialized, of a var-free function with one result.
+func (w *world) drawVar() {
+	file := w.anyFile("varFile")
+	v := &gvar{file: file, name: w.fresh("var", w.exported("varExported")),
+		form: rapid.SampledFrom([]string{"func", "map", "init"}).Draw(w.t, "varForm")}
+	sc := scope{file: file, freeOnly: true, vars: slices.Clone(w.vars)}
+	switch v.form {
+	case "init":
+		var calls []gstmt
+		for _, c := range w.calls(sc) {
+			if len(c.target.sig.results) == 1 {
+				calls = append(calls, c)
+			}
+		}
+		if len(calls) == 0 {
+			return
+		}
+		c := rapid.SampledFrom(calls).Draw(w.t, "initCall")
+		v.init = &c
+	case "func":
+		v.bodies = [][]gstmt{w.drawStmts(sc)}
+	default:
+		for range rapid.IntRange(1, 2).Draw(w.t, "entries") {
+			v.bodies = append(v.bodies, w.drawStmts(sc))
+		}
+	}
+	w.vars = append(w.vars, v)
+	file.decls = append(file.decls, v)
+}
+
 // bodyTwins are the functions whose bodies are drawn before fn's and that fn
 // can copy: in its file, named like a test exactly when fn is, so that a call
-// of rapid.Check finds its t, and ending in a panic when fn has results.
+// of rapid.Check finds its t, var-free when fn is, and ending in a panic when
+// fn has results.
 func (w *world) bodyTwins(fn *gfunc) []*gfunc {
 	var out []*gfunc
 	for _, other := range w.funcs[:slices.Index(w.funcs, fn)] {
-		if other.file == fn.file && other.testName == fn.testName && (len(fn.sig.results) == 0 || other.terminal != "") {
+		if other.file == fn.file && other.testName == fn.testName && (!fn.varFree || other.varFree) &&
+			(len(fn.sig.results) == 0 || other.terminal != "") {
 			out = append(out, other)
 		}
 	}
@@ -403,31 +453,31 @@ func (w *world) drawLayout() layout {
 	}
 }
 
-func (w *world) drawStmt(fn *gfunc, depth int) (gstmt, bool) {
-	s, ok := w.drawContent(fn, depth)
+func (w *world) drawStmt(sc scope, depth int) (gstmt, bool) {
+	s, ok := w.drawContent(sc, depth)
 	s.layout = w.drawLayout()
 	return s, ok
 }
 
 // drawContent draws what a statement does.
-func (w *world) drawContent(fn *gfunc, depth int) (gstmt, bool) {
-	kinds := []string{"call", "call", "call", "assign", "iface", "builtin", "ref", "comment"}
+func (w *world) drawContent(sc scope, depth int) (gstmt, bool) {
+	kinds := []string{"call", "call", "call", "assign", "iface", "builtin", "ref", "comment", "varCall", "varCall", "varRef", "varRef"}
 	if depth == 0 {
 		kinds = append(kinds, "closure")
 	}
-	if fn.testName == "Test" || fn.testName == "Testlower" {
+	if sc.tests {
 		kinds = append(kinds, "rapid", "rapid", "rapid")
 	}
 	switch kind := rapid.SampledFrom(kinds).Draw(w.t, "stmt"); kind {
 	case "call":
-		calls := w.callables(fn.file)
+		calls := w.calls(sc)
 		if len(calls) == 0 {
 			return gstmt{}, false
 		}
 		return rapid.SampledFrom(calls).Draw(w.t, "callee"), true
 	case "assign":
 		var calls []gstmt
-		for _, c := range w.callables(fn.file) {
+		for _, c := range w.calls(sc) {
 			if len(c.target.sig.results) == 1 {
 				calls = append(calls, gstmt{kind: kind, target: c.target, via: c.via})
 			}
@@ -439,14 +489,14 @@ func (w *world) drawContent(fn *gfunc, depth int) (gstmt, bool) {
 		call.name = w.fresh("variable", false)
 		return call, true
 	case "iface":
-		calls := w.interfaceCalls(fn.file)
+		calls := w.interfaceCalls(sc.file)
 		if len(calls) == 0 {
 			return gstmt{}, false
 		}
 		return rapid.SampledFrom(calls).Draw(w.t, "ifaceCall"), true
 	case "ref":
 		var refs []gstmt
-		for _, c := range w.callables(fn.file) {
+		for _, c := range w.calls(sc) {
 			if c.via == nil {
 				refs = append(refs, gstmt{kind: "ref", target: c.target})
 			}
@@ -456,13 +506,35 @@ func (w *world) drawContent(fn *gfunc, depth int) (gstmt, bool) {
 		}
 		return rapid.SampledFrom(refs).Draw(w.t, "ref"), true
 	case "closure":
-		inner, ok := w.drawStmt(fn, depth+1)
+		inner, ok := w.drawStmt(sc, depth+1)
 		return gstmt{kind: kind, inner: &inner}, ok
+	case "varCall", "varRef":
+		var held []*gvar
+		for _, v := range sc.vars {
+			if visible(sc.file, v.file, v.name) && (kind == "varRef" || v.form != "init") {
+				held = append(held, v)
+			}
+		}
+		if len(held) == 0 {
+			return gstmt{}, false
+		}
+		return gstmt{kind: kind, held: rapid.SampledFrom(held).Draw(w.t, "held")}, true
 	case "comment":
 		return gstmt{kind: kind, comment: w.drawBinding("bodyBinding", "func")}, true
 	default:
 		return gstmt{kind: kind}, true
 	}
+}
+
+// calls are the calls a scope can write.
+func (w *world) calls(sc scope) []gstmt {
+	var out []gstmt
+	for _, c := range w.callables(sc.file) {
+		if !sc.freeOnly || c.target.varFree {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // callables are the calls a file can write: to every function and method it

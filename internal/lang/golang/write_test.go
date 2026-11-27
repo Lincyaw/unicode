@@ -116,6 +116,8 @@ func (r *writer) decls() {
 			r.put(")\n")
 		case *gfunc:
 			r.function(decl)
+		case *gvar:
+			r.variable(decl)
 		case *gconst:
 			r.put("const " + decl.name + " " + decl.typ.name + " = " + strconv.Quote(decl.name) + "\n")
 		case *gloose:
@@ -202,13 +204,7 @@ func (r *writer) stmt(s *gstmt, indent string) {
 		if s.kind == "assign" {
 			r.put(s.name + " := ")
 		}
-		if s.via != nil {
-			r.put("new(" + r.qualified(s.via.file.pkg, s.via.name) + ").")
-		} else {
-			r.put(r.qualified(s.target.file.pkg, ""))
-		}
-		r.at[s] = r.pos()
-		r.put(s.target.sig.name + r.args(s.target.sig, s.layout, indent))
+		r.call(s, indent)
 		r.end(s.layout)
 		if s.kind == "assign" {
 			r.put(indent + "_ = " + s.name + "\n")
@@ -233,6 +229,16 @@ func (r *writer) stmt(s *gstmt, indent string) {
 		r.imports["pgregory.net/rapid"] = true
 		r.put(indent + "rapid.Check(t, func(*rapid.T) {})")
 		r.end(s.layout)
+	case "varCall":
+		r.put(indent + r.qualified(s.held.file.pkg, s.held.name))
+		if s.held.form == "map" {
+			r.put(`["k0"]`)
+		}
+		r.put("()")
+		r.end(s.layout)
+	case "varRef":
+		r.put(indent + "_ = " + r.qualified(s.held.file.pkg, s.held.name))
+		r.end(s.layout)
 	case "comment":
 		if r.plain {
 			return
@@ -240,6 +246,44 @@ func (r *writer) stmt(s *gstmt, indent string) {
 		r.put(indent)
 		r.at[&s.comment] = r.pos()
 		r.put(s.comment.text + "\n")
+	}
+}
+
+// call writes a call of a function or a method, recording where its callee is.
+func (r *writer) call(s *gstmt, indent string) {
+	if s.via != nil {
+		r.put("new(" + r.qualified(s.via.file.pkg, s.via.name) + ").")
+	} else {
+		r.put(r.qualified(s.target.file.pkg, ""))
+	}
+	r.at[s] = r.pos()
+	r.put(s.target.sig.name + r.args(s.target.sig, s.layout, indent))
+}
+
+// variable writes a package-level variable: a closure, a map of closures
+// keyed k0, k1 and so on, or a call.
+func (r *writer) variable(v *gvar) {
+	r.put("var " + v.name + " = ")
+	switch v.form {
+	case "init":
+		r.call(v.init, "")
+		r.put("\n")
+	case "func":
+		r.put("func() {\n")
+		for i := range v.bodies[0] {
+			r.stmt(&v.bodies[0][i], "\t")
+		}
+		r.put("}\n")
+	default:
+		r.put("map[string]func(){\n")
+		for k := range v.bodies {
+			r.put("\t" + strconv.Quote("k"+strconv.Itoa(k)) + ": func() {\n")
+			for i := range v.bodies[k] {
+				r.stmt(&v.bodies[k][i], "\t\t")
+			}
+			r.put("\t},\n")
+		}
+		r.put("}\n")
 	}
 }
 

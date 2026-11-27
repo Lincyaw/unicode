@@ -47,8 +47,9 @@ const goMod = "module " + modulePath + "\n\ngo 1.26\n\nrequire pgregory.net/rapi
 
 // genModule draws a random module of up to three packages, some with test
 // files and an external test package, holding types, functions, methods,
-// calls, imports, embedding, interfaces and their implementations, and
-// //uc: bindings, some of them not well-formed or misplaced.
+// calls, imports, embedding, interfaces and their implementations,
+// package-level variables holding closures that functions use, and //uc:
+// bindings, some of them not well-formed or misplaced.
 //
 //uc:generates lang.golang.extracts-generated-module.module
 func genModule() *rapid.Generator[Module] {
@@ -77,6 +78,9 @@ func genModule() *rapid.Generator[Module] {
 				w.drawFunc(f, rapid.SampledFrom([]string{"Test", "Fuzz", "Testlower"}).Draw(t, "testName"))
 			}
 		}
+		for range rapid.IntRange(0, 3).Draw(t, "vars") {
+			w.drawVar()
+		}
 		for _, fn := range w.funcs {
 			w.drawBody(fn)
 		}
@@ -93,6 +97,7 @@ type world struct {
 	packages []*gpkg
 	types    []*gtype
 	funcs    []*gfunc // functions and methods
+	vars     []*gvar
 }
 
 type gpkg struct {
@@ -107,7 +112,7 @@ type gfile struct {
 	path               string // relative to the module's root
 	test               bool
 	doc                []binding // the package's doc comment, its sentence first
-	decls              []any     // *gtype, *ggroup, *gfunc, *gconst or *gloose, in the order written
+	decls              []any     // *gtype, *ggroup, *gfunc, *gvar, *gconst or *gloose, in the order written
 	header             string
 	headerAfterPackage bool
 }
@@ -159,6 +164,7 @@ type gfunc struct {
 	ptrRecv  bool
 	sig      *gsig
 	testName string // Test, Fuzz or Testlower for a function named like a test
+	varFree  bool   // its body uses no variable and calls only functions that are var-free
 	body     []gstmt
 	terminal string // the panic's message that ends the body, or ""
 	doc      []binding
@@ -166,8 +172,9 @@ type gfunc struct {
 
 // gstmt is one statement of a body, or a comment line in it.
 type gstmt struct {
-	kind    string // call, assign, iface, closure, builtin, ref, rapid or comment
+	kind    string // call, assign, iface, closure, builtin, ref, rapid, varCall, varRef or comment
 	target  *gfunc // what a call calls
+	held    *gvar  // the variable a varCall calls or a varRef refers to
 	via     *gtype // the type whose value a method is called on
 	method  *gsig  // an interface's method
 	inner   *gstmt // a closure's statement
@@ -181,6 +188,29 @@ type gstmt struct {
 // it, and a call's arguments one to a line.
 type layout struct {
 	blank, note, split bool
+}
+
+// gvar is a package-level variable: a function literal (func), a map of
+// them (map), or the result of a call made when the package is initialized
+// (init).
+type gvar struct {
+	file   *gfile
+	name   string
+	form   string
+	bodies [][]gstmt // each function literal's statements
+	init   *gstmt    // init's call
+}
+
+// scope is what the statements of a body may name: the file they are in,
+// whether they call only var-free functions, the variables they may use,
+// and whether a t is there for rapid.Check. Go rejects a variable whose value
+// depends on itself, through function bodies too, so a variable's closures
+// call only var-free functions and use only the variables drawn before it.
+type scope struct {
+	file     *gfile
+	freeOnly bool
+	vars     []*gvar
+	tests    bool
 }
 
 // gconst is a constant of a defined type.
