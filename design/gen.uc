@@ -17,11 +17,11 @@ type PlanSample record "按语言根目录调度生成后端的样本" {
 
 op plan(root: string, g: graph.Graph, backends: list<lang.Backend>) -> lang.Generation "按系统 roots 选取可选 Generator，按路径排序合并结果；不以缺少实现或谓词阻止生成"
 
-op write(root: string, edits: list<lang.Edit>) -> list<diag.Diagnostic> "预检全部路径、重复目标、符号链接和生成标记，再逐文件原子写入；只覆盖工具生成文件，不承诺跨文件事务"
+op write(root: string, edits: list<lang.Edit>) -> list<diag.Diagnostic> "预检全部路径、重复目标、符号链接和生成标记，再逐文件原子写入；覆盖仅限工具生成文件，只新增骨架用独占创建，不承诺跨文件事务"
 
 op checkFiles(root: string, edits: list<lang.Edit>) -> list<diag.Diagnostic> "只读检查计划的路径和归属，逐字节核对全部生成文件；缺失或内容陈旧时给出诊断，不跟随符号链接，不创建或改写文件"
 
-property write-preserves-unowned-files invariant "写入只改计划中的工具生成文件；路径非法、重复、符号链接或已有文件没有生成标记时预检失败且不写任何文件；相同计划重复应用保持内容不变" {
+property write-preserves-unowned-files invariant "写入只改计划中的工具生成文件；路径非法、重复、符号链接或已有文件没有生成标记时预检失败且不写任何文件；可重写计划重复应用保持内容不变；只新增计划重复应用拒绝覆盖并保留已有内容" {
   about write
   forall sample: WriteSample generated "临时仓库中的普通文件、工具生成文件、符号链接和合法或带一处冲突的生成计划"
   manual "完整声明涉及文件系统的归属、符号链接和原子替换，由手写谓词在临时目录观察"

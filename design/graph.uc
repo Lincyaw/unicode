@@ -57,6 +57,7 @@ type EdgeKind enum "边的种类（model.md §4）" {
   value checks
   value generates
   value observes
+  value substitutes
   value owns
   value depends
   value traces

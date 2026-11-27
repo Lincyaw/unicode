@@ -98,7 +98,8 @@
 
 - **符号** x 有名称和设计中的类型 type(x)。性质的陈述对符号的每一组取值都成立。
 - type(x) = `call<R1, …, Rk>` 时，x 的一个值是对 R1, …, Rk 中某个操作的一次调用，带全部实参；Ri 是类型时指它的全部操作。关于一串调用的性质写成 `forall steps: list<call<Stock>>`；检查时先检查一次陈述，再依次执行这些调用，每一步之后检查陈述（[language.md](language.md) §4.4 E13）。
-- **陈述**是性质或流程的全部 `ensure` 表达式，连同性质的 `call` 子句和 `within` 的时长；类型规则和检查步骤见 [language.md](language.md) §4.4。流程的被测调用是它的第一个步骤。不能写成表达式的性质改带 `manual`，称为**人工性质**，由手写的谓词检查。
+- **陈述**是性质或流程的全部 `ensure` 表达式，连同性质的 `call` 子句和 `within` 的时长；类型规则和检查步骤见 [language.md](language.md) §4.4。流程的被测调用是它的第一个步骤。不能写成表达式的性质改带 `manual`，称为**人工性质**，由手写的谓词检查。需要环境准备的流程同样显式写 `manual` 理由。
+- `replies<R>` 是外部系统操作 R 的非空应答脚本，符号的类型确定安装目标；同一性质或流程对每个目标至多一个这样的符号。接口字段的值以同样的应答列表描述全部操作。成功和声明错误的值形状见 [design.md](design.md) §6.2；末项重复，应答不会在运行中随机生成。
 - **纯操作**是声明为 `pure` 的操作：结果只由接收者和实参决定，调用不改变接收者、实参或其他任何值。
 - **限定**缩小符号的取值。x 的**取值域** Dom(x) 是 type(x) 的全部取值中满足 x 的全部限定的部分。
 - **生成的符号**的取值域不由类型和限定给出，而由 `generates` 绑定的生成器给出（[language.md](language.md) §6）。生成的符号附一句取值域的说明，不带限定。
@@ -142,6 +143,7 @@
 | `checks` | 代码层 op → property、flow | 声明（代码中的绑定） | 该谓词检查这条性质或这个流程 |
 | `generates` | 代码层 op → property、flow | 声明（代码中的绑定） | 该函数给出一个生成的符号的生成器；属性写明符号的名称 |
 | `observes` | 代码层 op → observation | 声明（代码中的绑定） | 只读适配器取得这项观察的快照 |
+| `substitutes` | 代码层 op → 外部系统直接提供的设计层 op | 声明（代码中的绑定） | 安装该客户端的确定性应答替身，返回清理函数 |
 | `owns` | 设计层 container → 代码层 file | 推导 | 文件归属的容器 |
 | `depends` | 设计层 container → 设计层 container、actor | 推导 | 实际的依赖 |
 | `traces` | step → 代码层 op | 推导 | 落实该步骤所调用操作的函数 |
@@ -276,7 +278,8 @@
     3. `checks` 指向 `property` 或 `flow`，一个函数至多带一个 `checks`；
     4. `generates` 指向生成的符号；
     5. 方法不带 `realizes`；
-    6. `observes` 指向具名观察，每个观察适配器是自由函数，恰带一个 `observes` 绑定。
+    6. `observes` 指向具名观察，每个观察适配器是自由函数，恰带一个 `observes` 绑定；
+    7. `substitutes` 的安装器是自由函数，恰指向一个外部直接操作；每个目标至多一个安装器，归属与其客户端相同的允许容器。Go 安装器接收与客户端完全同签名的函数，返回清理函数。
 16. 【状态】每个类型和每个操作，包括外部系统的，都恰被一个代码层元素落实。没有时为 `missing`；落实操作的函数是骨架时为 `stub`。
 17. 若 realizes(x, n)，则 x 所在的文件归属于 container(n)。n 属于外部系统 X 时，x 所在的文件归属于某个 `uses` X 的容器。
 18. 【状态】若 realizes(x, n)，则下列各项都成立，否则 n 为 `contradicted`：
@@ -300,10 +303,10 @@
     对每个 `emit` 步骤 s，设 emits(s, E)：落实发起方的代码 `refers` 落实 E 的代码层类型。
 
     不满足时，s 为 `missing`。
-23. 不是生成的符号 x，其类型能够生成：type(x) 不是 `interface` 或 `error`，不经由必填字段递归引用自身；type(x) 为 `call<…>` 时，其中各操作的参数都能生成，操作名互不相同。类型为 `interface` 的字段不受此限，由替身填充（[design.md](design.md) §6.2）。
+23. 不是生成的符号 x，其类型能够生成：type(x) 不是 `interface` 或 `error`，不经由必填字段递归引用自身；type(x) 为 `call<…>` 时，其中各操作的参数都能生成，操作名互不相同。`replies<…>` 的返回值和错误字段同样能够生成。类型为 `interface` 的字段不受此限，由替身填充（[design.md](design.md) §6.2）。
 24. 每个生成的符号恰有一个 `generates` 绑定，并且不带限定；不是生成的符号没有 `generates` 绑定。
-25. 限定的路径从一个符号出发逐段解析：经过 `list`、`set` 时作用于每个元素，经过 `map` 时作用于每个值，经过 `call` 时下一段是操作名、再下一段是参数名。区间只用于 `int` 和 `float`；枚举子集只用于 `enum`；大小只用于 `list`、`set`、`map`、`string` 和 `bytes`。
-26. 每个用例 c，包括声明的和录制的，对每个符号 x 恰给出一个值，且 c(x) ∈ Dom(x)：记录给出全部字段，枚举值存在，只有 `optional` 取 `none`，调用给出该操作的全部参数，并满足全部限定。用例不对具名观察赋值；运行时的前提检查见 [language.md](language.md) E22。
+25. 限定的路径从一个符号出发逐段解析：经过 `list`、`set` 时作用于每个元素，经过 `map` 时作用于每个值，经过 `call` 时下一段是操作名、再下一段是参数名。区间只用于 `int` 和 `float`；枚举子集只用于 `enum`；大小只用于 `list`、`set`、`map`、`string`、`bytes` 和 `replies`。
+26. 每个用例 c，包括声明的和录制的，对每个符号 x 恰给出一个值，且 c(x) ∈ Dom(x)：记录给出全部字段，枚举值存在，只有 `optional` 取 `none`，调用给出该操作的全部参数，应答脚本非空且全部返回值和错误字段类型相符，并满足全部限定。用例不对具名观察赋值；运行时的前提检查见 [language.md](language.md) E22。
 27. 声明的用例的名称不匹配 `r-[0-9a-f]{8}`。
 
 **生成与录制**
@@ -372,7 +375,7 @@
 | 17 | `check.realization-outside-container` | `check.rejects-broken-graph` |
 | 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value` | `check.rejects-broken-graph` |
 | 19 | `check.missing-implements`、`check.missing-extends` | `check.rejects-broken-graph` |
-| 20 | `check.missing-predicate`、`check.multiple-predicates`、`check.predicate-signature`；带陈述的单次性质由 Go 生成谓词，流程的生成谓词未实现：M4 后续阶段 | `check.rejects-broken-graph`、`lang.golang.executes-contracts` |
+| 20 | `check.missing-predicate`、`check.multiple-predicates`、`check.predicate-signature`；Go 生成自动性质和流程入口谓词 | `check.rejects-broken-graph`、`lang.golang.executes-contracts` |
 | 21 | `check.handwritten-test`；Go 已启用，Python 未实现：M5 | `check.rejects-broken-graph` |
 | 22 | `check.untraced-step`、`check.unreachable-step`、`check.unreferenced-event` | `check.rejects-broken-graph` |
 | 23 | `design.ungenerable-symbol` | `design.rejects-broken-design` |
@@ -384,7 +387,7 @@
 | 29 | `design.unresolved-reference`、`design.wrong-reference-kind`、`cli.not-canonical` | `design.rejects-broken-design`、`cli.check-design` |
 | 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5；生成器的 map 名称未实现：[design.md](design.md) §4 没有给出生成器的名称映射 | `design.rejects-broken-design` |
 | 31 | `design.expression-type` | `design.rejects-broken-design` |
-| 32 | `lang.golang.purity-violation`，核对表达式中的纯调用；被测 `call` 的重复核对与操作状态传播未实现：M4 后续阶段 | `lang.golang.executes-contracts` |
+| 32 | `lang.golang.purity-violation`，核对表达式和被测调用的纯性；证据并图后的状态传播属于 M6 | `lang.golang.executes-contracts` |
 | 33 | 未实现：M7，评审 | — |
 | 34 | `check.missing-observer`、`check.multiple-observers`、`check.observer-signature`、`check.observer-outside-container` | `check.rejects-broken-graph` |
 | 35 | `design.invalid-observation`、`design.invalid-change-path`、`lang.golang.expression-failed`、`lang.golang.frame-violation`、`lang.golang.observation-failed` | `design.rejects-broken-design`、`lang.golang.executes-contracts` |
