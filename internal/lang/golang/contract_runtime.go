@@ -146,6 +146,15 @@ func ucSplitType(t string) (string, []string) {
 	}
 	return t[:i], append(args, strings.TrimSpace(body[start:]))
 }
+func ucBaseType(t string) string {
+	for {
+		kind, args := ucSplitType(t)
+		if kind != "optional" {
+			return t
+		}
+		t = args[0]
+	}
+}
 func ucFields(types map[string]ucType, t string) []ucField {
 	ty := types[t]
 	var out []ucField
@@ -553,7 +562,7 @@ func (env *ucEnvironment) eval(e *ucExpr) ucValue {
 			n := 0
 			switch x := v.Data.(type) {
 			case string:
-				if v.Type == "bytes" {
+				if ucBaseType(v.Type) == "bytes" {
 					n = len(x)
 				} else {
 					n = utf8.RuneCountInString(x)
@@ -693,7 +702,7 @@ func (env *ucEnvironment) eval(e *ucExpr) ucValue {
 		if len(collectionArgs) > 0 {
 			locals[e.Text] = collectionArgs[0]
 		}
-		floating := env.typeOf(e.Children[1], locals) == "float"
+		floating := ucBaseType(env.typeOf(e.Children[1], locals)) == "float"
 		for _, item := range items {
 			env.values[e.Text] = item
 			value := env.eval(e.Children[1])
@@ -867,7 +876,7 @@ func ucNative(v ucValue, t reflect.Type) reflect.Value {
 	switch x := v.Data.(type) {
 	case *big.Int:
 		if !x.IsInt64() || out.OverflowInt(x.Int64()) {
-			ucFail("lang.golang.expression-failed", "an integer argument is outside the Go parameter range", nil)
+			ucFail("lang.golang.input-outside-domain", "an integer argument is outside the Go parameter range", nil)
 		}
 		out.SetInt(x.Int64())
 	case float64:
@@ -951,8 +960,18 @@ func (env *ucEnvironment) prepare(e *ucExpr) (ucOperation, reflect.Value, []refl
 			fn = receiver.Native.MethodByName(op.GoName)
 			if !fn.IsValid() {
 				v := ucDeref(receiver.Native)
-				if v.IsValid() && v.CanAddr() {
-					fn = v.Addr().MethodByName(op.GoName)
+				if v.IsValid() {
+					if v.CanAddr() {
+						fn = v.Addr().MethodByName(op.GoName)
+					} else {
+						copy := reflect.New(v.Type())
+						copy.Elem().Set(v)
+						fn = copy.MethodByName(op.GoName)
+						if fn.IsValid() {
+							receiver.Native = copy
+							op.receiver = receiver
+						}
+					}
 				}
 			}
 		}
@@ -1200,7 +1219,7 @@ func ucExecute(s *ucContract, inputs map[string]reflect.Value, explore bool) (ou
 	defer func() {
 		if p := recover(); p != nil {
 			if issue, ok := p.(ucIssue); ok {
-				out.Infrastructure = phase == "input" || phase == "observer" || phase == "requires" || issue.code == "lang.golang.observation-failed" || issue.code == "lang.golang.unsupported-contract"
+				out.Infrastructure = phase == "input" || phase == "observer" || phase == "requires" || issue.code == "lang.golang.observation-failed" || issue.code == "lang.golang.unsupported-contract" || issue.code == "lang.golang.input-outside-domain"
 				out.Diagnostics = append(out.Diagnostics, ucDiagnosticOf(s, issue))
 			} else {
 				out.Infrastructure = phase != "call" && phase != "assertion"

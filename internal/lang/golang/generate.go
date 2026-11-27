@@ -75,7 +75,7 @@ func (b *Backend) Generate(plan lang.GenPlan) lang.Generation {
 		return lang.Generation{Diagnostics: []diag.Diagnostic{{Code: "lang.golang.invalid-plan", Position: diag.Position{Path: "design/system.uc", Line: 1, Column: 1}, Message: "the generation plan has no graph", Fix: "build and link the graph before generating Go contracts"}}}
 	}
 	var err error
-	c.loaded, err = load(plan.Root, plan.Roots)
+	c.loaded, err = loadForGeneration(plan.Root, plan.Roots)
 	if err != nil {
 		return lang.Generation{Diagnostics: []diag.Diagnostic{{Code: "lang.golang.generate-failed", Position: diag.Position{Path: "design/system.uc", Line: 1, Column: 1}, Message: err.Error(), Fix: "make the configured Go packages load before generation"}}}
 	}
@@ -826,7 +826,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 			t := c.goType(s.Type, file.pkg, file.imports)
 			params = append(params, s.Name+" "+t)
 			names = append(names, s.Name)
-			values = append(values, strconv.Quote(s.Name)+":reflect.ValueOf("+s.Name+")")
+			values = append(values, strconv.Quote(s.Name)+":reflect.ValueOf(&"+s.Name+").Elem()")
 		}
 		predicate := ""
 		if unit.predicate != nil {

@@ -52,6 +52,9 @@ type contractBank struct {
 	Port     any
 }
 type contractReceipt struct{ Amount int }
+
+func (r *contractReceipt) Value() int { return r.Amount }
+
 type contractStage string
 type contractFundsError struct{ AccountId string }
 
@@ -194,6 +197,33 @@ func checkExecutesContracts(t rapid.TB, sample ContractSample) {
 	env.values["text"] = ucNormalize(reflect.ValueOf(text), "string", spec.Types)
 	if !ucTruth(env.eval(runtimeExpr(t, "size(text) == "+strconv.Itoa(utf8.RuneCountInString(text)))), nil) {
 		t.Fatal("string size counted encoding bytes instead of codepoints")
+	}
+	optionalBytes := []byte(text)
+	env.values["optionalBytes"] = ucNormalize(reflect.ValueOf(&optionalBytes), "optional<bytes>", spec.Types)
+	if !ucTruth(env.eval(runtimeExpr(t, "size(optionalBytes) == "+strconv.Itoa(len(optionalBytes)))), nil) {
+		t.Fatal("optional bytes size counted codepoints")
+	}
+	optionalNumbers := []*float64{}
+	for _, number := range numbers {
+		copy := number
+		optionalNumbers = append(optionalNumbers, &copy)
+	}
+	env.values["optionalNumbers"] = ucNormalize(reflect.ValueOf(optionalNumbers), "list<optional<float>>", spec.Types)
+	if !ucTruth(env.eval(runtimeExpr(t, "sum(value in optionalNumbers: value) == 0.0")), nil) {
+		t.Fatal("an empty optional-float sum changed numeric type")
+	}
+	receipt := contractReceipt{sample.Amount}
+	env.values["receipt"] = ucNormalize(reflect.ValueOf(&receipt).Elem(), "Receipt", spec.Types)
+	oldReceipt := runtimeExpr(t, "old(receipt)")
+	env.old = map[string]ucValue{ucExprKey(oldReceipt): ucDetach(env.values["receipt"])}
+	receipt.Amount += sample.Amount
+	spec.Operations["Receipt.value"] = ucOperation{Name: "Receipt.value", GoName: "Value", Owner: "Receipt", Result: "int", Pure: true}
+	if !ucTruth(env.eval(runtimeExpr(t, "old(receipt).value() == amount")), nil) {
+		t.Fatal("a pure method read the live record through old")
+	}
+	env.values["copy"] = ucNormalize(reflect.ValueOf(contractReceipt{sample.Amount}), "Receipt", spec.Types)
+	if !ucTruth(env.eval(runtimeExpr(t, "copy.value() == amount")), nil) {
+		t.Fatal("a pointer method could not read a returned record value")
 	}
 	env.values["numbers"] = ucNormalize(reflect.ValueOf(numbers), "list<float>", spec.Types)
 	if !ucTruth(env.eval(runtimeExpr(t, "sum(value in numbers: value) == 0.0")), nil) {
