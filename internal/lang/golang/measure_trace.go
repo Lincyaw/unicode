@@ -536,6 +536,16 @@ func (p *measuredProgram) designCoverage(check string, trace measuredTrace) ([]l
 		if result.index != len(actions) {
 			continue
 		}
+		complete := true
+		for _, action := range matcher.allAsync {
+			if !result.used[action] {
+				complete = false
+				break
+			}
+		}
+		if !complete {
+			continue
+		}
 		points := map[string]lang.Coverage{}
 		for _, point := range result.coverage {
 			b, _ := json.Marshal(point)

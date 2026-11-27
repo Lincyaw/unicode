@@ -126,8 +126,11 @@ func (b *Backend) runMeasured(plan lang.RunPlan, generation lang.Generation) (re
 }
 func (r *measuredRunner) runCheck(plan lang.RunPlan, replay []ucReplayCase) lang.RunResult {
 	result := lang.RunResult{Id: r.check, Passed: true, Cases: []lang.CaseResult{}, Observations: []string{}, Differences: []string{}, Diagnostics: []diag.Diagnostic{}}
-	evaluate := func(input lang.Input, form, id, reason string) bool {
+	evaluate := func(input lang.Input, form, id, reason string, replaying bool) bool {
+		priorTrial := r.trial
+		r.trial = !replaying
 		evaluated := r.Evaluate(input)
+		r.trial = priorTrial
 		if len(evaluated.Diagnostics) > 0 {
 			result.Diagnostics = append(result.Diagnostics, evaluated.Diagnostics...)
 			result.Passed = false
@@ -148,7 +151,7 @@ func (r *measuredRunner) runCheck(plan lang.RunPlan, replay []ucReplayCase) lang
 		if candidate.Rejected {
 			result.Rejected++
 			result.Cases = append(result.Cases, candidate)
-			if form == "declared" || form == "recorded" {
+			if replaying {
 				result.Passed = false
 				result.Diagnostics = append(result.Diagnostics, runDiagnostic("lang.golang.input-outside-domain", "a replayed input no longer satisfies its type, limits or preconditions", "correct the declared case or run exploration to retire invalid recorded inputs"))
 			}
@@ -170,7 +173,7 @@ func (r *measuredRunner) runCheck(plan lang.RunPlan, replay []ucReplayCase) lang
 			result.Diagnostics = append(result.Diagnostics, runDiagnostic("lang.golang.input-codec-failed", err.Error(), "make recorded inputs satisfy their declared codecs"))
 			continue
 		}
-		evaluate(input, recorded.Form, recorded.Id, recorded.Reason)
+		evaluate(input, recorded.Form, recorded.Id, recorded.Reason, true)
 	}
 	if plan.Explore > 0 && result.Passed {
 		r.deadline = time.Now().Add(plan.Explore)
@@ -214,13 +217,16 @@ func (r *measuredRunner) runCheck(plan lang.RunPlan, replay []ucReplayCase) lang
 				break
 			}
 			prior := len(result.Cases)
-			if !evaluate(input, "recorded", r.check+".r-"+hash[:8], "coverage") {
+			if !evaluate(input, "recorded", r.check+".r-"+hash[:8], "coverage", false) {
 				break
 			}
 			if len(result.Cases) == prior {
 				continue
 			}
 			candidate := result.Cases[len(result.Cases)-1]
+			if candidate.Rejected {
+				continue
+			}
 			if !candidate.Passed {
 				trial := *r
 				trial.trial = true
@@ -248,9 +254,6 @@ func (r *measuredRunner) runCheck(plan lang.RunPlan, replay []ucReplayCase) lang
 				}
 				result.Cases[len(result.Cases)-1] = smallest
 				break
-			}
-			if !addsMeasuredCoverage(result.Cases[:len(result.Cases)-1], candidate) {
-				result.Cases = result.Cases[:len(result.Cases)-1]
 			}
 		}
 		eligible := []lang.CaseResult{}
@@ -292,22 +295,6 @@ func (r *measuredRunner) runCheck(plan lang.RunPlan, replay []ucReplayCase) lang
 	slices.Sort(result.Observations)
 	result.Observations = slices.Compact(result.Observations)
 	return result
-}
-func addsMeasuredCoverage(prior []lang.CaseResult, candidate lang.CaseResult) bool {
-	known := map[string]bool{}
-	for _, before := range prior {
-		for _, point := range before.Coverage {
-			data, _ := json.Marshal(point)
-			known[string(data)] = true
-		}
-	}
-	for _, point := range candidate.Coverage {
-		data, _ := json.Marshal(point)
-		if !known[string(data)] {
-			return true
-		}
-	}
-	return false
 }
 func (r *measuredRunner) Evaluate(input lang.Input) lang.CandidateEvaluation {
 	out := lang.CandidateEvaluation{Diagnostics: []diag.Diagnostic{}}
