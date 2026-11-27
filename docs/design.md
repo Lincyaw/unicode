@@ -175,7 +175,7 @@ type Runner interface {
 | --- | --- |
 | container（`package`、`file`） | `language`、`path`（文件的路径，或包的导入路径）；工具生成的文件另带 `generated: true` |
 | type | `name`、`fields`（每项 `名称: 类型`；未导出的字段是细节，不列出）、`declaration`（规范类型声明）、`values`（以字符串为底层类型、带常量的类型，每项是常量名按反向映射得到的枚举值，例如 `OrderStatusDraft` 写作 `draft`） |
-| op（`func`、`method`、`abstract`） | `name`（带 `checks` 绑定的谓词，写作性质或流程的名称）、`signature`、`testKind`（`none`、`example`、`property` 或 `fuzz`）、`stub`（`true` 或 `false`） |
+| op（`func`、`method`、`abstract`） | `name`（带 `checks` 绑定的谓词，写作性质或流程的名称）、`signature`、`testKind`（`none`、`example`、`property` 或 `fuzz`）、`stub`（`true` 或 `false`）、`body`（规范函数体）、`declaration`（具体操作的原生声明头） |
 
 `calls` 边的属性 `sites` 列出每个调用位置，写作 `路径:行:列`；`generates` 边的属性 `symbols` 列出符号的名称。Go 签名的写法：指针 `*T` 写作 `optional<T>`，`check` 比较时把设计中 `object` 类型的 `optional<X>` 与 `X` 视为相同；末尾的 `error` 写作 ` raises error`，与设计中非空的 `raises` 相符；谓词的第一个参数（`rapid.TB`）保留在签名中，比较符号时跳过。绑定边的终点是设计层的标识。`Graph.AddFragment` 先暂存终点不在图中的绑定边和方法的候选边；推导时加入能解析的，绑定边中终点仍不存在的报为 `graph.unresolved-binding`，即 [model.md](model.md) §10 第 15 条中"目标存在"的一半；其余端点缺失的边仍是 `DanglingEdge`。
 
@@ -261,7 +261,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
   | fuzz | `FuzzX` 中的 `rapid.MakeFuzz` | Hypothesis 的 `fuzz_one_input` 接到 atheris 上 |
   | 回放 | 普通的 `TestX`，逐个调用谓词 | 逐个调用谓词 |
 
-  Go 后端在落实代码所在包生成 `unicode_contracts_gen_test.go`，一个包一个文件，普通入口是 `TestUnicodeContracts`，各性质按标识作为子测试；原生 fuzz 入口按完整标识稳定命名。自动谓词带 `checks` 绑定，人工谓词直接复用；人工流程的 `within` 计量整个手写谓词边界，准备更细的边界时须拆分声明。所有模式共享输入与谓词，执行语义见本节开头；覆盖引导的模型用例录制仍按后续阶段交付。
+  Go 后端在落实代码所在包生成 `unicode_contracts_gen_test.go`，一个包一个文件，普通入口是 `TestUnicodeContracts`，各性质按标识作为子测试；原生 fuzz 入口按完整标识稳定命名。自动谓词带 `checks` 绑定，人工谓词直接复用；人工流程的 `within` 计量整个手写谓词边界，准备更细的边界时须拆分声明。所有模式共享输入与谓词，执行语义见本节开头；覆盖引导的模型用例录制属于 M6。
 
 ### 6.3 回放与探索
 

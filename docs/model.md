@@ -236,7 +236,7 @@
 - **D5 `exercises`**：若 checks(p, x)，函数 g 从 p 沿 `calls` 可达，则 exercises(p, g)。
 - **D6 显著性**：
   1. 设计层的节点都是显著的。
-  2. 代码层的类型和函数是显著的，当且仅当它落实设计节点（包括按 D2 落实操作的方法），或带 `checks`、`generates`、`observes` 绑定；但 `gen` 产生的生成文件中的元素都是细节。
+  2. 代码层的类型和函数是显著的，当且仅当它落实设计节点（包括按 D2 落实操作的方法），或带 `checks`、`generates`、`observes`、`substitutes` 绑定；但 `gen` 产生的生成文件中的元素都是细节。
   3. 代码层的文件和包是显著的，当且仅当它含有显著的元素。
 - **D7 `reaches`**：对显著的函数 f 和 g，reaches(f, g) 当且仅当存在 f → h1 → … → hk → g 的 `calls` 路径，k ≥ 1，且 h1, …, hk 都是细节。属性列出每条这样的路径上的 h1, …, hk。f 直接调用 g 时只有 `calls`，没有 `reaches`。
 
