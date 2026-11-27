@@ -90,6 +90,8 @@ type DuplicateEdge error "图中已有这条边：种类、起点和终点都相
 
 type DanglingEdge error "边的起点或终点不是图中的节点"
 
+type NotASnapshot error "字节不是 encode 写出的快照：不是 JSON，字段不符，或者其中的节点和边组不成一张图"
+
 type Graph object "一张图：节点按标识索引，边按种类、起点和终点索引" {
   op addNode(node: Node) raises DuplicateNode "加入一个节点"
   op addEdge(edge: Edge) raises DuplicateEdge, DanglingEdge "加入一条边；它的起点和终点必须已经在图中"
@@ -108,6 +110,8 @@ type Fragment record "一组节点和边：一种语言抽取出的代码层，�
 }
 
 op newGraph() -> Graph "一张空图"
+
+op decode(data: bytes) -> Graph raises NotASnapshot "encode 的逆：从快照还原出图"
 
 property encode-ignores-order relation "同一组节点和边，以任何次序加入，编码出的快照逐字节相同；快照中节点按标识、边按种类、起点、终点排序" {
   about Graph.encode

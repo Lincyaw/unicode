@@ -117,3 +117,20 @@ func presentAttrs(attrs map[string][]string) map[string][]string {
 	}
 	return out
 }
+
+// NotASnapshot is the error of Decode for bytes that are not a snapshot
+// Encode wrote: not its JSON, or nodes and edges that make no graph.
+//
+//uc:realizes graph.NotASnapshot
+type NotASnapshot struct{ Cause error }
+
+func (e NotASnapshot) Error() string { return "not a snapshot of the graph: " + e.Cause.Error() }
+
+func (e NotASnapshot) Unwrap() error { return e.Cause }
+
+// Decode is the inverse of Encode: it rebuilds the graph a snapshot holds.
+//
+//uc:realizes graph.decode
+func Decode(data []byte) (Graph, error) {
+	panic("unicode: unimplemented")
+}

@@ -39,6 +39,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | `internal/check` | 归属、依赖、绑定、可执行、生成与录制这几组约束 | graph、diag |
 | `internal/query` | 节点、引用、搜索、切片和影响 | graph |
 | `internal/view` | 视图的选取与折叠 | graph |
+| `internal/serve` | 查看器的后端：读取快照，载入时按 `check` 的约束检查，回答 §7.5.1 的接口 | graph、diag、check、query、view、lang.golang |
 | `internal/gen` | 生成计划：缺少的骨架，以及应有的生成文件 | graph、lang、diag |
 | `internal/run` | 回放与探索：经后端运行驱动，按覆盖挑选输入，缩减并写出录制文件 | graph、lang、syntax、diag |
 | `cmd/unicode` | 解析参数，调用其余组件，输出结果和退出码 | 全部 |
@@ -301,7 +302,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 
 切片的 `edges` 是两端都在切片列出的节点之中的 `contains` 边，由它还原祖先链和流程的步骤树。
 
-代码只给位置（路径和行号）；加 `--with-code` 时附上源码，JSON 中为 `code`：标识到源码，源码是包含该节点的顶层声明及其文档注释。目前只有 Go 后端提供，Python 到来时成为后端的一个操作。
+代码只给位置（路径和行号）；加 `--with-code` 时附上源码，JSON 中为 `code`：标识到源码，源码是包含该节点的顶层声明及其文档注释所占的各行，由 Go 后端的 `declaration` 给出，查看器的源码片段也用它。目前只有 Go 后端提供，Python 到来时成为后端接口的一个操作。
 
 ### 7.4 影响与索引
 
