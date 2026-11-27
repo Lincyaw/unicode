@@ -19,8 +19,8 @@ import (
 var _ lang.Runner = (*Backend)(nil)
 
 // Run checks generated files before running only their contract drivers.
-func (b *Backend) Run(plan lang.RunPlan) lang.RunReport {
-	report := lang.RunReport{}
+func (b *Backend) Run(plan lang.RunPlan) (report lang.RunReport) {
+	report = lang.RunReport{}
 	generation := b.Generate(lang.GenPlan{Root: plan.Root, Roots: plan.Roots, Graph: plan.Graph})
 	report.Diagnostics = append(report.Diagnostics, generation.Diagnostics...)
 	if len(report.Diagnostics) > 0 {
@@ -48,7 +48,11 @@ func (b *Backend) Run(plan lang.RunPlan) lang.RunReport {
 	if err != nil {
 		return lang.RunReport{Diagnostics: []diag.Diagnostic{runDiagnostic("lang.golang.run-failed", err.Error(), "make a writable temporary directory available")}}
 	}
-	defer os.RemoveAll(temp)
+	defer func() {
+		if err := os.RemoveAll(temp); err != nil {
+			report.Diagnostics = append(report.Diagnostics, runDiagnostic("lang.golang.run-failed", "cannot remove contract result files: "+err.Error(), "make the temporary result directory removable"))
+		}
+	}()
 	for index, edit := range generation.Edits {
 		if len(plan.Ids) > 0 {
 			needed := false

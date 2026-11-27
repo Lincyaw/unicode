@@ -335,6 +335,12 @@ func ucMaterialize(v ucValue) ucValue {
 	}
 	return v
 }
+func ucNone(v ucValue) bool {
+	if _, lazy := v.Data.(ucLazy); lazy {
+		return !v.Native.IsValid() || ((v.Native.Kind() == reflect.Pointer || v.Native.Kind() == reflect.Interface) && v.Native.IsNil())
+	}
+	return v.Data == nil
+}
 func ucFieldValue(v ucValue, name string) ucValue {
 	if lazy, ok := v.Data.(ucLazy); ok {
 		model := v.Type
@@ -479,7 +485,11 @@ func ucName(e *ucExpr) string {
 }
 func ucLookup(v ucValue, key ucValue, e *ucExpr) ucValue {
 	v = ucMaterialize(v)
-	for _, item := range v.Data.(ucMap) {
+	items, ok := v.Data.(ucMap)
+	if !ok {
+		ucFail("lang.golang.expression-failed", "a map was required but its optional value is none", e)
+	}
+	for _, item := range items {
 		if ucEqual(item.Key, key) {
 			return item.Value
 		}
@@ -604,6 +614,9 @@ func (env *ucEnvironment) eval(e *ucExpr) ucValue {
 		case "!=":
 			return ucBool(!ucEqual(a, b))
 		case "in":
+			if b.Data == nil {
+				ucFail("lang.golang.expression-failed", "membership requires a collection but the optional value is none", e)
+			}
 			switch xs := b.Data.(type) {
 			case []ucValue:
 				for _, x := range xs {
@@ -619,6 +632,9 @@ func (env *ucEnvironment) eval(e *ucExpr) ucValue {
 				}
 			}
 			return ucBool(false)
+		}
+		if a.Data == nil || b.Data == nil {
+			ucFail("lang.golang.expression-failed", "none was used where a numeric or ordered value is required", e)
 		}
 		if x, ok := a.Data.(*big.Int); ok {
 			y, ok := b.Data.(*big.Int)
@@ -696,7 +712,7 @@ func (env *ucEnvironment) eval(e *ucExpr) ucValue {
 		all, any := true, false
 		integer := new(big.Int)
 		rational := new(big.Rat)
-		collectionKind, collectionArgs := ucSplitType(collection.Type)
+		collectionKind, collectionArgs := ucSplitType(ucBaseType(collection.Type))
 		_ = collectionKind
 		locals := map[string]string{}
 		if len(collectionArgs) > 0 {
@@ -787,7 +803,7 @@ func (env *ucEnvironment) typeOf(e *ucExpr, locals map[string]string) string {
 			}
 		}
 	case "index":
-		_, args := ucSplitType(env.typeOf(e.Children[0], locals))
+		_, args := ucSplitType(ucBaseType(env.typeOf(e.Children[0], locals)))
 		if len(args) > 1 {
 			return args[1]
 		}
@@ -819,7 +835,7 @@ func (env *ucEnvironment) typeOf(e *ucExpr, locals map[string]string) string {
 	case "count":
 		return "int"
 	case "sum":
-		_, args := ucSplitType(env.typeOf(e.Children[0], locals))
+		_, args := ucSplitType(ucBaseType(env.typeOf(e.Children[0], locals)))
 		copy := map[string]string{}
 		for k, v := range locals {
 			copy[k] = v
@@ -865,7 +881,10 @@ func ucNative(v ucValue, t reflect.Type) reflect.Value {
 		}
 	}
 	if v.Data == nil {
-		return reflect.Zero(t)
+		if t.Kind() == reflect.Pointer || t.Kind() == reflect.Interface {
+			return reflect.Zero(t)
+		}
+		ucFail("lang.golang.expression-failed", "none cannot be adapted to a required Go value", nil)
 	}
 	out := reflect.New(t).Elem()
 	if t.Kind() == reflect.Pointer {
@@ -906,8 +925,13 @@ func ucNative(v ucValue, t reflect.Type) reflect.Value {
 			ucFail("lang.golang.unsupported-contract", "the detached collection has no supported Go map shape", nil)
 		}
 		out.Set(reflect.MakeMap(t))
+		kind, _ := ucSplitType(ucBaseType(v.Type))
 		for _, item := range x {
-			out.SetMapIndex(ucNative(item.Key, t.Key()), ucNative(item.Value, t.Elem()))
+			value := reflect.Zero(t.Elem())
+			if kind != "set" {
+				value = ucNative(item.Value, t.Elem())
+			}
+			out.SetMapIndex(ucNative(item.Key, t.Key()), value)
 		}
 	case map[string]ucValue:
 		if t.Kind() != reflect.Struct {
@@ -946,6 +970,9 @@ func (env *ucEnvironment) prepare(e *ucExpr) (ucOperation, reflect.Value, []refl
 	fn := op.Function
 	if !ok && callee.Kind == "field" {
 		receiver := env.eval(callee.Children[0])
+		if ucNone(receiver) {
+			ucFail("lang.golang.expression-failed", "none was used as an operation receiver", e)
+		}
 		if !receiver.Native.IsValid() && receiver.Shape != nil {
 			receiver.Native = ucNative(receiver, receiver.Shape)
 		}
@@ -984,7 +1011,14 @@ func (env *ucEnvironment) prepare(e *ucExpr) (ucOperation, reflect.Value, []refl
 	}
 	args := make([]reflect.Value, len(e.Children)-1)
 	for i := range args {
-		args[i] = ucNative(env.eval(e.Children[i+1]), fn.Type().In(i))
+		value := env.eval(e.Children[i+1])
+		if i < len(op.Params) {
+			kind, _ := ucSplitType(op.Params[i])
+			if kind != "optional" && ucNone(value) {
+				ucFail("lang.golang.expression-failed", "none was passed where the operation requires a value", e)
+			}
+		}
+		args[i] = ucNative(value, fn.Type().In(i))
 	}
 	return op, fn, args
 }
@@ -1558,4 +1592,34 @@ func (d *ucDiagnostic) UnmarshalJSON(data []byte) error {
 	}
 	*d = ucDiagnostic{wire.Code, wire.Subject, ucPosition{wire.Path, wire.Line, wire.Column}, wire.Message, wire.Fix}
 	return nil
+}
+
+func ucFailedPredicate(t rapid.TB, s *ucContract, r *ucRunResult) {
+	if t.Failed() {
+		r.Passed = false
+		if len(r.Diagnostics) == 0 {
+			r.Diagnostics = append(r.Diagnostics, ucDiagnosticOf(s, ucIssue{"lang.golang.predicate-failed", "the bound predicate or its driver failed", nil}))
+		}
+	}
+}
+func ucFinish(t rapid.TB, s *ucContract, r *ucRunResult) {
+	if r.Accepted == 0 {
+		r.Diagnostics = append(r.Diagnostics, ucDiagnosticOf(s, ucIssue{"lang.golang.no-effective-input", "the selected property has no effective execution", nil}))
+		r.Passed = false
+		r.Infrastructure = true
+	}
+	if s.Within > 0 && len(r.durations) > 0 {
+		slices.Sort(r.durations)
+		i := (95*len(r.durations)+99)/100 - 1
+		if r.durations[i] > s.Within {
+			r.Passed = false
+			message := fmt.Sprintf("the 95th percentile %s exceeds within %s", r.durations[i], s.Within)
+			r.Differences = append(r.Differences, message)
+			r.Diagnostics = append(r.Diagnostics, ucDiagnosticOf(s, ucIssue{"lang.golang.within-exceeded", message, nil}))
+		}
+	}
+	r.Passed = r.Passed && !t.Failed()
+	if !r.Passed {
+		t.Errorf("contract %s failed: %v %v", s.ID, r.Diagnostics, r.Differences)
+	}
 }

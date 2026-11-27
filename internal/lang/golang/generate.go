@@ -34,6 +34,8 @@ var _ = ucCheck
 var _ = ucDraw
 var _ = ucParseTime
 var _ = ucParseDuration
+var _ = ucFinish
+var _ = ucFailedPredicate
 
 type nativeDeclaration struct {
 	obj types.Object
@@ -59,7 +61,6 @@ type contractUnit struct {
 	cases         [][]string
 	generators    map[string]*types.Func
 	generatorArgs map[string][]string
-	types         []string
 	limits        []string
 }
 type contractFile struct {
@@ -444,7 +445,6 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 			c.diagnostic(n, "lang.golang.unsupported-contract", "the Go type of symbol "+symbol.Name+" is unavailable", "realize the model type and use supported finite model values")
 			return nil
 		}
-		unit.types = append(unit.types, goType)
 		if d, ok := c.bound(graph.EdgeKindGenerates, n.Id+"."+symbol.Name); ok {
 			fn, isfn := d.obj.(*types.Func)
 			if !isfn {
@@ -821,11 +821,10 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 			fmt.Fprintf(&body, "s.Observers[%d].Read=reflect.ValueOf(%s);", i, c.qualify(d.obj, file.pkg, file.imports))
 		}
 		body.WriteString("return &s }\n")
-		var params, values, names []string
+		var params, values []string
 		for _, s := range unit.spec.Symbols {
 			t := c.goType(s.Type, file.pkg, file.imports)
 			params = append(params, s.Name+" "+t)
-			names = append(names, s.Name)
 			values = append(values, strconv.Quote(s.Name)+":reflect.ValueOf(&"+s.Name+").Elem()")
 		}
 		predicate := ""
@@ -839,7 +838,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 			}
 			fmt.Fprintf(&body, "){ ucCheck(t,%s(),map[string]reflect.Value{%s}) }\n", specName, strings.Join(values, ","))
 		}
-		fmt.Fprintf(&body, "func ucDrive%s(t *testing.T, explore bool, budget time.Duration, r *ucRunResult) { s:=%s(); *r=ucRunResult{Id:s.ID,Passed:true,Observations:append([]string{},s.Observe...)}; for _,o:=range s.Observers {r.Observations=append(r.Observations,o.Name)}; ucCurrent=r; ucExploring=explore; defer func(){if t.Failed(){r.Passed=false;if len(r.Diagnostics)==0 {r.Diagnostics=append(r.Diagnostics,ucDiagnosticOf(s,ucIssue{\"lang.golang.predicate-failed\",\"the bound predicate or its driver failed\",nil}))}};ucCurrent=nil}();", id, specName)
+		fmt.Fprintf(&body, "func ucDrive%s(t *testing.T, explore bool, budget time.Duration, r *ucRunResult) { s:=%s(); *r=ucRunResult{Id:s.ID,Passed:true,Observations:append([]string{},s.Observe...)}; for _,o:=range s.Observers {r.Observations=append(r.Observations,o.Name)}; ucCurrent=r; ucExploring=explore; defer func(){ucFailedPredicate(t,s,r);ucCurrent=nil}();", id, specName)
 		fmt.Fprintf(&body, "invoke:=func(tb rapid.TB, values map[string]reflect.Value){")
 		if unit.predicate != nil {
 			body.WriteString("pre:=*s;pre.Call=nil;pre.Ensures=nil;ucCheck(tb,&pre,values);")
@@ -888,7 +887,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 				fmt.Fprintf(&body, "values[%s]=ucDraw(rt,reflect.TypeFor[%s](),%s,s.Types,%#v,%s,0);", strconv.Quote(s.Name), c.goType(s.Type, file.pkg, file.imports), strconv.Quote(s.Type), unit.limits, strconv.Quote(s.Name))
 			}
 		}
-		body.WriteString("invoke(rt,values)})};if r.Accepted==0 {r.Diagnostics=append(r.Diagnostics,ucDiagnosticOf(s,ucIssue{\"lang.golang.no-effective-input\",\"the selected property has no effective execution\",nil}));r.Passed=false;r.Infrastructure=true};if s.Within>0&&len(r.durations)>0{slices.Sort(r.durations);i:=(95*len(r.durations)+99)/100-1;if r.durations[i]>s.Within{r.Passed=false;r.Differences=append(r.Differences,\"the 95th percentile exceeded within\");r.Diagnostics=append(r.Diagnostics,ucDiagnosticOf(s,ucIssue{\"lang.golang.within-exceeded\",fmt.Sprintf(\"the 95th percentile %s exceeds within %s\",r.durations[i],s.Within),nil}))}};r.Passed=r.Passed&&!t.Failed();if !r.Passed {t.Errorf(\"contract %s failed: %v %v\",s.ID,r.Diagnostics,r.Differences)};return }\n")
+		body.WriteString("invoke(rt,values)})};ucFinish(t,s,r);return }\n")
 	}
 	body.WriteString("func TestUnicodeContracts(t *testing.T){ var selected []string; _=json.Unmarshal([]byte(os.Getenv(\"UNICODE_CONTRACT_IDS\")),&selected); explore:=os.Getenv(\"UNICODE_CONTRACT_EXPLORE\")!=\"\" || os.Getenv(\"UNICODE_CONTRACT_RESULTS\")==\"\"; budget,_:=time.ParseDuration(os.Getenv(\"UNICODE_CONTRACT_EXPLORE\"));if budget<=0 {budget=time.Minute}; results:=[]ucRunResult{}; defer func(){if path:=os.Getenv(\"UNICODE_CONTRACT_RESULTS\");path!=\"\"{data,err:=json.Marshal(results);if err!=nil{t.Error(err);return};if err=os.WriteFile(path,data,0600);err!=nil{t.Error(err)}}}();")
 	for i, unit := range file.units {

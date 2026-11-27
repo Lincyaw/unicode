@@ -209,6 +209,11 @@ func checkExecutesContracts(t rapid.TB, sample ContractSample) {
 		optionalNumbers = append(optionalNumbers, &copy)
 	}
 	env.values["optionalNumbers"] = ucNormalize(reflect.ValueOf(optionalNumbers), "list<optional<float>>", spec.Types)
+	optionalCollection := numbers
+	env.values["optionalCollection"] = ucNormalize(reflect.ValueOf(&optionalCollection), "optional<list<float>>", spec.Types)
+	if !ucTruth(env.eval(runtimeExpr(t, "sum(value in optionalCollection: value) == 0.0")), nil) {
+		t.Fatal("an optional float collection changed the sum type")
+	}
 	if !ucTruth(env.eval(runtimeExpr(t, "sum(value in optionalNumbers: value) == 0.0")), nil) {
 		t.Fatal("an empty optional-float sum changed numeric type")
 	}
