@@ -748,6 +748,7 @@ func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packa
 }
 func (c *contractCompiler) render(file *contractFile) []byte {
 	c.literalImports = file.imports
+	c.foreignNames, c.foreignOriginal = map[string]string{}, map[string]string{}
 	var body strings.Builder
 	var bridges []string
 	for index, unit := range file.units {

@@ -92,7 +92,7 @@ func driverFixture(sample DriverSample) (*contractCompiler, *contractFile, strin
 	var source strings.Builder
 	source.WriteString("package driverfixture\nimport \"pgregory.net/rapid\"\n")
 	var params, prior []string
-	names := []string{"t", "s", "values", "reflect", "ucContext", "ucInputs0", "ucInvoke0", "unicodeGeneratedPredicate0"}
+	names := []string{"t", "s", "values", "reflect", "ucContext", "ucInputs0", "ucInvoke0", "unicodeGeneratedPredicate0", "unicodeContractForeign0"}
 	if len(sample.Name)%2 == 1 {
 		slices.Reverse(names)
 	}
@@ -116,9 +116,13 @@ func driverFixture(sample DriverSample) (*contractCompiler, *contractFile, strin
 		prior = append(prior, fmt.Sprintf("value%d", i))
 	}
 	if sample.Manual {
-		unit.predicate = types.NewFunc(token.NoPos, pkg.Types, "ucCheck", types.NewSignatureType(nil, nil, nil, nil, nil, false))
+		name := "ucCheck"
+		if len(sample.Name)%2 == 1 {
+			name = "unicodeContractForeign0"
+		}
+		unit.predicate = types.NewFunc(token.NoPos, pkg.Types, name, types.NewSignatureType(nil, nil, nil, nil, nil, false))
 		pkg.Types.Scope().Insert(unit.predicate)
-		source.WriteString("func ucCheck(t rapid.TB")
+		fmt.Fprintf(&source, "func %s(t rapid.TB", name)
 		if len(params) > 0 {
 			source.WriteString("," + strings.Join(params, ","))
 		}
@@ -134,7 +138,8 @@ func driverFixture(sample DriverSample) (*contractCompiler, *contractFile, strin
 		}
 		unit.cases = append(unit.cases, values)
 	}
-	c := &contractCompiler{foreignNames: map[string]string{}, foreignOriginal: map[string]string{}, bindings: map[graph.EdgeKind]map[string][]string{}}
+	// Simulate protected-name state left by a previously emitted package.
+	c := &contractCompiler{foreignNames: map[string]string{"other.package.ucCheck": "unicodeContractForeign0"}, foreignOriginal: map[string]string{"unicodeContractForeign0": "wrongPackageName"}, bindings: map[graph.EdgeKind]map[string][]string{}}
 	return c, &contractFile{pkg: pkg, units: []*contractUnit{unit}, imports: map[string]string{}}, source.String()
 }
 
