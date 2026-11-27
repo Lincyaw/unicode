@@ -36,7 +36,7 @@ func genUpper(t *rapid.T, label string) Upper { return Upper(upperNames.Draw(t, 
 // genLower draws a lower-camel name, which may be a keyword but not a reserved literal.
 func genLower(t *rapid.T, label string) Lower {
 	gen := rapid.OneOf(lowerNames, lowerNames, lowerNames, rapid.SampledFrom(keywords))
-	return Lower(gen.Filter(func(s string) bool { return !slices.Contains(reserved, s) }).Draw(t, label))
+	return Lower(gen.Filter(func(s string) bool { return !slices.Contains(reserved, s) && !slices.Contains(expressionWords, s) }).Draw(t, label))
 }
 
 // interestingRunes are the characters strings are mostly made of: the ones
@@ -228,6 +228,7 @@ func genOp(t *rapid.T) *OpDecl {
 	if rapid.Bool().Draw(t, "result?") {
 		o.Result = genTypeExpr(t, 2)
 	}
+	o.Pure = rapid.Bool().Draw(t, "pure?")
 	o.Raises = some(t, 2, func() TypeRef { return genTypeRef(t) })
 	if rapid.Bool().Draw(t, "handles?") {
 		h := genTypeRef(t)
@@ -349,6 +350,7 @@ func genProperty(t *rapid.T) *PropertyDecl {
 	ls := []PropertyLine{&About{Refs: genRefs(t)}}
 	ls = append(ls, some(t, 2, func() PropertyLine { return genSymbol(t) })...)
 	ls = append(ls, some(t, 3, func() PropertyLine { return genLimit(t).(PropertyLine) })...)
+	ls = append(ls, &Manual{Reason: "The generated syntax fixture has no business claim"})
 	ls = append(ls, some(t, 2, func() PropertyLine { return genCase(t) })...)
 	return &PropertyDecl{
 		Name: genKebab(t, "property"), Form: rapid.SampledFrom(propertyForms).Draw(t, "form"),
@@ -693,6 +695,9 @@ func (w *writer) node(n any) {
 		w.word(&n.Low, w.number(n.Low))
 		w.tok("..")
 		w.word(&n.High, w.number(n.High))
+	case *Manual:
+		w.tok("manual")
+		w.summary(&n.Reason)
 	case *CaseDecl:
 		w.tok("case")
 		w.word(&n.Name, string(n.Name))
@@ -735,6 +740,9 @@ func (w *writer) opDecl(o *OpDecl) {
 	if o.Result != nil {
 		w.tok("->")
 		w.typeExpr(o.Result)
+	}
+	if o.Pure {
+		w.tok("pure")
 	}
 	for i, r := range o.Raises {
 		if i == 0 {

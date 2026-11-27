@@ -173,7 +173,12 @@ func (c *checker) file(f *File) {
 				if t, ok := l.(*TypeDecl); ok {
 					c.typeDecl(t)
 				}
+				if op, ok := l.(*OpDecl); ok {
+					c.expressionName(string(op.Name), op.Pos)
+				}
 			}
+		case *OpDecl:
+			c.expressionName(string(d.Name), d.Pos)
 		case *ComponentDecl:
 			seen := lines(c, componentOrder, d.Lines)
 			c.require(seen, "paths", d.Pos, "a component block needs paths", `add paths "pattern" to the component block`)
