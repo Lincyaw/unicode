@@ -32,6 +32,13 @@ func (c *contractCompiler) doubleModels(unit *contractUnit) []string {
 		switch kind {
 		case "replies":
 			found[model] = true
+			for _, id := range args {
+				op := unit.spec.Operations[id]
+				visit(op.Result)
+				for _, failure := range op.Raises {
+					visit(failure)
+				}
+			}
 			return
 		case "map", "list", "set", "optional":
 			for _, arg := range args {
@@ -39,11 +46,28 @@ func (c *contractCompiler) doubleModels(unit *contractUnit) []string {
 			}
 			return
 		case "call":
+			for _, op := range unit.spec.Types[model].Calls {
+				for _, parameter := range op.Params {
+					visit(parameter)
+				}
+				visit(op.Result)
+				for _, failure := range op.Raises {
+					visit(failure)
+				}
+			}
 			return
 		}
 		ty := unit.spec.Types[model]
 		if ty.Form == "interface" {
 			found[model] = true
+			for _, op := range unit.spec.Operations {
+				if op.Owner == model {
+					visit(op.Result)
+					for _, failure := range op.Raises {
+						visit(failure)
+					}
+				}
+			}
 		}
 		for _, f := range ucFields(unit.spec.Types, model) {
 			visit(f.Type)
@@ -102,7 +126,13 @@ func (c *contractCompiler) configureDoubles(unit *contractUnit) bool {
 		if kind, _ := ucSplitType(model); kind == "replies" {
 			unit.spec.Types[model] = ucType{Form: "replies"}
 		}
-		if len(ops) == 0 {
+		complete := true
+		if d, ok := c.bound(graph.EdgeKindRealizes, model); ok {
+			if iface, ok := d.obj.Type().Underlying().(*types.Interface); ok {
+				complete = iface.Complete().NumMethods() == len(ops)
+			}
+		}
+		if !complete || len(ops) == 0 && unit.spec.Types[model].Form != "interface" {
 			c.diagnostic(unit.node, "lang.golang.unsupported-contract", "the response script has no complete native operation binding: "+model, "realize its interface or external operation with matching Go signatures")
 			valid = false
 			continue
@@ -212,6 +242,7 @@ func (c *contractCompiler) renderDoubles(file *contractFile) string {
 			}
 			name := doubleName(model)
 			fmt.Fprintf(&out, "type %s struct{_scripts map[string][]map[string]any;_cursor map[string]int;_types map[string]ucType;_ops map[string]ucReplyOperation}\n", name)
+			fmt.Fprintf(&out, "func(d *%s)_unicodeCloneDouble()reflect.Value{return reflect.ValueOf(&%s{_scripts:d._scripts,_cursor:map[string]int{},_types:d._types,_ops:d._ops})}\n", name, name)
 			ops, sigs := c.replySignature(unit, model)
 			for _, key := range slices.Sorted(maps.Keys(ops)) {
 				sig := sigs[key]

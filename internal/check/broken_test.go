@@ -69,6 +69,21 @@ type breakage struct {
 }
 
 var breakages = []breakage{
+	{"check.multiple-substitutes", func(w *world) string {
+		_, target := w.substituteSample()
+		other := w.function(w.client.file, w.client.pkg+".OtherInstaller", "otherInstaller", "(replacement: func(int) int) -> func()", "func")
+		w.edge(graph.EdgeKindSubstitutes, other, target, graph.SourceDeclared, map[string][]string{"nativeSignature": {"true"}})
+		return target
+	}},
+	{"check.substitute-signature", func(w *world) string {
+		installer, _ := w.substituteSample()
+		for i, e := range w.f.Edges {
+			if e.Kind == graph.EdgeKindSubstitutes && e.From == installer {
+				w.f.Edges[i].Attrs = map[string][]string{"nativeSignature": {"false"}}
+			}
+		}
+		return installer
+	}},
 	{"check.handwritten-test", func(w *world) string {
 		entry := choose(w, w.drivers)
 		w.setAttr(entry, "testKind", []string{rapid.SampledFrom([]string{"example", "property", "fuzz"}).Draw(w.t, "handwrittenTestKind")})

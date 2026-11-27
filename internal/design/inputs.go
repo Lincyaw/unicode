@@ -146,7 +146,7 @@ func generable(t *typ, required, seen map[*entity]bool) string {
 	case "replies":
 		for _, op := range t.ops() {
 			if op.result != nil {
-				if why := generable(op.result, required, seen); why != "" {
+				if why := generableResponse(op.result, required, seen); why != "" {
 					return why
 				}
 			}
@@ -194,6 +194,9 @@ func generable(t *typ, required, seen map[*entity]bool) string {
 			base = base.elems[0]
 		}
 		if base.named().is(graph.NodeKindType, "interface") {
+			if why := generableResponse(base, required, seen); why != "" {
+				return why
+			}
 			continue
 		}
 		if why := generable(f.typ, required, seen); why != "" {
