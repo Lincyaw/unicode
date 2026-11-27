@@ -90,8 +90,13 @@ func runGen(root, format string, dryRun, check bool, stdout, stderr io.Writer) e
 		}
 	}
 	err = writeReport(format, report, text, diags, stdout, stderr)
-	if exit, ok := err.(*exitError); ok && exit.code == exitDiagnostics && slices.ContainsFunc(diags, func(d diag.Diagnostic) bool { return d.Code == "gen.unowned-file" }) {
-		exit.code = exitConflict
+	if exit, ok := err.(*exitError); ok && exit.code == exitDiagnostics {
+		switch {
+		case slices.ContainsFunc(diags, func(d diag.Diagnostic) bool { return d.Code == "gen.read-failed" }):
+			exit.code = exitEnvironment
+		case slices.ContainsFunc(diags, func(d diag.Diagnostic) bool { return d.Code == "gen.unowned-file" }):
+			exit.code = exitConflict
+		}
 	}
 	return err
 }
