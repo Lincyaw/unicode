@@ -10,10 +10,10 @@ export type Tone = 'neutral' | 'warning' | 'success' | 'info' | 'caution';
 
 /**
  * A small tag (the prototype's tag): a label, a count or a link, with an optional icon. A badge with `to` is a link, one
- * with `onClick` a button named by `label`, such as a +n that unfolds a list; both take the hover of a control.
+ * with `onClick` a button, such as a +n that unfolds a list; both take the hover of a control.
  */
-export function Badge({ tone, icon: Icon, to, onClick, label, mono = false, children, className }: {
-  tone: Tone; icon?: LucideIcon; to?: string; onClick?: () => void; label?: string; mono?: boolean; children?: ReactNode; className?: string;
+export function Badge({ tone, icon: Icon, to, onClick, mono = false, children, className }: {
+  tone: Tone; icon?: LucideIcon; to?: string; onClick?: () => void; mono?: boolean; children?: ReactNode; className?: string;
 }) {
   const content = (
     <>
@@ -26,7 +26,7 @@ export function Badge({ tone, icon: Icon, to, onClick, label, mono = false, chil
     return <Link className={classes} data-tone={tone} to={to}>{content}</Link>;
   }
   if (onClick !== undefined) {
-    return <button type="button" className={classes} data-tone={tone} aria-label={label} onClick={onClick}>{content}</button>;
+    return <button type="button" className={classes} data-tone={tone} onClick={onClick}>{content}</button>;
   }
   return <span className={classes} data-tone={tone}>{content}</span>;
 }

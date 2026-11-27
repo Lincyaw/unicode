@@ -53,7 +53,7 @@ function Rows({ rows, onToggle }: { rows: CardRow[]; onToggle?: () => void }) {
       case 'op':
         return <NodeRef key={index} id={row.op.id} className={styles.op}>{row.text}</NodeRef>;
       case 'more':
-        return <button key={index} type="button" className={clsx(styles.field, styles.more)} aria-expanded="false" aria-label={CONTROLS.expandRow} onClick={onToggle}>+{row.count}</button>;
+        return <button key={index} type="button" className={clsx(styles.field, styles.more)} aria-expanded="false" onClick={onToggle}>+{row.count}</button>;
       case 'less':
         return (
           <button key={index} type="button" className={clsx(styles.field, styles.more)} aria-expanded="true" aria-label={CONTROLS.collapseRow} onClick={onToggle}>

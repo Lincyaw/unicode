@@ -83,7 +83,7 @@ export function SymbolLine({ symbol, scope }: { symbol: string; scope?: string }
 
 /** The +n that unfolds a list in place. */
 export function MoreBadge({ count, icon, onClick }: { count: number; icon?: LucideIcon; onClick: () => void }) {
-  return <Badge tone="neutral" icon={icon} label={CONTROLS.expandRow} onClick={onClick}>+{count}</Badge>;
+  return <Badge tone="neutral" icon={icon} onClick={onClick}>+{count}</Badge>;
 }
 
 /** Nodes as chips that link to their pages, named relative to `scope`; past `limit`, a +n that unfolds the rest. */
