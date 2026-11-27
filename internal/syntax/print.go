@@ -320,6 +320,8 @@ func typeExpr(t TypeExpr) string {
 		return "map<" + typeExpr(t.Key) + ", " + typeExpr(t.Value) + ">"
 	case *CallType:
 		return "call<" + refs(t.Targets) + ">"
+	case *RepliesType:
+		return "replies<" + ref(Ref(t.Target)) + ">"
 	}
 	return ""
 }

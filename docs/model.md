@@ -186,7 +186,7 @@
 | 种类、形式、层 | 见 §1、§3、§4 |
 | 来源 | 见 §2 |
 | 出处 | 写出它的位置：设计文件、录制文件或代码文件的路径和行号。推导项的出处是推出它的那些边 |
-| 内容哈希 | 自身内容的 SHA-256，不含子节点。节点的内容是种类、形式、摘要和属性（[design.md](design.md) §5.2）的确定编码；代码层 `op` 另含归一化的函数体，代码层 `type` 另含不含方法体的声明 |
+| 内容哈希 | 自身内容的 SHA-256，不含子节点。节点的内容是种类、形式、摘要和属性（[design.md](design.md) §5.2）的确定编码；代码层 `op` 以 `attrs.body` 含归一化的函数体，代码层 `type` 以 `attrs.declaration` 含不含方法体的声明 |
 | 显著性 | 显著或细节，见 §9 |
 | 状态 | 只有设计层的声明项和 `depends` 边才有，status ∈ {verified, missing, stub, contradicted}，由 §10 的约束算出 |
 
@@ -385,7 +385,7 @@
 | 27 | `design.recorded-case-name` | `design.rejects-broken-design` |
 | 28 | `gen.stale-file`、`lang.golang.stale-contracts` | `gen.check-files-are-current`、`lang.golang.executes-contracts` |
 | 29 | `design.unresolved-reference`、`design.wrong-reference-kind`、`cli.not-canonical` | `design.rejects-broken-design`、`cli.check-design` |
-| 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5；生成器的 map 名称未实现：[design.md](design.md) §4 没有给出生成器的名称映射 | `design.rejects-broken-design` |
+| 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5；自定义生成器按绑定命名，骨架默认命名与撞名检查见 [design.md](design.md) §6.1 | `design.rejects-broken-design` |
 | 31 | `design.expression-type` | `design.rejects-broken-design` |
 | 32 | `lang.golang.purity-violation`，核对表达式和被测调用的纯性；证据并图后的状态传播属于 M6 | `lang.golang.executes-contracts` |
 | 33 | 未实现：M7，评审 | — |

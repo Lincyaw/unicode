@@ -78,6 +78,7 @@ func extract(l loaded) lang.Extracted {
 	}
 	x.addShapes()
 	x.addCandidates()
+	x.substituteSignatures()
 	for _, d := range x.declared {
 		if d.name != nil {
 			x.addTypeEdges(d)

@@ -56,6 +56,12 @@ type DoubleSample record "确定性替身的输入：应答数量及声明错误
   field fail: bool
 }
 
+type BodySample record "操作内容哈希的样本：原有常数、变化与排版差异" {
+  field value: int
+  field changed: bool
+  field spaced: bool
+}
+
 op newBackend() -> Backend "一个 Go 后端"
 
 op declaration(src: bytes, line: int, column: int) -> optional<Lines> "Go 源码中包含这一位置的顶层声明所占的行，从它的文档注释起；分组的类型声明中，取包含这一位置的那个类型；源码解析不了，或者这一位置不在任何声明之中时没有"
@@ -102,4 +108,10 @@ property scripted-doubles-follow-inputs invariant "接口及外部客户端的�
   about Backend
   forall sample: DoubleSample generated "一到五个成功或声明错误的应答，包含多个接口方法及客户端安装边界"
   manual "需要构造实际原生接口和客户端安装器，记录调用及清理并比较脚本的独立预期值"
+}
+
+property implementation-content-is-normalized invariant "函数体与类型声明的规范内容忽略排版、注释及源码位置；只改实际函数体包括闭包时，操作的内容哈希改变，依赖它的检查可以被增量选择" {
+  about Backend
+  forall sample: BodySample generated "有符号整数与是否改变函数返回表达式、注释及空行的组合"
+  manual "需要解析和抽取实际 Go AST，比较规范内容与图的哈希，而非手写预期格式"
 }

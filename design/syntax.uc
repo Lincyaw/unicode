@@ -51,6 +51,22 @@ op parseExpr(path: string, text: string) -> ExprParsed pure "解析单条表达�
 
 op exprText(expr: Expr) -> string pure "表达式的规范文本，保留源中的引用拼写，避免引入符号遮蔽"
 
+flow parse-entry-describes-outcome "语法解析入口返回文件或定位诊断，成功时保留输入路径与种类" {
+  forall path: string
+  forall kind: FileKind
+  forall src: bytes
+  where path size 1..64
+  where src size 0..512
+  user -> parse(path, kind, src)
+  ensure size(result.diagnostics) == 0 implies result.file != none and result.file.path == path and result.file.kind == kind
+  ensure all(d in result.diagnostics: d.position.path == path and d.position.line >= 1 and d.position.column >= 1)
+  case empty-component {
+    path = "design/example.uc"
+    kind = component
+    src = ""
+  }
+}
+
 property kind-of-follows-path invariant "design/system.uc 是系统文件；design/ 下其余文件名为 <名称>.uc、名称不为空的整洁路径是组件文件；corpus/ 下同样的路径是录制文件；其余路径都被拒绝，包括只叫 .uc 的文件和不整洁的路径（含 .、.. 或连续的 /）" {
   about kindOf
   forall path: string generated "形如 design/…、corpus/… 和其他目录下的相对路径，扩展名有的是 .uc，有的不是，有的文件名只是 .uc，有的路径不整洁"

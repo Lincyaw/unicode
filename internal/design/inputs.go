@@ -131,6 +131,22 @@ func generable(t *typ, required, seen map[*entity]bool) string {
 			}
 		}
 		return ""
+	case "replies":
+		for _, op := range t.ops() {
+			if op.result != nil {
+				if why := generable(op.result, required, seen); why != "" {
+					return why
+				}
+			}
+			for _, failure := range op.raises {
+				for _, f := range failure.fields {
+					if why := generable(f.typ, required, seen); why != "" {
+						return why
+					}
+				}
+			}
+		}
+		return ""
 	case "call":
 		names := map[string]bool{}
 		for _, op := range t.ops() {
@@ -161,6 +177,13 @@ func generable(t *typ, required, seen map[*entity]bool) string {
 	defer delete(required, n)
 	defer delete(seen, n)
 	for _, f := range n.fields {
+		base := f.typ
+		for base.kind == "optional" {
+			base = base.elems[0]
+		}
+		if base.named().is(graph.NodeKindType, "interface") {
+			continue
+		}
 		if why := generable(f.typ, required, seen); why != "" {
 			return why
 		}
@@ -176,7 +199,7 @@ func fits(op string, t *typ) bool {
 	case "in":
 		return t.builtin == "int" || t.builtin == "float"
 	case "size":
-		return t.kind == "list" || t.kind == "set" || t.kind == "map" || t.builtin == "string" || t.builtin == "bytes"
+		return t.kind == "list" || t.kind == "set" || t.kind == "map" || t.kind == "replies" || t.builtin == "string" || t.builtin == "bytes"
 	}
 	return t.named().is(graph.NodeKindType, "enum")
 }
