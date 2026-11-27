@@ -6,7 +6,7 @@
 - 图标只用 Lucide 一套。控件用的图标（箭头、折叠、主题、菜单、关闭、外链、文件、全屏、缩放、适合窗口、对勾、复制、搜索）都换成 Lucide 的图形，由 `icons.tsx` 的 `Icon` 画出。图标的三种尺寸（16、14、12）和笔画 1.4 只在 `icons.tsx` 中定义一次；排版代码按像素计算时读取其中的 `ICON_REGULAR`、`ICON_SMALL`、`ICON_TINY`。
 - `InfoHint` 接收 `subject`，读屏名称一律是 `UI_WORDS.about(subject)`。
 - `ThemeIcon` 随主题变化：深色时是太阳，浅色时是月亮。`theme.ts` 的 `useTheme` 给出当前主题和切换函数，由页面交给主题按钮。
-- `Button` 和 `ButtonLink` 有 `size`，取大、中、小三档；`Button` 可带读屏名称 `label`，也能作为弹层的触发器。
+- `Button` 和 `ButtonLink` 有 `size`，取大、中、小三档；`Button` 可带读屏名称 `label`，也能作为弹层的触发器。实心按钮末尾的箭头由 `Icon` 画出，不用样式表里手打的字符；查看器用不到的 `textLink` 类已删去。
 - `SearchField` 可带 `shortcut`：平台的修饰键加这个键把光标移进搜索框，框内按平台显示，macOS 上是 ⌘K，其他平台是 Ctrl K。它另外接收焦点和按键，供在框下列出结果的组件使用。
 - `MarkButton` 是作为数据标记的可点元素，例如图上的节点、树的行、结果列表中的一项。它不是胶囊，样式由使用方给出；`src/ui` 之外不直接写 `<button>`。
 - `Tag` 有 `tone`：中性，或失败、通过、需留意三种真实状态。状态色画在边线和图标上，文字的颜色不变，读起来与其他文字一样清楚。标签里可以带图标；标签带页面的底色，叠在图中的线上时盖住线。

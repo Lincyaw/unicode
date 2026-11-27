@@ -48,6 +48,10 @@
       }
     },
     {
+      "files": ["src/ui/**", "src/components/**", "src/pages/**"],
+      "rules": { "viewer/no-typed-symbols": "error" }
+    },
+    {
       "files": ["src/components/marks/icons.tsx"],
       "rules": { "viewer/icons-from-the-table": "off" }
     },
@@ -97,7 +101,8 @@
           "patterns": [
             { "group": ["**/mocks/*"], "message": "The viewer reaches data only through the API client; the mock server answers its requests." },
             { "group": ["**/api/client"], "message": "A component renders what its props give it: the page reads the data and passes it down." },
-            { "group": ["**/pages/**"], "message": "A component knows no page: pages compose components." }
+            { "group": ["**/pages/**"], "message": "A component knows no page: pages compose components." },
+            { "group": ["../*/*.css"], "message": "A component's stylesheet is its own: another component's look is reached through that component, so changing one does not break the other." }
           ]
         }]
       }

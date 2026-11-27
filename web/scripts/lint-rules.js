@@ -9,6 +9,9 @@ const PAGE_PATH = /^\/[a-z]/;
 /** The elements a page never writes itself: every button and field is one of the design kit's controls. */
 const KIT_ELEMENTS = new Set(['button', 'input']);
 
+/** Arrows, crosses and the like, which a page draws as icons rather than typing them. */
+const TYPED_SYMBOLS = /[→←‹›×−⋯↗]/u;
+
 /** A JSX element written in lower case is a DOM element rather than a component. */
 const DOM_ELEMENT = /^[a-z]/;
 
@@ -59,6 +62,29 @@ export default {
           JSXOpeningElement(node) {
             if (node.name.type === 'JSXIdentifier' && KIT_ELEMENTS.has(node.name.name)) {
               context.report({ node, message: `Use a control of src/ui instead of a raw <${node.name.name}>: Button, IconButton or MarkButton for an action (MarkButton for a mark such as a node or a row), SearchField for a field. A look the kit lacks becomes a prop or variant in src/ui, noted in its README.` });
+            }
+          },
+        };
+      },
+    },
+    'no-typed-symbols': {
+      meta: { type: 'problem', docs: { description: 'Arrows, crosses and the like are Lucide icons drawn with the kit\'s Icon, never typed characters.' } },
+      create(context) {
+        const report = node => context.report({ node, message: 'Draw arrows, crosses and the like with the kit\'s Icon and a glyph from components/marks/icons (src/ui imports Lucide itself): a typed character takes the font\'s shape and weight, not the line icons\', and moves with neither the text colour nor the hover.' });
+        return {
+          JSXText(node) {
+            if (TYPED_SYMBOLS.test(node.value)) {
+              report(node);
+            }
+          },
+          Literal(node) {
+            if (typeof node.value === 'string' && TYPED_SYMBOLS.test(node.value)) {
+              report(node);
+            }
+          },
+          TemplateElement(node) {
+            if (TYPED_SYMBOLS.test(node.value.cooked ?? '')) {
+              report(node);
             }
           },
         };

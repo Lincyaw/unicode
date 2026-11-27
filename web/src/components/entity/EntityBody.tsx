@@ -8,10 +8,8 @@ import { Hint, InfoHint } from '../../ui/hint';
 import { Icon } from '../../ui/icons';
 import table from '../../ui/table.module.css';
 import { CaseSections, CheckedSections, CodeSections, ContainerSections, EventSections, StepSections } from '../details/kindSections';
-import { DiagnosticTag, NodeRow, Section, SourcePanel, ViaTag } from '../details/sections';
-import detailStyles from '../details/details.module.css';
+import { DiagnosticTag, NodeRow, Section, SignaturePanel, SourcePanel, ViaTag } from '../details/sections';
 import { NodeLink } from '../marks/NodeLink';
-import { Signature } from '../marks/Signature';
 import { displayName, fileOf, opLine, placeOf, relative, scopeOf, statusOf, stepLine, stepName } from '../marks/format';
 import { ArrowRight, ArrowUpRight, Code, FileCode, KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
@@ -40,7 +38,7 @@ function Head({ entity }: { entity: Entity }) {
         <InfoHint subject={node.id}>{ABOUT.card(node, `${node.origin.path}:${node.origin.line}`)}</InfoHint>
       </div>
       {node.summary !== '' && <h2 className={styles.summary}>{node.summary}</h2>}
-      {node.kind === 'op' && node.layer === 'design' && <OpSignature op={node} />}
+      {node.kind === 'op' && node.layer === 'design' && <SignaturePanel op={node} callClassName={styles.call} />}
       <p className={styles.origin}>
         {file
           ? <NodeLink node={file} className={styles.place} tone="inherit" label={<><Icon glyph={FileCode} size="tiny" />{node.origin.path}:{node.origin.line}</>} />
@@ -53,10 +51,6 @@ function Head({ entity }: { entity: Entity }) {
   );
 }
 
-/** An operation's signature as its page shows it: the call in the link colour, then what it raises; each type a link to its page. */
-function OpSignature({ op }: { op: Node }) {
-  return <pre className={detailStyles.panel}><Signature op={op} references="link" callClassName={clsx(detailStyles.panelLine, styles.call)} raisesClassName={detailStyles.panelLine} /></pre>;
-}
 
 /** The fields: the type's fields or values, the code's counterpart of each, and the status of the comparison. */
 function MembersTable({ entity }: { entity: Entity }) {

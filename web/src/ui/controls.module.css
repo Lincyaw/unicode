@@ -24,8 +24,9 @@
 .solid { border-color: transparent; background: var(--bg-inverted); color: var(--text-on-inverted); }
 .solid:hover { background: var(--bg-inverted); box-shadow: var(--shadow-glow); }
 .solid:disabled { box-shadow: none; opacity: .5; cursor: progress; }
-.solid::after { content: "→"; transition: transform var(--duration-slow) var(--ease-out); }
-.solid:hover::after { transform: translateX(var(--space-1)); }
+/* The arrow that ends a solid button moves ahead as the pointer arrives. */
+.ahead { transition: transform var(--duration-slow) var(--ease-out); }
+.solid:hover .ahead { transform: translateX(var(--space-1)); }
 
 .copy { display: inline-flex; align-items: center; gap: var(--space-3); }
 .copied { display: inline-flex; align-items: center; gap: var(--space-1); }
@@ -89,21 +90,6 @@
 
 /* A mark that acts is styled by its user, whose rules win over these; the kit gives it only the motion every control shares. */
 :where(.mark) { text-align: inherit; transition: var(--control-transition); }
-
-/* Links underline in the ∞ gradient from the left as the pointer arrives. */
-.textLink {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: fit-content;
-  padding-bottom: var(--size-hairline);
-  color: var(--text-main);
-  background: var(--loop-gradient) left bottom / 0 var(--size-hairline) no-repeat;
-  transition: color var(--duration-base), background-size var(--duration-slow) var(--ease-out);
-}
-.textLink::after { content: "→"; transition: transform var(--duration-slow) var(--ease-out); }
-.textLink:hover { background-size: 100% var(--size-hairline); }
-.textLink:hover::after { transform: translateX(var(--space-1)); }
 
 /* A list's next page stays quiet until pointed at, and fades while it loads. */
 .more { color: var(--text-muted); transition: color var(--duration-base); }

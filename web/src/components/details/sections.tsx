@@ -85,9 +85,12 @@ export function CodePanel({ lines, className }: { lines: ReactNode[]; className?
   );
 }
 
-/** An operation's signature as a panel: the call and result, then what it raises; the operation and each type a link to its page. */
-export function SignaturePanel({ op }: { op: Node }) {
-  return <pre className={styles.panel}><Signature op={op} references="link" callClassName={styles.panelLine} raisesClassName={clsx(styles.panelLine, 'c-muted')} /></pre>;
+/**
+ * An operation's signature as a panel: the call and result, then what it raises; the operation and each type a link to
+ * its page. `callClassName` lets a page set its call apart, as the entity page does in the link colour.
+ */
+export function SignaturePanel({ op, callClassName }: { op: Node; callClassName?: string }) {
+  return <pre className={styles.panel}><Signature op={op} references="link" callClassName={clsx(styles.panelLine, callClassName)} raisesClassName={clsx(styles.panelLine, 'c-muted')} /></pre>;
 }
 
 /** Lines of a file, as the code section shows them. */

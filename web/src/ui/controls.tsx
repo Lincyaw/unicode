@@ -1,7 +1,7 @@
 import * as RadixSelect from '@radix-ui/react-select';
 import { clsx } from 'clsx';
 import {
-  ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, File, Maximize, Menu, Minimize, Minus, Moon, Plus, Search, Sun, X,
+  ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, File, Maximize, Menu, Minimize, Minus, Moon, Plus, Search, Sun, X,
 } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { Link } from 'react-router';
@@ -28,8 +28,13 @@ function buttonClasses(variant: ButtonVariant, size: PillSize): string {
   return clsx(styles.pill, styles[size], variant === 'solid' && styles.solid, variant === 'quiet' ? styles.quiet : 'loop-edge');
 }
 
+/** What a pill holds: its words, and the arrow that ends a solid one. */
+function ButtonContent({ variant, children }: { variant: ButtonVariant; children: ReactNode }) {
+  return <>{children}{variant === 'solid' && <Icon glyph={ArrowRight} size="small" className={styles.ahead} />}</>;
+}
+
 export function ButtonLink({ to, variant, size = 'large', children }: { to: string; variant: ButtonVariant; size?: PillSize; children: ReactNode }) {
-  return <Link className={buttonClasses(variant, size)} to={to}>{children}</Link>;
+  return <Link className={buttonClasses(variant, size)} to={to}><ButtonContent variant={variant}>{children}</ButtonContent></Link>;
 }
 
 /**
@@ -39,7 +44,7 @@ export function ButtonLink({ to, variant, size = 'large', children }: { to: stri
 export function Button({ variant, size = 'large', label, onClick, children, ...trigger }: {
   variant: ButtonVariant; size?: PillSize; label?: string; onClick?: () => void; children: ReactNode;
 }) {
-  return <button {...trigger} type="button" className={buttonClasses(variant, size)} aria-label={label} onClick={onClick}>{children}</button>;
+  return <button {...trigger} type="button" className={buttonClasses(variant, size)} aria-label={label} onClick={onClick}><ButtonContent variant={variant}>{children}</ButtonContent></button>;
 }
 
 /**
@@ -57,7 +62,7 @@ export function MarkButton({ className, children, ...props }: Omit<ComponentProp
 export function SubmitButton({ variant, pending, form, children }: { variant: ButtonVariant; pending: boolean; form?: string; children: ReactNode }) {
   return (
     <button type="submit" form={form} className={buttonClasses(variant, 'large')} disabled={pending} aria-busy={pending}>
-      {children}
+      <ButtonContent variant={variant}>{children}</ButtonContent>
     </button>
   );
 }
