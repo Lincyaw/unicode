@@ -283,8 +283,8 @@ func (x *extraction) addTypeEdges(d declared) {
 
 // addFuncEdges adds the refers edges of a function to the types of its
 // parameters and results and to the types its body names or gives its
-// variables, and its calls edges: those of its body, and those of the
-// closures in the package-level variables its body uses.
+// variables, and its calls edges: the calls and references of its body, and
+// those in the package-level variables its body uses.
 func (x *extraction) addFuncEdges(d declared) {
 	origin := x.position(d.pkg, d.pos)
 	refer := func(t *types.Named) {
@@ -302,25 +302,22 @@ func (x *extraction) addFuncEdges(d declared) {
 		return
 	}
 	info := d.pkg.TypesInfo
-	var vars []string
 	ast.Inspect(d.decl.Body, func(n ast.Node) bool {
-		switch n := n.(type) {
-		case *ast.Ident:
-			if name, ok := info.Uses[n].(*types.TypeName); ok {
+		if ident, ok := n.(*ast.Ident); ok {
+			if name, ok := info.Uses[ident].(*types.TypeName); ok {
 				mentioned(name.Type(), refer)
-			} else if v, ok := info.Defs[n].(*types.Var); ok {
+			} else if v, ok := info.Defs[ident].(*types.Var); ok {
 				mentioned(v.Type(), refer)
-			} else if id, ok := packageVar(info, n); ok {
-				vars = append(vars, id)
-			}
-		case *ast.CallExpr:
-			if callee, name, ok := staticCall(info, n); ok {
-				x.addCall(d.id, call{callee: callee, site: x.position(d.pkg, name.Pos())})
 			}
 		}
 		return true
 	})
-	x.addClosureCalls(d.id, vars)
+	var use varUse
+	x.bodyUse(&use, d.pkg, d.decl.Body)
+	for _, c := range use.calls {
+		x.addCall(d.id, c)
+	}
+	x.addClosureCalls(d.id, use.vars)
 }
 
 // call is a static call: the function it calls, and where it names it.

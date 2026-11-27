@@ -246,8 +246,9 @@ func (r *writer) stmt(s *gstmt, indent string) {
 	case "builtin":
 		r.put(indent + "_ = len(\"\")")
 		r.end(s.layout)
-	case "ref":
-		r.put(indent + "_ = " + r.qualified(s.target.file.pkg, s.target.sig.name))
+	case "ref", "ifaceRef":
+		r.put(indent + "_ = ")
+		r.reference(s)
 		r.end(s.layout)
 	case "rapid":
 		r.imports["pgregory.net/rapid"] = true
@@ -289,6 +290,27 @@ func (r *writer) callee(s *gstmt) {
 	}
 	r.at[s] = r.pos()
 	r.put(s.target.sig.name)
+}
+
+// reference writes a function or a method named outside a call, recording
+// where its name is: a function's name, a method value on a new value, or a
+// method expression on the method's type.
+func (r *writer) reference(s *gstmt) {
+	name := s.method
+	switch {
+	case s.kind == "ref" && !s.onType:
+		r.callee(s)
+		return
+	case s.kind == "ref":
+		name = s.target.sig
+		r.put("(*" + r.qualified(s.via.file.pkg, s.via.name) + ").")
+	case s.onType:
+		r.put(r.qualified(s.via.file.pkg, s.via.name) + ".")
+	default:
+		r.put("(*new(" + r.qualified(s.via.file.pkg, s.via.name) + ")).")
+	}
+	r.at[s] = r.pos()
+	r.put(name.name)
 }
 
 // variable writes a package-level variable: a closure, a map keyed k0, k1

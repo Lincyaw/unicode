@@ -47,7 +47,8 @@ const goMod = "module " + modulePath + "\n\ngo 1.26\n\nrequire pgregory.net/rapi
 
 // genModule draws a random module of up to three packages, some with test
 // files and an external test package, holding types, functions, methods,
-// calls, imports, embedding, interfaces and their implementations,
+// calls, references to functions and methods outside a call, imports,
+// embedding, interfaces and their implementations,
 // package-level variables holding closures and references to functions that
 // functions use, and //uc: bindings, some of them not well-formed or
 // misplaced.
@@ -171,13 +172,15 @@ type gfunc struct {
 	doc      []binding
 }
 
-// gstmt is one statement of a body, or a comment line in it.
+// gstmt is one statement of a body, or a comment line in it. A ref or an
+// ifaceRef names a function or a method outside a call.
 type gstmt struct {
-	kind    string // call, assign, iface, closure, builtin, ref, rapid, varCall, varRef or comment
-	target  *gfunc // what a call calls
+	kind    string // call, assign, iface, closure, builtin, ref, ifaceRef, rapid, varCall, varRef or comment
+	target  *gfunc // what a call calls or a ref names
 	held    *gvar  // the variable a varCall calls or a varRef refers to
 	via     *gtype // the type whose value a method is called on
 	method  *gsig  // an interface's method
+	onType  bool   // a ref or an ifaceRef names the method on its type, as a method expression
 	inner   *gstmt // a closure's statement
 	name    string // an assignment's variable
 	comment binding

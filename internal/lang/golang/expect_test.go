@@ -293,8 +293,8 @@ func callsRapid(body []gstmt) bool {
 	return slices.ContainsFunc(body, func(s gstmt) bool { return s.kind == "rapid" || s.inner != nil && s.inner.kind == "rapid" })
 }
 
-// addStmt expects a statement's calls edge, and refers edges to the types
-// its text names and its variable has.
+// addStmt expects a statement's calls edge, a reference's too, and refers
+// edges to the types its text names and its variable has.
 func (x *expectation) addStmt(id string, s *gstmt) {
 	switch s.kind {
 	case "closure":
@@ -316,9 +316,23 @@ func (x *expectation) addStmt(id string, s *gstmt) {
 		for _, p := range s.method.params {
 			x.refers(id, p.typ)
 		}
+	case "ref", "ifaceRef":
+		x.call(id, x.callee(s), s)
+		if s.via != nil {
+			x.edge(graph.EdgeKindRefers, id, typeIdentity(s.via), graph.SourceExtracted)
+		}
 	case "comment":
 		x.unbound(&s.comment)
 	}
+}
+
+// callee is the identity of what a statement calls or names: a function or a
+// method, or an interface's method.
+func (x *expectation) callee(s *gstmt) string {
+	if s.method != nil {
+		return x.abstract(s.method)
+	}
+	return funcIdentity(s.target)
 }
 
 // call expects a calls edge with the site of a statement's callee.
@@ -357,16 +371,15 @@ func (x *expectation) closureCalls(id string, body []gstmt) {
 	}
 }
 
-// closureStmt expects the call of a statement in a variable's closure as a
-// call of the function id, and returns the variables the statement uses.
+// closureStmt expects the call or the reference of a statement in a
+// variable's closure as a call of the function id, and returns the variables
+// the statement uses.
 func (x *expectation) closureStmt(id string, s *gstmt) []*gvar {
 	switch s.kind {
 	case "closure":
 		return x.closureStmt(id, s.inner)
-	case "call", "assign":
-		x.call(id, funcIdentity(s.target), s)
-	case "iface":
-		x.call(id, x.abstract(s.method), s)
+	case "call", "assign", "iface", "ref", "ifaceRef":
+		x.call(id, x.callee(s), s)
 	case "varCall", "varRef":
 		return []*gvar{s.held}
 	}

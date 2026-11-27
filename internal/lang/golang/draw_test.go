@@ -479,7 +479,7 @@ func (w *world) drawStmt(sc scope, depth int) (gstmt, bool) {
 
 // drawContent draws what a statement does.
 func (w *world) drawContent(sc scope, depth int) (gstmt, bool) {
-	kinds := []string{"call", "call", "call", "assign", "iface", "builtin", "ref", "ref", "comment", "varCall", "varCall", "varRef", "varRef"}
+	kinds := []string{"call", "call", "call", "assign", "iface", "builtin", "ref", "ref", "ref", "comment", "varCall", "varCall", "varRef", "varRef"}
 	if depth == 0 {
 		kinds = append(kinds, "closure")
 	}
@@ -513,12 +513,7 @@ func (w *world) drawContent(sc scope, depth int) (gstmt, bool) {
 		}
 		return rapid.SampledFrom(calls).Draw(w.t, "ifaceCall"), true
 	case "ref":
-		var refs []gstmt
-		for _, c := range w.calls(sc) {
-			if c.via == nil {
-				refs = append(refs, gstmt{kind: "ref", target: c.target})
-			}
-		}
+		refs := w.references(sc)
 		if len(refs) == 0 {
 			return gstmt{}, false
 		}
@@ -578,6 +573,28 @@ func (w *world) callables(from *gfile) []gstmt {
 		}
 	}
 	return calls
+}
+
+// references are the references outside a call a scope can write: to a
+// function by its name, and to a method, an interface's too, as a method
+// value or a method expression.
+func (w *world) references(sc scope) []gstmt {
+	var refs []gstmt
+	for _, c := range w.calls(sc) {
+		c.kind = "ref"
+		refs = append(refs, c)
+		if c.via != nil {
+			c.onType = true
+			refs = append(refs, c)
+		}
+	}
+	for _, c := range w.interfaceCalls(sc.file) {
+		c.kind = "ifaceRef"
+		refs = append(refs, c)
+		c.onType = true
+		refs = append(refs, c)
+	}
+	return refs
 }
 
 func (w *world) interfaceCalls(from *gfile) []gstmt {
