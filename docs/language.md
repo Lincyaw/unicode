@@ -521,3 +521,41 @@ case r-3f9a2c1d coverage {
 - **名称的写法由种类决定（L6）。** 看到名称就知道种类，也让名称能与各语言的代码名称双向映射（[model.md](model.md) §10 第 30 条）。
 - **关键字可以用作名称（L7、G5）。** 步骤由行首的形状识别，参与者和符号因此可以与关键字同名；只有 `true`、`false`、`none` 会与值混淆，所以保留。
 - **组内保持作者的次序（G1）。** 分组固定了查找的位置，组内的次序留给作者安排阅读顺序。
+
+## 附录 B 规则与诊断码
+
+每条规则一行，列出违反它时报出的诊断码，以及生成器违反它的性质或流程（`design/*.uc` 中的标识）。P 规则由打印器实现，违反时报 `cli.not-canonical`。不属于任何规则的诊断码列在 [design.md](design.md) §8。`make rule-check`（`scripts/rulecodes.py`）检查本表、[model.md](model.md) 附录 B 和 [design.md](design.md) §8 合起来恰好列出代码中的全部诊断码。
+
+| 规则 | 诊断码 | 验证的性质 |
+| --- | --- | --- |
+| F1 | `cli.not-a-design-file` | `syntax.kind-of-follows-path`、`cli.format-files`、`cli.check-design` |
+| F2 | `syntax.missing-header`、`syntax.unknown-declaration`、`syntax.duplicate-member`、`syntax.missing-member`、`design.missing-system-file`、`design.component-path-mismatch` | `syntax.rejects-broken-text`、`design.rejects-broken-design` |
+| F3 | `cli.not-a-design-file`、`syntax.missing-header`、`syntax.unknown-declaration`、`syntax.duplicate-member`、`design.corpus-path-mismatch`；“只由 `unicode test --record` 写入”未实现：M6 | `cli.format-files`、`syntax.rejects-broken-text`、`design.rejects-broken-design` |
+| F4 | `cli.not-canonical` | `syntax.format-is-stable`、`cli.format-files`、`cli.check-design` |
+| L1 | `syntax.invalid-utf8`、`syntax.tab`、`syntax.carriage-return`、`syntax.control-character`、`syntax.unexpected-character` | `syntax.rejects-broken-text` |
+| L2 | `syntax.trailing-comment` | `syntax.rejects-broken-text` |
+| L3 | `syntax.unterminated-string`、`syntax.invalid-escape` | `syntax.rejects-broken-text` |
+| L4 | `syntax.empty-summary`、`syntax.summary-tab-or-newline`、`syntax.summary-surrounding-space` | `syntax.rejects-broken-text` |
+| L5 | `syntax.not-an-integer`、`cli.not-canonical` | `syntax.rejects-broken-text`、`syntax.format-is-stable` |
+| L6 | `syntax.invalid-name`、`syntax.invalid-reference` | `syntax.rejects-broken-text` |
+| L7 | `syntax.reserved-name` | `syntax.rejects-broken-text` |
+| G1 | `syntax.declaration-order` | `syntax.rejects-broken-text` |
+| G2 | `syntax.member-order`、`syntax.value-outside-enum`、`syntax.field-not-allowed` | `syntax.rejects-broken-text` |
+| G3 | `syntax.member-order`、`syntax.missing-member`、`syntax.duplicate-member` | `syntax.rejects-broken-text` |
+| G4 | `syntax.brace-position`、`syntax.misplaced-else`、`syntax.unexpected-token`、`syntax.unexpected-end` | `syntax.rejects-broken-text` |
+| G5 | `syntax.unexpected-token` | `syntax.rejects-broken-text` |
+| G6 | `syntax.on-without-call` | `syntax.rejects-broken-text` |
+| G7 | `syntax.unexpected-token`、`syntax.empty-summary`、`syntax.summary-tab-or-newline`、`syntax.summary-surrounding-space` | `syntax.rejects-broken-text` |
+| G8 | `design.missing-focus` | `design.rejects-broken-design` |
+| G9 | `design.uses-person`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
+| G10 | `design.empty-interval` | `design.rejects-broken-design` |
+| G11 | `syntax.comment-in-value`、`syntax.unexpected-token` | `syntax.rejects-broken-text` |
+| P1 | `cli.not-canonical` | `syntax.format-is-stable` |
+| P2 | `cli.not-canonical` | `syntax.format-is-stable` |
+| P3 | `cli.not-canonical` | `syntax.format-is-stable` |
+| P4 | `cli.not-canonical` | `syntax.format-is-stable` |
+| P5 | `cli.not-canonical` | `syntax.format-is-stable` |
+| P6 | `cli.not-canonical` | `syntax.format-is-stable` |
+| R1 | `design.unresolved-reference` | `design.rejects-broken-design` |
+| R2 | `design.unresolved-reference` | `design.rejects-broken-design` |
+| R3 | `design.unresolved-reference` | `design.rejects-broken-design` |

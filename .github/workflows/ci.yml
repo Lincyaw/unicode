@@ -18,3 +18,4 @@ jobs:
       - run: go test ./...
       - run: go run ./cmd/unicode fmt --check
       - run: go run ./cmd/unicode check
+      - run: python3 scripts/rulecodes.py

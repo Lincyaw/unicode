@@ -312,3 +312,47 @@
 - **按分派检查接口（第 22 条）。** 接口中的 `abstract` 方法没有函数体，本身不调用任何函数，可达性只能从实现它的类型出发。
 - **运行时核对的部分（第 22 条）。** 静态可达只说明调用可能发生。调用的先后和事件的投递，由流程的驱动在运行时核对（[design.md](design.md) §6.3）。
 - **名称映射可逆（第 30 条）。** 谓词的名称由性质或流程的名称映射而来；`flow-` 开头的性质会与流程的谓词同名。Go 的映射会丢掉短横线，短横线后紧跟数字时无法还原。例如在 Go 中，类型 `Slice` 和操作 `slice` 都映射成 `Slice`，不能放在同一个容器中。
+
+## 附录 B 规则与诊断码
+
+每条推导规则和约束一行，列出违反它时报出的诊断码，以及生成器违反它的性质或流程（`design/*.uc` 中的标识）。推导规则没有诊断码，由性质把推导的结果与 §9 的定义逐条比较。不属于任何规则的诊断码列在 [design.md](design.md) §8。`make rule-check`（`scripts/rulecodes.py`）检查本表与代码中的诊断码一致。
+
+| 规则 | 诊断码 | 验证的性质 |
+| --- | --- | --- |
+| D1 | 由性质验证 | `graph.derive-matches-definition` |
+| D2 | 由性质验证 | `graph.derive-matches-definition`、`lang.golang.extracts-generated-module` |
+| D3 | 由性质验证 | `graph.derive-matches-definition` |
+| D4 | 由性质验证 | `graph.derive-matches-definition` |
+| D5 | 由性质验证 | `graph.derive-matches-definition` |
+| D6 | 由性质验证；“生成文件中的元素都是细节”未实现：M4 | `graph.derive-matches-definition` |
+| D7 | 由性质验证 | `graph.derive-matches-definition` |
+| 1 | `design.unresolved-reference`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
+| 2 | `design.duplicate-name` | `design.rejects-broken-design` |
+| 3 | `design.missing-system-file`、`design.missing-parent` | `design.rejects-broken-design` |
+| 4 | `design.undeclared-dependency` | `design.rejects-broken-design` |
+| 5 | `design.unknown-label`、`design.undeclared-notation`、`design.label-not-allowed` | `design.rejects-broken-design` |
+| 6 | `design.not-an-event`、`design.invalid-subscription` | `design.rejects-broken-design` |
+| 7 | `design.wrong-reference-kind`、`design.nested-person-sender`、`design.undeclared-dependency`、`design.argument-count` | `design.rejects-broken-design` |
+| 8 | `design.sender-not-receiver` | `design.rejects-broken-design` |
+| 9 | `design.wrong-reference-kind`、`design.not-an-event`、`design.argument-count` | `design.rejects-broken-design` |
+| 10 | `syntax.on-without-call`、`design.unraised-error` | `syntax.rejects-broken-text`、`design.rejects-broken-design` |
+| 11 | `design.async-without-trigger`、`design.sender-not-receiver` | `design.rejects-broken-design` |
+| 12 | `graph.bad-path-pattern`、`check.unowned-file`、`check.overlapping-paths` | `graph.derive-matches-definition`、`check.rejects-broken-graph` |
+| 13 | `design.undeclared-dependency`、`check.undeclared-dependency` | `design.rejects-broken-design`、`check.rejects-broken-graph` |
+| 14 | `check.undeclared-dependency` | `check.rejects-broken-graph` |
+| 15 | `lang.golang.missing-binding-id`、`lang.golang.invalid-binding-id`、`lang.golang.misplaced-binding`、`lang.golang.duplicate-binding`、`graph.unresolved-binding`、`check.wrong-binding-kind`、`check.multiple-checks`、`check.not-generated-symbol`、`check.method-binding` | `lang.golang.extracts-generated-module`、`graph.derive-matches-definition`、`check.rejects-broken-graph` |
+| 16 | `check.unrealized`、`check.multiple-realizations` | `check.rejects-broken-graph` |
+| 17 | `check.realization-outside-container` | `check.rejects-broken-graph` |
+| 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value` | `check.rejects-broken-graph` |
+| 19 | `check.missing-implements`、`check.missing-extends` | `check.rejects-broken-graph` |
+| 20 | `check.missing-predicate`、`check.multiple-predicates`、`check.predicate-signature` | `check.rejects-broken-graph` |
+| 21 | 未实现：M4，要等 `gen` 区分生成文件 | — |
+| 22 | `check.untraced-step`、`check.unreachable-step`、`check.unreferenced-event` | `check.rejects-broken-graph` |
+| 23 | `design.ungenerable-symbol` | `design.rejects-broken-design` |
+| 24 | `design.limited-generated-symbol`、`lang.golang.duplicate-binding`、`check.missing-generator`、`check.multiple-generators`、`check.not-generated-symbol` | `design.rejects-broken-design`、`lang.golang.extracts-generated-module`、`check.rejects-broken-graph` |
+| 25 | `design.invalid-limit-path`、`design.invalid-limit` | `design.rejects-broken-design` |
+| 26 | `design.unknown-symbol`、`design.duplicate-value`、`design.missing-value`、`design.value-type-mismatch`、`design.value-out-of-limit` | `design.rejects-broken-design` |
+| 27 | `design.recorded-case-name` | `design.rejects-broken-design` |
+| 28 | 未实现：M4，要等 `gen` | — |
+| 29 | `design.unresolved-reference`、`design.wrong-reference-kind`、`cli.not-canonical` | `design.rejects-broken-design`、`cli.check-design` |
+| 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5 | `design.rejects-broken-design` |

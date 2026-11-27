@@ -366,6 +366,15 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 - **路径参数**：按工作目录解析，必须是根目录下 `design/` 或 `corpus/` 之内的文件或目录。路径不存在、不在这两个目录之内，或者找不到缺省的根目录，都是参数错误。目录会被遍历。`design/` 或 `corpus/` 中 `KindOf` 拒绝的文件给出诊断 `cli.not-a-design-file`，读不出的文件给出 `cli.unreadable-file`，符号链接给出诊断 `cli.symlink`，既不跟随读取，也不改写。全局参数也可以写在命令之后。
 - **改写与输出**：改写是原子的，并保留文件的权限，失败时不留下临时文件；写入或输出失败时退出码为 1。`cli.not-canonical` 的位置是与规范格式第一处不同的字节。`--help` 写到标准输出，退出码为 0。JSON 缩进两个空格。带 `--format json` 时，诊断是数据，写在标准输出的 JSON 中，标准错误只放日志；文本模式下，诊断写到标准错误，标准输出只列出改写了的或不是规范格式的文件。
 - **诊断的 JSON**：`{code, subject, path, line, column, message, fix}`。`code` 是稳定的诊断码，写作 `<组件>.<短横线名称>`，例如 `syntax.unexpected-token`；每条约束有一个或几个，修正办法不同的子规则各用一个。`syntax` 和 `cli` 的诊断，对象是文件的路径。
+- **诊断码与规则**：违反规则的诊断码按规则列在 [language.md](language.md) 和 [model.md](model.md) 的附录 B 中。不属于任何规则的诊断码如下：
+
+  | 诊断码 | 原因 |
+  | --- | --- |
+  | `cli.unreadable-file` | 文件读不出，属于输入输出 |
+  | `cli.symlink` | 符号链接既不跟随读取，也不改写，属于文件系统 |
+  | `cli.extract-failed` | 代码无法加载，或源码根目录不存在，属于环境 |
+  | `cli.unsupported-language` | 系统文件配置的语言尚无后端，属于工具链的能力 |
+  | `lang.golang.unknown-binding-verb` | 绑定的动词不是 `realizes`、`checks`、`generates` 之一；[language.md](language.md) §6 的绑定写法尚未编号 |
 
 ## 9 计划
 
@@ -384,7 +393,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 
 ## 10 工具链对自己的验证
 
-- **静态检查**：`gofmt`、`go vet`、`golangci-lint`，以及 `unicode fmt --check` 和 `unicode check`。M2 之前，组件之间的导入边界由 golangci-lint 的 depguard 检查；M2 起改由 `unicode check` 按设计中的 `uses` 检查。
+- **静态检查**：`gofmt`、`go vet`、`golangci-lint`，以及 `unicode fmt --check` 和 `unicode check`。`make rule-check`（`scripts/rulecodes.py`）检查每条规则在 [language.md](language.md) 或 [model.md](model.md) 的附录 B 中有一行，这两张表与 §8 的表合起来恰好列出代码中的全部诊断码。M2 之前，组件之间的导入边界由 golangci-lint 的 depguard 检查；M2 起改由 `unicode check` 按设计中的 `uses` 检查。
 - **性质**（M1 时写成带符号的 `property`，M4 起由工具链自己生成驱动）：
   1. `fmt` 幂等。
   2. 规范格式打印之后再解析，得到同一棵语法树。
@@ -420,6 +429,7 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
 17. **快照不进 Git**：快照是生成物，随时可以从提交重建；Git 只保存设计文件、录制文件和代码。
 18. **工具链不调度 agent**：调度由使用工具链的设计者负责。工具链只做设计、生成、检查、运行和查询，接口因此简单而确定。
 19. **优先用维护中的外部库**：库的代码有人维护，我们只维护怎样用它，评审时也只需看用法；精力放在性质所描述的整体行为上，而不是细节的打磨。
+20. **规则对照表的检查用 Python 写**：仓库中的每个 Go 文件都归属于设计中的某个组件，`scripts/rulecodes.py` 只读文档、设计文件和源码，不属于任何组件，所以不用 Go 写；它只用标准库。
 
 ## 附录 B 待定
 
