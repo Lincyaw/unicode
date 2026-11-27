@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/lincyaw/unicode/internal/graph"
+	"github.com/lincyaw/unicode/internal/repo"
 )
 
 // diffCommand is `unicode diff <rev> [--to REV]`.
@@ -40,8 +41,8 @@ func diffCommand(g *globalOptions, stdout io.Writer) *cobra.Command {
 // base commit, the head (a commit, or the working tree with whether it has
 // changes), and the changed nodes and edges.
 type diffReport struct {
-	Base revision    `json:"base"`
-	Head workingTree `json:"head"`
+	Base repo.Revision    `json:"base"`
+	Head repo.WorkingTree `json:"head"`
 	graph.Comparison
 }
 
@@ -53,10 +54,14 @@ func runDiff(root, rev, to, format string, stdout io.Writer) error {
 		return err
 	}
 	var headGraph graph.Graph
-	var head workingTree
+	var head repo.WorkingTree
 	if to != "" {
-		headGraph, head.revision, err = revisionGraph(root, to)
-	} else if head, err = readWorkingTree(root, filepath.Join(root, ".unicode")); err == nil {
+		var r repo.Revision
+		headGraph, r, err = revisionGraph(root, to)
+		head = r.At(false)
+	} else if head, err = repo.ReadWorkingTree(root, filepath.Join(root, ".unicode")); err != nil {
+		return repoError(err)
+	} else {
 		headGraph, _, err = buildGraph(root)
 	}
 	if err != nil {
@@ -69,14 +74,14 @@ func runDiff(root, rev, to, format string, stdout io.Writer) error {
 // revisionGraph builds the graph of the commit rev in a checkout of it,
 // which it removes afterwards. As for a query, the diagnostics of building
 // are check's to report.
-func revisionGraph(root, rev string) (graph.Graph, revision, error) {
-	r, err := readRevision(root, rev)
+func revisionGraph(root, rev string) (graph.Graph, repo.Revision, error) {
+	r, err := repo.ReadRevision(root, rev)
 	if err != nil {
-		return graph.Graph{}, revision{}, err
+		return graph.Graph{}, repo.Revision{}, repoError(err)
 	}
 	dir, err := checkoutRev(root, r.Commit)
 	if err != nil {
-		return graph.Graph{}, revision{}, err
+		return graph.Graph{}, repo.Revision{}, err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	g, _, err := buildGraph(dir)

@@ -69,7 +69,7 @@ model TreeNode {
 /** The snapshot the server answers from. */
 @route("/snapshot")
 @get
-op getSnapshot(): Snapshot;
+op getSnapshot(): Snapshot | Refusals;
 
 /**
  * The design tree: the system, then its containers by focus (core, then support), the external systems, the persons
@@ -78,7 +78,7 @@ op getSnapshot(): Snapshot;
  */
 @route("/tree")
 @get
-op getTree(): TreeNode;
+op getTree(): TreeNode | Refusals;
 
 /** The latest commits of the checked-out branch, newest first, from which the compare button picks its base. */
 @route("/revisions")
@@ -86,4 +86,4 @@ op getTree(): TreeNode;
 op listRevisions(
   /** At most this many; 20 when not given */
   @query limit?: int32,
-): Revision[];
+): Revision[] | BadRequest | Refusals;

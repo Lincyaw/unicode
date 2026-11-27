@@ -67,4 +67,4 @@ model Comparison {
  */
 @route("/compare")
 @get
-op compare(@query base: string): Comparison | BadRequest;
+op compare(@query base: string): Comparison | BadRequest | Refusals;

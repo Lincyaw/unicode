@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/google/renameio/v2"
 	"github.com/spf13/cobra"
+
+	"github.com/lincyaw/unicode/internal/repo"
 )
 
 // buildCommand is `unicode build [--out DIR]`.
@@ -40,34 +41,6 @@ func buildCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
 	return c
 }
 
-// The files that build writes to its directory.
-const (
-	snapshotFile = "graph.json"
-	headFile     = "build.json"
-)
-
-// buildHead is build.json: the commit the repository is at, nil outside a
-// Git work tree with a commit, and whether the working tree differs from it,
-// which it always does when there is no commit.
-type buildHead struct {
-	Commit *string `json:"commit"`
-	Dirty  bool    `json:"dirty"`
-}
-
-// readHead reads the head record of the repository at root, whose build
-// writes to the directory out.
-func readHead(root, out string) (buildHead, error) {
-	if _, err := exec.LookPath("git"); err != nil {
-		return buildHead{Dirty: true}, nil
-	}
-	commit, err := git(root, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
-	if err != nil {
-		return buildHead{Dirty: true}, nil
-	}
-	dirty, err := isDirty(root, out)
-	return buildHead{Commit: &commit, Dirty: dirty}, err
-}
-
 // buildReport is the JSON of build: the diagnostics of building the graph,
 // and the path of the snapshot written, "" when there are diagnostics.
 type buildReport struct {
@@ -79,9 +52,9 @@ type buildReport struct {
 // diagnostics, writes its snapshot and the head record to the directory out,
 // each atomically. In text mode standard output gives the snapshot's path.
 func runBuild(root, out, format string, stdout, stderr io.Writer) error {
-	head, err := readHead(root, out)
+	head, err := repo.ReadHead(root, out)
 	if err != nil {
-		return err
+		return repoError(err)
 	}
 	g, diags, err := buildGraph(root)
 	if err != nil {
@@ -98,11 +71,11 @@ func runBuild(root, out, format string, stdout, stderr io.Writer) error {
 		if err := os.MkdirAll(out, 0o755); err != nil {
 			return &exitError{code: exitUnexpected, err: fmt.Errorf("cannot make the directory of the snapshot: %w", err)}
 		}
-		path := filepath.Join(out, snapshotFile)
+		path := filepath.Join(out, repo.SnapshotFile)
 		if err := renameio.WriteFile(path, g.Encode(), 0o644); err != nil {
 			return &exitError{code: exitUnexpected, err: fmt.Errorf("cannot write the snapshot: %w", err)}
 		}
-		if err := renameio.WriteFile(filepath.Join(out, headFile), record, 0o644); err != nil {
+		if err := renameio.WriteFile(filepath.Join(out, repo.RecordFile), record, 0o644); err != nil {
 			return &exitError{code: exitUnexpected, err: fmt.Errorf("cannot write the head record: %w", err)}
 		}
 		report.Snapshot = path

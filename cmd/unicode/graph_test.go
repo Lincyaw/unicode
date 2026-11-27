@@ -54,14 +54,14 @@ type repoComponent struct {
 	observed  bool // the component also declares a named snapshot and its adapter
 }
 
-// repo is the model of a drawn repository.
-type repo struct {
+// repoModel is the model of a drawn repository.
+type repoModel struct {
 	ddd        bool
 	components []repoComponent
 }
 
-func drawRepo(t *rapid.T) repo {
-	r := repo{ddd: rapid.Bool().Draw(t, "ddd")}
+func drawRepo(t *rapid.T) repoModel {
+	r := repoModel{ddd: rapid.Bool().Draw(t, "ddd")}
 	names := rapid.Permutation(componentNames).Draw(t, "names")
 	for i, name := range names[:rapid.IntRange(1, 3).Draw(t, "components")] {
 		c := repoComponent{name: name, focus: rapid.SampledFrom([]string{"core", "support", "utility"}).Draw(t, "focus"), recorded: -1}
@@ -82,7 +82,7 @@ func drawRepo(t *rapid.T) repo {
 }
 
 // texts writes the repository's files: design/, corpus/, the module and the code.
-func (r repo) texts(t *rapid.T) map[string]string {
+func (r repoModel) texts(t *rapid.T) map[string]string {
 	files := maps.Clone(moduleFiles)
 	system := "system sys \"the system\"\n\n"
 	if r.ddd {
@@ -178,6 +178,7 @@ func repoFiles(texts map[string]string) map[string]RepoFile {
 //uc:generates cli.query-graph.files
 //uc:generates cli.diff-snapshots.base
 //uc:generates cli.diff-snapshots.head
+//uc:generates cli.serve-viewer.files
 func genRepo() *rapid.Generator[map[string]RepoFile] {
 	return rapid.Custom(func(t *rapid.T) map[string]RepoFile {
 		return repoFiles(drawRepo(t).texts(t))

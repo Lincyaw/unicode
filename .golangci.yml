@@ -111,9 +111,18 @@ linters:
             - github.com/lincyaw/unicode/internal/query
             - github.com/lincyaw/unicode/internal/view
             - github.com/lincyaw/unicode/internal/lang/golang
+            - github.com/lincyaw/unicode/internal/repo
           deny:
             - pkg: github.com/lincyaw/unicode/internal
-              desc: "组件 serve 只能依赖 graph、diag、check、query、view、lang.golang（design/serve.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+              desc: "组件 serve 只能依赖 graph、diag、check、query、view、lang.golang、repo（design/serve.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+        repo:
+          list-mode: lax
+          files: ["**/internal/repo/**"]
+          allow:
+            - $gostd
+          deny:
+            - pkg: github.com/lincyaw/unicode/internal
+              desc: "组件 repo 只能依赖 无（design/repo.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
         gen:
           list-mode: lax
           files: ["**/internal/gen/**"]

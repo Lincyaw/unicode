@@ -17,6 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/serve"
 )
 
@@ -88,7 +89,7 @@ func runServe(root, snapshot, addr string, web pageDir, format string, stdout, s
 	if err != nil {
 		return err
 	}
-	s, err := serve.Open(root, snapshot)
+	s, err := serve.Open(root, snapshot, commitGraphs{})
 	if err != nil {
 		return &exitError{code: exitEnvironment, err: fmt.Errorf("%w; run unicode build to write the snapshot", err)}
 	}
@@ -96,6 +97,9 @@ func runServe(root, snapshot, addr string, web pageDir, format string, stdout, s
 	if err != nil {
 		return &exitError{code: exitEnvironment, err: fmt.Errorf("cannot listen on %s: %w", addr, err)}
 	}
+	// The interrupt is caught before the address is out, so that whoever reads the address can stop serve.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	url := "http://" + ln.Addr().String() + "/"
 	if _, err := io.WriteString(stderr, note); err != nil {
 		_ = ln.Close()
@@ -105,8 +109,6 @@ func runServe(root, snapshot, addr string, web pageDir, format string, stdout, s
 		_ = ln.Close()
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	server := &http.Server{Handler: logRequests(s.Handler(pages), stderr), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -143,4 +145,13 @@ type statusWriter struct {
 func (w *statusWriter) WriteHeader(status int) {
 	w.status = status
 	w.ResponseWriter.WriteHeader(status)
+}
+
+// commitGraphs builds the graph of a commit for serve's comparisons, as
+// unicode diff builds its base.
+type commitGraphs struct{}
+
+func (commitGraphs) Build(root, commit string) (graph.Graph, error) {
+	g, _, err := revisionGraph(root, commit)
+	return g, err
 }

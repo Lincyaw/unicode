@@ -5,6 +5,7 @@ import (
 	"maps"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -27,13 +28,13 @@ type Exchange struct {
 	Requests []Request
 }
 
-// repo draws a small repository's graph and files: a system with a person
+// repoDraw draws a small repository's graph and files: a system with a person
 // and an external system; components with types, operations, a flow and a
 // property with cases; and a Go package for each, whose file declares the
 // code types and functions that realize the design. Edges of every kind
 // join them as docs/model.md §4 draws them, derived ones included, and
 // salience is drawn, so the graph need not conform.
-type repo struct {
+type repoDraw struct {
 	t     *rapid.T
 	f     graph.Fragment
 	ids   map[string]graph.Node
@@ -41,7 +42,7 @@ type repo struct {
 	files map[string][]string
 }
 
-func (r *repo) node(n graph.Node) string {
+func (r *repoDraw) node(n graph.Node) string {
 	if _, ok := r.ids[n.Id]; ok {
 		return n.Id
 	}
@@ -55,21 +56,21 @@ func (r *repo) node(n graph.Node) string {
 }
 
 // design adds a design node written on the next line of its design file.
-func (r *repo) design(id string, kind graph.NodeKind, form, file string, attrs map[string][]string) string {
+func (r *repoDraw) design(id string, kind graph.NodeKind, form, file string, attrs map[string][]string) string {
 	r.files[file] = append(r.files[file], fmt.Sprintf("%s %s %s", form, kind, id))
 	return r.node(graph.Node{Id: id, Kind: kind, Form: form, Layer: graph.LayerDesign, Summary: "the " + string(kind) + " " + id,
 		Origin: diag.Position{Path: file, Line: len(r.files[file]), Column: 1}, Attrs: attrs})
 }
 
 // code adds a code type or function declared at the end of a Go file.
-func (r *repo) code(id string, kind graph.NodeKind, form, file string, decl []string, attrs map[string][]string) string {
+func (r *repoDraw) code(id string, kind graph.NodeKind, form, file string, decl []string, attrs map[string][]string) string {
 	r.files[file] = append(r.files[file], decl...)
 	line := len(r.files[file]) - len(decl) + 1
 	return r.node(graph.Node{Id: id, Kind: kind, Form: form, Layer: graph.LayerCode, Source: graph.SourceExtracted,
 		Origin: diag.Position{Path: file, Line: line, Column: 1}, Attrs: attrs})
 }
 
-func (r *repo) edge(kind graph.EdgeKind, from, to string, attrs map[string][]string) {
+func (r *repoDraw) edge(kind graph.EdgeKind, from, to string, attrs map[string][]string) {
 	key := string(kind) + " " + from + " " + to
 	if r.edges[key] || from == "" || to == "" {
 		return
@@ -82,14 +83,14 @@ func (r *repo) edge(kind graph.EdgeKind, from, to string, attrs map[string][]str
 	r.f.Edges = append(r.f.Edges, graph.Edge{Kind: kind, From: from, To: to, Source: source, Origin: r.ids[from].Origin, Attrs: attrs})
 }
 
-func (r *repo) pick(label string, ids []string) string {
+func (r *repoDraw) pick(label string, ids []string) string {
 	if len(ids) == 0 {
 		return ""
 	}
 	return rapid.SampledFrom(ids).Draw(r.t, label)
 }
 
-func (r *repo) of(kinds ...graph.NodeKind) []string {
+func (r *repoDraw) of(kinds ...graph.NodeKind) []string {
 	var ids []string
 	for _, n := range r.f.Nodes {
 		if slices.Contains(kinds, n.Kind) {
@@ -100,7 +101,7 @@ func (r *repo) of(kinds ...graph.NodeKind) []string {
 }
 
 func genRepo(t *rapid.T) (graph.Fragment, map[string]string) {
-	r := &repo{t: t, ids: map[string]graph.Node{}, edges: map[string]bool{}, files: map[string][]string{}}
+	r := &repoDraw{t: t, ids: map[string]graph.Node{}, edges: map[string]bool{}, files: map[string][]string{}}
 	notations := rapid.SliceOfNDistinct(rapid.SampledFrom([]string{"ddd", "c4"}), 0, 2, rapid.ID[string]).Draw(t, "notations")
 	system := r.design("shop", graph.NodeKindContainer, "system", "design/system.uc", map[string][]string{"notations": notations, "roots": {"go: ."}})
 	user := r.design("user", graph.NodeKindActor, "person", "design/system.uc", nil)
@@ -131,7 +132,7 @@ func genRepo(t *rapid.T) (graph.Fragment, map[string]string) {
 
 // designOf adds a component's types, with fields, values and operations, its
 // free operation and its property with cases.
-func (r *repo) designOf(c, file string) {
+func (r *repoDraw) designOf(c, file string) {
 	t := r.t
 	for k := range rapid.IntRange(0, 3).Draw(t, "types") {
 		form := rapid.SampledFrom([]string{"record", "object", "enum", "error", "event"}).Draw(t, "typeForm")
@@ -170,7 +171,7 @@ func (r *repo) designOf(c, file string) {
 
 // signature draws an operation's signature over the declared types, which
 // it refers to.
-func (r *repo) signature() string {
+func (r *repoDraw) signature() string {
 	types := r.of(graph.NodeKindType)
 	if len(types) == 0 || !rapid.Bool().Draw(r.t, "typed?") {
 		return "(x: int) -> int"
@@ -186,7 +187,7 @@ func (r *repo) signature() string {
 // codeOf adds a component's Go package and file, a code type for each of
 // its types with a method for each operation, and a function for each free
 // operation, each realizing its design node now and then.
-func (r *repo) codeOf(c string) {
+func (r *repoDraw) codeOf(c string) {
 	t := r.t
 	pkg := "go:example.com/shop/src/" + c
 	file := "src/" + c + "/" + c + ".go"
@@ -236,7 +237,7 @@ func (r *repo) codeOf(c string) {
 	}
 }
 
-func (r *repo) children(id string) []string {
+func (r *repoDraw) children(id string) []string {
 	var ids []string
 	for _, e := range r.f.Edges {
 		if e.Kind == graph.EdgeKindContains && e.From == id {
@@ -249,7 +250,7 @@ func (r *repo) children(id string) []string {
 // flows adds a flow to the first component: steps that a person, a
 // component or a type sends, calling operations, emitting events and
 // handling errors, some nested, each call traced to a function now and then.
-func (r *repo) flows(components []string, user string) {
+func (r *repoDraw) flows(components []string, user string) {
 	t := r.t
 	if !rapid.Bool().Draw(t, "flow?") {
 		return
@@ -290,7 +291,7 @@ func (r *repo) flows(components []string, user string) {
 	}
 }
 
-func (r *repo) realizers(id string) []string {
+func (r *repoDraw) realizers(id string) []string {
 	var ids []string
 	for _, e := range r.f.Edges {
 		if e.Kind == graph.EdgeKindRealizes && e.To == id {
@@ -303,7 +304,7 @@ func (r *repo) realizers(id string) []string {
 // links adds the edges between what the components declare: uses and
 // depends, refers from operations to the types of their signatures, about,
 // subscribes, extends and implements, and calls, reaches and realizes in the code.
-func (r *repo) links(components []string) {
+func (r *repoDraw) links(components []string) {
 	t := r.t
 	for _, a := range components {
 		for _, b := range append(slices.Clone(components), "gateway") {
@@ -361,7 +362,7 @@ func (r *repo) links(components []string) {
 }
 
 // text writes each drawn file as its lines.
-func (r *repo) text() map[string]string {
+func (r *repoDraw) text() map[string]string {
 	out := map[string]string{}
 	for path, lines := range r.files {
 		out[path] = strings.Join(lines, "\n") + "\n"
@@ -398,14 +399,14 @@ var endpoints = map[string]func(r *requests) url.Values{
 	"/api/impact": func(r *requests) url.Values { return url.Values{"id": r.ids("impact", 1)} },
 	"/api/code":   func(r *requests) url.Values { return r.code() },
 	"/api/compare": func(r *requests) url.Values {
-		return url.Values{"base": {rapid.SampledFrom([]string{"HEAD", "-x", ""}).Draw(r.t, "base")}}
+		return url.Values{"base": {rapid.SampledFrom([]string{"HEAD", "HEAD", "-x", "nope", ""}).Draw(r.t, "base")}}
 	},
 	"/api/views":   func(r *requests) url.Values { return r.view() },
 	"/api/nowhere": func(*requests) url.Values { return nil },
 }
 
-// queryEndpoints are the endpoints that answer as query and view do.
-var queryEndpoints = []string{"/api/node", "/api/search", "/api/slice", "/api/impact", "/api/views"}
+// queryEndpoints are the endpoints that answer as query, view and graph.Compare do.
+var queryEndpoints = []string{"/api/node", "/api/search", "/api/slice", "/api/impact", "/api/views", "/api/compare"}
 
 // requests draws requests about one graph: identities are mostly its nodes'.
 type requests struct {
@@ -473,7 +474,8 @@ func (r *requests) code() url.Values {
 }
 
 // view draws a view kind, now and then one that does not exist, and its
-// input, expansions, layer and level.
+// input and expansions; now and then a layer or a level, given to any view
+// and now and then naming no value.
 func (r *requests) view() url.Values {
 	kind := rapid.SampledFrom([]string{"architecture", "ddd", "class", "sequence", "activity", "events", "calls", "property", "code", "c4", "bogus"}).Draw(r.t, "view")
 	r.path = "/api/views/" + kind
@@ -488,8 +490,11 @@ func (r *requests) view() url.Values {
 		}
 		q["expand"] = append(q["expand"], x)
 	}
-	if rapid.IntRange(0, 4).Draw(r.t, "layer?") == 0 {
-		q["layer"] = []string{rapid.SampledFrom([]string{"design", "code"}).Draw(r.t, "layer")}
+	if rapid.IntRange(0, 3).Draw(r.t, "layer?") == 0 {
+		q["layer"] = []string{rapid.SampledFrom([]string{"design", "code", "code", "bogus"}).Draw(r.t, "layer")}
+	}
+	if rapid.IntRange(0, 3).Draw(r.t, "level?") == 0 {
+		q["level"] = []string{rapid.SampledFrom([]string{"context", "context", "container", "bogus"}).Draw(r.t, "level")}
 	}
 	return q
 }
@@ -519,6 +524,7 @@ func genExchangeOf(paths []string) *rapid.Generator[Exchange] {
 //uc:generates serve.answers-follow-contract.exchange
 //uc:generates serve.identities-resolve.exchange
 //uc:generates serve.answers-are-deterministic.exchange
+//uc:generates serve.snapshot-head-follows-record.exchange
 func genExchange() *rapid.Generator[Exchange] {
 	return genExchangeOf(slices.Sorted(maps.Keys(endpoints)))
 }
@@ -530,9 +536,23 @@ func genQueryExchange() *rapid.Generator[Exchange] {
 	return genExchangeOf(queryEndpoints)
 }
 
-// served writes an exchange's repository to a new directory, its snapshot
-// at .unicode/graph.json, and opens a server on it.
+// served writes an exchange's repository to a new directory, commits its
+// files when a request reads a revision, writes its snapshot at
+// .unicode/graph.json, and opens a server on it whose base commits all have
+// the graph baseOf gives.
 func served(t rapid.TB, x Exchange) (*Server, string, graph.Graph) {
+	root, g := written(t, x)
+	s, err := Open(root, filepath.Join(root, ".unicode", "graph.json"), baseBuilder{graphOf(t, baseOf(x.Fragment))})
+	if err != nil {
+		t.Fatalf("Open refused the snapshot that Encode wrote of a graph with a system container: %v", err)
+	}
+	return s, root, g
+}
+
+// written writes an exchange's repository to a new directory, commits its
+// files when a request reads a revision, and writes its snapshot at
+// .unicode/graph.json.
+func written(t rapid.TB, x Exchange) (string, graph.Graph) {
 	root, err := os.MkdirTemp("", "unicode-serve-")
 	if err != nil {
 		t.Fatalf("setup failed: cannot make a directory for the repository: %v", err)
@@ -540,13 +560,61 @@ func served(t rapid.TB, x Exchange) (*Server, string, graph.Graph) {
 	for path, text := range x.Files {
 		writeFile(t, filepath.Join(root, filepath.FromSlash(path)), []byte(text))
 	}
+	if slices.ContainsFunc(x.Requests, readsRevision) {
+		runGit(t, root, "init", "-q")
+		runGit(t, root, "add", "-A")
+		runGit(t, root, "-c", "user.name=unicode", "-c", "user.email=unicode@example.com", "-c", "commit.gpgsign=false",
+			"-c", "core.hooksPath=/dev/null", "commit", "-q", "--allow-empty", "-m", "the drawn repository")
+	}
 	g := graphOf(t, x.Fragment)
 	writeFile(t, filepath.Join(root, ".unicode", "graph.json"), g.Encode())
-	s, err := Open(root, filepath.Join(root, ".unicode", "graph.json"))
+	return root, g
+}
+
+// readsRevision tells whether a request reads a commit of the repository.
+func readsRevision(r Request) bool {
+	_, base := r.Query["base"]
+	return base || r.Path == "/api/compare" || r.Path == "/api/revisions"
+}
+
+// runGit runs git in root without the user's and the system's configuration.
+func runGit(t rapid.TB, root string, args ...string) string {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("Open refused the snapshot that Encode wrote of a graph with a system container: %v", err)
+		t.Fatalf("setup failed: git %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
 	}
-	return s, root, g
+	return strings.TrimSpace(string(out))
+}
+
+// baseBuilder gives the same graph for every commit.
+type baseBuilder struct{ base graph.Graph }
+
+func (b baseBuilder) Build(string, string) (graph.Graph, error) { return b.base, nil }
+
+// baseOf is the graph a commit had before the snapshot: without the
+// snapshot's last node other than the system and the edges at it, with
+// another summary and another attribute value for its first node other
+// than the system, so that its comparison adds, modifies and leaves alone.
+func baseOf(f graph.Fragment) graph.Fragment {
+	base := shrunk(f)
+	for i, n := range base.Nodes {
+		if n.Form != "system" {
+			n.Summary += " before"
+			n.Attrs = maps.Clone(n.Attrs)
+			if n.Attrs == nil {
+				n.Attrs = map[string][]string{}
+			}
+			n.Attrs["labels"] = append(slices.Clone(n.Attrs["labels"]), "older")
+			base.Nodes[i] = n
+			break
+		}
+	}
+	return base
 }
 
 func writeFile(t rapid.TB, path string, data []byte) {

@@ -34,4 +34,4 @@ model CheckReport {
 /** The diagnostics of the snapshot, sorted by file, line, column and code, and every status: the header's ⚠ list. */
 @route("/diagnostics")
 @get
-op getDiagnostics(): CheckReport;
+op getDiagnostics(): CheckReport | Refusals;

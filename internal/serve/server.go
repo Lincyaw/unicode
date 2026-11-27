@@ -13,6 +13,8 @@ import (
 	"path"
 	"sync"
 	"time"
+
+	"github.com/lincyaw/unicode/internal/graph"
 )
 
 // Unreadable is the error of Open for a snapshot file that does not exist,
@@ -29,6 +31,29 @@ func (e Unreadable) Error() string {
 }
 
 func (e Unreadable) Unwrap() error { return e.Cause }
+
+// Unbuildable is the error of building the graph of a base commit: its
+// files cannot be taken out, or they build no graph.
+//
+//uc:realizes serve.Unbuildable
+type Unbuildable struct {
+	Commit string
+	Cause  error
+}
+
+func (e Unbuildable) Error() string {
+	return fmt.Sprintf("cannot build the graph of the commit %s: %v", e.Commit, e.Cause)
+}
+
+func (e Unbuildable) Unwrap() error { return e.Cause }
+
+// Builder builds the graph of the repository at root as it is at a commit,
+// as a query's --rev does: the command line provides it.
+//
+//uc:realizes serve.Builder
+type Builder interface {
+	Build(root, commit string) (graph.Graph, error)
+}
 
 // Request is one request of the interface: its path, which starts with
 // /api, and its query parameters.
@@ -55,6 +80,10 @@ type Response struct {
 type Server struct {
 	root, path string
 	api        http.Handler
+	builder    Builder
+	// bases are the indexed graphs of the base commits built so far, which
+	// do not change.
+	bases sync.Map
 
 	mu sync.Mutex
 	// read is the snapshot last read, and stamp the file's state then;
@@ -71,15 +100,16 @@ type stamp struct {
 }
 
 // Open reads the snapshot file of the repository at root and checks it as
-// unicode check does.
+// unicode check does; builder builds the graphs of the commits it is
+// compared with.
 //
 //uc:realizes serve.open
-func Open(root, snapshot string) (*Server, error) {
-	s := &Server{root: root, path: snapshot}
+func Open(root, snapshot string, builder Builder) (*Server, error) {
+	s := &Server{root: root, path: snapshot, builder: builder}
 	if _, err := s.current(); err != nil {
 		return nil, err
 	}
-	strict := NewStrictHandlerWithOptions(answers{}, nil, StrictHTTPServerOptions{
+	strict := NewStrictHandlerWithOptions(answers{s}, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  badParameter,
 		ResponseErrorHandlerFunc: writeError,
 	})
@@ -193,8 +223,30 @@ func (r *recorder) Write(b []byte) (int, error) {
 	return r.body.Write(b)
 }
 
+// response is what the handler wrote, its JSON written again as the
+// snapshot's JSON is, with <, > and & as they are: the generated handlers
+// escape them for HTML.
 func (r *recorder) response() Response {
-	return Response{Status: r.status, Body: bytes.Clone(r.body.Bytes())}
+	return Response{Status: r.status, Body: plainJSON(r.body.Bytes())}
+}
+
+// plainJSON writes a JSON document again without escaping <, > and &; the
+// keys of an object come sorted, as the interface's types order their
+// fields, and numbers keep their text. A body that is not JSON is kept as it is.
+func plainJSON(body []byte) []byte {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return bytes.Clone(body)
+	}
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return bytes.Clone(body)
+	}
+	return out.Bytes()
 }
 
 // problem is a refused request: its status and its body.
@@ -214,7 +266,9 @@ func refuse(status int, code, fix, format string, args ...any) problem {
 func writeProblem(w http.ResponseWriter, p problem) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(p.status)
-	_ = json.NewEncoder(w).Encode(p.body)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(p.body)
 }
 
 // badParameter answers a request whose parameters do not bind: one missing,

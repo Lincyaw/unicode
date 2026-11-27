@@ -28,4 +28,4 @@ model CodeExcerpt {
  */
 @route("/code")
 @get
-op getCode(@query path: string, @query from?: int32, @query to?: int32): CodeExcerpt | NotFound | BadRequest;
+op getCode(@query path: string, @query from?: int32, @query to?: int32): CodeExcerpt | NotFound | BadRequest | Refusals;
