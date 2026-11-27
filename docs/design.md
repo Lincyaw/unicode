@@ -386,7 +386,7 @@ Go 先以只读源码覆盖插入 `runtime/trace.Log`，编译一次带 `atomic`
 
 ### 7.5 查看器
 
-查看器只渲染图，不另存数据。视觉规范是 Figma 原型（文件 `inTTk3ypjVqoB9tHq0ErO4`），样式取自 aegis-bench-site；界面的改动先画进原型，再实现。
+查看器只渲染图，不另存数据。视觉规范是 Figma 原型（文件 `inTTk3ypjVqoB9tHq0ErO4`），用 aegis-bench-site 套件的令牌和控件绘制；界面的改动先画进原型，再实现。原型与套件不一致时以套件为准，并更正原型。
 
 查看器由工具链提供：`unicode serve` 启动一个小型后端，读取本地 `unicode build` 编译出的数据，提供查询与交互的接口，并提供前端页面。接口用 TypeSpec 定义，由各视图需要显示的内容推出（§7.5.1）；前端的源码在 `web/`，只通过这些接口取数据。前端的构建结果嵌入 `unicode` 程序，`unicode serve` 因此在任何仓库中都能提供页面（§8）。
 

@@ -1,6 +1,6 @@
 # 设计系统
 
-本目录复制自 aegis-bench-site 的 `src/ui`。Figma 原型与本设计系统不一致时，以本设计系统为准。在 unicode 查看器中有以下改动，其余见后面的原文：
+本目录复制自 aegis-bench-site 的 `src/ui`。Figma 原型与本设计系统不一致时，以本设计系统为准（docs/decisions.md 第 102 条）。在 unicode 查看器中有以下改动，其余见后面的原文：
 
 - 链接用 react-router 的 `Link`，控件自己的文案在 `words.ts`；面包屑不带 `useReturnPath`。
 - 图标只用 Lucide 一套。控件用的图标（箭头、折叠、主题、菜单、关闭、外链、文件、全屏、缩放、适合窗口、对勾、复制、搜索）都换成 Lucide 的图形，由 `icons.tsx` 的 `Icon` 画出。图标的三种尺寸（16、14、12）和笔画 1.4 只在 `icons.tsx` 中定义一次；排版代码按像素计算时读取其中的 `ICON_REGULAR`、`ICON_SMALL`、`ICON_TINY`。
