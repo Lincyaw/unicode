@@ -1320,6 +1320,7 @@ func ucExecute(s *ucContract, inputs map[string]reflect.Value, explore bool) (ou
 			}
 			if !matched {
 				out.Differences = append(out.Differences, "the call returned an undeclared error: "+env.failure.Error())
+				out.Diagnostics = append(out.Diagnostics, ucDiagnosticOf(s, ucIssue{"lang.golang.undeclared-error", "the call returned an undeclared error: " + env.failure.Error(), s.Call}))
 			}
 		}
 		if env.failure == nil && len(values) > 0 {
