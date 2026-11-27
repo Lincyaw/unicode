@@ -43,4 +43,5 @@
 
 .marker { position: absolute; display: flex; align-items: center; gap: var(--space-1); transform: translate(-50%, -50%); white-space: nowrap; }
 .marker[data-side="right"] { transform: translate(var(--space-2), -50%); }
+.marker[data-side="left"] { transform: translate(calc(-100% - var(--space-2)), -50%); }
 .marker[data-side="above"] { transform: translate(-50%, calc(-100% - var(--space-1))); }

@@ -17,7 +17,7 @@ export function DiagnosticsButton({ diagnostics, subjectHref }: { diagnostics: D
         {diagnostics.length}
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content className={clsx(hintStyles.popover, styles.panel)} align="start" sideOffset={8} collisionPadding={12}>
+        <Popover.Content className={clsx(hintStyles.popover, styles.panel)} align="start" sideOffset={8} collisionPadding={12} onOpenAutoFocus={event => event.preventDefault()}>
           <div className={styles.panelHead}>
             <span className="t-micro c-faint">{SECTIONS.diagnostics}</span>
             <InfoHint label={SECTIONS.diagnostics}>{ABOUT.diagnostics}</InfoHint>

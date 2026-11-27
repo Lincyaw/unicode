@@ -52,7 +52,7 @@ function ViewHeader({ address, links }: { address: ViewAddress; links: NodeLinks
       <HeaderTools
         base={address.base}
         baseHref={base => viewPath({ ...address, base })}
-        subjectHref={subject => (isEdgeKey(subject) ? undefined : links.entityHref(subject))}
+        subjectHref={subject => (isEdgeKey(subject) ? viewPath(selecting(address, subject)) : links.entityHref(subject))}
         entityHref={links.entityHref}
       />
     </PageHeader>

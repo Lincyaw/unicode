@@ -10,7 +10,7 @@ import { Badge } from '../marks/Badge';
 import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
 import { HiddenCount, UndeclaredBadge } from './ArchitectureView';
-import { boxEdges, edgeKey, toneOf } from './graphParts';
+import { boxEdges, componentGraph, edgeKey, toneOf } from './graphParts';
 import styles from './views.module.css';
 
 const SPACING = { node: 40, rank: 64 };
@@ -51,15 +51,16 @@ function context(container: ViewNode, view: View): Context {
 }
 
 /** The DDD view (Figma 07): bounded contexts with their aggregates, values, services and repositories. */
-export function DddView({ view }: { view: View }) {
+export function DddView({ view: answer }: { view: View }) {
   const links = useLinks();
+  const view = { ...answer, nodes: componentGraph(answer).nodes };
   const folded = new Set(view.folded);
   const contexts = new Map(view.nodes.filter(node => !folded.has(node.id)).map(node => [node.id, context(node, view)]));
   const boxes = view.nodes.map(node => {
     const inner = contexts.get(node.id);
     return inner ? { id: node.id, width: inner.width, height: inner.height } : { id: node.id, width: CARD_WIDTH, height: foldedHeight((node.contents ?? []).map(child => child.title)) };
   });
-  const outer = view.edges.filter(edge => edge.kind === 'depends' || edge.kind === 'uses');
+  const outer = componentGraph(answer).edges;
   const outerLinks: Link[] = outer.map(edge => ({ id: edgeKey(edge), from: edge.from, to: edge.to, unranked: edge.status === 'contradicted' }));
   const { rects, bends, width, height } = arrange(boxes, outerLinks, 'TB', SPACING);
   const routes = routeAll(outerLinks, rects, 'TB', bends);

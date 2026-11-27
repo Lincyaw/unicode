@@ -47,7 +47,7 @@ export function Lines({ width, height, lines, selected, onSelect }: {
   );
 }
 
-/** A label or badge placed at a point of the drawing: centred on it, beside it to the right, or above it. */
-export function Marker({ at, side = 'center', children }: { at: { x: number; y: number }; side?: 'center' | 'right' | 'above'; children: ReactNode }) {
+/** A label or badge placed at a point of the drawing: centred on it, beside it to the right or left, or above it. */
+export function Marker({ at, side = 'center', children }: { at: { x: number; y: number }; side?: 'center' | 'right' | 'left' | 'above'; children: ReactNode }) {
   return <div className={styles.marker} data-side={side} style={{ left: at.x, top: at.y }}>{children}</div>;
 }

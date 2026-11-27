@@ -9,7 +9,7 @@ import { CARD_WIDTH, cardHeight, CHIP_HEIGHT, chipWidth, CONTAINER_HEAD, CONTAIN
 import { Lines, Marker, type Line } from '../canvas/Edges';
 import { arrange, routeAll, type Box, type Link, type Rect } from '../canvas/layout';
 import { useLinks } from '../marks/links';
-import { evidenceCount, externalsBeside } from './graphParts';
+import { componentGraph, evidenceCount, externalsBeside } from './graphParts';
 import { NodeChip } from '../marks/NodeChip';
 import styles from './views.module.css';
 
@@ -85,8 +85,9 @@ export function HiddenCount({ hidden }: { hidden: number }) {
 }
 
 /** The architecture view (Figma 01): components and external systems with their dependencies. */
-export function ArchitectureView({ view }: { view: View }) {
+export function ArchitectureView({ view: answer }: { view: View }) {
   const links = useLinks();
+  const view = { ...answer, ...componentGraph(answer) };
   const folded = new Set(view.folded);
   const expandedOnRequest = new Set(view.expand);
   const insides = new Map(view.nodes.filter(node => node.kind === 'container' && !folded.has(node.id)).map(node => [node.id, inside(node)]));
@@ -105,7 +106,7 @@ export function ArchitectureView({ view }: { view: View }) {
   const routes = routeAll(edgeLinks, rects, 'TB', bends);
   const lines: Line[] = view.edges.flatMap(edge => {
     const route = routes.get(edgeKey(edge));
-    return route ? [{ id: edgeKey(edge), route, tone: edge.status === 'contradicted' ? 'warning' as const : 'plain' as const, select: edgeKey(edge) }] : [];
+    return route ? [{ id: edgeKey(edge), route, tone: edge.status === 'contradicted' ? 'warning' as const : edge.kind === 'uses' ? 'dashed' as const : 'plain' as const, select: edgeKey(edge) }] : [];
   });
   return (
     <Canvas about={ABOUT.architecture} label={VIEW_NAMES.architecture} width={width} height={height} footer={view.hidden > 0 ? <HiddenCount hidden={view.hidden} /> : undefined}>

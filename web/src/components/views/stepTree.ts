@@ -21,7 +21,11 @@ export function stepTree(view: View): StepTree {
   const byId = new Map(view.nodes.map(node => [node.id, node]));
   const roots = steps.filter(step => step.step?.parent === undefined).sort((a, b) => indexOf(a) - indexOf(b));
   const children = (step: ViewNode) => (step.step?.children ?? []).flatMap(id => byId.get(id) ?? []).sort((a, b) => indexOf(a) - indexOf(b));
-  return { roots, children, lifelines: view.nodes.filter(node => node.kind !== 'step'), byId };
+  // The lifelines are the participants, the nodes that send or receive a step, in the view's order; a view may also
+  // give the flow itself and what the steps call or emit.
+  const participants = new Set(steps.flatMap(step => [step.step?.sender?.id, step.step?.receiver?.id].flatMap(id => (id === undefined ? [] : [id]))));
+  const lifelines = view.nodes.filter(node => node.kind !== 'step' && participants.has(node.id));
+  return { roots, children, lifelines, byId };
 }
 
 /** Every step under a step, depth first. */

@@ -77,4 +77,17 @@ export function externalsBeside(view: View): Map<string, string> {
   return new Map([...users].flatMap(([actor, edges]) => (edges.length === 1 && edges[0] ? [[actor, edges[0].from]] : [])));
 }
 
+/**
+ * What a component-level view draws as boxes and lines: every node but the system the view is of (whose containment
+ * the drawing already is), and the dependencies between them, a declared use and the actual dependency of one pair
+ * drawn once (the dependency, with its status; a use alone when the code does not depend).
+ */
+export function componentGraph(view: View): { nodes: View['nodes']; edges: ViewEdge[] } {
+  const nodes = view.nodes.filter(node => !(node.kind === 'container' && node.form === 'system'));
+  const drawn = new Set(nodes.map(node => node.id));
+  const depends = new Set(view.edges.filter(edge => edge.kind === 'depends').map(edge => `${edge.from} ${edge.to}`));
+  const edges = view.edges.filter(edge => drawn.has(edge.from) && drawn.has(edge.to) && (edge.kind === 'depends' || (edge.kind === 'uses' && !depends.has(`${edge.from} ${edge.to}`))));
+  return { nodes, edges };
+}
+
 export { edgeKey };

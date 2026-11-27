@@ -27,7 +27,7 @@ export function CompareButton({ base, revisions, comparison, baseHref, entityHre
         <span className="t-mono">{base ?? CONTROLS.compare}</span>
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content className={clsx(hintStyles.popover, styles.panel)} align="start" sideOffset={8} collisionPadding={12}>
+        <Popover.Content className={clsx(hintStyles.popover, styles.panel)} align="start" sideOffset={8} collisionPadding={12} onOpenAutoFocus={event => event.preventDefault()}>
           <div className={styles.panelHead}>
             <span className="t-micro c-faint">{CONTROLS.compare}</span>
             <InfoHint label={CONTROLS.compare}>{ABOUT.compare}</InfoHint>

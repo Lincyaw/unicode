@@ -1,5 +1,5 @@
 import { Maximize, Minus, Plus } from 'lucide-react';
-import { useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { CONTROLS } from '../../terms';
 import { ICON_SMALL, ICON_STROKE, InfoHint } from '../../ui/hint';
 import styles from './canvas.module.css';
@@ -8,6 +8,10 @@ import styles from './canvas.module.css';
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 2;
 const SCALE_STEP = 0.1;
+
+/** A drawing that overflows its column by more than this share opens zoomed out to fit, but no smaller than OPEN_SCALE. */
+const OVERFLOW = 1.05;
+const OPEN_SCALE = 0.5;
 const CANVAS_MARGIN = { top: 52, side: 24 };
 const BOTTOM_MARGIN = 72;
 
@@ -31,6 +35,14 @@ export function Canvas({ about, label, width, height, toolbar, footer, margin = 
       zoom(Math.min(1, element.clientWidth / fullWidth, element.clientHeight / fullHeight));
     }
   };
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    if (!element) {
+      throw new Error('The canvas renders its viewport before its layout effect runs');
+    }
+    const room = Math.min(element.clientWidth / fullWidth, element.clientHeight / fullHeight);
+    setScale(room * OVERFLOW < 1 ? Math.max(OPEN_SCALE, Math.floor(room * 20) / 20) : 1);
+  }, [fullWidth, fullHeight]);
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     const element = viewport.current;
     if (!element || (event.target as HTMLElement).closest('button, a, [data-hit]')) {

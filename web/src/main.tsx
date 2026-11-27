@@ -13,7 +13,7 @@ const SERVE_MODE = 'serve';
 // leaves it out, since `unicode serve` answers there.
 if (import.meta.env.DEV && import.meta.env.MODE !== SERVE_MODE) {
   const { worker } = await import('./mocks/browser');
-  await worker.start({ quiet: true });
+  await worker.start({ quiet: true, onUnhandledFrame: 'bypass' });
 }
 
 /** Answers stay fresh until the reader moves on: the snapshot changes only when it is rebuilt. */

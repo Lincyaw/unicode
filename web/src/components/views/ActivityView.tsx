@@ -5,7 +5,7 @@ import { ABOUT, VIEW_NAMES } from '../../terms';
 import { ICON_TINY } from '../../ui/hint';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { Lines, type Line, type LineTone } from '../canvas/Edges';
-import { route, type Rect } from '../canvas/layout';
+import { route, type Rect, type Route } from '../canvas/layout';
 import { monoWidth } from '../canvas/measure';
 import { messageOf, relative, scopeOf } from '../marks/format';
 import { KindIcon } from '../marks/icons';
@@ -24,6 +24,7 @@ const BRANCH_GAP = 180;
 const ASYNC_GAP = 56;
 const ASYNC_PADDING = 22;
 const ASYNC_HEAD = 46;
+const EVENT_TURN = 24;
 
 /** What the activity drawing places: a step's box, a call's group of boxes, the start, an end, a decision or an event. */
 type Piece =
@@ -115,6 +116,15 @@ function column(tree: StepTree, steps: ViewNode[], x: number, top: number, drawn
   return { bottom: y, last, width };
 }
 
+/** A line from a step out of its right side, up or down beside the drawing, and into an event's pill from its left. */
+function intoSide(from: Rect, to: Rect): Route {
+  const x1 = from.x + from.width;
+  const y1 = from.y + from.height / 2;
+  const turn = x1 + EVENT_TURN;
+  const y2 = to.y + to.height / 2;
+  return { d: `M ${x1} ${y1} H ${turn} V ${y2} H ${to.x}`, mid: { x: turn, y: (y1 + y2) / 2 } };
+}
+
 /** The step and the event that trigger an async fragment: the event its operation subscribes to, and the step that emits it. */
 function triggerOf(view: View, step: ViewNode): { event: string; emitter?: ViewNode } | undefined {
   const op = step.step?.target?.id;
@@ -185,7 +195,7 @@ export function ActivityView({ view }: { view: View }) {
   }
   const width = Math.max(...drawn.pieces.map(piece => piece.rect.x + piece.rect.width));
   const height = Math.max(...drawn.pieces.map(piece => piece.rect.y + piece.rect.height));
-  const lines: Line[] = drawn.arrows.map((arrow, index) => ({ id: String(index), route: route(arrow.from, arrow.to), tone: arrow.tone ?? 'plain' }));
+  const lines: Line[] = drawn.arrows.map((arrow, index) => ({ id: String(index), route: arrow.tone === 'event' ? intoSide(arrow.from, arrow.to) : route(arrow.from, arrow.to), tone: arrow.tone ?? 'plain' }));
   const label = (step: ViewNode, children: ReactNode, className?: string) => <StepLabel step={step} diagnostics={diagnosticsAbout(view, step.id)} className={className}>{children}</StepLabel>;
   return (
     <Canvas about={ABOUT.activity} label={VIEW_NAMES.activity} width={width} height={height}>

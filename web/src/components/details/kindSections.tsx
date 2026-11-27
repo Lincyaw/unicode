@@ -93,7 +93,8 @@ export function ContainerSections({ entity }: { entity: Entity }) {
   if (node.kind === 'actor' && node.form === 'external') {
     return <ExternalSections entity={entity} />;
   }
-  const declared = detail?.dependsOn.filter(({ edge }) => edge.status !== 'contradicted') ?? [];
+  // A declared use and the actual dependency on the same component are one row.
+  const declared = [...new Map((detail?.dependsOn ?? []).filter(({ edge }) => edge.status !== 'contradicted').map(neighbor => [neighbor.node.id, neighbor])).values()];
   const undeclared = [...(detail?.dependsOn ?? []), ...(detail?.dependedOnBy ?? [])].filter(({ edge }) => edge.status === 'contradicted');
   const files = detail?.files ?? [];
   return (

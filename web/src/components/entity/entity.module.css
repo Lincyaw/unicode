@@ -13,7 +13,7 @@
 
 .table { margin: 0 calc(-1 * var(--space-2)); }
 .headRow { min-height: var(--space-8); padding: 0 var(--space-2); border-top: 0; color: var(--text-faint); font: var(--type-micro); }
-.bodyRow { min-height: calc(var(--space-8) + var(--space-1)); padding: 0 var(--space-2); }
+.bodyRow { min-height: calc(var(--space-8) + var(--space-1)); padding: var(--space-2); overflow-wrap: anywhere; }
 .bodyRow[data-warn="true"] { color: var(--accent-warning); }
 .typeLink, .iconLink { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--accent-info); font: var(--type-code); }
 .plainLink { color: var(--text-main); }

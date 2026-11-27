@@ -124,13 +124,26 @@ function arrangeRanked(boxes: Box[], links: Link[], direction: Direction, spacin
   for (const [id, points] of bends) {
     bends.set(id, points.map(point => ({ x: point.x + (shift.get(nearestRank(shift, point.y)) ?? 0), y: point.y })));
   }
+  // dagre may thread a line left of every box; the drawing then moves right so the line stays on it.
+  const left = Math.min(0, ...[...bends.values()].flatMap(points => points.map(point => point.x - BEND_ROOM)));
+  if (left < 0) {
+    for (const [id, rect] of rects) {
+      rects.set(id, { ...rect, x: rect.x - left });
+    }
+    for (const [id, points] of bends) {
+      bends.set(id, points.map(point => ({ ...point, x: point.x - left })));
+    }
+  }
   return {
     rects,
     bends,
-    width: Math.max(0, ...[...rects.values()].map(rect => rect.x + rect.width)),
+    width: Math.max(0, ...[...rects.values()].map(rect => rect.x + rect.width), ...[...bends.values()].flatMap(points => points.map(point => point.x + BEND_ROOM))),
     height: Math.max(0, ...[...rects.values()].map(rect => rect.y + rect.height)),
   };
 }
+
+/** How far a threaded line keeps from the drawing's edge. */
+const BEND_ROOM = 8;
 
 function nearestRank(shift: ReadonlyMap<number, number>, y: number): number {
   let best = y;

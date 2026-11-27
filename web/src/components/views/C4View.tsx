@@ -152,8 +152,10 @@ export function C4View({ view, toolbar }: { view: View; toolbar: ReactNode }) {
         const from = rects.get(edge.from);
         const to = rects.get(edge.to);
         const vertical = from !== undefined && to !== undefined && from.x < to.x + to.width && to.x < from.x + from.width;
+        // A label keeps to the side its line leans toward, so the labels of lines leaving one box spread apart.
+        const leans = from !== undefined && to !== undefined && to.x + to.width / 2 < from.x + from.width / 2 - 1 ? 'left' : 'right';
         return (
-          <Marker key={edgeKey(edge)} at={path.mid} side={edge.status === 'contradicted' ? 'center' : vertical ? 'right' : 'above'}>
+          <Marker key={edgeKey(edge)} at={path.mid} side={edge.status === 'contradicted' ? 'center' : vertical ? leans : 'above'}>
             {edge.status === 'contradicted' ? <UndeclaredBadge edge={edge} /> : <span className={styles.edgeLabel}>{labelOf(edge)}</span>}
           </Marker>
         );
