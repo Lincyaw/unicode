@@ -183,6 +183,29 @@ func checkRecordingsAreReplayable(t rapid.TB, sample Sample) {
 	if _, err := os.Lstat(filepath.Join(root, "corpus/removed.uc")); !os.IsNotExist(err) {
 		t.Fatalf("orphan remained: %v", err)
 	}
+	// A former check can remain in the graph as another kind or layer. Its
+	// canonical namespace is still orphaned; ownership checks remain strict.
+	obsolete := graph.Node{Id: "removed", Kind: graph.NodeKindOp, Layer: graph.LayerDesign}
+	switch sample.Limit % 3 {
+	case 1:
+		obsolete.Kind = graph.NodeKindType
+	case 2:
+		obsolete.Kind, obsolete.Layer = graph.NodeKindProperty, graph.LayerCode
+	}
+	if err := g.AddNode(obsolete); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, root, "corpus/removed.uc", []byte("corpus removed\n"))
+	retyped := Recordings(root, g, cases)
+	if len(retyped.Diagnostics) != 0 || !slices.Contains(retyped.Removals, "corpus/removed.uc") {
+		t.Fatalf("former check namespace not removed: %+v", retyped)
+	}
+	if problems := ApplyRecordings(root, retyped); len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "corpus/removed.uc")); !os.IsNotExist(err) {
+		t.Fatalf("former check namespace remained: %v", err)
+	}
 	writeFixture(t, root, "corpus/broken.uc", []byte("corpus other\n"))
 	invalidBefore := fileTree(t, root)
 	invalid := Recordings(root, g, cases)

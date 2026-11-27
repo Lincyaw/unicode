@@ -135,12 +135,8 @@ func corpusFiles(root string, g *graph.Graph) (map[string]corpusFile, []string, 
 		}
 
 		target := g.Node(check)
-		if target == nil {
+		if target == nil || target.Layer != graph.LayerDesign || target.Kind != graph.NodeKindProperty && target.Kind != graph.NodeKindFlow {
 			removals = append(removals, relative)
-			return nil
-		}
-		if target.Layer != graph.LayerDesign || target.Kind != graph.NodeKindProperty && target.Kind != graph.NodeKindFlow {
-			problems = append(problems, storeDiagnostic("evidence.invalid-corpus", relative, "the corpus target is not a property or flow", "use the identity of an existing check"))
 			return nil
 		}
 		files[check] = corpusFile{path: relative, data: data}
