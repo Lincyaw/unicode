@@ -29,7 +29,7 @@ export function EntityPane({ entity, trail, base }: { entity: Entity; trail: Tra
           );
         })}
       </Section>
-      <ViewLinks views={entity.views} self={entity.node.id} />
+      <ViewLinks views={entity.views} />
       {base !== undefined && (
         <Section title={SECTIONS.changes}>
           <div className={styles.changeRow}>

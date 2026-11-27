@@ -45,15 +45,16 @@ export interface Fact {
 }
 
 /**
- * Labelled values in one of three arrangements: stacked label over value in a flowing row, two-column rows, or
- * label and value side by side in a flowing line.
+ * Labelled values in one of four arrangements: stacked label over value in a flowing row, two-column rows, label and
+ * value side by side in a flowing line, or pairs in a narrow column, the names as wide as the widest. A label may
+ * repeat, such as several call sites under one name.
  */
-export function FactList({ facts, layout }: { facts: Fact[]; layout: 'stacked' | 'rows' | 'inline' }) {
+export function FactList({ facts, layout }: { facts: Fact[]; layout: 'stacked' | 'rows' | 'inline' | 'pairs' }) {
   return (
     <dl className={styles[layout]}>
-      {facts.map(fact => (
-        <div key={fact.label}>
-          <dt className={clsx(layout === 'rows' ? 't-small c-muted' : 't-micro c-faint')}>{fact.label}</dt>
+      {facts.map((fact, index) => (
+        <div key={`${index} ${fact.label}`}>
+          <dt className={clsx(layout === 'rows' || layout === 'pairs' ? 't-small c-muted' : 't-micro c-faint')}>{fact.label}</dt>
           <dd className={fact.format === 'code' ? 't-mono' : 't-small'}>{fact.value}</dd>
         </div>
       ))}

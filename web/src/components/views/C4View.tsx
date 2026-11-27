@@ -2,6 +2,7 @@ import { clsx } from 'clsx';
 import type { CSSProperties, ReactNode } from 'react';
 import type { View, ViewEdge, ViewNode } from '../../api/types';
 import { ABOUT, VIEW_NAMES } from '../../terms';
+import { MarkButton } from '../../ui/controls';
 import { InfoHint } from '../../ui/hint';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { Lines, Marker, type Line } from '../canvas/Edges';
@@ -12,7 +13,7 @@ import { useLinks, useNodeActions, useSelectedBox } from '../marks/links';
 import { Above } from '../marks/Above';
 import { CoverButton } from '../marks/CoverButton';
 import { StatusDot } from '../marks/StatusDot';
-import { HiddenCount, UndeclaredBadge } from './ArchitectureView';
+import { HiddenCount, UndeclaredTag } from './ArchitectureView';
 import { edgeKey, toneOf } from './graphParts';
 import styles from './views.module.css';
 
@@ -61,11 +62,11 @@ function Boundary({ boundary }: { boundary: ViewNode }) {
 /** The head of the system's boundary, which previews the system. */
 function BoundaryHead({ boundary }: { boundary: ViewNode }) {
   return (
-    <button type="button" className={styles.boundaryHead} {...useNodeActions(boundary.id)}>
+    <MarkButton className={styles.boundaryHead} {...useNodeActions(boundary.id)}>
       <StatusDot status={boundary.status} />
       <KindIcon node={boundary} size="small" />
       {boundary.title}
-    </button>
+    </MarkButton>
   );
 }
 
@@ -168,7 +169,7 @@ export function C4View({ view, toolbar }: { view: View; toolbar: ReactNode }) {
         const leans = from !== undefined && to !== undefined && to.x + to.width / 2 < from.x + from.width / 2 - 1 ? 'left' : 'right';
         return (
           <Marker key={edgeKey(edge)} at={path.mid} side={edge.status === 'contradicted' ? 'center' : vertical ? leans : 'above'}>
-            {edge.status === 'contradicted' ? <UndeclaredBadge edge={edge} /> : <span className={styles.edgeLabel}>{labelOf(edge)}</span>}
+            {edge.status === 'contradicted' ? <UndeclaredTag edge={edge} /> : <span className={styles.edgeLabel}>{labelOf(edge)}</span>}
           </Marker>
         );
       })}

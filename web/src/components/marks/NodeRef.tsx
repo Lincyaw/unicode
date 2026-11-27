@@ -1,5 +1,6 @@
 import { clsx } from 'clsx';
 import type { ComponentProps } from 'react';
+import { MarkButton } from '../../ui/controls';
 import { useNodeActions } from './links';
 import styles from './marks.module.css';
 
@@ -8,6 +9,6 @@ import styles from './marks.module.css';
  * previews the node, a double click or Enter enters its page. Other props reach the button, so a hint can make it its
  * trigger.
  */
-export function NodeRef({ id, className, children, ...rest }: { id: string } & ComponentProps<'button'>) {
-  return <button type="button" {...rest} className={clsx(styles.ref, className)} data-ref {...useNodeActions(id)}>{children}</button>;
+export function NodeRef({ id, className, children, ...rest }: { id: string } & ComponentProps<typeof MarkButton>) {
+  return <MarkButton {...rest} className={clsx(styles.ref, className)} data-ref {...useNodeActions(id)}>{children}</MarkButton>;
 }

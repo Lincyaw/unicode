@@ -1,6 +1,7 @@
 import { clsx } from 'clsx';
 import type { View, ViewNode } from '../../api/types';
-import { ABOUT, VIEW_NAMES } from '../../terms';
+import { ABOUT, formWord, VIEW_NAMES } from '../../terms';
+import { MarkButton } from '../../ui/controls';
 
 import { Canvas, Placed } from '../canvas/Canvas';
 import { Lines, type Line } from '../canvas/Edges';
@@ -137,14 +138,14 @@ function layout(tree: StepTree) {
 function LaneHead({ lane }: { lane: Lane }) {
   const { node } = lane;
   return (
-    <button
-      type="button" className={clsx(styles.laneHead, 'loop-edge')} data-person={node.kind === 'actor' && node.form === 'person'} data-external={node.kind === 'actor' && node.form === 'external'}
+    <MarkButton
+      className={clsx(styles.laneHead, 'loop-edge')} data-person={node.kind === 'actor' && node.form === 'person'} data-external={node.kind === 'actor' && node.form === 'external'}
       {...useNodeActions(node.id)}
     >
       {node.kind !== 'actor' && <StatusDot status={node.status} />}
       <KindIcon node={node} size="small" />
       {node.title}
-    </button>
+    </MarkButton>
   );
 }
 
@@ -172,7 +173,7 @@ export function SequenceView({ view }: { view: View }) {
   ];
   const fragments = marks.flatMap(mark => (mark.kind === 'fragment' ? [mark] : []));
   return (
-    <Canvas about={ABOUT.sequence} label={VIEW_NAMES.sequence} width={width} height={height} margin={MARGIN} aboutBelow>
+    <Canvas about={ABOUT.sequence} aboutSide="bottom" label={VIEW_NAMES.sequence} width={width} height={height} margin={MARGIN}>
       {fragments.map(mark => (
         <Placed key={mark.step.id} rect={{ x: mark.left, y: mark.top, width: mark.right - mark.left, height: mark.bottom - mark.top }} className={styles.fragment}>
           <span className={styles.fragmentIndex} aria-hidden="true">{mark.step.title}</span>
@@ -215,7 +216,7 @@ export function SequenceView({ view }: { view: View }) {
         <Placed key={`tag ${mark.step.id}`} rect={{ x: mark.left + 8, y: mark.top + 8, width: 0, height: LABEL }} className={styles.messageSlot}>
           <StepLabel step={mark.step} diagnostics={diagnosticsAbout(view, mark.step.id)} className={styles.fragmentTag}>
             <KindIcon node={mark.step} size="tiny" />
-            {mark.step.form} {relative(mark.step.step?.target?.id ?? '', scope)}
+            {formWord(mark.step.kind, mark.step.form)} {relative(mark.step.step?.target?.id ?? '', scope)}
           </StepLabel>
         </Placed>
       ))}

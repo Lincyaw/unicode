@@ -28,15 +28,18 @@ function boxOf(drawing: HTMLElement, id: string): HTMLElement | null {
   return mark && (mark.closest<HTMLElement>('[data-selected="true"]') ?? mark);
 }
 
+/** Where a canvas's ⓘ stands: top left, or bottom left for a drawing whose heads run along its top. */
+export type AboutSide = 'top' | 'bottom';
+
 /**
  * The canvas a view draws on: the drawing at its own size, panned and zoomed by the reader's gestures (panZoom.ts) and
  * by the control at the bottom right. It opens at a readable scale and brings a node into view when the selection
  * changes to one out of sight, or when a box asks for it, such as a card just unfolded. Its ⓘ, top left, says how to
  * read the view; `toolbar` sits top right and `footer` bottom left.
  */
-export function Canvas({ about, label, width, height, toolbar, footer, margin = CANVAS_MARGIN, aboutBelow = false, children }: {
+export function Canvas({ about, label, width, height, toolbar, footer, margin = CANVAS_MARGIN, aboutSide = 'top', children }: {
   about: string; label: string; width: number; height: number; toolbar?: ReactNode; footer?: ReactNode; margin?: { top: number; side: number };
-  aboutBelow?: boolean; children: ReactNode;
+  aboutSide?: AboutSide; children: ReactNode;
 }) {
   const { selected } = useLinks();
   const viewport = useRef<HTMLDivElement>(null);
@@ -74,7 +77,7 @@ export function Canvas({ about, label, width, height, toolbar, footer, margin = 
           </div>
         </div>
       </div>
-      <div className={aboutBelow ? styles.aboutBelow : styles.about}><InfoHint subject={label}>{about}</InfoHint></div>
+      <div className={styles.about} data-side={aboutSide}><InfoHint subject={label}>{about}</InfoHint></div>
       {toolbar && <div className={styles.toolbar}>{toolbar}</div>}
       {footer && <div className={styles.footer}>{footer}</div>}
       <div className={styles.zoom}>

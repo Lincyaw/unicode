@@ -2,9 +2,10 @@ import * as Tooltip from '@radix-ui/react-tooltip';
 import { clsx } from 'clsx';
 import type { ReactNode } from 'react';
 import type { Diagnostic, ViewNode } from '../../api/types';
-import { CONTROLS, SECTIONS, STATUS_NAMES } from '../../terms';
+import { CONTROLS, formWord, SECTIONS, STATUS_NAMES } from '../../terms';
+import { Tag } from '../../ui/content';
+import { MarkButton } from '../../ui/controls';
 import hintStyles from '../../ui/hint.module.css';
-import { Badge } from '../marks/Badge';
 import { useNodeActions } from '../marks/links';
 import { StatusDot } from '../marks/StatusDot';
 import styles from './views.module.css';
@@ -15,11 +16,11 @@ import styles from './views.module.css';
  */
 export function StepLabel({ step, diagnostics, children, className }: { step: ViewNode; diagnostics: Diagnostic[]; children: ReactNode; className?: string }) {
   const label = (
-    <button type="button" className={clsx(styles.stepLabel, className)} {...useNodeActions(step.id)}>
+    <MarkButton className={clsx(styles.stepLabel, className)} {...useNodeActions(step.id)}>
       <span className={styles.stepIndex}>{step.title}</span>
       <StatusDot status={step.status} />
       {children}
-    </button>
+    </MarkButton>
   );
   if (diagnostics.length === 0) {
     return label;
@@ -31,7 +32,7 @@ export function StepLabel({ step, diagnostics, children, className }: { step: Vi
         <Tooltip.Content className={clsx(hintStyles.popover, styles.diagnosticCard)} side="bottom" align="start" sideOffset={8} collisionPadding={12}>
           <span className={styles.diagnosticHead}>
             <span className="t-mono-strong">{step.id}</span>
-            <Badge tone="neutral">{step.form}</Badge>
+            <Tag>{formWord(step.kind, step.form)}</Tag>
           </span>
           {diagnostics.map(diagnostic => (
             <span key={diagnostic.code} className={styles.diagnosticBody}>

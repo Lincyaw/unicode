@@ -1,15 +1,15 @@
 import type { View, ViewNode } from '../../api/types';
 import { ABOUT, VIEW_NAMES } from '../../terms';
+import { Tag } from '../../ui/content';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { ContainerBox, FoldedCard } from '../canvas/cards';
 import { CARD_WIDTH, CHIP_HEIGHT, chipWidth, CONTAINER_HEAD, CONTAINER_PADDING, foldedHeight } from '../canvas/sizes';
 import { Lines, Marker, type Line } from '../canvas/Edges';
 import { arrange, routeAll, shifted, shiftedBends, TIGHT, type Link, type Rect } from '../canvas/layout';
 import { textWidth } from '../canvas/measure';
-import { Badge } from '../marks/Badge';
 import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
-import { HiddenCount, UndeclaredBadge } from './ArchitectureView';
+import { HiddenCount, UndeclaredTag } from './ArchitectureView';
 import { boxEdges, componentGraph, edgeKey, toneOf } from './graphParts';
 import styles from './views.module.css';
 
@@ -86,7 +86,7 @@ export function DddView({ view: answer }: { view: View }) {
               <Lines width={inner.width} height={inner.height} lines={inner.lines} />
               {(node.contents ?? []).filter(child => inner.rects.has(child.id)).map(child => (
                 <Placed key={child.id} rect={inner.rects.get(child.id) ?? { x: 0, y: 0, width: 0, height: 0 }} className={styles.chipSlot}>
-                  <NodeChip node={child}>{dddLabels(child).map(label => <Badge key={label} tone="info" className={styles.inlineLabel}>{label}</Badge>)}</NodeChip>
+                  <NodeChip node={child}>{dddLabels(child).map(label => <Tag key={label}>{label}</Tag>)}</NodeChip>
                 </Placed>
               ))}
             </ContainerBox>
@@ -95,7 +95,7 @@ export function DddView({ view: answer }: { view: View }) {
       })}
       {view.edges.filter(edge => edge.status === 'contradicted').map(edge => {
         const route = routes.get(edgeKey(edge));
-        return route && <Marker key={edgeKey(edge)} at={route.mid}><UndeclaredBadge edge={edge} /></Marker>;
+        return route && <Marker key={edgeKey(edge)} at={route.mid}><UndeclaredTag edge={edge} /></Marker>;
       })}
     </Canvas>
   );

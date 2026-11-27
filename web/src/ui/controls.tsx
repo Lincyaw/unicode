@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 import {
   ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, File, Maximize, Menu, Minimize, Minus, Moon, Plus, Search, Sun, X,
 } from 'lucide-react';
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { Link } from 'react-router';
 import styles from './controls.module.css';
 import { Hint } from './hint';
@@ -46,7 +46,7 @@ export function Button({ variant, size = 'large', label, onClick, children, ...t
  * A mark that acts when pressed, such as a node on a drawing, a row of a tree or a result in a list. It is data before
  * it is a control, so it is no pill: its class gives its look, and it keeps the kit's focus ring and transitions.
  */
-export function MarkButton({ className, children, ...props }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type'>) {
+export function MarkButton({ className, children, ...props }: Omit<ComponentProps<'button'>, 'type'>) {
   return <button {...props} type="button" className={clsx(styles.mark, className)}>{children}</button>;
 }
 

@@ -1,17 +1,17 @@
 import { clsx } from 'clsx';
-import { Code, X } from '../marks/icons';
 import type { View, ViewNode } from '../../api/types';
 import { ABOUT, MARKS, SECTIONS, VIEW_NAMES } from '../../terms';
+import { HintedHeading, Tag } from '../../ui/content';
+import { ButtonLink, MarkButton } from '../../ui/controls';
 import { InfoHint } from '../../ui/hint';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { CHIP_HEIGHT, chipWidth } from '../canvas/sizes';
 import { Lines, Marker, type Line } from '../canvas/Edges';
 import { route, type Rect } from '../canvas/layout';
 import { monoWidth } from '../canvas/measure';
-import { ViaBadge } from '../details/sections';
-import { Badge } from '../marks/Badge';
+import { ViaTag } from '../details/sections';
 import { relative, scopeOf, shortPath, statusOf } from '../marks/format';
-import { KindIcon } from '../marks/icons';
+import { Code, FlaskConical, KindIcon, Merge, Split } from '../marks/icons';
 import { useLinks, useNodeActions } from '../marks/links';
 import { NodeRef } from '../marks/NodeRef';
 import { NodeChip } from '../marks/NodeChip';
@@ -57,7 +57,8 @@ interface FileBox {
   height: number;
 }
 
-function fileBox(file: ViewNode, input: boolean): FileBox {
+/** A file's box, laid out with a row for its undrawn detail functions when `details` counts any (only the input's box does). */
+function fileBox(file: ViewNode, details: number): FileBox {
   const items = (file.contents ?? []).flatMap(node => [{ node, depth: 0 }, ...(node.contents ?? []).filter(child => child.kind === 'op').map(child => ({ node: child, depth: 1 }))]);
   const widths = items.map(({ node, depth }) => {
     const bound = bindingOf(node);
@@ -70,20 +71,20 @@ function fileBox(file: ViewNode, input: boolean): FileBox {
     y += ROW + GAP;
     return { node, depth, rect };
   });
-  const details = input && (file.details ?? 0) > 0 ? { x: PADDING + INDENT, y, width: 80, height: CHIP_HEIGHT - 8 } : undefined;
-  if (details) {
-    y += details.height + GAP;
+  const detailsRect = details > 0 ? { x: PADDING + INDENT, y, width: 80, height: CHIP_HEIGHT - 8 } : undefined;
+  if (detailsRect) {
+    y += detailsRect.height + GAP;
   }
-  return { file, rows, details, width, height: y + PADDING - GAP };
+  return { file, rows, details: detailsRect, width, height: y + PADDING - GAP };
 }
 
 /** The head of a file's box, which previews the file. */
 function FileHead({ file }: { file: ViewNode }) {
   return (
-    <button type="button" className={styles.fileHead} {...useNodeActions(file.id)}>
+    <MarkButton className={styles.fileHead} {...useNodeActions(file.id)}>
       <KindIcon node={file} size="tiny" />
       {shortPath(file.title)}
-    </button>
+    </MarkButton>
   );
 }
 
@@ -97,7 +98,7 @@ export function CodeView({ view }: { view: View }) {
   const files = view.nodes.filter(node => node.kind === 'container' && node.form === 'file');
   const cases = view.nodes.filter(node => node.kind === 'case');
   const containers = view.nodes.filter(node => folded.has(node.id));
-  const boxesByFile = new Map(files.map(file => [file.id, fileBox(file, file.id === view.input.id)]));
+  const boxesByFile = new Map(files.map(file => [file.id, fileBox(file, file.id === view.input.id ? file.details ?? 0 : 0)]));
   const owner = new Map<string, string>();
   for (const box of boxesByFile.values()) {
     box.rows.forEach(row => owner.set(row.node.id, box.file.id));
@@ -198,7 +199,7 @@ export function CodeView({ view }: { view: View }) {
             <NodeChip node={node} state="folded" />
             {count !== undefined && (
               <span className={styles.count}>
-                <Badge tone="neutral"><Icon glyph={X} size="tiny" />{count}</Badge>
+                <Tag><Icon glyph={Merge} size="tiny" />{count}</Tag>
                 <InfoHint subject={MARKS.merged}>{ABOUT.merged}</InfoHint>
               </span>
             )}
@@ -206,14 +207,16 @@ export function CodeView({ view }: { view: View }) {
         );
       })}
       {routed.filter(({ edge }) => edge.kind === 'reaches').map(({ edge, route: path }) => (
-        <Marker key={edgeKey(edge)} at={path.mid}><ViaBadge count={edge.attrs.via?.length ?? 0} /></Marker>
+        <Marker key={edgeKey(edge)} at={path.mid}><ViaTag count={edge.attrs.via?.length ?? 0} /></Marker>
       ))}
       {input && inputRect && cases.length > 0 && (
         <Placed rect={{ x: inputRect.x, y: inputRect.y + input.height + 24, width: input.width, height: 48 }} className={styles.coverage}>
-          <span className={styles.coverageHead}>{SECTIONS.coveredBy}<InfoHint subject={SECTIONS.coveredBy}>{ABOUT.coveredBy}</InfoHint></span>
+          <HintedHeading rank="h3" className="t-micro c-muted" title={SECTIONS.coveredBy} about={ABOUT.coveredBy} />
           <span className={styles.coverageChips}>
-            {branches.map(branch => <Badge key={branch.label} tone="neutral">{branch.label} {branch.cases}</Badge>)}
-            {cases.map(item => <Badge key={item.id} tone="info" to={links.entityHref(item.id)}>{item.title}</Badge>)}
+            {branches.map(branch => <Tag key={branch.label}><Icon glyph={Split} size="tiny" />{branch.label} {branch.cases}</Tag>)}
+            {cases.map(item => (
+              <ButtonLink key={item.id} to={links.entityHref(item.id)} variant="line" size="small"><Icon glyph={FlaskConical} size="tiny" />{item.title}</ButtonLink>
+            ))}
           </span>
         </Placed>
       )}

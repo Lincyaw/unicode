@@ -5,27 +5,20 @@
 .previewTop { display: grid; gap: var(--space-2); min-width: 0; }
 .previewHead { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .identity { flex: 1; min-width: 0; overflow: hidden; font: var(--type-mono-strong); text-overflow: ellipsis; white-space: nowrap; }
-.enter { display: grid; place-items: center; color: var(--text-muted); transition: color var(--duration-base), transform var(--duration-base) var(--ease-out); }
-.enter:hover { color: var(--text-main); transform: translate(var(--space-px), calc(-1 * var(--space-px))); }
 .summary { color: var(--text-muted); font: var(--type-small); }
 .codeLine { color: var(--text-main); font: var(--type-code); overflow-wrap: anywhere; }
 
-/* A section: a small faint head over rows eight apart. */
+/* A section: the kit's small hinted heading over rows eight apart; a pill in it keeps its own width. */
 .section { display: grid; gap: var(--space-2); min-width: 0; }
-.sectionHead { display: flex; align-items: center; gap: var(--space-1); color: var(--text-faint); font: var(--type-micro); }
-
-.facts { display: grid; gap: var(--space-2); }
-.facts > div { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: var(--space-3); align-items: baseline; }
-.facts dt { color: var(--text-muted); font: var(--type-small); }
-.facts dd { min-width: 0; font: var(--type-code); overflow-wrap: anywhere; }
+.section > :is(a, button) { justify-self: start; }
 
 /* Icons keep their size in a row that runs short of room; the names beside them give way, cut with an ellipsis. */
 .preview svg, .section svg { flex: none; }
 
 .row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; min-height: var(--space-5); color: var(--text-main); }
-.row[data-tone="warning"] { color: var(--accent-warning); }
-.row[data-tone="success"] { color: var(--accent-success); }
-.row[data-tone="success"] .code { color: var(--text-main); }
+/* A row with a status draws its icon in the status colour; its words keep the text colour. */
+.row[data-tone="warning"] > svg { color: var(--accent-warning); }
+.row[data-tone="success"] > svg { color: var(--accent-success); }
 .code { font: var(--type-code); }
 /* The two ends of an edge with the arrow between them, in the code face. */
 .ends { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); min-width: 0; font: var(--type-code); }

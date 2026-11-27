@@ -1,22 +1,21 @@
 import { clsx } from 'clsx';
-import { Dices, FileCode, Play, Repeat, type LucideIcon } from '../marks/icons';
 import type { CSSProperties } from 'react';
 import type { DriverMode, View, ViewNode } from '../../api/types';
-import { ABOUT, ADEQUACY, CASE_COLUMNS, CONTROLS, DRIVER_MODES, OUTCOMES, SECTIONS } from '../../terms';
-
+import { ABOUT, ADEQUACY, CASE_COLUMNS, CASE_SOURCES, CONTROLS, DRIVER_MODES, formWord, OUTCOMES, SECTIONS } from '../../terms';
+import { Tag } from '../../ui/content';
+import { MarkButton } from '../../ui/controls';
+import { Icon } from '../../ui/icons';
 import table from '../../ui/table.module.css';
 import { caseSource } from '../details/nodeWords';
 import { CodePanel, Section, SymbolLine } from '../details/sections';
-import { Badge } from '../marks/Badge';
 import { placeOf, relative, scopeOf, statusOf } from '../marks/format';
-import { KindIcon } from '../marks/icons';
+import { Dices, FileCode, KindIcon, Play, Repeat, TriangleAlert, type LucideIcon } from '../marks/icons';
 import { useLinks, useNodeActions } from '../marks/links';
 import { NodeRef } from '../marks/NodeRef';
 import { Signature } from '../marks/Signature';
 import { NodeChip } from '../marks/NodeChip';
 import { StatusDot } from '../marks/StatusDot';
 import styles from './property.module.css';
-import { Icon } from '../../ui/icons';
 
 const DRIVER_ICONS: Record<DriverMode, LucideIcon> = { replay: Play, explore: Dices, fuzz: Repeat };
 
@@ -32,7 +31,7 @@ function AboutSignature({ op }: { op: ViewNode }) {
 
 /** A case's name in the case table, which previews the case. */
 function CaseButton({ item }: { item: ViewNode }) {
-  return <button type="button" className={styles.code} {...useNodeActions(item.id)}>{item.title}</button>;
+  return <MarkButton className={styles.code} {...useNodeActions(item.id)}>{item.title}</MarkButton>;
 }
 
 function Adequacy({ label, value }: { label: string; value?: number }) {
@@ -62,8 +61,8 @@ function PropertyBlock({ property, view }: { property: ViewNode; view: View }) {
         <div className={styles.cardHead}>
           <StatusDot status={property.status} />
           <KindIcon node={property} />
-          <button type="button" className={styles.identity} {...useNodeActions(property.id)}>{property.id}</button>
-          <span className="t-small c-muted">{property.form}</span>
+          <MarkButton className={styles.identity} {...useNodeActions(property.id)}>{property.id}</MarkButton>
+          <span className="t-small c-muted">{formWord(property.kind, property.form)}</span>
         </div>
         <p className={styles.statement}>{property.summary}</p>
         {about.map(node => (
@@ -88,9 +87,10 @@ function PropertyBlock({ property, view }: { property: ViewNode; view: View }) {
         {(evidence?.drivers ?? []).length > 0 && (
           <div className={styles.drivers}>
             {evidence?.drivers?.map(driver => (
-              <Badge key={driver.mode} tone={driver.mode === 'replay' ? 'success' : 'neutral'} icon={DRIVER_ICONS[driver.mode]}>
+              <Tag key={driver.mode} tone={driver.mode === 'replay' ? 'success' : 'neutral'}>
+                <Icon glyph={DRIVER_ICONS[driver.mode]} size="tiny" />
                 {DRIVER_MODES[driver.mode]} · {driver.mode === 'replay' ? driver.cases : driver.tool}
-              </Badge>
+              </Tag>
             ))}
           </div>
         )}
@@ -108,7 +108,7 @@ function PropertyBlock({ property, view }: { property: ViewNode; view: View }) {
               return (
                 <div key={item.id} className={clsx(table.row, styles.bodyRow)} role="row" aria-selected={links.selected === item.id}>
                   <span role="cell"><CaseButton item={item} /></span>
-                  <span role="cell"><Badge tone={item.form === 'declared' ? 'neutral' : item.attrs.reason?.[0] === 'counterexample' ? 'warning' : 'info'}>{source}</Badge></span>
+                  <span role="cell">{source === CASE_SOURCES.counterexample ? <Tag tone="warning"><Icon glyph={TriangleAlert} size="tiny" />{source}</Tag> : <Tag>{source}</Tag>}</span>
                   <span role="cell" className={styles.values}>{(item.attrs.values ?? []).map(value => value.replace(/^\w+ = /, '')).join(', ')}</span>
                   <span role="cell" className={styles.outcome} data-outcome={outcome}>{outcome && <><StatusDot status={outcome === 'passed' ? 'verified' : 'contradicted'} />{OUTCOMES[outcome]}</>}</span>
                   <span role="cell" className={styles.gain}>{gain === undefined ? CONTROLS.none : `+${gain} ${CONTROLS.linesUnit}`}</span>

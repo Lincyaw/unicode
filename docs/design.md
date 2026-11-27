@@ -408,7 +408,7 @@ Go 先以只读源码覆盖插入 `runtime/trace.Log`，编译一次带 `atomic`
 | 进入实体页、展开、比较、诊断 | `arrow-up-right`、`chevron-right`、`git-compare-arrows`、`triangle-alert` |
 | 回放、探索、模糊测试、分支、异步 | `play`、`dices`、`repeat`、`split`、`radio` |
 | 提交、文件、隐藏的节点、说明 | `git-commit-horizontal`、`file-code`、`eye-off`、`info` |
-| 收起、边的方向、经过的细节函数、合并的边 | `chevron-down`、`arrow-right`、`ellipsis`、`merge` |
+| 收起、展开的分支、边的方向、经过的细节函数、合并的边 | `chevron-up`、`chevron-down`、`arrow-right`、`ellipsis`、`merge` |
 | 通过、失败、视图 | `check`、`x`、`view` |
 | 设计树、详情栏、切换到浅色、切换到深色、搜索 | `list-tree`、`panel-right`、`sun`、`moon`、`search` |
 | 放大、缩小、适合窗口 | `plus`、`minus`、`maximize` |

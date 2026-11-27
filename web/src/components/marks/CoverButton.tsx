@@ -1,5 +1,6 @@
 import { clsx } from 'clsx';
 import type { ReactNode } from 'react';
+import { MarkButton } from '../../ui/controls';
 import { useNodeActions } from './links';
 import styles from './marks.module.css';
 
@@ -14,5 +15,5 @@ import styles from './marks.module.css';
  * anywhere on the box that no lifted control takes previews the box's node, and a double click or Enter enters its page.
  */
 export function CoverButton({ id, className, children }: { id: string; className?: string; children: ReactNode }) {
-  return <button type="button" className={clsx(styles.cover, className)} {...useNodeActions(id)}>{children}</button>;
+  return <MarkButton className={clsx(styles.cover, className)} {...useNodeActions(id)}>{children}</MarkButton>;
 }

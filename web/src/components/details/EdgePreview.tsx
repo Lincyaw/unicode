@@ -1,16 +1,17 @@
-import { ArrowRight, ArrowUpRight, CornerDownRight, Plus } from '../marks/icons';
 import type { EdgeEntity } from '../../api/types';
-import { ABOUT, SECTIONS, VIEW_NAMES } from '../../terms';
-import { Badge } from '../marks/Badge';
+import { ABOUT, EDGE_KINDS, SECTIONS, VIEW_NAMES, viewTitle } from '../../terms';
+import { Tag } from '../../ui/content';
+import { ButtonLink } from '../../ui/controls';
+import { InfoHint } from '../../ui/hint';
+import { Icon } from '../../ui/icons';
 import { messageOf, placeOf, stepName } from '../marks/format';
+import { ArrowRight, ArrowUpRight, ChevronRight, CornerDownRight } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { StatusDot } from '../marks/StatusDot';
 import { statusWord } from './nodeWords';
 import { NodeLink } from '../marks/NodeLink';
 import { DiagnosticTag, NodeRow, Section } from './sections';
 import styles from './details.module.css';
-import { InfoHint } from '../../ui/hint';
-import { Icon } from '../../ui/icons';
 
 /**
  * The preview of an edge (Figma 04): what joins what, the nodes its attributes name (the detail functions a reaches
@@ -28,8 +29,8 @@ export function EdgePreview({ edge }: { edge: EdgeEntity }) {
         <div className={styles.previewHead}>
           <StatusDot status={edge.edge.status} />
           <Icon glyph={CornerDownRight} />
-          <span className={styles.identity}>{edge.edge.kind}</span>
-          <InfoHint subject={edge.edge.kind}>{`${edge.edge.origin.path}:${edge.edge.origin.line}`}</InfoHint>
+          <span className={styles.identity}>{EDGE_KINDS[edge.edge.kind]}</span>
+          <InfoHint subject={EDGE_KINDS[edge.edge.kind]}>{`${edge.edge.origin.path}:${edge.edge.origin.line}`}</InfoHint>
         </div>
         <p className={styles.ends}>
           <NodeLink node={fromNode} tone="inherit" />
@@ -43,21 +44,29 @@ export function EdgePreview({ edge }: { edge: EdgeEntity }) {
         </Section>
       )}
       <Section title={SECTIONS.end}>
-        <NodeRow node={toNode} trailing={end !== undefined ? <Badge tone="neutral">{end}</Badge> : undefined} />
+        <NodeRow node={toNode} trailing={end !== undefined ? <Tag>{end}</Tag> : undefined} />
       </Section>
       {edge.diagnostics.length > 0 && <Section title={SECTIONS.diagnostics}>{edge.diagnostics.map(diagnostic => <DiagnosticTag key={diagnostic.code} diagnostic={diagnostic} />)}</Section>}
       {edge.steps.length > 0 && (
         <Section title={SECTIONS.steps}>
           {edge.steps.map(step => (
-            <NodeRow key={step.id} node={step} icon dot={false} label={stepName(step)} trailing={`${step.step?.sender?.title ?? ''} -> ${messageOf(step)}`} />
+            <NodeRow
+              key={step.id} node={step} icon dot={false} label={stepName(step)}
+              trailing={<span className={styles.ends}>{step.step?.sender?.title}<Icon glyph={ArrowRight} size="tiny" />{messageOf(step)}</span>}
+            />
           ))}
         </Section>
       )}
       {(expand !== undefined || others.length > 0) && (
-        <Section title={SECTIONS.actions}>
+        <Section title={SECTIONS.views}>
           <div className={styles.chips}>
-            {expand && <Badge tone="info" icon={Plus} to={links.viewHref(expand)}>{SECTIONS.expand}</Badge>}
-            {others.map(view => <Badge key={`${view.kind} ${view.input.id} ${view.select ?? ''}`} tone="info" icon={ArrowUpRight} to={links.viewHref(view)}>{VIEW_NAMES[view.kind]} {view.select?.includes('#') ? `#${view.select.split('#').at(-1) ?? ''}` : view.input.title}</Badge>)}
+            {expand && <ButtonLink to={links.viewHref(expand)} variant="line" size="small"><Icon glyph={ChevronRight} size="tiny" />{SECTIONS.expand}</ButtonLink>}
+            {others.map(view => (
+              <ButtonLink key={`${view.kind} ${view.input.id} ${view.select ?? ''}`} to={links.viewHref(view)} variant="line" size="small">
+                <Icon glyph={ArrowUpRight} size="tiny" />
+                {viewTitle(VIEW_NAMES[view.kind], view.select?.includes('#') ? `#${view.select.split('#').at(-1) ?? ''}` : view.input.title)}
+              </ButtonLink>
+            ))}
           </div>
         </Section>
       )}

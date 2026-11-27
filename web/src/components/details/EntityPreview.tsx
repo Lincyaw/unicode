@@ -1,6 +1,6 @@
 import type { Entity } from '../../api/types';
 import { stepLine } from '../marks/format';
-import { CaseSections, CheckedSections, CodeSections, ContainerSections, OpSections, StepSections, TypeSections } from './kindSections';
+import { CaseSections, CheckedSections, CodeSections, ContainerSections, OpSections, StepSections, TypePreviewSections } from './kindSections';
 import { PreviewHead, ViewLinks } from './sections';
 import styles from './details.module.css';
 
@@ -15,7 +15,7 @@ function KindSections({ entity }: { entity: Entity }) {
     case 'actor':
       return <ContainerSections entity={entity} />;
     case 'type':
-      return <TypeSections entity={entity} preview />;
+      return <TypePreviewSections entity={entity} />;
     case 'op':
       return <OpSections entity={entity} />;
     case 'step':
@@ -47,7 +47,7 @@ export function EntityPreview({ entity, current }: { entity: Entity; current?: {
         {line !== '' && <p className={node.kind === 'step' || node.layer === 'code' ? styles.codeLine : styles.summary}>{line}</p>}
       </div>
       <KindSections entity={entity} />
-      <ViewLinks views={entity.views} self={node.id} current={current} />
+      <ViewLinks views={entity.views} current={current} />
     </div>
   );
 }

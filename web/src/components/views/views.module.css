@@ -1,18 +1,6 @@
-.warningBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-px) var(--space-1);
-  border-radius: var(--radius-sm);
-  background: var(--bg-warning-soft);
-  color: var(--accent-warning);
-  font: var(--type-micro);
-}
 .chipSlot { position: absolute; display: flex; }
 .chipSlot > :first-child { width: 100%; }
 .count { position: absolute; top: 50%; left: calc(100% + var(--space-2)); display: flex; align-items: center; gap: var(--space-1); transform: translateY(-50%); }
-.collapse { display: inline-flex; align-items: center; gap: var(--space-1); width: fit-content; height: fit-content; padding: var(--space-px) var(--space-2); border-radius: var(--radius-sm); background: var(--bg-info-soft); color: var(--accent-info); font: var(--type-micro); }
-.inlineLabel { margin-left: var(--space-px); }
 
 /* A file of the code view: a box of its types and functions, each with what it realizes. */
 .fileBox { position: relative; width: 100%; height: 100%; border: var(--rule-hairline); border-radius: var(--radius-md); background: var(--bg-page); }
@@ -25,7 +13,6 @@
 .binding { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-px) var(--space-2); border-radius: var(--radius-sm); background: var(--bg-info-soft); color: var(--accent-info); font: var(--type-micro); white-space: nowrap; }
 .detailsCount { position: absolute; display: flex; align-items: center; gap: var(--space-1); color: var(--text-muted); font: var(--type-mono); }
 .coverage { position: absolute; display: grid; gap: var(--space-2); }
-.coverageHead { display: flex; align-items: center; gap: var(--space-1); color: var(--text-faint); font: var(--type-micro); }
 .coverageChips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
 /* C4: cards with a summary and paths, the system's dashed boundary, and the operations labelling each edge. */
@@ -54,7 +41,7 @@
 .edgeLabel { padding: 0 var(--space-1); color: var(--text-faint); font: var(--type-mono); text-shadow: var(--shadow-text-halo); }
 
 /* Events: cards of steps and operations either side of an event's pill or an error's chip. */
-.columnHead { position: absolute; color: var(--text-faint); font: var(--type-micro); }
+.columnHead { position: absolute; color: var(--text-muted); font: var(--type-micro); }
 .eventCard {
   position: relative;
   isolation: isolate;
@@ -73,7 +60,8 @@
 .eventHead { display: flex; align-items: center; gap: var(--space-2); font: var(--type-code); white-space: nowrap; }
 .refLine { display: inline-flex; align-items: center; gap: var(--space-1); }
 .eventSecond { display: flex; align-items: center; gap: var(--space-1); padding-left: var(--space-4); color: var(--text-muted); font: var(--type-mono); white-space: nowrap; }
-.eventPill { border-color: var(--ink-warn); border-radius: var(--radius-full); background: var(--bg-warn-soft); color: var(--ink-warn); }
+/* An event's pill keeps its words in the text colour; the warning ink edges it. */
+.eventPill { border-color: var(--ink-warn); border-radius: var(--radius-full); background: var(--bg-warn-soft); color: var(--text-main); }
 
 /* Flows: lifelines and their heads, messages, activations, fragments and the activity's boxes. */
 .laneHead {
@@ -102,11 +90,12 @@
 .fragmentIndex { position: absolute; top: var(--space-2); left: calc(-1 * var(--space-6)); color: var(--text-faint); font: var(--type-mono); }
 .fragmentTag { background: var(--bg-muted); color: var(--text-muted); font: var(--type-small); }
 .fragmentTag .stepIndex { display: none; }
-.pill { display: inline-flex; align-items: center; gap: var(--space-1); height: calc(var(--space-6)); padding: 0 var(--space-2); border: var(--size-hairline) solid var(--ink-warn); border-radius: var(--radius-full); background: var(--bg-warn-soft); color: var(--ink-warn); font: var(--type-code); white-space: nowrap; }
+.pill { display: inline-flex; align-items: center; gap: var(--space-1); height: calc(var(--space-6)); padding: 0 var(--space-2); border: var(--size-hairline) solid var(--ink-warn); border-radius: var(--radius-full); background: var(--bg-warn-soft); color: var(--text-main); font: var(--type-code); white-space: nowrap; }
+.pill > svg { color: var(--ink-warn); }
 .diagnosticCard { z-index: 60; display: grid; gap: var(--space-2); max-width: 21rem; padding: var(--space-3) var(--space-4); font: var(--type-small); }
 .diagnosticHead { display: flex; align-items: center; gap: var(--space-2); }
 .diagnosticBody { display: grid; gap: var(--space-2); }
-.diagnosticCode { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--ink-warn); font: var(--type-micro); }
+.diagnosticCode { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--text-main); font: var(--type-micro); }
 
 .activityStep { position: absolute; display: flex; align-items: center; justify-content: center; border: var(--rule-emphasis); border-radius: var(--radius-sm); background: var(--bg-page); }
 .boxLabel { width: 100%; height: 100%; justify-content: center; }

@@ -2,6 +2,7 @@ import { EyeOff, TriangleAlert } from '../marks/icons';
 import type { View, ViewEdge, ViewNode } from '../../api/types';
 import { edgeKey } from '../../api/types';
 import { ABOUT, DIAGNOSTIC_WORDS, MARKS, VIEW_NAMES } from '../../terms';
+import { Tag } from '../../ui/content';
 import { InfoHint } from '../../ui/hint';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { ContainerBox, ExternalCard, FoldedCard, TypeCard } from '../canvas/cards';
@@ -62,14 +63,14 @@ function inside(container: ViewNode, unfolded: ReadonlySet<string>): Inside {
   return { cards, chips, width, height: y };
 }
 
-/** The badge on an undeclared dependency: the warning and how many imports and calls make it, with its ⓘ. */
-export function UndeclaredBadge({ edge }: { edge: ViewEdge }) {
+/** The tag on an undeclared dependency: the warning and how many imports and calls make it, with its ⓘ. */
+export function UndeclaredTag({ edge }: { edge: ViewEdge }) {
   return (
     <>
-      <span className={styles.warningBadge}>
+      <Tag tone="warning">
         <Icon glyph={TriangleAlert} size="tiny" />
         {DIAGNOSTIC_WORDS.count(evidenceCount(edge))}
-      </span>
+      </Tag>
       <InfoHint subject={DIAGNOSTIC_WORDS.undeclared}>{ABOUT.undeclared}</InfoHint>
     </>
   );
@@ -138,7 +139,7 @@ export function ArchitectureView({ view: answer }: { view: View }) {
       })}
       {view.edges.filter(edge => edge.status === 'contradicted').map(edge => {
         const route = routes.get(edgeKey(edge));
-        return route && <Marker key={edgeKey(edge)} at={route.mid}><UndeclaredBadge edge={edge} /></Marker>;
+        return route && <Marker key={edgeKey(edge)} at={route.mid}><UndeclaredTag edge={edge} /></Marker>;
       })}
     </Canvas>
   );

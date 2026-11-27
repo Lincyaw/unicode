@@ -1,24 +1,23 @@
 import { clsx } from 'clsx';
-import { ArrowRight, ArrowUpRight, Code, FileCode } from '../marks/icons';
 import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Entity, Neighbor, Node } from '../../api/types';
-import { ABOUT, kindWord, MEMBER_COLUMNS, OP_COLUMNS, SECTIONS } from '../../terms';
-import { InfoHint } from '../../ui/hint';
+import { ABOUT, MEMBER_COLUMNS, OP_COLUMNS, SECTIONS } from '../../terms';
+import { Tag } from '../../ui/content';
+import { Hint, InfoHint } from '../../ui/hint';
+import { Icon } from '../../ui/icons';
 import table from '../../ui/table.module.css';
-import { CaseSections, CheckedSections, CodeSections, ContainerSections, StepSections, TypeSections } from '../details/kindSections';
-import { DiagnosticTag, NodeRow, Section, SourcePanel, ViaBadge } from '../details/sections';
+import { CaseSections, CheckedSections, CodeSections, ContainerSections, EventSections, StepSections } from '../details/kindSections';
+import { DiagnosticTag, NodeRow, Section, SourcePanel, ViaTag } from '../details/sections';
 import detailStyles from '../details/details.module.css';
 import { NodeLink } from '../marks/NodeLink';
 import { Signature } from '../marks/Signature';
-import { Badge } from '../marks/Badge';
 import { displayName, fileOf, opLine, placeOf, relative, scopeOf, statusOf, stepLine, stepName } from '../marks/format';
-import { KindIcon } from '../marks/icons';
+import { ArrowRight, ArrowUpRight, Code, FileCode, KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
 import { StatusDot } from '../marks/StatusDot';
 import styles from './entity.module.css';
-import { Icon } from '../../ui/icons';
 
 /*
  * The entity page (Figma 05, 06): a node in full on the canvas. Every kind has the common head (identity, status,
@@ -33,12 +32,12 @@ function Head({ entity }: { entity: Entity }) {
   return (
     <header className={styles.head}>
       <div className={styles.identity}>
-        <span className={styles.kindIcon}><KindIcon node={node} /></span>
-        <span className="t-mono-strong">{node.id}</span>
+        <KindIcon node={node} />
+        <Hint content={node.id}><span className={clsx(styles.identityText, 't-mono-strong')}>{node.id}</span></Hint>
         <StatusDot status={statusOf(node)} />
-        {(node.attrs.labels ?? []).map(label => <Badge key={label} tone="info">{label}</Badge>)}
+        {(node.attrs.labels ?? []).map(label => <Tag key={label}>{label}</Tag>)}
         <span className={styles.spacer} />
-        <InfoHint subject={node.id}>{ABOUT.card(kindWord(node.kind, node.form, node.layer), node.form, `${node.origin.path}:${node.origin.line}`)}</InfoHint>
+        <InfoHint subject={node.id}>{ABOUT.card(node, `${node.origin.path}:${node.origin.line}`)}</InfoHint>
       </div>
       {node.summary !== '' && <h2 className={styles.summary}>{node.summary}</h2>}
       {node.kind === 'op' && node.layer === 'design' && <OpSignature op={node} />}
@@ -150,7 +149,7 @@ function Between({ node, page, before, after, beforeTitle, afterTitle, badge }: 
           const neighbor = nodes[index];
           const target = neighbor ? neighbor.node : (item as Node);
           return (
-            <span key={target.id} className={styles.withBadge}>
+            <span key={target.id} className={styles.withTag}>
               <NodeChip node={target} label={displayName(target, scope)} status={statusOf(target)} mode="link" />
               {neighbor && badge?.(neighbor)}
             </span>
@@ -200,7 +199,7 @@ function TypeBody({ entity }: { entity: Entity }) {
           <Between node={entity.node} page={entity.node.id} before={detail.referredBy} after={detail.refers} beforeTitle={SECTIONS.referredBy} afterTitle={SECTIONS.refers} />
         </Section>
       )}
-      <TypeSections entity={entity} preview={false} />
+      <EventSections entity={entity} />
       <FlowSteps entity={entity} />
       <Sources entity={entity} />
     </>
@@ -222,12 +221,12 @@ function OpBody({ entity }: { entity: Entity }) {
           <Between
             node={self} page={entity.node.id} before={detail.callers.map(neighbor => neighbor.node)} after={detail.callees}
             beforeTitle={SECTIONS.caller} afterTitle={SECTIONS.callee}
-            badge={neighbor => (neighbor.edge.kind === 'reaches' ? <ViaBadge count={neighbor.edge.attrs.via?.length ?? 0} /> : null)}
+            badge={neighbor => (neighbor.edge.kind === 'reaches' ? <ViaTag count={neighbor.edge.attrs.via?.length ?? 0} /> : null)}
           />
         </Section>
       )}
       <FlowSteps entity={entity}>
-        {step => (step.step && step.step.children.length > 0 ? <Badge tone="neutral">{SECTIONS.children} {step.step.children.map(id => `#${id.split('#').at(-1) ?? ''}`).join(' ')}</Badge> : null)}
+        {step => (step.step && step.step.children.length > 0 ? <Tag>{SECTIONS.children} {step.step.children.map(id => `#${id.split('#').at(-1) ?? ''}`).join(' ')}</Tag> : null)}
       </FlowSteps>
       {entity.properties.length > 0 && (
         <Section title={SECTIONS.properties}>

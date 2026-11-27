@@ -2,7 +2,7 @@ import { clsx } from 'clsx';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Node } from '../../api/types';
-
+import { MarkButton } from '../../ui/controls';
 import { KindIcon } from './icons';
 import { useLinks, useNodeActions } from './links';
 import { StatusDot } from './StatusDot';
@@ -46,6 +46,6 @@ export function NodeChip({ node, label, state = 'default', mode = 'select', stat
     case 'link':
       return <Link className={control} data-state={state} to={links.entityHref(node.id)}>{content}</Link>;
     case 'select':
-      return <button type="button" className={control} data-state={state} {...actions}>{content}</button>;
+      return <MarkButton className={control} data-state={state} {...actions}>{content}</MarkButton>;
   }
 }

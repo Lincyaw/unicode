@@ -3,7 +3,8 @@ import { ChevronDown, ChevronRight } from '../marks/icons';
 import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Node, ViewNode } from '../../api/types';
-import { ABOUT, CONTROLS, kindWord } from '../../terms';
+import { ABOUT, CONTROLS } from '../../terms';
+import { MarkButton } from '../../ui/controls';
 import { Hint, InfoHint } from '../../ui/hint';
 import { opLine } from '../marks/format';
 import { KindIcon } from '../marks/icons';
@@ -30,7 +31,7 @@ function NodeHint({ node }: { node: Node }) {
   return (
     <Above>
       <InfoHint subject={node.id}>
-        <span>{ABOUT.card(kindWord(node.kind, node.form, node.layer), node.form, `${node.origin.path}:${node.origin.line}`)}</span>
+        <span>{ABOUT.card(node, `${node.origin.path}:${node.origin.line}`)}</span>
         {node.summary !== '' && <span>{node.summary}</span>}
       </InfoHint>
     </Above>
@@ -53,7 +54,7 @@ function Rows({ rows, onUnfold }: { rows: CardRow[]; onUnfold?: () => void }) {
         // A long signature is cut short on the card; its whole text shows while the pointer rests on it.
         return <Hint key={index} content={row.text}><NodeRef id={row.op.id} className={styles.op}>{row.text}</NodeRef></Hint>;
       case 'more':
-        return <button key={index} type="button" className={clsx(styles.field, styles.more)} aria-expanded="false" onClick={onUnfold}>+{row.count}</button>;
+        return <MarkButton key={index} className={clsx(styles.field, styles.more)} aria-expanded="false" onClick={onUnfold}>+{row.count}</MarkButton>;
     }
   });
 }

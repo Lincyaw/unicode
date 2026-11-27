@@ -1,18 +1,17 @@
-import { ArrowRight, Check, FileCode, FlaskConical, Play, Split, TriangleAlert, X } from '../marks/icons';
 import type { Entity, Neighbor, Node, RunResult } from '../../api/types';
-import { ABOUT, CASE_SOURCES, DIAGNOSTIC_WORDS, HISTORY, SECTIONS } from '../../terms';
-
-import { Badge } from '../marks/Badge';
+import { ABOUT, CASE_SOURCES, DIAGNOSTIC_WORDS, EDGE_KINDS, HISTORY, SECTIONS } from '../../terms';
+import { Tag } from '../../ui/content';
+import { ButtonLink } from '../../ui/controls';
+import { Icon } from '../../ui/icons';
 import { fileOf, opLine, placeOf, relative, scopeOf, shortPath, stepLine, stepName, typeParts } from '../marks/format';
-import { KindIcon } from '../marks/icons';
+import { ArrowRight, Check, FileCode, FlaskConical, KindIcon, Play, Split, TriangleAlert, Workflow, X } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { caseSource } from './nodeWords';
 import { useFolded } from './folded';
 import { NodeLink } from '../marks/NodeLink';
 import { TypeText } from '../marks/Signature';
-import { ChipList, CodePanel, DiagnosticTag, Facts, MoreBadge, NodeRow, Section, SignaturePanel, SymbolLine, ViaBadge } from './sections';
+import { ChipList, CodePanel, DiagnosticTag, Facts, NodeRow, Section, SignaturePanel, SymbolLine, UnfoldButton, ViaTag } from './sections';
 import styles from './details.module.css';
-import { Icon } from '../../ui/icons';
 
 /*
  * The sections of a node's page by its kind (api/entities.tsp), shared by the right pane's preview and the canvas's
@@ -38,24 +37,31 @@ function place(node: Node): string {
   return placeOf(node.origin);
 }
 
-/** The steps of each flow a node takes part in, grouped by flow. */
-function flowsOf(steps: Node[]): { flow: Node; steps: Node[] }[] {
-  const byFlow = Map.groupBy(steps, step => step.step?.flow ?? '');
-  return [...byFlow].map(([flow, group]) => ({
-    flow: { ...(group[0] as Node), id: flow, title: flow.split('.').at(-1) ?? flow, kind: 'flow', form: 'flow', status: undefined },
-    steps: group,
-  }));
+/** The flow a step lies in, by its identity: the interface gives a step's flow only as that. */
+function flowOf(step: Node): string {
+  if (step.step === undefined) {
+    throw new Error(`The entity lists ${step.id} among the steps it takes part in, but the step carries no step information`);
+  }
+  return step.step.flow;
 }
 
-/** The flows it takes part in: each flow with the steps the node takes part in. */
+/**
+ * The flows it takes part in: each flow, named by its identity relative to the node's component, with the steps the
+ * node takes part in.
+ */
 export function FlowsSection({ entity }: { entity: Entity }) {
   if (entity.flows.length === 0) {
     return null;
   }
+  const scope = scopeOf(entity.node.id);
   return (
     <Section title={SECTIONS.flows}>
-      {flowsOf(entity.flows).map(({ flow, steps }) => (
-        <NodeRow key={flow.id} node={flow} icon dot={false} tone="link" trailing={<span className={styles.indexes}>{steps.map(step => <NodeLink key={step.id} node={step} tone="inherit" />)}</span>} />
+      {[...Map.groupBy(entity.flows, flowOf)].map(([flow, steps]) => (
+        <div key={flow} className={styles.row}>
+          <Icon glyph={Workflow} size="small" />
+          <NodeLink node={{ id: flow, title: relative(flow, scope) }} />
+          <span className={styles.trailing}><span className={styles.indexes}>{steps.map(step => <NodeLink key={step.id} node={step} tone="inherit" />)}</span></span>
+        </div>
       ))}
     </Section>
   );
@@ -116,7 +122,7 @@ export function ContainerSections({ entity }: { entity: Entity }) {
                 <NodeLink node={{ id: edge.to, title: edge.to }} tone="inherit" />
               </span>
               <span className={styles.trailing}>
-                <Badge tone="warning">{DIAGNOSTIC_WORDS.undeclared} {(edge.attrs.imports?.length ?? 0) + (edge.attrs.calls?.length ?? 0)}</Badge>
+                <Tag tone="warning">{DIAGNOSTIC_WORDS.undeclared} {(edge.attrs.imports?.length ?? 0) + (edge.attrs.calls?.length ?? 0)}</Tag>
               </span>
             </div>
           ))}
@@ -135,7 +141,7 @@ function FilesSection({ files }: { files: Node[] }) {
   return (
     <Section title={SECTIONS.code}>
       {shown.map(file => <NodeRow key={file.id} node={file} icon dot={false} tone="muted" label={shortPath(file.title)} />)}
-      {more > 0 && <MoreBadge count={more} icon={FileCode} onClick={unfold} />}
+      {more > 0 && <UnfoldButton count={more} icon={FileCode} onClick={unfold} />}
     </Section>
   );
 }
@@ -150,7 +156,7 @@ function ExternalSections({ entity }: { entity: Entity }) {
       {ops.length > 0 && <Section title={SECTIONS.signature}>{ops.map(op => <SignaturePanel key={op.id} op={op} />)}</Section>}
       {detail && detail.dependedOnBy.length > 0 && (
         <Section title={SECTIONS.dependedOnBy}>
-          {detail.dependedOnBy.map(({ node, edge }) => <NodeRow key={node.id} node={node} trailing={edge.kind} />)}
+          {detail.dependedOnBy.map(({ node, edge }) => <NodeRow key={node.id} node={node} trailing={EDGE_KINDS[edge.kind]} />)}
         </Section>
       )}
       <RealizedSection entity={entity} />
@@ -159,35 +165,12 @@ function ExternalSections({ entity }: { entity: Entity }) {
   );
 }
 
-/** A type's sections: attributes, fields, operations, references, events' publishers and subscribers. */
-export function TypeSections({ entity, preview }: { entity: Entity; preview: boolean }) {
-  const { node } = entity;
+/** An event's sections, on its preview and its page alike: the steps that publish it and the operations subscribed to it. */
+export function EventSections({ entity }: { entity: Entity }) {
   const detail = entity.type;
-  const scope = scopeOf(node.id);
-  const container = entity.ancestors.at(-1);
-  const attributes = presentRows([
-    [SECTIONS.labels, node.attrs.labels?.join(', ')],
-    [SECTIONS.container, container?.form === 'system' ? undefined : container?.title],
-  ]);
-  const members = detail?.members ?? [];
+  const scope = scopeOf(entity.node.id);
   return (
     <>
-      {preview && attributes.length > 0 && <Section title={SECTIONS.attributes}><Facts rows={attributes} /></Section>}
-      {preview && members.length > 0 && (
-        <Section title={members[0]?.kind === 'value' ? SECTIONS.values : SECTIONS.fields}>
-          {members.map(member => (
-            <div key={member.name} className={styles.field} data-warn={member.status === 'contradicted' || member.status === 'missing'}>
-              <span>{member.name}</span>
-              <span className={styles.fieldType}><TypeText parts={typeParts(member.type ?? member.codeType ?? '', scope, member.refers)} references="link" /></span>
-            </div>
-          ))}
-        </Section>
-      )}
-      {preview && detail && detail.ops.length > 0 && (
-        <Section title={SECTIONS.ops}>
-          {detail.ops.map(row => <NodeRow key={row.op.id} node={row.op} label={opLine(row.op)} />)}
-        </Section>
-      )}
       {detail && detail.emittedBy.length > 0 && (
         <Section title={SECTIONS.emittedBy}>
           {detail.emittedBy.map(step => (
@@ -201,11 +184,48 @@ export function TypeSections({ entity, preview }: { entity: Entity; preview: boo
       {detail && detail.subscribers.length > 0 && (
         <Section title={SECTIONS.subscribers}>{detail.subscribers.map(op => <NodeRow key={op.id} node={op} label={op.id} />)}</Section>
       )}
-      {preview && detail && detail.refers.length > 0 && <Section title={SECTIONS.refers}><ChipList nodes={detail.refers} scope={scope} /></Section>}
-      {preview && detail && detail.referredBy.length > 0 && <Section title={SECTIONS.referredBy}><ChipList nodes={detail.referredBy} scope={scope} /></Section>}
-      {preview && <PropertiesSection entity={entity} />}
-      {preview && <FlowsSection entity={entity} />}
-      {preview && <RealizedSection entity={entity} />}
+    </>
+  );
+}
+
+/**
+ * A type's sections in the preview: attributes, fields, operations, an event's publishers and subscribers, references,
+ * then the properties, flows and code; its page draws the fields, operations and references its own way.
+ */
+export function TypePreviewSections({ entity }: { entity: Entity }) {
+  const { node } = entity;
+  const detail = entity.type;
+  const scope = scopeOf(node.id);
+  const container = entity.ancestors.at(-1);
+  const attributes = presentRows([
+    [SECTIONS.labels, node.attrs.labels?.join(', ')],
+    [SECTIONS.container, container?.form === 'system' ? undefined : container?.title],
+  ]);
+  const members = detail?.members ?? [];
+  return (
+    <>
+      {attributes.length > 0 && <Section title={SECTIONS.attributes}><Facts rows={attributes} /></Section>}
+      {members.length > 0 && (
+        <Section title={members[0]?.kind === 'value' ? SECTIONS.values : SECTIONS.fields}>
+          {members.map(member => (
+            <div key={member.name} className={styles.field} data-warn={member.status === 'contradicted' || member.status === 'missing'}>
+              <span>{member.name}</span>
+              <span className={styles.fieldType}><TypeText parts={typeParts(member.type ?? member.codeType ?? '', scope, member.refers)} references="link" /></span>
+            </div>
+          ))}
+        </Section>
+      )}
+      {detail && detail.ops.length > 0 && (
+        <Section title={SECTIONS.ops}>
+          {detail.ops.map(row => <NodeRow key={row.op.id} node={row.op} label={opLine(row.op)} />)}
+        </Section>
+      )}
+      <EventSections entity={entity} />
+      {detail && detail.refers.length > 0 && <Section title={SECTIONS.refers}><ChipList nodes={detail.refers} scope={scope} /></Section>}
+      {detail && detail.referredBy.length > 0 && <Section title={SECTIONS.referredBy}><ChipList nodes={detail.referredBy} scope={scope} /></Section>}
+      <PropertiesSection entity={entity} />
+      <FlowsSection entity={entity} />
+      <RealizedSection entity={entity} />
     </>
   );
 }
@@ -233,7 +253,7 @@ export function OpSections({ entity }: { entity: Entity }) {
 /** A callee: its name, and where it is or how many detail functions lead to it. */
 function CalleeRow({ neighbor }: { neighbor: Neighbor }) {
   const via = neighbor.edge.kind === 'reaches' ? neighbor.edge.attrs.via?.length ?? 0 : 0;
-  return <NodeRow node={neighbor.node} icon dot={false} trailing={via > 0 ? <ViaBadge count={via} /> : place(neighbor.node)} />;
+  return <NodeRow node={neighbor.node} icon dot={false} trailing={via > 0 ? <ViaTag count={via} /> : place(neighbor.node)} />;
 }
 
 /** A step's sections (Figma 02, 09): what it calls or handles, who calls whom, its code trace, sub-steps and cases. */
@@ -279,8 +299,10 @@ export function StepSections({ entity }: { entity: Entity }) {
       {(evidence?.branches !== undefined || (entity.coveredBy?.length ?? 0) > 0) && (
         <Section title={SECTIONS.stepCases} about={ABOUT.stepCases}>
           <div className={styles.chips}>
-            {evidence?.branches?.map(branch => <Badge key={branch.label} tone="neutral" icon={Split}>{branch.label} {branch.cases}</Badge>)}
-            {entity.coveredBy?.map(item => <Badge key={item.id} tone="info" icon={FlaskConical} to={links.entityHref(item.id)}>{item.title}</Badge>)}
+            {evidence?.branches?.map(branch => <Tag key={branch.label}><Icon glyph={Split} size="tiny" />{branch.label} {branch.cases}</Tag>)}
+            {entity.coveredBy?.map(item => (
+              <ButtonLink key={item.id} to={links.entityHref(item.id)} variant="line" size="small"><Icon glyph={FlaskConical} size="tiny" />{item.title}</ButtonLink>
+            ))}
           </div>
         </Section>
       )}
@@ -316,7 +338,7 @@ export function CaseSections({ entity }: { entity: Entity }) {
   return (
     <>
       <div className={styles.chips}>
-        <Badge tone={source === CASE_SOURCES.counterexample ? 'warning' : source === CASE_SOURCES.recorded ? 'info' : 'neutral'} icon={source === CASE_SOURCES.counterexample ? TriangleAlert : undefined}>{source}</Badge>
+        {source === CASE_SOURCES.counterexample ? <Tag tone="warning"><Icon glyph={TriangleAlert} size="tiny" />{source}</Tag> : <Tag>{source}</Tag>}
       </div>
       {(node.attrs.values ?? []).length > 0 && <Section title={SECTIONS.valuesOfCase}><CodePanel lines={node.attrs.values ?? []} /></Section>}
       {history.length > 0 && (
@@ -404,7 +426,9 @@ export function CodeSections({ entity }: { entity: Entity }) {
       {detail && detail.details.length > 0 && (
         <Section title={SECTIONS.details} about={ABOUT.details}>
           <div className={styles.chips}>
-            {detail.details.map(fn => <Badge key={fn.id} tone="neutral" mono to={links.entityHref(fn.id)}><KindIcon node={fn} size="tiny" />{fn.title}</Badge>)}
+            {detail.details.map(fn => (
+              <ButtonLink key={fn.id} to={links.entityHref(fn.id)} variant="line" size="small"><KindIcon node={fn} size="tiny" /><span className="t-mono">{fn.title}</span></ButtonLink>
+            ))}
           </div>
         </Section>
       )}

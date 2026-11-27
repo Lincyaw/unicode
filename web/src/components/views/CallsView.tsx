@@ -1,15 +1,15 @@
-import { X } from '../marks/icons';
-import { Link } from 'react-router';
 import type { View, ViewEdge, ViewNode } from '../../api/types';
 import { ABOUT, MARKS, SECTIONS, VIEW_NAMES } from '../../terms';
+import { Tag } from '../../ui/content';
+import { ButtonLink } from '../../ui/controls';
 import { InfoHint } from '../../ui/hint';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { CHIP_HEIGHT, chipWidth } from '../canvas/sizes';
 import { Lines, Marker, type Line } from '../canvas/Edges';
 import { arrange, route, type Link as LayoutLink, type Rect, type Route } from '../canvas/layout';
 import { statusOf } from '../marks/format';
-import { ViaBadge } from '../details/sections';
-import { Badge } from '../marks/Badge';
+import { ViaTag } from '../details/sections';
+import { ChevronUp, Merge } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
 import { edgeKey } from './graphParts';
@@ -109,7 +109,7 @@ export function CallsView({ view }: { view: View }) {
             <NodeChip node={node} state={stateOf(node, folded)} status={statusOf(node)} />
             {count !== undefined && (
               <span className={styles.count}>
-                <Badge tone="neutral"><Icon glyph={X} size="tiny" />{count}</Badge>
+                <Tag><Icon glyph={Merge} size="tiny" />{count}</Tag>
                 <InfoHint subject={MARKS.merged}>{ABOUT.merged}</InfoHint>
               </span>
             )}
@@ -118,11 +118,11 @@ export function CallsView({ view }: { view: View }) {
       })}
       {view.edges.filter(edge => edge.kind === 'reaches').map(edge => {
         const path = routes.get(edgeKey(edge));
-        return path && <Marker key={edgeKey(edge)} at={path.mid}><ViaBadge count={edge.attrs.via?.length ?? 0} /></Marker>;
+        return path && <Marker key={edgeKey(edge)} at={path.mid}><ViaTag count={edge.attrs.via?.length ?? 0} /></Marker>;
       })}
       {collapse && (
         <Placed rect={{ x: detailStart, y: lowest + CHIP_HEIGHT, width: 120, height: CHIP_HEIGHT }} className={styles.chipSlot}>
-          <Link className={styles.collapse} to={collapse}><Icon glyph={X} size="tiny" />{SECTIONS.collapse}</Link>
+          <ButtonLink to={collapse} variant="line" size="small"><Icon glyph={ChevronUp} size="tiny" />{SECTIONS.collapse}</ButtonLink>
         </Placed>
       )}
     </Canvas>
