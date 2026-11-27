@@ -324,7 +324,7 @@ func (st *state) viewApplies(kind view.ViewKind, input string) bool {
 	if known, ok := st.applies.Load(key); ok {
 		return known.(bool)
 	}
-	_, err := view.Select(&st.g, kind, input, nil)
+	_, err := view.Select(&st.g, kind, input, nil, view.ClassLayerDesign, view.C4LevelContainer)
 	st.applies.Store(key, err == nil)
 	return err == nil
 }

@@ -19,7 +19,25 @@ type Broken record "一张合乎约束的图做了一处违反某条约束的改
   field code: string
 }
 
+type MemberKind enum "类型的成员是字段还是枚举值" {
+  value field
+  value value
+}
+
+type Member record "设计类型的一个字段或枚举值，与落实该类型的代码类型的逐项比较（model.md §10 第 18 条）：字段的类型、代码中的类型、设计和代码中是否有它、字段类型中写出的设计类型，以及没有代码类型落实该类型时不给的状态" {
+  field kind: MemberKind
+  field name: string
+  field type: string
+  field codeType: string
+  field inDesign: bool
+  field inCode: bool
+  field refers: list<string>
+  field status: optional<graph.Status>
+}
+
 op conform(g: graph.Graph) -> Checked "在推导过的图上，检查需要代码才能判断的约束（design.md §5.3）"
+
+op members(g: graph.Graph, ids: list<string>) -> map<string, list<Member>> "每个设计类型的成员：设计中写出的字段按次序，枚举再加它的值和只在代码中有的值；各与恰好一个落实该类型的代码类型比较，没有或有几个时不给状态"
 
 property accepts-conforming-graph invariant "合乎约束的图推导、检查之后没有诊断，每个声明项的状态都是 verified" {
   about conform

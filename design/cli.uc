@@ -67,7 +67,7 @@ flow query-graph "用户运行 node get、node search、node refs、slice、impa
     cli -> design.load(files)
     cli -> graph.Graph.derive()
     cli -> query.slice(g, ids, expand)
-    cli -> view.select(g, kind, id, expand)
+    cli -> view.select(g, kind, id, expand, layer, level)
   }
 }
 

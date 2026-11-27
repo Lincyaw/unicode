@@ -86,7 +86,7 @@ func candidates(files map[string]RepoFile) []candidate {
 var viewInputs = map[view.ViewKind]func(candidate) bool{
 	view.ViewKindArchitecture: isDesignContainerCandidate,
 	view.ViewKindClass: func(c candidate) bool {
-		return c.kind == graph.NodeKindContainer || c.kind == graph.NodeKindType
+		return c.layer == graph.LayerDesign && (c.kind == graph.NodeKindContainer || c.kind == graph.NodeKindType)
 	},
 	view.ViewKindSequence: func(c candidate) bool { return c.kind == graph.NodeKindFlow },
 	view.ViewKindActivity: func(c candidate) bool { return c.kind == graph.NodeKindFlow },
@@ -175,8 +175,14 @@ func genQueryCommand(files map[string]RepoFile) *rapid.Generator[[]string] {
 			if rapid.IntRange(0, 4).Draw(t, "anyInput?") == 0 {
 				takes = nil
 			}
-			if (kind != view.ViewKindArchitecture && kind != view.ViewKindEvents) || rapid.Bool().Draw(t, "input?") {
+			if !slices.Contains(wholeSystemViews, kind) || rapid.Bool().Draw(t, "input?") {
 				command = append(command, id("input", takes))
+			}
+			if rapid.IntRange(0, 3).Draw(t, "layer?") == 0 {
+				command = append(command, "--layer", rapid.SampledFrom([]string{"design", "code"}).Draw(t, "layer"))
+			}
+			if rapid.IntRange(0, 3).Draw(t, "level?") == 0 {
+				command = append(command, "--level", rapid.SampledFrom([]string{"context", "container"}).Draw(t, "level"))
 			}
 			for range rapid.IntRange(0, 2).Draw(t, "expandCount") {
 				x := id("expand", func(c candidate) bool { return c.kind == graph.NodeKindContainer || c.kind == graph.NodeKindOp })
@@ -196,11 +202,16 @@ func genQueryCommand(files map[string]RepoFile) *rapid.Generator[[]string] {
 	})
 }
 
+// wholeSystemViews are the views that take the whole system when no input is given.
+var wholeSystemViews = []view.ViewKind{view.ViewKindArchitecture, view.ViewKindEvents, view.ViewKindDdd, view.ViewKindC4}
+
 // parsedCommand is a query command as genCommand writes it.
 type parsedCommand struct {
 	positional []string
 	expand     []string
 	kind       string
+	layer      string
+	level      string
 	withCode   bool
 	rev        bool
 }
@@ -215,6 +226,12 @@ func parseCommand(command []string) parsedCommand {
 		case "--kind":
 			i++
 			p.kind = command[i]
+		case "--layer":
+			i++
+			p.layer = command[i]
+		case "--level":
+			i++
+			p.level = command[i]
 		case "--rev":
 			i++
 			p.rev = true
@@ -232,7 +249,8 @@ func parseCommand(command []string) parsedCommand {
 
 // directResult calls query or view as the command asks, on the graph g, and
 // returns the result and whether the command names an identity that is not
-// a node of g, or a view that does not apply to its input.
+// a node of g, or a view that does not apply to its input or does not read
+// its --layer or --level.
 func directResult(t rapid.TB, g *graph.Graph, p parsedCommand) (any, bool, bool) {
 	missing := func(ids ...string) bool {
 		return slices.ContainsFunc(ids, func(id string) bool { return g.Node(id) == nil })
@@ -260,14 +278,24 @@ func directResult(t rapid.TB, g *graph.Graph, p parsedCommand) (any, bool, bool)
 	case "impact":
 		result, err = query.Impact(g, args[1:])
 	case "view":
-		id := ""
+		kind, id := view.ViewKind(args[1]), ""
 		if len(args) > 2 {
 			id = args[2]
+		}
+		if p.layer != "" && kind != view.ViewKindClass || p.level != "" && kind != view.ViewKindC4 {
+			return nil, false, true
 		}
 		if missing(viewIdentitiesOf(id, p.expand)...) {
 			return nil, true, false
 		}
-		result, err = view.Select(g, view.ViewKind(args[1]), id, p.expand)
+		layer, level := view.ClassLayerDesign, view.C4LevelContainer
+		if p.layer != "" {
+			layer = view.ClassLayer(p.layer)
+		}
+		if p.level != "" {
+			level = view.C4Level(p.level)
+		}
+		result, err = view.Select(g, kind, id, p.expand, layer, level)
 		if errors.As(err, new(view.NotApplicable)) {
 			return nil, false, true
 		}
@@ -347,7 +375,7 @@ func checkFlowQueryGraph(t rapid.TB, files map[string]RepoFile, command []string
 		return
 	case inapplicable:
 		if code != exitUsage || stdout != "" || stderr == "" {
-			t.Fatalf("the view of unicode %s does not apply to its input, so it should exit with %d and say why on stderr, yet it exited with %d\nstdout: %s\nstderr: %s",
+			t.Fatalf("the view of unicode %s does not apply to its input, or does not read its --layer or --level, so it should exit with %d and say why on stderr, yet it exited with %d\nstdout: %s\nstderr: %s",
 				strings.Join(command, " "), exitUsage, code, stdout, stderr)
 		}
 		return
