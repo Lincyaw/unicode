@@ -14,15 +14,22 @@ import (
 
 func (st *state) resultNodes(id, form string, current bool) []string {
 	out := []string{}
+	times := map[string]time.Time{}
 	for _, source := range st.sources(id, graph.EdgeKindAbout) {
 		node := st.nodes[source]
 		if node.Layer != graph.LayerEvidence || node.Kind != graph.NodeKindResult || node.Form != form || current && st.attr(source, "fresh") != "true" {
 			continue
 		}
+		at, err := time.Parse(time.RFC3339Nano, st.attr(source, "at"))
+		if err != nil {
+			// Invalid reports already have evidence diagnostics and cannot select an outcome.
+			continue
+		}
+		times[source] = at
 		out = append(out, source)
 	}
 	slices.SortFunc(out, func(a, b string) int {
-		return cmp.Or(cmp.Compare(st.attr(b, "at"), st.attr(a, "at")), cmp.Compare(b, a))
+		return cmp.Or(times[b].Compare(times[a]), cmp.Compare(b, a))
 	})
 	return out
 }
