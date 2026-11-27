@@ -15,6 +15,7 @@ import (
 // new nodes and edges. A removed node may come back under its identity.
 //
 //uc:generates graph.compare-follows-identity.head
+//uc:generates graph.compare-lists-changed-attrs.head
 //uc:generates graph.compare-reverses.head
 func genEdit(base Fragment) *rapid.Generator[Fragment] {
 	return rapid.Custom(func(t *rapid.T) Fragment {
@@ -279,9 +280,6 @@ func checkCompareFollowsIdentity(t rapid.TB, base Fragment, head Fragment) {
 		case !samePresent(got.After, after, inHead, sameNode):
 			t.Fatalf("the change of the node %q gives the head's node as %+v, not %+v", want.Id, got.After, after)
 		}
-		if why := attrsMismatch(before.Attrs, after.Attrs, got.Attrs); why != "" {
-			t.Fatalf("the change of the node %q: %s", want.Id, why)
-		}
 	}
 	be, he := indexEdges(base.Edges), indexEdges(head.Edges)
 	keys := slices.SortedFunc(slices.Values(allKeys(be, he)), compareKeys)
@@ -316,6 +314,17 @@ func checkCompareFollowsIdentity(t rapid.TB, base Fragment, head Fragment) {
 			t.Fatalf("the change of the edge %s %q %q gives the base's edge as %+v, not %+v", k.kind, k.from, k.to, got.Before, before)
 		case !samePresent(got.After, after, inHead, sameEdge):
 			t.Fatalf("the change of the edge %s %q %q gives the head's edge as %+v, not %+v", k.kind, k.from, k.to, got.After, after)
+		}
+	}
+}
+
+//uc:checks graph.compare-lists-changed-attrs
+func checkCompareListsChangedAttrs(t rapid.TB, base Fragment, head Fragment) {
+	gb, gh := build(t, base.Nodes, base.Edges), build(t, head.Nodes, head.Edges)
+	bn, hn := indexNodes(base.Nodes), indexNodes(head.Nodes)
+	for _, got := range Compare(&gb, &gh).Nodes {
+		if why := attrsMismatch(bn[got.Id].Attrs, hn[got.Id].Attrs, got.Attrs); why != "" {
+			t.Fatalf("the change of the node %q: %s", got.Id, why)
 		}
 	}
 }

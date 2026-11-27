@@ -196,11 +196,18 @@ property digest-follows-content invariant "相同的种类、形式、摘要和�
   manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
 }
 
-property compare-follows-identity relation "比较按标识对齐：只在 head 中的节点为新增，只在 base 中的为删除，两边都有而内容哈希不同的为修改，其余的不列出；边按种类、起点和终点对齐，两边都有而属性不同的为修改；before 和 after 是该项在 base 和 head 中的样子；节点的 attrs 按键排序，恰列出两边的值不同的键，每个键上去掉的值是 base 中的值的子序列，加上的值是 head 中的值的子序列，两者没有相同的值，从两边分别除去它们之后剩下的值相同；节点按标识排序，边按种类、起点、终点排序" {
+property compare-follows-identity relation "compare 按 model.md §8 对齐节点和边，恰列出新增、删除和修改的项并按此排序，before 和 after 是该项在 base 和 head 中的内容" {
   about compare
   forall base: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
   forall head: Fragment generated "base 的一份改动：去掉一些节点和边，改动一些节点的内容和一些边的属性，改动一些项的出处、来源、层或显著性而不改内容，再加上一些新的节点和边"
   manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
+}
+
+property compare-lists-changed-attrs relation "比较中每个节点的 attrs 按键排序，恰列出两边的值不同的键，每个键上去掉和加上的值分别是 base 和 head 中的值的子序列，两者没有相同的值，各自除去之后剩下的值相同" {
+  about compare
+  forall base: Fragment generated "零至八个标识互不相同的节点，以及零至十二条两端都在其中、彼此不同的边：标识是 a、b、.、#、- 组成的一至四个字符，种类、层和来源任取，形式、摘要和属性取自含引号、< 和中文的短文字，可以有空的属性列表和自环，节点都不显著"
+  forall head: Fragment generated "base 的一份改动：每个节点和边约五分之一删去、五分之一改内容或属性、五分之一只改出处、来源、层或显著性，其余不变，再加上零至三个节点和零至四条边，新节点可能用回删去的节点的标识"
+  manual "需要判断去掉和加上的值是不是两边的值的子序列，表达式没有子序列的判断"
 }
 
 property compare-reverses relation "compare(head, base) 是 compare(base, head) 的反面：列出的项和次序相同，新增与删除互换，修改仍是修改，before 与 after 互换，每个属性键上去掉的值与加上的值互换" {
