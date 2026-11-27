@@ -48,6 +48,7 @@ a.badge:hover, button.badge:hover { box-shadow: inset 0 0 0 var(--size-hairline)
 .chip[data-state="folded"] { border-color: var(--border-hairline); background: var(--bg-muted); color: var(--text-muted); }
 .chip[aria-pressed="true"] { background: var(--bg-muted); font: var(--type-mono-strong); }
 .chipLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chip svg, .cover svg, .ref svg { flex: none; }
 
 /*
  * A box on a canvas holds its own click targets: the head is a cover button whose hit area stretches over the nearest

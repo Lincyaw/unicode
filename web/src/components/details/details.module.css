@@ -21,6 +21,9 @@
 .facts dt { color: var(--text-muted); font: var(--type-small); }
 .facts dd { min-width: 0; font: var(--type-code); overflow-wrap: anywhere; }
 
+/* Icons keep their size in a row that runs short of room; the names beside them give way, cut with an ellipsis. */
+.preview svg, .section svg { flex: none; }
+
 .row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; min-height: var(--space-5); color: var(--text-main); }
 .row[data-tone="warning"] { color: var(--accent-warning); }
 .row[data-tone="success"] { color: var(--accent-success); }
