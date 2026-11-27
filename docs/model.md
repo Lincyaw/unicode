@@ -383,9 +383,9 @@
 | 28 | 未实现：M4，要等 `gen` | — |
 | 29 | `design.unresolved-reference`、`design.wrong-reference-kind`、`cli.not-canonical` | `design.rejects-broken-design`、`cli.check-design` |
 | 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5；生成器的 map 名称未实现：[design.md](design.md) §4 没有给出生成器的名称映射 | `design.rejects-broken-design` |
-| 31 | 未实现：表达式的载入尚未实现 | — |
+| 31 | `design.expression-type` | `design.rejects-broken-design` |
 | 32 | 未实现：M4，驱动核对纯操作 | — |
 | 33 | 未实现：M7，评审 | — |
 | 34 | 未实现：黑盒契约的观察绑定、签名和归属检查 | — |
-| 35 | 未实现：黑盒契约的观察与变化范围检查 | — |
+| 35 | `design.invalid-observation`、`design.invalid-change-path`；运行时快照和范围核对未实现：M4 | `design.rejects-broken-design` |
 | 36 | 未实现：M7，观察适配器的评审 | — |

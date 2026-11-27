@@ -25,10 +25,11 @@ import (
 //
 //uc:realizes design.Sample
 type Sample struct {
-	Files map[string]string
-	Nodes []string
-	Edges []string
-	Attrs map[string]map[string][]string
+	Files     map[string]string
+	Nodes     []string
+	Edges     []string
+	Attrs     map[string]map[string][]string
+	EdgeAttrs map[string]map[string][]string
 }
 
 // gNode is one declared node of the model.
@@ -155,7 +156,14 @@ func (d *designer) unique(gen *rapid.Generator[string], label string) string {
 }
 
 func (d *designer) kebab(label string) string { return d.unique(kebabNames, label) }
-func (d *designer) lower(label string) string { return d.unique(lowerNames, label) }
+func (d *designer) lower(label string) string {
+	for {
+		name := d.unique(lowerNames, label)
+		if !slices.Contains(strings.Fields("implies or and not in old raised failure result all any count sum size"), name) {
+			return name
+		}
+	}
+}
 
 func (d *designer) summary(label string) syntax.Summary {
 	return syntax.Summary(summaries.Draw(d.t, label))
@@ -297,6 +305,12 @@ func count(d *designer, label string, low, high int) int {
 //uc:generates design.accepts-valid-design.sample
 func genSample() *rapid.Generator[Sample] {
 	return rapid.Custom(func(t *rapid.T) Sample {
+		if rapid.IntRange(0, 2).Draw(t, "contract") == 0 {
+			if rapid.Bool().Draw(t, "returned value") {
+				return resultContractFixture(t)
+			}
+			return contractFixture(t)
+		}
 		d := newDesign(t, rapid.Bool().Draw(t, "rich"))
 		return d.sample()
 	})

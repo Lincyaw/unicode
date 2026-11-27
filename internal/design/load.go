@@ -425,6 +425,10 @@ func (l *loader) refers(e *entity, t *typ) {
 // opDecl declares an operation under parent: a component, an external actor or a type.
 func (l *loader) opDecl(f *syntax.File, parent, scope *entity, d *syntax.OpDecl) {
 	e := &entity{name: string(d.Name), kind: graph.NodeKindOp, form: "op", file: f, pos: d.Pos}
+	e.pure = d.Pure
+	if d.Pure {
+		e.setAttr("pure", []string{"true"})
+	}
 	if d.Summary != nil {
 		e.summary = string(*d.Summary)
 	}
@@ -449,6 +453,7 @@ func (l *loader) opDecl(f *syntax.File, parent, scope *entity, d *syntax.OpDecl)
 		signature := "(" + strings.Join(members(e.params), ", ") + ")"
 		if d.Result != nil {
 			t := l.typeOf(e, scope, d.Result)
+			e.result = t
 			l.refers(e, t)
 			l.depends(e, t.allRefs())
 			signature += " -> " + t.text()
@@ -505,6 +510,7 @@ func (l *loader) flowDecl(f *syntax.File, parent *entity, d *syntax.FlowDecl) {
 	l.checks = append(l.checks, func() {
 		s := &stepper{l: l, flow: e, scope: parent, emitted: map[*entity]bool{}, sent: map[*entity]bool{}}
 		s.list(e, steps, enclosing{}, "")
+		l.flowExpressions(e, parent, d, steps)
 	})
 }
 
@@ -536,6 +542,7 @@ func (l *loader) propertyDecl(f *syntax.File, parent *entity, d *syntax.Property
 		}
 	}
 	l.inputs(e, parent, symbols, limits, cases)
+	l.propertyExpressions(e, parent, d)
 }
 
 // caseDecl declares a declared case of a flow or a property.

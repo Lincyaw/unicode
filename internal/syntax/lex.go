@@ -27,7 +27,8 @@ var ucLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "SendArrow", Pattern: `->>`},
 	{Name: "Arrow", Pattern: `->`},
 	{Name: "DotDot", Pattern: `\.\.`},
-	{Name: "Punct", Pattern: `[{}()\[\]<>,:.=]`},
+	{Name: "Compare", Pattern: `==|!=|<=|>=`},
+	{Name: "Punct", Pattern: `[{}()\[\]<>,:.=+*/-]`},
 	{Name: "NL", Pattern: `\n([ ]*\n)*`},
 	{Name: "Whitespace", Pattern: `[ ]+`},
 })
