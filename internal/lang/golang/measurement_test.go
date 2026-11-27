@@ -206,6 +206,14 @@ func checkMeasuredExecutionKeepsRealEvidence(t rapid.TB, sample MeasurementSampl
 			if sample.Variant == 5 {
 				expected = 3
 			}
+			if sample.Variant == 4 {
+				expected = 3
+				if result.BranchTotal != 2 || !slices.ContainsFunc(candidate.Coverage, func(point lang.Coverage) bool {
+					return point.Kind == "branch" && point.Node == "domain.measured#2" && point.Label == "taken"
+				}) {
+					t.Fatalf("the taken control branch has no branch coverage point: %+v", candidate.Coverage)
+				}
+			}
 			if count != expected {
 				t.Fatalf("actual flow steps were not measured exactly: %+v", candidate.Coverage)
 			}
@@ -284,6 +292,12 @@ func measurementGraph(t rapid.TB, sample MeasurementSample, value int) graph.Gra
 	if kind == graph.NodeKindFlow {
 		add("domain.measured#1", graph.NodeKindStep, "call", "domain.measured", map[string][]string{"index": {"1"}})
 		edge(graph.EdgeKindCalls, "domain.measured#1", op)
+		if sample.Variant == 4 {
+			add("domain.measured#2", graph.NodeKindStep, "opt", "domain.measured#1", map[string][]string{"index": {"1"}})
+			add("domain.measured#3", graph.NodeKindStep, "call", "domain.measured#2", map[string][]string{"index": {"1"}})
+			edge(graph.EdgeKindCalls, "domain.measured#3", "domain.classify")
+			return g
+		}
 		form := "call"
 		target := "domain.classify"
 		if sample.Variant == 5 || sample.Variant == 6 {
