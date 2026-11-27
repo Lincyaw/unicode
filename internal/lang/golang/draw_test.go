@@ -373,12 +373,13 @@ func (w *world) drawStmts(sc scope) []gstmt {
 }
 
 // drawVar draws a package-level variable in any file: closures with
-// statements of their own, or a call that runs when the package is
-// initialized, of a var-free function with one result.
+// statements of their own and references to var-free functions and methods,
+// or a call that runs when the package is initialized, of a var-free
+// function with one result.
 func (w *world) drawVar() {
 	file := w.anyFile("varFile")
 	v := &gvar{file: file, name: w.fresh("var", w.exported("varExported")),
-		form: rapid.SampledFrom([]string{"func", "map", "init"}).Draw(w.t, "varForm")}
+		form: rapid.SampledFrom([]string{"func", "map", "ref", "init"}).Draw(w.t, "varForm")}
 	sc := scope{file: file, freeOnly: true, vars: slices.Clone(w.vars)}
 	switch v.form {
 	case "init":
@@ -393,15 +394,32 @@ func (w *world) drawVar() {
 		}
 		c := rapid.SampledFrom(calls).Draw(w.t, "initCall")
 		v.init = &c
+	case "ref":
+		refs := w.calls(sc)
+		if len(refs) == 0 {
+			return
+		}
+		ref := rapid.SampledFrom(refs).Draw(w.t, "stored")
+		v.entries = []gentry{{ref: &ref}}
 	case "func":
-		v.bodies = [][]gstmt{w.drawStmts(sc)}
+		v.entries = []gentry{{body: w.drawStmts(sc)}}
 	default:
-		for range rapid.IntRange(1, 2).Draw(w.t, "entries") {
-			v.bodies = append(v.bodies, w.drawStmts(sc))
+		for range rapid.IntRange(1, 3).Draw(w.t, "entries") {
+			v.entries = append(v.entries, w.drawEntry(sc))
 		}
 	}
 	w.vars = append(w.vars, v)
 	file.decls = append(file.decls, v)
+}
+
+// drawEntry draws a value of a map: a reference, when there is a function it
+// may refer to, or a function literal.
+func (w *world) drawEntry(sc scope) gentry {
+	if refs := w.calls(sc); len(refs) > 0 && rapid.Bool().Draw(w.t, "entryRef") {
+		ref := rapid.SampledFrom(refs).Draw(w.t, "entry")
+		return gentry{ref: &ref}
+	}
+	return gentry{body: w.drawStmts(sc)}
 }
 
 // bodyTwins are the functions whose bodies are drawn before fn's and that fn
@@ -461,7 +479,7 @@ func (w *world) drawStmt(sc scope, depth int) (gstmt, bool) {
 
 // drawContent draws what a statement does.
 func (w *world) drawContent(sc scope, depth int) (gstmt, bool) {
-	kinds := []string{"call", "call", "call", "assign", "iface", "builtin", "ref", "comment", "varCall", "varCall", "varRef", "varRef"}
+	kinds := []string{"call", "call", "call", "assign", "iface", "builtin", "ref", "ref", "comment", "varCall", "varCall", "varRef", "varRef"}
 	if depth == 0 {
 		kinds = append(kinds, "closure")
 	}
@@ -511,7 +529,7 @@ func (w *world) drawContent(sc scope, depth int) (gstmt, bool) {
 	case "varCall", "varRef":
 		var held []*gvar
 		for _, v := range sc.vars {
-			if visible(sc.file, v.file, v.name) && (kind == "varRef" || v.form != "init") {
+			if visible(sc.file, v.file, v.name) && (kind == "varRef" || v.form == "func" || v.form == "map") {
 				held = append(held, v)
 			}
 		}

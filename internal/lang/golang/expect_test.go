@@ -113,9 +113,9 @@ func (x *expectation) addPackage(p *gpkg) {
 			case *gfunc:
 				x.addFunc(decl, fileID)
 			case *gvar:
-				for k := range decl.bodies {
-					for i := range decl.bodies[k] {
-						x.closureComments(&decl.bodies[k][i])
+				for _, e := range decl.entries {
+					for i := range e.body {
+						x.closureComments(&e.body[i])
 					}
 				}
 			case *gloose:
@@ -329,8 +329,9 @@ func (x *expectation) abstract(sig *gsig) string {
 }
 
 // closureCalls expects the calls of the closures in the variables a body
-// uses, and in the variables their statements use in turn, as calls of the
-// body's function, each variable's once; no refers edge comes with them.
+// uses and the functions and methods they store, and those of the variables
+// their statements use in turn, as calls of the body's function, each
+// variable's once; no refers edge comes with them.
 func (x *expectation) closureCalls(id string, body []gstmt) {
 	held := heldBy(body)
 	seen := map[*gvar]bool{}
@@ -341,9 +342,12 @@ func (x *expectation) closureCalls(id string, body []gstmt) {
 			continue
 		}
 		seen[v] = true
-		for k := range v.bodies {
-			for i := range v.bodies[k] {
-				held = append(held, x.closureStmt(id, &v.bodies[k][i])...)
+		for _, e := range v.entries {
+			if e.ref != nil {
+				x.call(id, funcIdentity(e.ref.target), e.ref)
+			}
+			for i := range e.body {
+				held = append(held, x.closureStmt(id, &e.body[i])...)
 			}
 		}
 	}

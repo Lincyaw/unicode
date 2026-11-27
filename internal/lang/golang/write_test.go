@@ -232,7 +232,7 @@ func (r *writer) stmt(s *gstmt, indent string) {
 	case "varCall":
 		r.put(indent + r.qualified(s.held.file.pkg, s.held.name))
 		if s.held.form == "map" {
-			r.put(`["k0"]`)
+			r.put(`["k0"].(func())`)
 		}
 		r.put("()")
 		r.end(s.layout)
@@ -251,40 +251,58 @@ func (r *writer) stmt(s *gstmt, indent string) {
 
 // call writes a call of a function or a method, recording where its callee is.
 func (r *writer) call(s *gstmt, indent string) {
+	r.callee(s)
+	r.put(r.args(s.target.sig, s.layout, indent))
+}
+
+// callee writes the function or the method a statement names, recording
+// where its name is; without arguments it is a reference.
+func (r *writer) callee(s *gstmt) {
 	if s.via != nil {
 		r.put("new(" + r.qualified(s.via.file.pkg, s.via.name) + ").")
 	} else {
 		r.put(r.qualified(s.target.file.pkg, ""))
 	}
 	r.at[s] = r.pos()
-	r.put(s.target.sig.name + r.args(s.target.sig, s.layout, indent))
+	r.put(s.target.sig.name)
 }
 
-// variable writes a package-level variable: a closure, a map of closures
-// keyed k0, k1 and so on, or a call.
+// variable writes a package-level variable: a closure, a map keyed k0, k1
+// and so on of closures and references, a reference, or a call.
 func (r *writer) variable(v *gvar) {
 	r.put("var " + v.name + " = ")
 	switch v.form {
 	case "init":
 		r.call(v.init, "")
 		r.put("\n")
+	case "ref":
+		r.callee(v.entries[0].ref)
+		r.put("\n")
 	case "func":
-		r.put("func() {\n")
-		for i := range v.bodies[0] {
-			r.stmt(&v.bodies[0][i], "\t")
-		}
-		r.put("}\n")
+		r.literal(v.entries[0].body, "")
+		r.put("\n")
 	default:
-		r.put("map[string]func(){\n")
-		for k := range v.bodies {
-			r.put("\t" + strconv.Quote("k"+strconv.Itoa(k)) + ": func() {\n")
-			for i := range v.bodies[k] {
-				r.stmt(&v.bodies[k][i], "\t\t")
+		r.put("map[string]any{\n")
+		for k := range v.entries {
+			r.put("\t" + strconv.Quote("k"+strconv.Itoa(k)) + ": ")
+			if ref := v.entries[k].ref; ref != nil {
+				r.callee(ref)
+			} else {
+				r.literal(v.entries[k].body, "\t")
 			}
-			r.put("\t},\n")
+			r.put(",\n")
 		}
 		r.put("}\n")
 	}
+}
+
+// literal writes a function literal with its statements.
+func (r *writer) literal(body []gstmt, indent string) {
+	r.put("func() {\n")
+	for i := range body {
+		r.stmt(&body[i], indent+"\t")
+	}
+	r.put(indent + "}")
 }
 
 // blank writes the blank line a layout puts before its statement or field.
