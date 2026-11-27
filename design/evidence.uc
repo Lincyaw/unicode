@@ -72,9 +72,9 @@ property attachment-preserves-input-identity postcondition "有效性取自实�
   forall sample: AttachmentSample generated "当前与陈旧报告、重命名的同输入用例、未录制业务反例，以及只有环境错误但曾有有效执行的报告"
   call attach(sample.graph, sample.reports)
   ensure size(result.diagnostics) == 0
-  ensure count(node in result.fragment.nodes: node.form == "case" and node.attrs["fresh"][0] == "true") == sample.freshCount
-  ensure count(node in result.fragment.nodes: node.form == "check" and node.attrs["fresh"][0] == "true" and node.attrs["businessFailed"][0] == "true") == size(sample.failedChecks)
-  ensure all(id in sample.failedChecks: any(node in result.fragment.nodes: node.form == "check" and node.attrs["check"][0] == id and node.attrs["fresh"][0] == "true" and node.attrs["businessFailed"][0] == "true"))
+  ensure count(node in result.fragment.nodes: node.form == "case" and "true" in node.attrs["fresh"]) == sample.freshCount
+  ensure count(node in result.fragment.nodes: node.form == "check" and "true" in node.attrs["fresh"] and "true" in node.attrs["businessFailed"]) == size(sample.failedChecks)
+  ensure all(id in sample.failedChecks: any(node in result.fragment.nodes: node.form == "check" and id in node.attrs["check"] and "true" in node.attrs["fresh"] and "true" in node.attrs["businessFailed"]))
   ensure all(edge in result.fragment.edges: edge.kind == graph.EdgeKind.covers implies edge.from in sample.currentCases)
 }
 

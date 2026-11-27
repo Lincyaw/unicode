@@ -398,5 +398,5 @@
 | 34 | `check.missing-observer`、`check.multiple-observers`、`check.observer-signature`、`check.observer-outside-container` | `check.rejects-broken-graph` |
 | 35 | `design.invalid-observation`、`design.invalid-change-path`、`lang.golang.expression-failed`、`lang.golang.frame-violation`、`lang.golang.observation-failed` | `design.rejects-broken-design`、`lang.golang.executes-contracts` |
 | 36 | 由性质验证：评审指纹决定观察适配器变化后的待审状态 | `review.evaluation-follows-content` |
-| 37 | `check.runtime-counterexample`、`check.runtime-purity-violation` | `evidence.recordings-are-replayable` |
+| 37 | `check.runtime-counterexample`、`check.runtime-purity-violation` | `evidence.attachment-preserves-input-identity`、`evidence.recordings-are-replayable` |
 | 38 | `design.invalid-codec`、`design.value-type-mismatch` | `design.codecs-are-typed`、`evidence.recordings-are-replayable` |
