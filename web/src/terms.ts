@@ -197,7 +197,7 @@ export const EDGE_KINDS: Record<EdgeKind, string> = {
   generates: '生成',
   observes: '观察',
   substitutes: '替身',
-  publishes: '发布边界',
+  publishes: '发布函数',
   owns: '归属',
   depends: '依赖',
   traces: '代码追溯',

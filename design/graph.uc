@@ -149,7 +149,7 @@ type Comparison record "两张图的差别：新增、删除和修改的节点�
   field edges: list<EdgeChange>
 }
 
-type FingerprintSample record "fingerprints-separate-inputs-and-artifacts 的输入：一张图，加上运行产物的同一张图，改了源位置的同一张图，以及一条边、只改出处的这条边和改了属性的这条边" {
+type FingerprintSample record "fingerprints-separate-inputs-and-artifacts 的输入：一张图，加上运行产物的同一张图，移动了一处源位置的同一张图，以及一条边、改了出处和来源的这条边和改了属性的这条边" {
   field base: Graph
   field artifacts: Graph
   field moved: Graph
@@ -238,9 +238,9 @@ property node-sequence-keeps-index transition "依次调用 addNode 时，每次
   ensure all(n in snapshot.nodes(): snapshot.node(n.id) == n)
 }
 
-property fingerprints-separate-inputs-and-artifacts postcondition "执行输入哈希不随运行产物改变而随源位置改变，edgeDigest 不随出处改变而随属性改变" {
+property fingerprints-separate-inputs-and-artifacts postcondition "执行输入哈希有 64 个字符，图中加入证据、评审、录制用例、生成文件中的代码及与它们相连的边时不变，移动一处源位置时改变，edgeDigest 不随出处和来源改变而随属性改变" {
   about inputDigest, edgeDigest
-  forall sample: FingerprintSample generated "一张随机的图，加上证据或评审节点的同一张图，移动了一处源位置的同一张图，以及一条边和它只改出处、只改属性的两个变体"
+  forall sample: FingerprintSample generated "固定形状的图：一个系统和一条性质、一个源文件中的一至五个函数及第一个函数的自调用边，摘要和函数体是至多 30 个字母、数字、<、> 或空格，行号在 1 至 1000，加上录制用例、运行、结果、评审节点和生成文件中的代码的同一张图，第一个函数后移一至十行的同一张图，以及这条调用边、改了出处和来源的变体与 labels 多一个值的变体"
   call inputDigest(sample.base)
   ensure size(result) == 64
   ensure result == inputDigest(sample.artifacts)

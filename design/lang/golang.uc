@@ -89,9 +89,9 @@ property driver-modes-preserve-claims invariant "生成的驱动和手写谓词�
   manual "需要生成驱动的 Go 源码，再用 go/types 检查并读取它的语法树，表达式不能处理 Go 源码"
 }
 
-property measured-execution-keeps-real-evidence invariant "Go 后端生成驱动并在隔离的进程中执行模型输入：被拒绝的候选输入照常计数，有效输入完整保留，基本块覆盖映射回原始源码，codec 保持表示，不能保持别名关系的输入报错，同步和异步的轨迹须恰好合乎流程，多出的调用也算不合" {
+property measured-execution-keeps-real-evidence invariant "Go 后端在隔离的进程中执行生成的驱动且不改动文件：拒绝的候选输入只计数，有效执行全部保留且输入哈希与规范值相符，基本块覆盖只映射到原始源码，codec 保持私有状态，共享别名的输入报错，轨迹只含被测调用及其后代并恰合同步和异步流程的步骤和分支，多出的异步调用报为流程不合" {
   about Backend
-  forall sample: MeasurementSample generated "value 取 -100 至 100，variant 取 0 至 7，选出八种情形之一：合法的回放、被前提拒绝的输入、codec 编码的私有状态、共享的别名，以及含同步调用、发布或多出的异步调用的流程"
+  forall sample: MeasurementSample generated "value 取 -100 至 100，variant 取 0 至 7，选出八种情形之一：两个声明用例的回放、被前提拒绝的探索输入、codec 编码的私有状态、共享的别名、含同步调用的流程、含发布的流程、多出异步调用的流程，以及反复得到同一有效输入的探索"
   manual "需要按 sample 重建临时的 Go 仓库，编译并在隔离的进程中运行，表达式不能读写文件或运行程序"
 }
 

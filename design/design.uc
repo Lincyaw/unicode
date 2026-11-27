@@ -94,7 +94,7 @@ property inheritance-members-are-resolved invariant "继承的字段和操作按
   manual "需要按 sample 拼出设计文件的文本再解析和载入，表达式不能构造或解析文本"
 }
 
-property codecs-are-typed invariant "codec 载入成对编码和解码操作的引用，encoded(v) 按表示类型检查，签名不对、重复、用于接口、没有声明、表示类型循环依赖或靠继承得到 codec 时载入给出诊断，载入时不调用解码操作" {
+property codecs-are-typed invariant "codec 载入成 codec 属性中编码和解码操作的引用、codecType 属性中的表示类型和指向这两个操作的 refers 边，经 optional、list、set、map 或另一个 codec 终止的表示被接受，encoded(v) 按表示类型检查，签名不对、重复、用于接口、操作没有声明、没有 codec 却用 encoded、表示类型经必填字段或 codec 循环依赖、靠继承得到 codec 时载入给出诊断，解码后的限定不在载入时检查，每条诊断都有 design.<名称> 形式的诊断码、subject、原因、修正和文件内的位置" {
   about load
   forall value: int
   forall variant: int
@@ -103,8 +103,8 @@ property codecs-are-typed invariant "codec 载入成对编码和解码操作的�
   manual "需要按 value 和 variant 拼出含 codec 的设计文件再载入，表达式不能构造或解析文本"
 }
 
-property exploration-prunes-recorded-inputs invariant "loadForExploration 丢弃不再合乎设计的录制用例、忽略目标已不存在的录制文件并保留合法的录制用例，声明的用例和其他设计错误照常给出诊断，而 load 对这些录制用例和文件仍报错" {
+property exploration-prunes-recorded-inputs invariant "loadForExploration 丢弃不再合乎设计的录制用例、忽略目标不存在或不是性质或流程的录制文件并保留合法的录制用例，所得的图与不含这些录制时 load 的图相同，声明的用例、重复的录制用例名、放错路径的录制文件和其他设计错误照常给出诊断，而 load 对丢弃的录制用例和忽略的文件仍报错，两种载入都不改动语法树，每条诊断都有 design.<名称> 形式的诊断码、subject、原因、修正和文件内的位置" {
   about load, loadForExploration
-  forall sample: Sample generated "一组合法的设计文件和录制文件，录制用例有的合法，有的符号或类型已过期、取值在域外、目标已不存在或路径不对"
-  manual "需要把同一组文件分别用 load 和 loadForExploration 载入再比较诊断和丢弃的用例，表达式不能解析文本"
+  forall sample: Sample generated "与 accepts-valid-design 的 sample 取值相同：一组随机的合法文件，约三分之一是黑盒契约，其余是系统文件、至多三层的组件文件和录制文件，录制用例都合乎设计"
+  manual "需要在语法树上增删和改写录制用例，再打印成文件载入，表达式不能构造或打印语法树"
 }

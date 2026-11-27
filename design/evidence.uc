@@ -30,7 +30,7 @@ type Recording record "recordings 的结果：要写的录制文件、要删除�
   field diagnostics: list<diag.Diagnostic>
 }
 
-type Sample record "evidence 各性质的输入：一组用例的结果及其覆盖、录制用例的上限，以及必须留下的用例标识" {
+type Sample record "reduction-preserves-evidence 和 recordings-are-replayable 的输入：一组用例的结果及其覆盖、录制用例的上限，以及必须保持的覆盖点" {
   field cases: list<lang.CaseResult>
   field limit: int
   field required: list<string>
@@ -60,16 +60,16 @@ op applyRecordings(root: string, recording: Recording) -> list<diag.Diagnostic> 
 
 property reduction-preserves-evidence postcondition "reduce 没有诊断时，留下的用例含全部声明的用例和反例，覆盖原有的全部覆盖点，录制用例不超过 limit" {
   about reduce
-  forall sample: Sample generated "声明的用例、反例和覆盖用例的组合，覆盖点互相重叠，上限有时不足以保持覆盖"
+  forall sample: Sample generated "一至八个用例，约一半是声明的用例，约四分之一是反例，其余是覆盖用例，约一半重复出现一次，共一至六个覆盖点，每个用例各以一半机会覆盖其中每一个，上限 0 至 9，有时不足以保持覆盖，输入是十四种模型值之一"
   call reduce(sample.cases, sample.limit)
   ensure size(result.diagnostics) == 0 implies all(original in sample.cases: original.form == "declared" or original.reason == "counterexample" implies any(retained in result.cases: retained.id == original.id))
   ensure size(result.diagnostics) == 0 implies all(original in sample.cases: all(point in original.coverage: any(retained in result.cases: any(covered in retained.coverage: point == covered))))
   ensure size(result.diagnostics) == 0 implies count(retained in result.cases: retained.form != "declared") <= sample.limit
 }
 
-property attachment-preserves-input-identity postcondition "attach 只把输入和执行输入哈希都与当前相符的用例判为当前证据，只把以反例失败的性质或流程标为失败（只有检查错误的不算），covers 边只从当前的用例出发" {
+property attachment-preserves-input-identity postcondition "attach 没有诊断，标为当前的用例结果数恰等于执行输入哈希与当前相符的报告中的用例数，标为失败的当前性质或流程恰是有反例或超出 within 的那些（只有检查错误的不算），covers 边只从输入与当前结果相同的用例出发" {
   about attach
-  forall sample: AttachmentSample generated "十种情形之一：当前通过的报告，执行输入哈希已过期的报告，改了名而输入相同的用例，录制的反例，观察失败，反例和观察失败并存，没有录制的反例，超出 within，表达式求值错误，以及没有有效执行；有时另有一份当前通过的报告"
+  forall sample: AttachmentSample generated "整数输入 -50 至 50，以及十种情形之一：当前通过的报告，执行输入哈希已过期的失败报告，改了名而输入相同的失败用例，图中没有对应用例的录制反例，观察失败，反例和观察失败并存，输入与声明的用例不同的反例，超出 within，报告中的表达式求值错误，以及没有有效执行；约一半另有一份执行输入哈希与前一份相同、用例通过的报告"
   call attach(sample.graph, sample.reports)
   ensure size(result.diagnostics) == 0
   ensure count(node in result.fragment.nodes: node.form == "case" and "true" in node.attrs["fresh"]) == sample.freshCount
@@ -78,8 +78,8 @@ property attachment-preserves-input-identity postcondition "attach 只把输入�
   ensure all(edge in result.fragment.edges: edge.kind == graph.EdgeKind.covers implies edge.from in sample.currentCases)
 }
 
-property recordings-are-replayable invariant "录制的用例回放时得到录制时的同一输入：模型值在调用前冻结，编码往返不丢状态，录制文件重新解析后给出同一输入，失败或损坏时不写出空结果" {
+property recordings-are-replayable invariant "录制文件重新解析后给出录制时的同一输入，再次录制不改动文件，不能写成录制文件的输入、越界路径、损坏的录制文件和符号链接给出诊断而不改动文件，孤立的录制文件被删除，运行记录保存后读出不变且不改写历史，缩小把反例缩到最小的失败输入，缩小中断时保留原反例" {
   about recordings, applyRecordings, shrink, save, read, attach
-  forall sample: Sample generated "含整数、集合、记录、经 codec 编码的对象和替身脚本的输入，其中有的输入有错，以及当前的和陈旧的结果"
+  forall sample: Sample generated "一至八个用例，同一样本的输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者都不能直接写成录制文件；用例约一半是声明的，约四分之一是反例，上限 0 至 9"
   manual "需要在临时目录中写出并读回录制文件和运行记录，表达式不能读写文件"
 }
