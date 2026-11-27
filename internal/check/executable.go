@@ -86,6 +86,8 @@ func (c *checker) generators() {
 				c.fail("check.missing-generator", p.Id, graph.StatusMissing, p.Origin,
 					fmt.Sprintf("the symbol %s of %s is generated, but no function has the binding generates %s.%s", s, p.Id, p.Id, s),
 					fmt.Sprintf("write a generator with the binding generates %s.%s that returns a generator of the symbol's type", p.Id, s))
+			case len(gens) == 1 && c.attr(gens[0], "stub") == "true":
+				c.mark(p.Id, graph.StatusStub)
 			case len(gens) > 1:
 				c.fail("check.multiple-generators", p.Id, graph.StatusContradicted, p.Origin,
 					fmt.Sprintf("the symbol %s of %s has %d generators, %s, but exactly one generates it", s, p.Id, len(gens), strings.Join(gens, ", ")),

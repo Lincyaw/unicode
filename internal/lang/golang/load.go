@@ -42,6 +42,10 @@ func loadForGeneration(root string, srcRoots []string) (loaded, error) {
 }
 
 func loadPackages(root string, srcRoots []string, forGeneration bool) (loaded, error) {
+	return loadPackagesOverlay(root, srcRoots, forGeneration, nil)
+}
+
+func loadPackagesOverlay(root string, srcRoots []string, forGeneration bool, extra map[string][]byte) (loaded, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return loaded{}, err
@@ -52,6 +56,9 @@ func loadPackages(root string, srcRoots []string, forGeneration bool) (loaded, e
 			return loaded{}, fmt.Errorf("the source root %q is not a relative path inside the root", r)
 		}
 		if info, err := os.Stat(filepath.Join(abs, r)); err != nil || !info.IsDir() {
+			if forGeneration && errors.Is(err, os.ErrNotExist) {
+				continue
+			}
 			return loaded{}, fmt.Errorf("the source root %q is not a directory", r)
 		}
 		if rel := path.Clean(filepath.ToSlash(r)); rel == "." {
@@ -67,15 +74,28 @@ func loadPackages(root string, srcRoots []string, forGeneration bool) (loaded, e
 	// checkout whose git status cannot be read.
 	cfg := &packages.Config{Mode: loadMode, Dir: abs, Tests: true, BuildFlags: []string{"-buildvcs=false"}}
 	if forGeneration {
+		cfg.BuildFlags = append(cfg.BuildFlags, "-mod=readonly")
 		cfg.Overlay, err = generatedTestOverlay(abs, srcRoots)
 		if err != nil {
 			return loaded{}, err
+		}
+	}
+	if len(extra) > 0 {
+		if cfg.Overlay == nil {
+			cfg.Overlay = map[string][]byte{}
+		}
+		for name, content := range extra {
+			cfg.Overlay[name] = content
 		}
 	}
 	all, err := packages.Load(cfg, patterns...)
 	if err != nil {
 		return loaded{}, err
 	}
+	return keepLoadedPackages(abs, all)
+}
+
+func keepLoadedPackages(abs string, all []*packages.Package) (loaded, error) {
 	kept := map[string]*packages.Package{}
 	for _, p := range all {
 		if len(filesUnder(abs, p)) == 0 {
@@ -135,6 +155,9 @@ func generatedTestOverlay(root string, srcRoots []string) (map[string][]byte, er
 			prefix := source[:set.Position(file.Package).Offset]
 			empty := append([]byte{}, prefix...)
 			empty = append(empty, "package "+file.Name.Name+"\n"...)
+			if declarations, _ := parser.ParseFile(set, name, source, parser.ParseComments|parser.AllErrors); declarations != nil {
+				empty = append(empty, retainGeneratedCarriers(declarations, source, set)...)
+			}
 			overlay[name] = empty
 			return nil
 		})

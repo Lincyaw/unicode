@@ -527,8 +527,8 @@ func snapshotType(t *typ, seen map[*entity]bool) string {
 	if t == nil || t.builtin == "invalid" {
 		return ""
 	}
-	if t.kind == "call" {
-		return "call values cannot be observed as snapshots"
+	if t.kind == "call" || t.kind == "replies" {
+		return "call values and response scripts cannot be observed as snapshots"
 	}
 	for _, elem := range t.elems {
 		if why := snapshotType(elem, seen); why != "" {

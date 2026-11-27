@@ -1,0 +1,383 @@
+package golang
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io"
+	"io/fs"
+	"maps"
+	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"golang.org/x/mod/modfile"
+	"golang.org/x/tools/go/packages"
+
+	"github.com/lincyaw/unicode/internal/graph"
+	"github.com/lincyaw/unicode/internal/lang"
+)
+
+// loadWithSkeletons keeps every prospective declaration off the repository.
+// Go's overlay cannot add directories; a temporary copy is needed only when a
+// planned package directory does not exist yet.
+func loadWithSkeletons(plan lang.GenPlan, edits []lang.Edit) (loaded, error) {
+	return loadPlannedGo(plan, edits, true)
+}
+
+func loadPlannedGo(plan lang.GenPlan, edits []lang.Edit, bootstrapCarriers bool) (loaded, error) {
+	root, roots := plan.Root, plan.Roots
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return loaded{}, err
+	}
+	if err := validatePlannedGoPaths(abs, edits); err != nil {
+		return loaded{}, err
+	}
+	extra := map[string][]byte{}
+	mirror := false
+	for _, edit := range edits {
+		name := filepath.Join(abs, filepath.FromSlash(edit.Path))
+		extra[name] = edit.Content
+		if _, err := os.Stat(filepath.Dir(name)); errors.Is(err, os.ErrNotExist) {
+			mirror = true
+		} else if err != nil {
+			return loaded{}, err
+		}
+	}
+	if bootstrapCarriers {
+		if err := addSkeletonCarriers(plan, edits, extra); err != nil {
+			return loaded{}, err
+		}
+	}
+	if !mirror {
+		return loadPackagesOverlay(root, roots, true, extra)
+	}
+	temp, err := os.MkdirTemp("", "unicode-skeleton-load-")
+	if err != nil {
+		return loaded{}, err
+	}
+	defer func() { _ = os.RemoveAll(temp) }()
+	if err = copySkeletonModule(abs, temp); err != nil {
+		return loaded{}, err
+	}
+	overlay, err := generatedTestOverlay(abs, roots)
+	if err != nil {
+		return loaded{}, err
+	}
+	for name, content := range extra {
+		overlay[name] = content
+	}
+	for name, content := range overlay {
+		rel, err := filepath.Rel(abs, name)
+		if err != nil || !filepath.IsLocal(rel) {
+			return loaded{}, fmt.Errorf("overlay path %q is outside the repository", name)
+		}
+		target := filepath.Join(temp, rel)
+		if err = os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			return loaded{}, err
+		}
+		if err = os.WriteFile(target, content, 0o600); err != nil {
+			return loaded{}, err
+		}
+	}
+	if err = rewriteSkeletonModules(abs, temp); err != nil {
+		return loaded{}, err
+	}
+	return loadSkeletonMirror(abs, temp, roots)
+}
+func copySkeletonModule(root, temp string) error {
+	return filepath.WalkDir(root, func(name string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, name)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		if entry.Name() == ".git" {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		target := filepath.Join(temp, rel)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o700)
+		}
+		regular := entry.Type().IsRegular()
+		if entry.Type()&os.ModeSymlink != 0 {
+			info, err := os.Stat(name)
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				// Directory links are retained for read-only package imports.
+				// Resolve their original destination before moving the link.
+				resolved, err := filepath.EvalSymlinks(name)
+				if err != nil {
+					return err
+				}
+				return os.Symlink(resolved, target)
+			}
+			regular = info.Mode().IsRegular()
+		}
+		if !regular {
+			return fmt.Errorf("cannot copy nonregular module entry %s for skeleton loading", rel)
+		}
+		src, err := os.Open(name)
+		if err != nil {
+			return err
+		}
+		dst, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
+			return errors.Join(err, src.Close())
+		}
+		_, err = io.Copy(dst, src)
+		return errors.Join(err, src.Close(), dst.Close())
+	})
+}
+
+// Relative local replacements keep referring to their original directories,
+// including modules outside the repository. The source go.mod is unchanged.
+func rewriteSkeletonModules(root, temp string) error {
+	return filepath.WalkDir(temp, func(name string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.Type().IsRegular() || entry.Name() != "go.mod" {
+			return nil
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		file, err := modfile.Parse(name, src, nil)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(temp, filepath.Dir(name))
+		if err != nil {
+			return err
+		}
+		for _, replacement := range file.Replace {
+			if replacement.New.Version != "" || filepath.IsAbs(replacement.New.Path) {
+				continue
+			}
+			original := filepath.Clean(filepath.Join(root, rel, replacement.New.Path))
+			// A replacement within the copied repository must include new skeletons.
+			if within, err := filepath.Rel(root, original); err == nil && filepath.IsLocal(within) {
+				original = filepath.Join(temp, within)
+			}
+			if err = file.AddReplace(replacement.Old.Path, replacement.Old.Version, original, ""); err != nil {
+				return err
+			}
+		}
+		out, err := file.Format()
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(name, out, 0o600)
+	})
+}
+func loadSkeletonMirror(root, temp string, roots []string) (loaded, error) {
+	patterns := []string{}
+	for _, r := range roots {
+		if !filepath.IsLocal(r) {
+			return loaded{}, fmt.Errorf("invalid source root %q", r)
+		}
+		if _, err := os.Stat(filepath.Join(temp, r)); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return loaded{}, err
+		}
+		patterns = append(patterns, "./"+filepath.ToSlash(filepath.Clean(r))+"/...")
+	}
+	if len(patterns) == 0 {
+		return loaded{root: root}, nil
+	}
+	env := os.Environ()
+	// A parent workspace must include the temporary copy instead of the
+	// original module. Preserve its other modules and explicit replacements.
+	work := exec.Command("go", "env", "GOWORK")
+	work.Dir = root
+	workBytes, err := work.Output()
+	if err != nil {
+		return loaded{}, err
+	}
+	workspace := strings.TrimSpace(string(workBytes))
+	env = append(env, "GOWORK=off")
+	if workspace != "" && workspace != "off" {
+		source, err := os.ReadFile(workspace)
+		if err != nil {
+			return loaded{}, err
+		}
+		parsed, err := modfile.ParseWork(workspace, source, nil)
+		if err != nil {
+			return loaded{}, err
+		}
+		for _, use := range parsed.Use {
+			dir := use.Path
+			if !filepath.IsAbs(dir) {
+				dir = filepath.Join(filepath.Dir(workspace), dir)
+			}
+			if filepath.Clean(dir) == filepath.Clean(root) {
+				dir = temp
+			}
+			if err = parsed.AddUse(dir, ""); err != nil {
+				return loaded{}, err
+			}
+			if use.Path != dir {
+				if err = parsed.DropUse(use.Path); err != nil {
+					return loaded{}, err
+				}
+			}
+		}
+		for _, replacement := range parsed.Replace {
+			if replacement.New.Version == "" && !filepath.IsAbs(replacement.New.Path) {
+				absolute := filepath.Join(filepath.Dir(workspace), replacement.New.Path)
+				if err = parsed.AddReplace(replacement.Old.Path, replacement.Old.Version, absolute, ""); err != nil {
+					return loaded{}, err
+				}
+			}
+		}
+		file, err := os.CreateTemp(temp, "unicode-skeleton-*.go.work")
+		if err != nil {
+			return loaded{}, err
+		}
+		_, writeErr := file.Write(modfile.Format(parsed.Syntax))
+		if err = errors.Join(writeErr, file.Close()); err != nil {
+			return loaded{}, err
+		}
+		env = append(env, "GOWORK="+file.Name())
+	}
+	cfg := &packages.Config{Mode: loadMode, Dir: temp, Tests: true, Env: env, BuildFlags: []string{"-buildvcs=false", "-mod=readonly"}}
+	cfg.ParseFile = func(set *token.FileSet, name string, source []byte) (*ast.File, error) {
+		rel, err := filepath.Rel(temp, name)
+		if err == nil && filepath.IsLocal(rel) {
+			name = filepath.Join(root, rel)
+		}
+		return parser.ParseFile(set, name, source, parser.ParseComments|parser.AllErrors)
+	}
+	all, err := packages.Load(cfg, patterns...)
+	if err != nil {
+		return loaded{}, err
+	}
+	return keepLoadedPackages(root, all)
+}
+
+// addSkeletonCarriers makes fresh custom generators and manual predicates
+// loadable before the first owned driver is written. Only validated carriers
+// from the previous owned output are retained beside the new declarations.
+func addSkeletonCarriers(plan lang.GenPlan, edits []lang.Edit, extra map[string][]byte) error {
+	root, err := filepath.Abs(plan.Root)
+	if err != nil {
+		return err
+	}
+	owned, err := generatedTestOverlay(root, plan.Roots)
+	if err != nil {
+		return err
+	}
+	typesByDirectory := map[string]map[string]bool{}
+	packagesByDirectory := map[string]string{}
+	for _, node := range plan.Graph.Nodes() {
+		if node.Layer != graph.LayerDesign || (node.Kind != graph.NodeKindProperty && node.Kind != graph.NodeKindFlow) {
+			continue
+		}
+		for _, edit := range edits {
+			if !strings.HasSuffix(edit.Path, "_test.go") || !strings.Contains(string(edit.Content), "//uc:checks "+node.Id+"\n") && !strings.Contains(string(edit.Content), "//uc:generates "+node.Id+".") {
+				continue
+			}
+			parsed, err := parser.ParseFile(token.NewFileSet(), edit.Path, edit.Content, parser.PackageClauseOnly)
+			if err != nil {
+				return err
+			}
+			dir := filepath.Dir(edit.Path)
+			packagesByDirectory[dir] = parsed.Name.Name
+			if typesByDirectory[dir] == nil {
+				typesByDirectory[dir] = map[string]bool{}
+			}
+			var collect func(string)
+			collect = func(model string) {
+				kind, args := ucSplitType(model)
+				if kind == "call" || kind == "replies" {
+					typesByDirectory[dir][model] = true
+					return
+				}
+				for _, arg := range args {
+					collect(arg)
+				}
+			}
+			for _, symbol := range node.Attrs["symbols"] {
+				_, model, _ := strings.Cut(symbol, ": ")
+				collect(strings.TrimSuffix(model, " generated"))
+			}
+		}
+	}
+	for dir, models := range typesByDirectory {
+		if len(models) == 0 {
+			continue
+		}
+		name := filepath.Join(root, dir, "unicode_contracts_gen_test.go")
+		source, exists := owned[name]
+		if !exists {
+			if _, err := os.Lstat(name); err == nil {
+				return fmt.Errorf("the prospective carrier file %s is not owned by unicode", name)
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			source = []byte(unicodeGeneratedHeader + "\npackage " + packagesByDirectory[dir] + "\n")
+		}
+		for _, model := range slices.Sorted(maps.Keys(models)) {
+			if !bytes.Contains(source, []byte("type "+modelCarrierName(model)+" ")) {
+				source = append(source, modelCarrierDeclaration(model)...)
+			}
+		}
+		extra[name] = source
+	}
+	return nil
+}
+
+// validatePlannedGoPaths runs before any temporary mirror writes. Copying a
+// source symlink is harmless, but no planned path may traverse one: otherwise
+// writing through a copied absolute link could change the original repository.
+func validatePlannedGoPaths(root string, edits []lang.Edit) error {
+	for _, edit := range edits {
+		if !filepath.IsLocal(edit.Path) || edit.Path == "." || strings.ContainsAny(edit.Path, "\\\x00") || path.Clean(edit.Path) != edit.Path {
+			return fmt.Errorf("the planned path %q is not a clean relative repository file", edit.Path)
+		}
+		parts := strings.Split(edit.Path, "/")
+		name := root
+		for i := -1; i < len(parts); i++ {
+			if i >= 0 {
+				name = filepath.Join(name, parts[i])
+			}
+			info, err := os.Lstat(name)
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("the planned path %q traverses a symbolic link at %s", edit.Path, name)
+			}
+			if i < len(parts)-1 && !info.IsDir() {
+				return fmt.Errorf("the planned path %q has a non-directory parent %s", edit.Path, name)
+			}
+			if i == len(parts)-1 && !info.Mode().IsRegular() {
+				return fmt.Errorf("the planned target %q is not a regular file", edit.Path)
+			}
+		}
+	}
+	return nil
+}

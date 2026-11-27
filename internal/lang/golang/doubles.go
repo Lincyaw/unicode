@@ -32,6 +32,13 @@ func (c *contractCompiler) doubleModels(unit *contractUnit) []string {
 		switch kind {
 		case "replies":
 			found[model] = true
+			for _, id := range args {
+				op := unit.spec.Operations[id]
+				visit(op.Result)
+				for _, failure := range op.Raises {
+					visit(failure)
+				}
+			}
 			return
 		case "map", "list", "set", "optional":
 			for _, arg := range args {
@@ -39,11 +46,32 @@ func (c *contractCompiler) doubleModels(unit *contractUnit) []string {
 			}
 			return
 		case "call":
+			for _, op := range unit.spec.Types[model].Calls {
+				for _, parameter := range op.Params {
+					visit(parameter)
+				}
+				visit(op.Result)
+				for _, failure := range op.Raises {
+					visit(failure)
+				}
+			}
 			return
 		}
 		ty := unit.spec.Types[model]
 		if ty.Form == "interface" {
 			found[model] = true
+			owners := map[string]bool{}
+			for owner := model; owner != "" && !owners[owner]; owner = unit.spec.Types[owner].Parent {
+				owners[owner] = true
+			}
+			for _, op := range unit.spec.Operations {
+				if owners[op.Owner] {
+					visit(op.Result)
+					for _, failure := range op.Raises {
+						visit(failure)
+					}
+				}
+			}
 		}
 		for _, f := range ucFields(unit.spec.Types, model) {
 			visit(f.Type)
@@ -102,7 +130,16 @@ func (c *contractCompiler) configureDoubles(unit *contractUnit) bool {
 		if kind, _ := ucSplitType(model); kind == "replies" {
 			unit.spec.Types[model] = ucType{Form: "replies"}
 		}
-		if len(ops) == 0 {
+		complete := true
+		if unit.spec.Types[model].Form == "interface" {
+			complete = false
+		}
+		if d, ok := c.bound(graph.EdgeKindRealizes, model); ok {
+			if iface, ok := d.obj.Type().Underlying().(*types.Interface); ok {
+				complete = iface.Complete().NumMethods() == len(ops)
+			}
+		}
+		if !complete || len(ops) == 0 && unit.spec.Types[model].Form != "interface" {
 			c.diagnostic(unit.node, "lang.golang.unsupported-contract", "the response script has no complete native operation binding: "+model, "realize its interface or external operation with matching Go signatures")
 			valid = false
 			continue
@@ -212,6 +249,7 @@ func (c *contractCompiler) renderDoubles(file *contractFile) string {
 			}
 			name := doubleName(model)
 			fmt.Fprintf(&out, "type %s struct{_scripts map[string][]map[string]any;_cursor map[string]int;_types map[string]ucType;_ops map[string]ucReplyOperation}\n", name)
+			fmt.Fprintf(&out, "func(d *%s)_unicodeCloneDouble()reflect.Value{return reflect.ValueOf(&%s{_scripts:d._scripts,_cursor:map[string]int{},_types:d._types,_ops:d._ops})}\n", name, name)
 			ops, sigs := c.replySignature(unit, model)
 			for _, key := range slices.Sorted(maps.Keys(ops)) {
 				sig := sigs[key]
@@ -427,11 +465,71 @@ func (c *contractCompiler) replyLiteral(value syntax.Value, op ucOperation, sig 
 		if !types.Implements(native, errorType.Underlying().(*types.Interface)) {
 			native = types.NewPointer(native)
 		}
-		text, err := c.valueLiteral(fields["fields"], c.nativeTypeText(native, pkg, c.literalImports), pkg)
+		text, _, err := c.replyRecordLiteral(fields["fields"], native, pkg)
 		if err != nil {
 			return "", err
 		}
 		entries = append(entries, "{\"raises\":"+strconv.Quote(string(id.Text))+",\"fields\":"+text+"}")
 	}
 	return "[]map[string]any{" + strings.Join(entries, ",") + "}", nil
+}
+
+// Error cases name inherited model fields directly. Go may represent them
+// through embedded values or pointers, so construct that native nesting.
+func (c *contractCompiler) replyRecordLiteral(value syntax.Value, native types.Type, pkg *packages.Package) (string, map[string]bool, error) {
+	pointer := false
+	typ := native
+	if p, ok := types.Unalias(typ).(*types.Pointer); ok {
+		pointer = true
+		typ = p.Elem()
+	}
+	named, ok := types.Unalias(typ).(*types.Named)
+	if !ok {
+		return "", nil, fmt.Errorf("the response error is not a named record")
+	}
+	structure, ok := named.Underlying().(*types.Struct)
+	if !ok {
+		return "", nil, fmt.Errorf("the response error is not a struct")
+	}
+	b, ok := value.(*syntax.BraceValue)
+	if !ok {
+		return "", nil, fmt.Errorf("response error fields must be a record")
+	}
+	given := map[string]syntax.Value{}
+	for _, entry := range b.Entries {
+		if entry.Key.Name != nil {
+			given[upperFirst(string(*entry.Key.Name))] = entry.Value
+		}
+	}
+	used := map[string]bool{}
+	var fields []string
+	for i := 0; i < structure.NumFields(); i++ {
+		field := structure.Field(i)
+		if v := given[field.Name()]; v != nil {
+			text, err := c.valueLiteral(v, c.nativeTypeText(field.Type(), pkg, c.literalImports), pkg)
+			if err != nil {
+				return "", nil, err
+			}
+			fields = append(fields, field.Name()+":"+text)
+			used[field.Name()] = true
+			continue
+		}
+		if field.Embedded() {
+			text, keys, err := c.replyRecordLiteral(value, field.Type(), pkg)
+			if err != nil {
+				return "", nil, err
+			}
+			if len(keys) > 0 {
+				fields = append(fields, field.Name()+":"+text)
+				for key := range keys {
+					used[key] = true
+				}
+			}
+		}
+	}
+	prefix := ""
+	if pointer {
+		prefix = "&"
+	}
+	return prefix + c.nativeTypeText(typ, pkg, c.literalImports) + "{" + strings.Join(fields, ",") + "}", used, nil
 }

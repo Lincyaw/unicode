@@ -20,5 +20,7 @@ func (c *checker) substituteBinding(e graph.Edge) {
 	}
 	if values := e.Attrs["nativeSignature"]; len(values) != 1 || values[0] != "true" {
 		c.fail("check.substitute-signature", e.From, graph.StatusContradicted, e.Origin, fmt.Sprintf("the installer %s does not accept the exact native client function signature and return func()", e.From), "accept exactly one function with the client's full native signature and return one nonnil func() cleanup")
+	} else if len(c.out[graph.EdgeKindSubstitutes][e.From]) == 1 && len(c.in[graph.EdgeKindSubstitutes][e.To]) == 1 && c.attr(e.From, "stub") == "true" {
+		c.mark(e.To, graph.StatusStub)
 	}
 }
