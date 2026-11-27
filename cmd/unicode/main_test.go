@@ -146,12 +146,17 @@ func genLink(t *rapid.T, link string, files map[string]RepoFile) RepoFile {
 	return RepoFile{Content: rapid.SampledFrom(targets).Draw(t, "target"), Mode: symlinkMode}
 }
 
+// genFormatFiles draws the files of the format-files flow.
+//
+//uc:generates cli.format-files.files
+func genFormatFiles() *rapid.Generator[map[string]RepoFile] {
+	return genFiles(fileModes)
+}
+
 // genFiles draws the design and corpus files of a repository, always with a
 // design/system.uc, each with permission bits among modes, and now and then
 // a symbolic link among them. No other directory of the repository holds a
 // design/system.uc, which would make it the root of a repository of its own.
-//
-//uc:generates cli.format-files.files
 func genFiles(modes []int) *rapid.Generator[map[string]RepoFile] {
 	return rapid.Custom(func(t *rapid.T) map[string]RepoFile {
 		files := map[string]RepoFile{"design/system.uc": genRepoFile(t, "design/system.uc", modes)}
