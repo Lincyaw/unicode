@@ -1,9 +1,10 @@
 import * as RadixSelect from '@radix-ui/react-select';
 import { clsx } from 'clsx';
+import { Maximize, Minus, Plus } from 'lucide-react';
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import styles from './controls.module.css';
-import { Hint } from './hint';
+import { Hint, ICON_STROKE, ICON_TINY } from './hint';
 import { UI_WORDS } from './words';
 
 /**
@@ -227,17 +228,13 @@ export function FullscreenIcon({ leave }: { leave: boolean }) {
 
 /** A plus or a minus, for making something larger or smaller; in an icon button it keeps upright on hover. */
 export function ZoomIcon({ direction }: { direction: 'in' | 'out' }) {
-  return <svg viewBox="0 0 12 12" width="12" height="12" data-upright aria-hidden="true"><path d={direction === 'in' ? 'M6 2.5v7M2.5 6h7' : 'M2.5 6h7'} stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>;
+  const Icon = direction === 'in' ? Plus : Minus;
+  return <Icon size={ICON_TINY} strokeWidth={ICON_STROKE} data-upright aria-hidden="true" />;
 }
 
-/** A square inside four corners, for fitting a drawing to the room it has; in an icon button it keeps upright on hover. */
+/** Four corners around the room, for fitting a drawing to the room it has; in an icon button it keeps upright on hover. */
 export function FitIcon() {
-  return (
-    <svg viewBox="0 0 12 12" width="12" height="12" data-upright aria-hidden="true">
-      <path d="M1.5 4V1.5H4M8 1.5h2.5V4M10.5 8v2.5H8M4 10.5H1.5V8" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      <rect x="4.25" y="4.25" width="3.5" height="3.5" rx=".5" fill="none" stroke="currentColor" strokeWidth="1.2" />
-    </svg>
-  );
+  return <Maximize size={ICON_TINY} strokeWidth={ICON_STROKE} data-upright aria-hidden="true" />;
 }
 
 /**

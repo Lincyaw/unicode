@@ -1,8 +1,9 @@
 .canvas { position: absolute; inset: 0; }
-.viewport { position: absolute; inset: 0; overflow: auto; cursor: grab; }
+/* The viewport takes the reader's gestures itself (panZoom.ts), so the browser neither scrolls nor zooms it. */
+.viewport { position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none; }
 .viewport:active { cursor: grabbing; }
-.sizer { position: relative; }
-.drawing { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.sheet { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.drawing { position: absolute; }
 .placed { position: absolute; }
 .about { position: absolute; top: var(--space-5); left: var(--space-6); display: flex; }
 .aboutBelow { position: absolute; bottom: var(--space-10); left: var(--space-6); display: flex; }
@@ -15,15 +16,13 @@
   bottom: var(--space-8);
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-1) var(--space-3);
+  gap: var(--space-1);
+  padding: var(--space-px) var(--space-1);
   border: var(--rule-emphasis);
   border-radius: var(--radius-full);
   background: var(--bg-page);
   color: var(--text-main);
 }
-.zoom button { display: grid; place-items: center; color: var(--text-muted); transition: color var(--duration-fast); }
-.zoom button:hover { color: var(--text-main); }
 .zoom span { min-width: 2.25rem; text-align: center; }
 
 .lines { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
