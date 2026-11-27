@@ -121,7 +121,7 @@ type Backend interface {
 
 - [language.md](language.md) 中的语义规则：
   - `design/system.uc` 恰有一个，`design/` 中其余每个文件声明的组件，其标识与文件路径相符；录制文件的路径与它指向的性质或流程的标识相符；
-  - 引用按 §2 的规则解析；
+  - 引用按 [language.md](language.md) §4.1 的规则解析；
   - 顶层组件写了 `focus`；
   - 标签属于 `notation` 声明过的记法，并且能用在这种元素上。
 - [model.md](model.md) §10：
@@ -374,7 +374,6 @@ M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通
   | `cli.symlink` | 符号链接既不跟随读取，也不改写，属于文件系统 |
   | `cli.extract-failed` | 代码无法加载，或源码根目录不存在，属于环境 |
   | `cli.unsupported-language` | 系统文件配置的语言尚无后端，属于工具链的能力 |
-  | `lang.golang.unknown-binding-verb` | 绑定的动词不是 `realizes`、`checks`、`generates` 之一；[language.md](language.md) §6 的绑定写法尚未编号 |
 
 ## 9 计划
 

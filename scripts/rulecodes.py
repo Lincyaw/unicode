@@ -19,7 +19,7 @@ UNIMPLEMENTED = "未实现："
 BY_PROPERTY = "由性质验证"
 
 KEBAB = r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
-LANGUAGE_RULE = re.compile(r"^- \*\*([FLGPR][0-9]+)\*\*", re.MULTILINE)
+LANGUAGE_RULE = re.compile(r"^- \*\*([BEFLGPR][0-9]+)\*\*", re.MULTILINE)
 DERIVATION = re.compile(r"^- \*\*(D[0-9]+) ", re.MULTILINE)
 CONSTRAINTS = re.compile(r"^## 10 约束\n(.*?)^## ", re.MULTILINE | re.DOTALL)
 CONSTRAINT = re.compile(r"^([0-9]+)\. ", re.MULTILINE)

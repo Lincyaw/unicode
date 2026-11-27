@@ -17,7 +17,7 @@
 
 ## 2 词法
 
-- **L1** 文件是 UTF-8 文本。空白只有空格（U+0020）和 LF；制表符、CR、其他控制字符和非 UTF-8 的字节都是错误。记号之间的空格个数、缩进、行尾空格和空行属于排版（P 规则）。
+- **L1** 文件是 UTF-8 文本。空白只有空格（U+0020）和 LF；制表符、CR、其他控制字符、非 UTF-8 的字节，以及不属于任何记号（§5.1）的字符，都是错误。记号之间的空格个数、缩进、行尾空格和空行属于排版（P 规则）。
 - **L2** 注释独占一行，以 `//` 开头；`//` 之后的文字原样保留，只去掉行尾的空格。
 - **L3** 字符串用双引号括起，写在一行之内。转义只有 `\"`、`\\`、`\n`（换行）和 `\t`（制表符）四种。
 - **L4** 摘要字符串非空，首尾没有空白（按 Unicode 判断），不含换行和制表符。
@@ -109,12 +109,13 @@ NL            = 换行 { 换行 } .
 
 **次序与结构**
 
+- **G0** 每个文件合乎 §3 中它的种类的产生式，包括产生式规定的声明次序、块的成员和只出现一次的子句。
 - **G1** 组件文件中的声明按组件、类型、操作、流程、性质分组，各组内部保持作者写的次序。
 - **G2** 类型的成员按 `label`、`extends`、`implements`、`field` 或 `value`、`op` 的次序排列。`value` 只出现在 `enum` 中；`field` 不出现在 `enum` 和 `interface` 中。
 - **G3** 流程的成员按 `forall`、`where`、步骤、`case` 的次序排列；性质的成员按 `about`、`forall`、`where`、`case` 的次序排列。
 - **G4** `{` 总在行尾，`}` 总在行首；同一行中 `{` 之后或 `}` 之前不能有别的内容。`alt` 的分支写作一行 `} else "标签" {`。
 - **G5** 在流程中，一行的第一个词之后是 `->`、`->>` 或 `.`，或是 `emits` 再接一个大驼峰的词或带 `.` 的引用时，这一行是一个步骤；否则第一个词是关键字。
-- **G6** 调用后面的 `{ … }` 是这次调用的子步骤。`on` 紧跟在一个调用的 `}` 之后，调用与 `on` 之间的注释属于 `on`。
+- **G6** 调用后面的 `{ … }` 是这次调用的子步骤。`on` 紧跟在一个调用之后，调用带子步骤时在它的 `}` 之后；一个调用之后可以有几个 `on`。调用与 `on` 之间的注释属于 `on`。
 
 **必需项与取值**
 
@@ -229,7 +230,7 @@ NL            = 换行 { 换行 } .
 | 静态规则 | `internal/syntax/check.go` | 语法树 → 合法的语法树 | `syntax.declaration-order`、`syntax.invalid-name` 等 |
 | 规范格式 | `internal/syntax/print.go` | 语法树 → 规范文本 | `cli.not-canonical` |
 | 载入 | `design.Load` | 全部合法的语法树 → 设计层 | `design.*` |
-| 链接 | 语言后端、`graph`、`check` | 设计层与代码 → 图与状态 | `cli.extract-failed`、`graph.*`、`check.*` |
+| 链接 | 语言后端、`graph`、`check` | 设计层与代码 → 图与状态 | `cli.extract-failed`、`lang.<语言>.*`、`graph.*`、`check.*` |
 
 ### 5.1 分类、词法分析与语法分析
 
@@ -258,7 +259,7 @@ NL            = 换行 { 换行 } .
 
 ### 5.5 诊断
 
-每条诊断有诊断码、位置、原因和修正办法。诊断码写作 `<阶段>.<短横线名称>`，阶段为 `cli`、`syntax`、`design`、`graph` 或 `check`。诊断都是错误，没有警告；输出按路径、行、列和诊断码排序。
+每条诊断有诊断码、位置、原因和修正办法。诊断码写作 `<组件>.<短横线名称>`，组件是报出它的那个：`cli`、`syntax`、`design`、`graph`、`check`，或语言后端，例如 `lang.golang`。诊断都是错误，没有警告；输出按路径、行、列和诊断码排序。
 
 ## 6 绑定
 
@@ -267,6 +268,9 @@ NL            = 换行 { 换行 } .
 - **`realizes <标识>`**：写在类型或自由函数上，表示它落实这个类型，或容器、外部系统直接提供的这个操作。落实外部系统的操作的，是调用该外部系统的客户端函数。方法上不写绑定；方法按名称映射对应到它所在类型落实的那个类型的操作（[design.md](design.md) §4）。
 - **`checks <标识>`**：写在谓词上，表示它检查这条性质或这个流程。谓词的参数就是性质或流程的符号；驱动由 `gen` 生成（[design.md](design.md) §6.2）。一个函数至多带一个 `checks`。
 - **`generates <标识>`**：写在生成器函数上，标识是性质或流程的标识后接 `.` 和一个生成的符号的名称，表示它给出这个符号的生成器。同一个生成器可以用于几个符号，每个符号写一行 `generates`。
+
+- **B1** 绑定的动词只有 `realizes`、`checks` 和 `generates`，后接一个空格和一个设计标识；`generates` 的标识指向一个生成的符号。
+- **B2** 绑定写在类型或函数的文档注释中，独占一行；`checks` 和 `generates` 只写在函数上。
 
 ### 6.1 Go
 
@@ -541,10 +545,11 @@ case r-3f9a2c1d coverage {
 | L5 | `syntax.not-an-integer`、`cli.not-canonical` | `syntax.rejects-broken-text`、`syntax.format-is-stable` |
 | L6 | `syntax.invalid-name`、`syntax.invalid-reference` | `syntax.rejects-broken-text` |
 | L7 | `syntax.reserved-name` | `syntax.rejects-broken-text` |
+| G0 | `syntax.unexpected-token`、`syntax.unexpected-end`、`syntax.missing-member`、`syntax.declaration-order` | `syntax.rejects-broken-text` |
 | G1 | `syntax.declaration-order` | `syntax.rejects-broken-text` |
 | G2 | `syntax.member-order`、`syntax.value-outside-enum`、`syntax.field-not-allowed` | `syntax.rejects-broken-text` |
 | G3 | `syntax.member-order`、`syntax.missing-member`、`syntax.duplicate-member` | `syntax.rejects-broken-text` |
-| G4 | `syntax.brace-position`、`syntax.misplaced-else`、`syntax.unexpected-token`、`syntax.unexpected-end` | `syntax.rejects-broken-text` |
+| G4 | `syntax.brace-position`、`syntax.misplaced-else`、`syntax.unexpected-token` | `syntax.rejects-broken-text` |
 | G5 | `syntax.unexpected-token` | `syntax.rejects-broken-text` |
 | G6 | `syntax.on-without-call` | `syntax.rejects-broken-text` |
 | G7 | `syntax.unexpected-token`、`syntax.empty-summary`、`syntax.summary-tab-or-newline`、`syntax.summary-surrounding-space` | `syntax.rejects-broken-text` |
@@ -561,3 +566,5 @@ case r-3f9a2c1d coverage {
 | R1 | `design.unresolved-reference` | `design.rejects-broken-design` |
 | R2 | `design.unresolved-reference` | `design.rejects-broken-design` |
 | R3 | `design.unresolved-reference` | `design.rejects-broken-design` |
+| B1 | `lang.golang.unknown-binding-verb`、`lang.golang.missing-binding-id`、`lang.golang.invalid-binding-id` | `lang.golang.extracts-generated-module` |
+| B2 | `lang.golang.misplaced-binding` | `lang.golang.extracts-generated-module` |

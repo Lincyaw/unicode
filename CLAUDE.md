@@ -30,7 +30,7 @@ This project's engineering conventions are the general rules of the `engineering
 
 ## Go
 
-- Go 1.26, module `github.com/lincyaw/unicode`. `make check` runs golangci-lint (with gofmt), `go test ./...` and `unicode fmt --check` on this repository.
+- Go 1.26, module `github.com/lincyaw/unicode`. `make check` runs golangci-lint (with gofmt), `go test ./...`, `unicode fmt --check`, the full `unicode check`, and `scripts/rulecodes.py`, which keeps every numbered rule of docs/language.md and docs/model.md mapped to the diagnostic codes of the source (their appendix B).
 - Each package under `internal/` is one component. Its imports follow the design's `uses`, checked by golangci-lint's depguard until M2 and by `unicode check` from M2; a change to the depguard rules follows a change to the design.
 - The libraries in use are listed in `docs/design.md` §3. Adding or replacing one is a design decision (principle 8).
 - General Go rules belong in the conventions skill as `reference/go.md`. Until that reference exists, this section holds them.
