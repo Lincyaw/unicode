@@ -63,7 +63,7 @@ function EntityTrail({ address }: { address: EntityAddress }) {
   const nodes = new Map(useNodes(ids).map(node => [node.id, node]));
   const trail = address.trail.flatMap((entry, index): TrailItem[] => {
     if ('view' in entry) {
-      return [{ view: entry.view, href: viewPath(trailView(entry, address.base)) }];
+      return [{ view: entry.view.kind, href: viewPath(trailView(entry, address.base)) }];
     }
     const node = nodes.get(entry.node);
     return node ? [{ node, href: entityPath({ id: node.id, trail: address.trail.slice(0, index + 1), base: address.base }) }] : [];

@@ -1,10 +1,12 @@
-import type { FallbackProps } from 'react-error-boundary';
 import { ApiError } from '../../api/errors';
 import { CONTROLS, PROBLEM_WORDS, SECTIONS } from '../../terms';
 import styles from './details.module.css';
 
-/** A refused request, shown where its data would be: the code, the cause and the fix, as a diagnostic reads. */
-export function ProblemNote({ error }: FallbackProps) {
+/**
+ * A refused request, shown where its data would be: the code, the cause and the fix, as a diagnostic reads. Any other
+ * error, such as an address the viewer cannot read, shows its message.
+ */
+export function ProblemNote({ error }: { error: unknown }) {
   if (!(error instanceof ApiError)) {
     return (
       <div className={styles.problem} role="alert">

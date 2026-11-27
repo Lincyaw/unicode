@@ -5,7 +5,7 @@ import { PageHeader } from '../components/shell/PageHeader';
 import { ViewTabs } from '../components/shell/ViewTabs';
 import { ViewDrawing } from './ViewDrawing';
 import {
-  DEFAULT_VIEW, enteringFromView, entityPath, isEdgeKey, readViewAddress, readViewKind, requestedView, selecting, toggling, viewPath, type ViewAddress,
+  enteringFromView, entityPath, isEdgeKey, readViewAddress, readViewKind, requestedView, selecting, toggling, viewPath, type ViewAddress,
 } from '../routes/address';
 import { displayName } from '../components/marks/format';
 import { kindWord, VIEW_NAMES, VIEW_WORD, viewTitle } from '../terms';
@@ -67,7 +67,7 @@ function ViewTree({ address, links }: { address: ViewAddress; links: NodeLinks }
 
 /** A view (docs/design.md §7.1): the drawing, the design tree and the preview of the selection. */
 export function ViewPage() {
-  const kind = readViewKind(useParams().kind) ?? DEFAULT_VIEW;
+  const kind = readViewKind(useParams().kind);
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const address = readViewAddress(kind, params);

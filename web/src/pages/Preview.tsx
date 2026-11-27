@@ -1,8 +1,7 @@
 import { useEdge, useEntity, useSnapshot } from '../api/client';
-import type { EdgeKind } from '../api/types';
 import { EdgePreview } from '../components/details/EdgePreview';
 import { EntityPreview } from '../components/details/EntityPreview';
-import { isEdgeKey, type ViewAddress } from '../routes/address';
+import { isEdgeKey, readEdgeKey, type ViewAddress } from '../routes/address';
 
 function NodePreview({ id, address }: { id: string; address: ViewAddress }) {
   const entity = useEntity(id, address.base);
@@ -10,8 +9,8 @@ function NodePreview({ id, address }: { id: string; address: ViewAddress }) {
 }
 
 function EdgeData({ select }: { select: string }) {
-  const [kind = '', from = '', to = ''] = select.split(' ');
-  const edge = useEdge(kind as EdgeKind, from, to);
+  const { kind, from, to } = readEdgeKey(select);
+  const edge = useEdge(kind, from, to);
   return <EdgePreview edge={edge} />;
 }
 
