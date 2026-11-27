@@ -2007,38 +2007,6 @@ func ucManual(t rapid.TB, s *ucContract, inputs map[string]reflect.Value, predic
 	predicate()
 }
 
-// ucConstructField follows a native promoted-field index and allocates embedded
-// pointers before assigning a generated inherited model field.
-func ucConstructField(value reflect.Value, name string) reflect.Value {
-	value = ucDeref(value)
-	if !value.IsValid() || value.Kind() != reflect.Struct {
-		return reflect.Value{}
-	}
-	field, ok := value.Type().FieldByName(name)
-	if !ok {
-		return reflect.Value{}
-	}
-	for position, index := range field.Index {
-		for value.Kind() == reflect.Pointer {
-			if value.IsNil() {
-				if !value.CanSet() {
-					return reflect.Value{}
-				}
-				value.Set(reflect.New(value.Type().Elem()))
-			}
-			value = value.Elem()
-		}
-		if value.Kind() != reflect.Struct {
-			return reflect.Value{}
-		}
-		value = value.Field(index)
-		if position == len(field.Index)-1 {
-			return value
-		}
-	}
-	return reflect.Value{}
-}
-
 // ucEmbeddedNative selects a declared parent view rather than a shadowing child
 // field. It follows only native embedding, preserving the actual error data.
 func ucEmbeddedNative(value reflect.Value, target reflect.Type) reflect.Value {

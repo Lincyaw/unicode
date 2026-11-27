@@ -90,7 +90,11 @@ func (c *contractCompiler) nativeFieldIndex(named *types.Named, model, name stri
 			return nil, nil, false
 		}
 		wanted := modelNativeNamed(declaration.obj.Type())
-		structure, ok := modelNativeNamed(current).Underlying().(*types.Struct)
+		native := modelNativeNamed(current)
+		if native == nil {
+			return nil, nil, false
+		}
+		structure, ok := native.Underlying().(*types.Struct)
 		if !ok {
 			return nil, nil, false
 		}
@@ -108,7 +112,11 @@ func (c *contractCompiler) nativeFieldIndex(named *types.Named, model, name stri
 			return nil, nil, false
 		}
 	}
-	structure, ok := modelNativeNamed(current).Underlying().(*types.Struct)
+	native := modelNativeNamed(current)
+	if native == nil {
+		return nil, nil, false
+	}
+	structure, ok := native.Underlying().(*types.Struct)
 	if !ok {
 		return nil, nil, false
 	}
