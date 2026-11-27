@@ -4,8 +4,8 @@
 
 .head { display: grid; gap: var(--space-2); }
 .identity { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-/* A long identity ends in an ellipsis; its hint holds it whole. */
-.identityText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long identity wraps, so every reader sees it whole. */
+.identityText { min-width: 0; overflow-wrap: anywhere; }
 .spacer { flex: 1; }
 .summary { font: var(--type-heading); font-weight: 600; }
 .origin { display: flex; flex-wrap: wrap; gap: var(--space-4); color: var(--text-faint); font: var(--type-mono); }

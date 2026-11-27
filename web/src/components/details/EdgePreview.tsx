@@ -1,5 +1,5 @@
 import type { EdgeEntity } from '../../api/types';
-import { ABOUT, EDGE_KINDS, SECTIONS, VIEW_NAMES, viewTitle } from '../../terms';
+import { ABOUT, EDGE_KINDS, SECTIONS, VIEW_NAMES } from '../../terms';
 import { Tag } from '../../ui/content';
 import { ButtonLink } from '../../ui/controls';
 import { InfoHint } from '../../ui/hint';
@@ -8,6 +8,7 @@ import { messageOf, placeOf, stepName } from '../marks/format';
 import { ArrowRight, ArrowUpRight, ChevronRight, CornerDownRight } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { StatusDot } from '../marks/StatusDot';
+import { ViewName } from '../marks/ViewName';
 import { statusWord } from './nodeWords';
 import { NodeLink } from '../marks/NodeLink';
 import { DiagnosticTag, NodeRow, Section } from './sections';
@@ -64,7 +65,7 @@ export function EdgePreview({ edge }: { edge: EdgeEntity }) {
             {others.map(view => (
               <ButtonLink key={`${view.kind} ${view.input.id} ${view.select ?? ''}`} to={links.viewHref(view)} variant="line" size="small">
                 <Icon glyph={ArrowUpRight} size="tiny" />
-                {viewTitle(VIEW_NAMES[view.kind], view.select?.includes('#') ? `#${view.select.split('#').at(-1) ?? ''}` : view.input.title)}
+                <ViewName view={VIEW_NAMES[view.kind]} input={view.select?.includes('#') ? `#${view.select.split('#').at(-1) ?? ''}` : view.input.title} />
               </ButtonLink>
             ))}
           </div>

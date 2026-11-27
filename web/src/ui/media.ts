@@ -3,6 +3,15 @@ import { useSyncExternalStore } from 'react';
 export const NARROW_QUERY = '(max-width: 760px)';
 export const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 
+/** A length token of base.css in pixels, for a script that lays the page out by the same sizes as the stylesheets. */
+export function tokenPixels(token: string): number {
+  const pixels = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(token));
+  if (!Number.isFinite(pixels)) {
+    throw new Error(`base.css defines no length ${token}`);
+  }
+  return pixels;
+}
+
 /** The nav's height, from the site's layout tokens. */
 export function navHeight(): number {
   return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--nav-height'));

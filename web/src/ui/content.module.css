@@ -1,6 +1,7 @@
 .tag {
   display: inline-flex;
   flex: none;
+  justify-self: start;
   align-items: center;
   gap: var(--space-1);
   height: var(--space-6);

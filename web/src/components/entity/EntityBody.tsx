@@ -4,7 +4,7 @@ import { Link } from 'react-router';
 import type { Entity, Neighbor, Node } from '../../api/types';
 import { ABOUT, MEMBER_COLUMNS, OP_COLUMNS, SECTIONS } from '../../terms';
 import { Tag } from '../../ui/content';
-import { Hint, InfoHint } from '../../ui/hint';
+import { InfoHint } from '../../ui/hint';
 import { Icon } from '../../ui/icons';
 import table from '../../ui/table.module.css';
 import { CaseSections, CheckedSections, CodeSections, ContainerSections, EventSections, StepSections } from '../details/kindSections';
@@ -31,7 +31,7 @@ function Head({ entity }: { entity: Entity }) {
     <header className={styles.head}>
       <div className={styles.identity}>
         <KindIcon node={node} />
-        <Hint content={node.id}><span className={clsx(styles.identityText, 't-mono-strong')}>{node.id}</span></Hint>
+        <span className={clsx(styles.identityText, 't-mono-strong')}>{node.id}</span>
         <StatusDot status={statusOf(node)} />
         {(node.attrs.labels ?? []).map(label => <Tag key={label}>{label}</Tag>)}
         <span className={styles.spacer} />

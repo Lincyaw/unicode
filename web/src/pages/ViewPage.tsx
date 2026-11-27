@@ -8,7 +8,8 @@ import {
   enteringFromView, entityPath, isEdgeKey, readViewAddress, readViewKind, requestedView, selecting, toggling, viewPath, type ViewAddress,
 } from '../routes/address';
 import { displayName } from '../components/marks/format';
-import { kindWord, VIEW_NAMES, VIEW_WORD, viewTitle } from '../terms';
+import { ViewName } from '../components/marks/ViewName';
+import { kindWord, VIEW_NAMES, VIEW_WORD } from '../terms';
 import { Boundary } from './Boundary';
 import { HeaderTools } from './frame/HeaderTools';
 import { SizedFrame } from './frame/SizedFrame';
@@ -43,7 +44,7 @@ function ViewHeader({ address, links }: { address: ViewAddress; links: NodeLinks
   return (
     <PageHeader
       crumbs={crumbs}
-      title={onSystem ? VIEW_NAMES[address.kind] : viewTitle(VIEW_NAMES[address.kind], displayName(view.input))}
+      title={onSystem ? VIEW_NAMES[address.kind] : <ViewName view={VIEW_NAMES[address.kind]} input={displayName(view.input)} />}
       tools={(
         <HeaderTools
           base={address.base}

@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 import {
   ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, File, Maximize, Menu, Minimize, Minus, Moon, Plus, Search, Sun, X,
 } from 'lucide-react';
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type Ref, type RefObject } from 'react';
 import { Link } from 'react-router';
 import styles from './controls.module.css';
 import { Hint } from './hint';
@@ -130,11 +130,12 @@ export type IconButtonSize = 'regular' | 'small';
 
 /**
  * A round control whose icon turns when hovered; a disabled one stays still and faint. It runs an action, opens a page
- * of the site, or opens an address elsewhere in a new tab.
+ * of the site, or opens an address elsewhere in a new tab. An action that shows or hides a part of the page names it
+ * with `controls`, and takes a `ref` for the page to return focus to it.
  */
-export function IconButton({ label, expanded, disabled, variant = 'line', size = 'regular', children, ...action }: {
-  label: string; expanded?: boolean; disabled?: boolean; variant?: ControlVariant; size?: IconButtonSize; children: ReactNode;
-} & ({ onClick: () => void } | { to: string } | { href: string })) {
+export function IconButton({ label, expanded, controls, disabled, variant = 'line', size = 'regular', children, ...action }: {
+  label: string; expanded?: boolean; controls?: string; disabled?: boolean; variant?: ControlVariant; size?: IconButtonSize; children: ReactNode;
+} & ({ onClick: () => void; ref?: Ref<HTMLButtonElement> } | { to: string } | { href: string })) {
   const quiet = variant === 'quiet';
   const className = clsx(styles.pill, styles.icon, size === 'small' && styles.small, quiet && styles.quiet, !disabled && !quiet && 'loop-edge');
   // A hint makes the control its trigger by handing it handlers and a ref as props, which the spread passes on.
@@ -144,7 +145,7 @@ export function IconButton({ label, expanded, disabled, variant = 'line', size =
   if ('href' in action) {
     return <a {...action} className={className} target="_blank" rel="noreferrer" aria-label={label}>{children}</a>;
   }
-  return <button {...action} type="button" className={className} aria-label={label} aria-expanded={expanded} disabled={disabled}>{children}</button>;
+  return <button {...action} type="button" className={className} aria-label={label} aria-expanded={expanded} aria-controls={controls} disabled={disabled}>{children}</button>;
 }
 
 /** Appends a list's next page; its label says how much is shown, and it waits while the page loads. */

@@ -9,11 +9,12 @@
 - `Button` 和 `ButtonLink` 有 `size`，取大、中、小三档；`Button` 可带读屏名称 `label`，也能作为弹层的触发器。实心按钮末尾的箭头由 `Icon` 画出，不用样式表里手打的字符；查看器用不到的 `textLink` 类已删去。
 - `SearchField` 可带 `shortcut`：平台的修饰键加这个键把光标移进搜索框，框内按平台显示，macOS 上是 ⌘K，其他平台是 Ctrl K。它另外接收焦点和按键，供在框下列出结果的组件使用。
 - `MarkButton` 是作为数据标记的可点元素，例如图上的节点、树的行、结果列表中的一项。它不是胶囊，样式由使用方给出；`src/ui` 之外不直接写 `<button>`。
-- `Tag` 有 `tone`：中性，或失败、通过、需留意三种真实状态。状态色画在边线和图标上，文字的颜色不变，读起来与其他文字一样清楚。标签里可以带图标；标签带页面的底色，叠在图中的线上时盖住线。
+- `IconButton` 执行操作时可带 `controls`（它显示或收起的部分的 id）和 `ref`，页面借此把焦点还给它。
+- `Tag` 有 `tone`：中性，或失败、通过、需留意三种真实状态。状态色画在边线和图标上，文字的颜色不变，读起来与其他文字一样清楚。标签里可以带图标；标签带页面的底色，叠在图中的线上时盖住线；在网格中不被拉宽。
 - `FactList` 另有 `pairs` 排法，供侧栏使用：名称一栏取最宽的名称的宽度，值很长时随处换行。同一名称可以出现多次，例如一个名称下的几个调用位置。
-- 拖动条在悬停和拖动时显出的线用 `--border-emphasis`；只有键盘聚焦时才用焦点色。
-- `media.ts` 另有 `useWindowWidth`，给出窗口的宽度，供占满窗口的工具页限制各栏的宽度。
-- `base.css` 另有查看器用到的令牌：`--type-page-title`、`--type-mono-strong` 及对应的 `.t-code`、`.t-mono-strong`，以及工具页顶栏和状态栏的高度 `--bar-height`、`--status-height`。
+- 拖动条在悬停和拖动时显出的线用 `--border-emphasis`；只有键盘聚焦时才用焦点色。`ResizeHandle` 可带 `className`，例如让页面在窄屏上收起它。
+- `media.ts` 另有 `useWindowWidth`，给出窗口的宽度，供占满窗口的工具页限制各栏的宽度；`tokenPixels` 按像素读出 `base.css` 中的长度令牌，供按同样尺寸排版的脚本使用。
+- `base.css` 另有查看器用到的令牌：`--type-page-title`、`--type-mono-strong` 及对应的 `.t-code`、`.t-mono-strong`，工具页顶栏和状态栏的高度 `--bar-height`、`--status-height`，以及两侧栏的起始宽度 `--tree-width`、`--pane-width`。
 
 以下是原文。
 

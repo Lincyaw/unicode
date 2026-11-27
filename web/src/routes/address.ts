@@ -125,11 +125,11 @@ export function readViewAddress(kind: ViewKind, params: URLSearchParams): ViewAd
   return { ...readPlace(kind, params), base: params.get('base') ?? undefined };
 }
 
-/** The entity page's address, or undefined when it names no node. */
-export function readEntityAddress(params: URLSearchParams): EntityAddress | undefined {
+/** The entity page's address; one that names no node is an error. */
+export function readEntityAddress(params: URLSearchParams): EntityAddress {
   const id = params.get('id');
   if (id === null) {
-    return undefined;
+    throw new Error('The address names no node: an entity page is /entity?id= and the node\'s identity');
   }
   return {
     id,

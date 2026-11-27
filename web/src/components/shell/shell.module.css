@@ -7,7 +7,7 @@
   height: 100dvh;
 }
 /* The reader sizes the side columns with the handles between them and the canvas. */
-.body { position: relative; display: grid; grid-template-columns: var(--tree-width, 18rem) auto minmax(0, 1fr) auto var(--pane-width, 22.5rem); min-height: 0; }
+.body { position: relative; display: grid; grid-template-columns: var(--tree-width) auto minmax(0, 1fr) auto var(--pane-width); min-height: 0; }
 .tree { min-width: 0; padding: var(--space-4) var(--space-3); overflow: auto; }
 .main { position: relative; min-width: 0; overflow: hidden; border-left: var(--rule-hairline); border-right: var(--rule-hairline); }
 .pane { min-width: 0; padding: var(--space-5); overflow: auto; }
@@ -33,21 +33,19 @@
 
 /* Header */
 /*
- * The heading gives way first: its path and title end in an ellipsis. On a window too narrow for one row, the tabs and
- * tools wrap under the heading; on a narrow one the tabs scroll in their own track.
+ * The heading gives way first: its path and title wrap, so every reader sees them whole. On a window too narrow for
+ * one row, the tabs and tools wrap under the heading; on a narrow one the tabs scroll in their own track.
  */
 .header { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); min-width: 0; padding: var(--space-2) var(--space-6); }
 .heading { display: grid; flex: 1 1 12rem; gap: var(--space-px); min-width: 0; }
-/* The path is one line, ending in an ellipsis when it runs out of room. */
-.heading > nav { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.title { overflow: hidden; font: var(--type-page-title); text-overflow: ellipsis; white-space: nowrap; }
-.header > nav { flex: 0 1 auto; min-width: 0; }
+.title { font: var(--type-page-title); overflow-wrap: anywhere; }
+.tabs { flex: 0 1 auto; min-width: 0; }
 .tools { display: flex; flex: none; align-items: center; gap: var(--space-2); }
 
 /* A count of diagnostics draws its icon in the failure colour only when there is one. */
 .alert { color: var(--accent-warning); }
 
-.panel { z-index: 50; display: grid; gap: var(--space-3); width: 28rem; max-height: min(32rem, var(--radix-popover-content-available-height)); padding: var(--space-4); overflow: auto; }
+.panel { z-index: 50; display: grid; gap: var(--space-3); width: min(28rem, var(--radix-popover-content-available-width)); max-height: min(32rem, var(--radix-popover-content-available-height)); padding: var(--space-4); overflow: auto; }
 .diagnosticList { display: grid; gap: var(--space-3); }
 .diagnostic { display: grid; gap: var(--space-1); padding-bottom: var(--space-3); border-bottom: var(--rule-hairline); }
 .diagnostic:last-child { padding-bottom: 0; border-bottom: 0; }
@@ -98,10 +96,11 @@
   .header { padding: var(--space-2); }
   /* The tools stay beside the heading, and the tabs take a line of their own. */
   .tools { order: 1; }
-  .header > nav { order: 2; overflow-x: auto; scrollbar-width: none; }
+  /* The tabs' own edge sits a hairline outside their track, so the scrolling slot leaves it that room. */
+  .tabs { order: 2; padding: var(--size-hairline); overflow-x: auto; scrollbar-width: none; }
   .drawerToggle { display: flex; flex: none; }
   .body { grid-template-columns: minmax(0, 1fr); overflow: hidden; }
-  .body > [role="separator"] { display: none; }
+  .handle { display: none; }
   .main { border: 0; }
   .tree, .pane {
     position: absolute;
@@ -112,7 +111,8 @@
     background: var(--bg-page);
     box-shadow: var(--shadow-float);
     visibility: hidden;
-    transition: transform var(--duration-base) var(--ease-out), visibility var(--duration-base);
+    /* A drawer shows at once as it slides in, so that it can take the focus, and hides at once as it closes. */
+    transition: transform var(--duration-base) var(--ease-out);
   }
   .tree { left: 0; border-right: var(--rule-hairline); transform: translateX(-100%); }
   .pane { right: 0; border-left: var(--rule-hairline); transform: translateX(100%); }

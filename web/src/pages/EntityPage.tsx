@@ -1,4 +1,4 @@
-import { Navigate, useNavigate, useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { useEntity, useNodes } from '../api/client';
 import { EntityBody } from '../components/entity/EntityBody';
 import { EntityPane, type TrailItem } from '../components/entity/EntityPane';
@@ -6,7 +6,7 @@ import { LinksContext, type NodeLinks } from '../components/marks/links';
 import { PageHeader } from '../components/shell/PageHeader';
 import { ViewTabs } from '../components/shell/ViewTabs';
 import {
-  entityPath, following, isEdgeKey, readEntityAddress, requestedView, ROOT_PATH, trailView, viewPath, type EntityAddress,
+  entityPath, following, isEdgeKey, readEntityAddress, requestedView, trailView, viewPath, type EntityAddress,
 } from '../routes/address';
 import { displayName } from '../components/marks/format';
 import { kindWord } from '../terms';
@@ -81,9 +81,6 @@ export function EntityPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const address = readEntityAddress(params);
-  if (address === undefined) {
-    return <Navigate to={ROOT_PATH} replace />;
-  }
   const links = entityLinks(address, to => void navigate(to));
   const key = entityPath(address);
   return (

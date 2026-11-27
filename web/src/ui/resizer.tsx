@@ -1,3 +1,4 @@
+import { clsx } from 'clsx';
 import type { KeyboardEvent, PointerEvent } from 'react';
 import styles from './resizer.module.css';
 
@@ -13,7 +14,7 @@ export const RESIZE_STEP = 16;
  * A handle that sizes the column on one side of it. `grows` says which way a drag widens the column: toward the end for a
  * column before the handle, toward the start for one after it.
  */
-export function ResizeHandle({ label, size, min, max, grows, onResize, onReset }: {
+export function ResizeHandle({ label, size, min, max, grows, onResize, onReset, className }: {
   label: string;
   size: number;
   min: number;
@@ -21,6 +22,7 @@ export function ResizeHandle({ label, size, min, max, grows, onResize, onReset }
   grows: 'end' | 'start';
   onResize: (size: number) => void;
   onReset: () => void;
+  className?: string;
 }) {
   const sign = grows === 'end' ? 1 : -1;
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -46,7 +48,7 @@ export function ResizeHandle({ label, size, min, max, grows, onResize, onReset }
   };
   return (
     <div
-      className={styles.handle} role="separator" aria-orientation="vertical" aria-label={label} aria-valuenow={Math.round(size)} aria-valuemin={min} aria-valuemax={max}
+      className={clsx(styles.handle, className)} role="separator" aria-orientation="vertical" aria-label={label} aria-valuenow={Math.round(size)} aria-valuemin={min} aria-valuemax={max}
       tabIndex={0} onPointerDown={onPointerDown} onKeyDown={onKeyDown} onDoubleClick={onReset}
     />
   );

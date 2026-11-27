@@ -36,10 +36,8 @@ export const CLOSED_TABS: Record<ClosedTab, string> = {
 /** The word for what a breadcrumb names when the input is the whole system. */
 export const VIEW_WORD = '视图';
 
-/** A view's title: the view's name and the name of its input. */
-export function viewTitle(view: string, input: string): string {
-  return `${view} · ${input}`;
-}
+/** What stands between two names that make one, such as a view's and its input's. */
+export const NAME_SEPARATOR = ' · ';
 
 export const STATUS_NAMES: Record<Status, string> = {
   verified: '已验证',

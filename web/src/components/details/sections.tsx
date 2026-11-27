@@ -2,7 +2,7 @@ import { clsx } from 'clsx';
 import type { ReactNode } from 'react';
 import type { CodeExcerpt, Diagnostic, Node, ViewRequest } from '../../api/types';
 import { requestedView } from '../../routes/address';
-import { ABOUT, CONTROLS, SECTIONS, VIEW_NAMES, viewTitle } from '../../terms';
+import { ABOUT, CONTROLS, SECTIONS, VIEW_NAMES } from '../../terms';
 import { FactList, HintedHeading, Tag, type Fact } from '../../ui/content';
 import { Button, ButtonLink, IconButton, LinkArrowIcon } from '../../ui/controls';
 import { InfoHint } from '../../ui/hint';
@@ -14,6 +14,7 @@ import { NodeChip } from '../marks/NodeChip';
 import { NodeLink, type LinkTone } from '../marks/NodeLink';
 import { Signature, TypeText } from '../marks/Signature';
 import { StatusDot } from '../marks/StatusDot';
+import { ViewName } from '../marks/ViewName';
 import { useFolded } from './folded';
 import styles from './details.module.css';
 
@@ -132,7 +133,7 @@ export function ViewLinks({ views, current }: { views: ViewRequest[]; current?: 
       <div className={styles.chips}>
         {shown.map(request => (
           <ButtonLink key={`${request.kind} ${request.input.id}`} to={links.viewHref(request)} variant="line" size="small">
-            <Icon glyph={ArrowUpRight} size="tiny" />{viewTitle(VIEW_NAMES[request.kind], request.input.title)}
+            <Icon glyph={ArrowUpRight} size="tiny" /><ViewName view={VIEW_NAMES[request.kind]} input={request.input.title} />
           </ButtonLink>
         ))}
       </div>

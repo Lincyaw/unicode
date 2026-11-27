@@ -4,7 +4,7 @@
 .preview { display: grid; gap: var(--space-5); align-content: start; min-width: 0; }
 .previewTop { display: grid; gap: var(--space-2); min-width: 0; }
 .previewHead { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.identity { flex: 1; min-width: 0; overflow: hidden; font: var(--type-mono-strong); text-overflow: ellipsis; white-space: nowrap; }
+.identity { flex: 1; min-width: 0; font: var(--type-mono-strong); overflow-wrap: anywhere; }
 .summary { color: var(--text-muted); font: var(--type-small); }
 .codeLine { color: var(--text-main); font: var(--type-code); overflow-wrap: anywhere; }
 
