@@ -163,4 +163,4 @@ op getView(
 
   /** The C4 view only; container when not given */
   @query level?: C4Level,
-): View | NotFound | BadRequest;
+): View | NotFound | BadRequest | Refusals;

@@ -7,12 +7,13 @@ import (
 
 	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
+	"github.com/lincyaw/unicode/internal/repo"
 )
 
 // sinceRevisionGraph keeps the baseline's build diagnostics so incremental
 // selection cannot omit checks because it read an incomplete graph.
 func sinceRevisionGraph(root, rev string) (g graph.Graph, diagnostics []diag.Diagnostic, err error) {
-	commit, err := readRevision(root, rev)
+	commit, err := repo.ReadRevision(root, rev)
 	if err != nil {
 		return graph.Graph{}, nil, err
 	}

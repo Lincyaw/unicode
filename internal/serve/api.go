@@ -10,13 +10,14 @@ import (
 	"github.com/lincyaw/unicode/internal/check"
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/query"
+	"github.com/lincyaw/unicode/internal/repo"
 	"github.com/lincyaw/unicode/internal/view"
 )
 
 // answers implements the operations of api/openapi.yaml over the snapshot
 // that Answer puts in each request's context. A refusal is a problem error,
 // which writeError writes.
-type answers struct{}
+type answers struct{ s *Server }
 
 var _ StrictServerInterface = answers{}
 
@@ -45,9 +46,15 @@ func (answers) GetView(ctx context.Context, request GetViewRequestObject) (GetVi
 	}
 	layer, level := view.ClassLayerDesign, view.C4LevelContainer
 	if l := request.Params.Layer; l != nil {
+		if err := viewOption("layer", request.Kind, ViewKindClass, *l, l.Valid(), "design or code"); err != nil {
+			return nil, err
+		}
 		layer = view.ClassLayer(*l)
 	}
 	if l := request.Params.Level; l != nil {
+		if err := viewOption("level", request.Kind, ViewKindC4, *l, l.Valid(), "context or container"); err != nil {
+			return nil, err
+		}
 		level = view.C4Level(*l)
 	}
 	v, err := stateOf(ctx).view(view.ViewKind(request.Kind), value(request.Params.Input), value(request.Params.Expand), layer, level)
@@ -57,17 +64,19 @@ func (answers) GetView(ctx context.Context, request GetViewRequestObject) (GetVi
 	return GetView200JSONResponse(v), nil
 }
 
-func (answers) GetEntity(ctx context.Context, request GetEntityRequestObject) (GetEntityResponseObject, error) {
+func (a answers) GetEntity(ctx context.Context, request GetEntityRequestObject) (GetEntityResponseObject, error) {
 	st := stateOf(ctx)
 	e, err := st.entity(request.Params.Id)
 	if err != nil {
 		return nil, err
 	}
 	if base := request.Params.Base; base != nil {
-		// The changes need graph.Compare; until it exists the page has none, but the base must be a commit.
-		if _, err := revision(st.root, *base); err != nil {
+		c, err := a.s.compare(st, *base)
+		if err != nil {
 			return nil, err
 		}
+		changes := st.changes(request.Params.Id, c)
+		e.Changes = &changes
 	}
 	return GetEntity200JSONResponse(e), nil
 }
@@ -192,25 +201,27 @@ func (answers) GetCode(ctx context.Context, request GetCodeRequestObject) (GetCo
 	return GetCode200JSONResponse(e), nil
 }
 
-func (answers) Compare(ctx context.Context, request CompareRequestObject) (CompareResponseObject, error) {
-	if _, err := revision(stateOf(ctx).root, request.Params.Base); err != nil {
+func (a answers) Compare(ctx context.Context, request CompareRequestObject) (CompareResponseObject, error) {
+	st := stateOf(ctx)
+	c, err := a.s.compare(st, request.Params.Base)
+	if err != nil {
 		return nil, err
 	}
-	return nil, refuse(http.StatusNotImplemented, "serve.not-implemented", "compare the two revisions with git diff until unicode diff exists",
-		"comparing snapshots needs graph.Compare, which this version of unicode does not have yet")
+	return Compare200JSONResponse(st.comparison(c)), nil
 }
 
 func (answers) ListRevisions(ctx context.Context, request ListRevisionsRequestObject) (ListRevisionsResponseObject, error) {
-	st := stateOf(ctx)
 	limit := 20
 	if l := request.Params.Limit; l != nil {
 		limit = int(*l)
 	}
-	rs := revisions(st.root, "HEAD", limit)
-	if len(rs) > 0 {
-		rs[0].Branch = branch(st.root)
+	out := []Revision{}
+	// A repository without git or without a commit has no revisions to compare with.
+	rs, _ := repo.Log(stateOf(ctx).root, "HEAD", limit)
+	for _, r := range rs {
+		out = append(out, revision(r))
 	}
-	return ListRevisions200JSONResponse(rs), nil
+	return ListRevisions200JSONResponse(out), nil
 }
 
 // queryError refuses a query given an identity that is not a node with
@@ -324,6 +335,19 @@ func optional[T comparable](v T) *T {
 		return nil
 	}
 	return &v
+}
+
+// viewOption refuses a view's layer or level, as unicode view refuses
+// --layer and --level: given to another view than the one that reads it, or
+// naming none of its values.
+func viewOption[T ~string](name string, kind, reads ViewKind, value T, valid bool, values string) error {
+	switch {
+	case kind != reads:
+		return refuse(http.StatusBadRequest, "serve.bad-parameter", "leave "+name+" out", "%s picks the %s of the %s view, not of the %s view", name, name, reads, kind)
+	case !valid:
+		return refuse(http.StatusBadRequest, "serve.bad-parameter", "give "+values, "%q is not a %s", value, name)
+	}
+	return nil
 }
 
 // viewIdentities are the node identities a view request names: its input,

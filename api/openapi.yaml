@@ -52,13 +52,34 @@ paths:
         '400':
           description: |-
             The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
-            revision that git cannot read (`serve.bad-revision`), or a path outside the repository (`serve.bad-path`).
+            revision that git cannot read (`serve.bad-revision`), a path outside the repository (`serve.bad-path`), or a
+            parameter that is missing, not of its type, or not read by the view it is given to (`serve.bad-parameter`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '404':
-          description: The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`).
+          description: The request names a node, an edge, a file or an endpoint that the snapshot or the interface does not have (`serve.not-found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
           content:
             application/json:
               schema:
@@ -86,7 +107,28 @@ paths:
         '400':
           description: |-
             The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
-            revision that git cannot read (`serve.bad-revision`), or a path outside the repository (`serve.bad-path`).
+            revision that git cannot read (`serve.bad-revision`), a path outside the repository (`serve.bad-path`), or a
+            parameter that is missing, not of its type, or not read by the view it is given to (`serve.bad-parameter`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
           content:
             application/json:
               schema:
@@ -103,6 +145,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CheckReport'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /edge:
     get:
       operationId: getEdge
@@ -133,8 +195,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EdgeEntity'
+        '400':
+          description: |-
+            The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
+            revision that git cannot read (`serve.bad-revision`), a path outside the repository (`serve.bad-path`), or a
+            parameter that is missing, not of its type, or not read by the view it is given to (`serve.bad-parameter`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
-          description: The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`).
+          description: The request names a node, an edge, a file or an endpoint that the snapshot or the interface does not have (`serve.not-found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
           content:
             application/json:
               schema:
@@ -166,13 +257,34 @@ paths:
         '400':
           description: |-
             The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
-            revision that git cannot read (`serve.bad-revision`), or a path outside the repository (`serve.bad-path`).
+            revision that git cannot read (`serve.bad-revision`), a path outside the repository (`serve.bad-path`), or a
+            parameter that is missing, not of its type, or not read by the view it is given to (`serve.bad-parameter`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '404':
-          description: The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`).
+          description: The request names a node, an edge, a file or an endpoint that the snapshot or the interface does not have (`serve.not-found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
           content:
             application/json:
               schema:
@@ -198,8 +310,37 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Affected'
+        '400':
+          description: |-
+            The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
+            revision that git cannot read (`serve.bad-revision`), a path outside the repository (`serve.bad-path`), or a
+            parameter that is missing, not of its type, or not read by the view it is given to (`serve.bad-parameter`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
-          description: The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`).
+          description: The request names a node, an edge, a file or an endpoint that the snapshot or the interface does not have (`serve.not-found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
           content:
             application/json:
               schema:
@@ -222,8 +363,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NodeView'
+        '400':
+          description: |-
+            The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
+            revision that git cannot read (`serve.bad-revision`), a path outside the repository (`serve.bad-path`), or a
+            parameter that is missing, not of its type, or not read by the view it is given to (`serve.bad-parameter`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
-          description: The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`).
+          description: The request names a node, an edge, a file or an endpoint that the snapshot or the interface does not have (`serve.not-found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
           content:
             application/json:
               schema:
@@ -251,6 +421,35 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Node'
+        '400':
+          description: |-
+            The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
+            revision that git cannot read (`serve.bad-revision`), a path outside the repository (`serve.bad-path`), or a
+            parameter that is missing, not of its type, or not read by the view it is given to (`serve.bad-parameter`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /revisions:
     get:
       operationId: listRevisions
@@ -273,6 +472,35 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Revision'
+        '400':
+          description: |-
+            The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
+            revision that git cannot read (`serve.bad-revision`), a path outside the repository (`serve.bad-path`), or a
+            parameter that is missing, not of its type, or not read by the view it is given to (`serve.bad-parameter`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /search:
     get:
       operationId: search
@@ -307,6 +535,35 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Node'
+        '400':
+          description: |-
+            The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
+            revision that git cannot read (`serve.bad-revision`), a path outside the repository (`serve.bad-path`), or a
+            parameter that is missing, not of its type, or not read by the view it is given to (`serve.bad-parameter`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /slice:
     get:
       operationId: getSlice
@@ -339,8 +596,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Slice'
+        '400':
+          description: |-
+            The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
+            revision that git cannot read (`serve.bad-revision`), a path outside the repository (`serve.bad-path`), or a
+            parameter that is missing, not of its type, or not read by the view it is given to (`serve.bad-parameter`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
-          description: The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`).
+          description: The request names a node, an edge, a file or an endpoint that the snapshot or the interface does not have (`serve.not-found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
           content:
             application/json:
               schema:
@@ -357,6 +643,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Snapshot'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /tree:
     get:
       operationId: getTree
@@ -372,6 +678,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TreeNode'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /views/{kind}:
     get:
       operationId: getView
@@ -422,13 +748,34 @@ paths:
         '400':
           description: |-
             The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
-            revision that git cannot read (`serve.bad-revision`), or a path outside the repository (`serve.bad-path`).
+            revision that git cannot read (`serve.bad-revision`), a path outside the repository (`serve.bad-path`), or a
+            parameter that is missing, not of its type, or not read by the view it is given to (`serve.bad-parameter`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Problem'
         '404':
-          description: The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`).
+          description: The request names a node, an edge, a file or an endpoint that the snapshot or the interface does not have (`serve.not-found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '405':
+          description: 'The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: 'The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: |-
+            The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+            again, the next request is answered.
           content:
             application/json:
               schema:

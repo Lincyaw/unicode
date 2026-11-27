@@ -264,12 +264,12 @@ model EdgeEntity {
 /** The page of a node. With `base`, `changes` compares it with that revision. */
 @route("/entity")
 @get
-op getEntity(@query id: string, @query base?: string): Entity | NotFound | BadRequest;
+op getEntity(@query id: string, @query base?: string): Entity | NotFound | BadRequest | Refusals;
 
 /** The preview of an edge. */
 @route("/edge")
 @get
-op getEdge(@query kind: EdgeKind, @query from: string, @query to: string): EdgeEntity | NotFound;
+op getEdge(@query kind: EdgeKind, @query from: string, @query to: string): EdgeEntity | NotFound | BadRequest | Refusals;
 
 /**
  * Several nodes by identity, in the order asked: the entries of the navigation trail. An identity the snapshot no
@@ -277,12 +277,12 @@ op getEdge(@query kind: EdgeKind, @query from: string, @query to: string): EdgeE
  */
 @route("/nodes")
 @get
-op listNodes(@query(#{ explode: true }) id: string[]): Node[];
+op listNodes(@query(#{ explode: true }) id: string[]): Node[] | BadRequest | Refusals;
 
 /** One node with the edges that leave it and reach it, sorted by kind, start and end (`unicode node get`). */
 @route("/node")
 @get
-op getNode(@query id: string): NodeView | NotFound;
+op getNode(@query id: string): NodeView | NotFound | BadRequest | Refusals;
 
 /** A node with the edges that leave it and those that reach it (query.NodeView). */
 model NodeView {

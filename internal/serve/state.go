@@ -3,6 +3,7 @@ package serve
 import (
 	"cmp"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/lincyaw/unicode/internal/check"
 	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
+	"github.com/lincyaw/unicode/internal/repo"
 	"github.com/lincyaw/unicode/internal/view"
 )
 
@@ -32,8 +34,10 @@ type state struct {
 	files   map[string]string
 	checked check.Checked
 	head    WorkingTree
-	// applies memoizes whether a view applies to an input, by "kind input".
-	applies sync.Map
+	// applies memoizes whether a view applies to an input, by "kind input";
+	// comparisons the comparison with each base commit.
+	applies     sync.Map
+	comparisons sync.Map
 }
 
 // load reads the snapshot file path of the repository at root, decodes it
@@ -47,16 +51,28 @@ func load(root, path string, builtAt time.Time) (*state, error) {
 	if err != nil {
 		return nil, Unreadable{Path: path, Cause: err}
 	}
-	st := &state{root: root, path: path, builtAt: builtAt.UTC(), g: g, nodes: map[string]graph.Node{},
-		out: map[string][]graph.Edge{}, in: map[string][]graph.Edge{}, edges: map[string]graph.Edge{}}
+	st := indexed(root, g)
+	if st.system == "" {
+		return nil, Unreadable{Path: path, Cause: errors.New("the snapshot has no system container, so unicode build did not write it")}
+	}
+	st.path, st.builtAt = path, builtAt.UTC()
+	st.checked = check.Conform(&g)
+	if st.head, err = readHead(root, filepath.Dir(path)); err != nil {
+		return nil, Unreadable{Path: path, Cause: err}
+	}
+	return st, nil
+}
+
+// indexed indexes the graph of the repository at root, unchecked: the
+// served snapshot before its check, or the graph of a base revision.
+func indexed(root string, g graph.Graph) *state {
+	st := &state{root: root, g: g, nodes: map[string]graph.Node{}, out: map[string][]graph.Edge{}, in: map[string][]graph.Edge{},
+		edges: map[string]graph.Edge{}, checked: check.Checked{Statuses: map[string]graph.Status{}}}
 	for _, n := range g.Nodes() {
 		st.nodes[n.Id] = n
 		if st.system == "" && n.Layer == graph.LayerDesign && n.Kind == graph.NodeKindContainer && n.Form == "system" {
 			st.system = n.Id
 		}
-	}
-	if st.system == "" {
-		return nil, Unreadable{Path: path, Cause: errors.New("the snapshot has no system container, so unicode build did not write it")}
 	}
 	for _, e := range g.Edges() {
 		st.out[e.From] = append(st.out[e.From], e)
@@ -64,9 +80,38 @@ func load(root, path string, builtAt time.Time) (*state, error) {
 		st.edges[edgeID(e.Kind, e.From, e.To)] = e
 	}
 	st.files = files(st.nodes)
-	st.checked = check.Conform(&g)
-	st.head = readHead(root)
-	return st, nil
+	return st
+}
+
+// readHead reads the working tree the snapshot was built from: from the
+// record build wrote beside it in dir, the commit with what git tells of it
+// and whether the working tree had changes; without a record, from git now,
+// empty without git or a commit. A record that is not {commit, dirty} is an error.
+func readHead(root, dir string) (WorkingTree, error) {
+	record, err := repo.ReadRecord(dir)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		w, err := repo.ReadWorkingTree(root, dir)
+		if err != nil {
+			return WorkingTree{}, nil
+		}
+		return workingTree(w), nil
+	case err != nil:
+		return WorkingTree{}, err
+	}
+	head := WorkingTree{Dirty: record.Dirty}
+	if record.Commit == nil {
+		return head, nil
+	}
+	head.Commit = *record.Commit
+	if r, err := repo.ReadRevision(root, *record.Commit); err == nil && r.Commit == *record.Commit {
+		head = workingTree(r.At(record.Dirty))
+	}
+	return head, nil
+}
+
+func workingTree(w repo.WorkingTree) WorkingTree {
+	return WorkingTree{Commit: w.Commit, Short: w.Short, Branch: optional(w.Branch), Subject: w.Subject, Time: w.Time, Dirty: w.Dirty}
 }
 
 func edgeID(kind graph.EdgeKind, from, to string) string { return string(kind) + " " + from + " " + to }

@@ -40,7 +40,8 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | `internal/check` | 归属、依赖、绑定、可执行、生成与录制这几组约束 | graph、diag |
 | `internal/query` | 节点、引用、搜索、切片和影响 | graph |
 | `internal/view` | 视图的选取与折叠；类型卡片的成员沿用 `check` 对字段和枚举值的逐项比较 | graph、check |
-| `internal/serve` | 查看器的后端：读取快照，载入时按 `check` 的约束检查，回答 §7.5.1 的接口 | graph、diag、check、query、view、lang.golang |
+| `internal/repo` | 仓库：经 git 读出提交、工作区和提交中的文件，以及 `build` 写在快照旁边的记录 | — |
+| `internal/serve` | 查看器的后端：读取快照，载入时按 `check` 的约束检查，回答 §7.5.1 的接口；比较的基准由命令行建图 | graph、diag、check、query、view、lang.golang、repo |
 | `internal/gen` | 生成计划：缺少的骨架，以及应有的生成文件 | graph、lang、diag |
 | `internal/run` | 回放与探索：经后端运行驱动，按覆盖挑选输入，缩减并写出录制文件 | graph、lang、syntax、diag |
 | `cmd/unicode` | 解析参数，调用其余组件，输出结果和退出码 | 全部 |
@@ -95,7 +96,7 @@ type Runner interface {
 ```
 
 - **抽取**：后端读出 `container`、`type`、`op` 节点，以及 `contains`、`imports`、`calls`、`refers`、`extends`、`implements` 边。它同时读出代码中的绑定，写成 `realizes`、`checks`、`generates` 和 `observes` 边；绑定的写法不合格式时，给出诊断。带 `realizes` 绑定的类型，它的每个方法按反向的名称映射（例如 Go 的 `Submit` 对应 `submit`）得到一条到 `<类型的标识>.<操作名>` 的 `realizes` 边，来源为推导；推导时，终点不存在的这类边被丢掉，那些方法是细节。代码层 `op` 的 `signature` 属性按下面的类型映射归一化成设计的写法，引用写成从根起的标识，与设计层的签名直接按字符串比较。后端产出的是代码层的图片段，格式与快照相同。
-- **Go 后端**：在进程内用 `golang.org/x/tools/go/packages` 和 `go/types` 解析源码和类型。调用按静态类型解析，接口方法的调用解析到接口的方法。函数字面量中的调用属于能运行它的函数：写在函数体中的，属于这个函数；写在包级变量的初始值中的，属于引用了这个变量的每个函数，并经由初始值中引用的其他包级变量传递，调用位置仍是它在初始值中的位置。初始化时就执行的调用（不在函数字面量中）不属于任何函数；对函数的引用不是调用。`implements` 按 Go 方法集的类型身份判断，参数名和返回值名不参与比较；包的测试变体仍按同一包路径识别类型，有符号性、整数宽度与可变参数等真实类型差异保留。抽取包括 `_test.go` 文件：谓词、生成器和只供它们使用的类型都在其中，它们的绑定照常读取。
+- **Go 后端**：在进程内用 `golang.org/x/tools/go/packages` 和 `go/types` 解析源码和类型。调用按静态类型解析，接口方法的调用解析到接口的方法。函数字面量中的调用属于能运行它的函数：写在函数体中的，属于这个函数；写在包级变量的初始值中的，属于引用了这个变量的每个函数，并经由初始值中引用的其他包级变量传递，调用位置仍是它在初始值中的位置。初始值在函数字面量之外引用的函数和方法（例如按种类取函数的表，或 `var f = g`），也算作引用了这个变量的每个函数对它们的调用，同样经由其他包级变量传递，调用位置是引用的位置：这是可能的调用，与经由接口的分派一样取宽。初始化时就执行的调用（不在函数字面量中）不属于任何函数，它直接调用的函数也不算被存放；函数体中对函数的引用不是调用。`implements` 按 Go 方法集的类型身份判断，参数名和返回值名不参与比较；包的测试变体仍按同一包路径识别类型，有符号性、整数宽度与可变参数等真实类型差异保留。抽取包括 `_test.go` 文件：谓词、生成器和只供它们使用的类型都在其中，它们的绑定照常读取。
 - **Python 后端**：工具链内嵌一个只用标准库的抽取脚本，以 `python3 -I` 运行。脚本用 `ast` 解析源码，把图片段以 JSON 写到标准输出。调用按名称和导入关系解析，解析不到的调用不成边，只计数。生成在 Go 中按模板完成。
 - **运行**：后端用该语言的测试工具运行驱动，在进程内逐个输入记录覆盖：Go 用 `-cover` 构建，并用 `runtime/coverage` 在每个输入前后清零和读出计数；Python 用标准库的 `sys.monitoring`。覆盖只统计谓词沿 `exercises` 可达的函数，不含生成文件和谓词本身。
 - **测试类别**：Go 中，`func FuzzX(f *testing.F)` 为 `fuzz`，调用了 `rapid.Check` 的 `TestX` 为 `property`，其余 `TestX` 为 `example`。Python 中，带 `hypothesis.given` 的测试为 `property`，用 `atheris` 的为 `fuzz`。后端据此找出生成文件之外的测试函数（[model.md](model.md) §10 第 21 条）。
@@ -173,12 +174,11 @@ type Runner interface {
 
 | 种类 | 属性的键 |
 | --- | --- |
-| container（`package`、`file`） | `language`、`path`（文件的路径，或包的导入路径）；工具生成的文件另带 `generated: true` |
+| container（`package`、`file`） | `language`、`path`（文件的路径，或包的导入路径）；工具生成的文件另带 `generated: true`；文件另带 `globals`（不是节点的顶层声明的 SHA-256，按源码次序） |
 | type | `name`、`fields`（每项 `名称: 类型`；未导出的字段是细节，不列出）、`values`、`declaration`（类型参数和定义的规范形式 SHA-256，不含类型名或方法体） |
 | op（`func`、`method`、`abstract`） | `name`（带 `checks` 绑定的谓词写作检查名称）、`signature`、`testKind`、`stub`、`body`（函数体规范形式的 SHA-256，无函数体时省略）、`declaration`（具体操作的原生声明头的 SHA-256，包含接收者、原生签名及泛型约束） |
 
 `body` 和 `declaration` 让内容哈希含有实际实现。Go 按语法树编码，依次记录节点类型与字段，位置只记有无，忽略注释；摘要写成小写十六进制。声明头不含函数体，接口抽象操作没有原生声明头。
-
 
 `calls` 边的属性 `sites` 列出每个调用位置，写作 `路径:行:列`；`generates` 边的属性 `symbols` 列出符号的名称。Go 签名的写法：指针 `*T` 写作 `optional<T>`，`check` 比较时把设计中 `object` 类型的 `optional<X>` 与 `X` 视为相同；末尾的 `error` 写作 ` raises error`，与设计中非空的 `raises` 相符；谓词的第一个参数（`rapid.TB`）保留在签名中，比较符号时跳过。绑定边的终点是设计层的标识。`Graph.AddFragment` 先暂存终点不在图中的绑定边和方法的候选边；推导时加入能解析的，绑定边中终点仍不存在的报为 `graph.unresolved-binding`，即 [model.md](model.md) §10 第 15 条中"目标存在"的一半；其余端点缺失的边仍是 `DanglingEdge`。
 
@@ -402,7 +402,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 
 #### 7.5.1 接口
 
-**数据来源。** `unicode serve` 读取 `unicode build` 写出的快照 `.unicode/graph.json`，载入时按 `unicode check` 的约束检查一遍，得到诊断和每个声明项的状态。快照文件改变后（按修改时间和大小判断），下一次请求时重新读入；每个请求只从一个快照回答。工作区所在的提交、分支和是否有改动，在读入快照时由 git 给出。比较的基准由后端按查询的 `--rev` 的方式取出该提交并建图，在进程内保留。
+**数据来源。** `unicode serve` 读取 `unicode build` 写出的快照 `.unicode/graph.json`，载入时按 `unicode check` 的约束检查一遍，得到诊断和每个声明项的状态。快照文件改变后（按修改时间和大小判断），下一次请求时重新读入；每个请求只从一个快照回答。快照所在的工作区取自 `build` 写在快照旁边的 `build.json`：其中的提交和是否有改动，另由 git 给出该提交的缩写、说明、时间和检出在它上面的分支，git 读不出时这几项为空；记录的提交为 `null` 时只有是否有改动。没有 `build.json` 时，在读入快照时由 git 给出；`build.json` 不是 `{commit, dirty}` 时，快照算作读不出。比较的基准由命令行按查询的 `--rev` 的方式取出该提交并建图（`serve` 的 `Builder`），每个提交只建一次，在进程内保留；比较由 `graph.compare` 给出，`base` 和 `head` 的写法与 `unicode diff --format json` 相同，`head` 是快照所在的工作区。实体页的变更取自同一个比较：节点本身，以及在基准或快照中落实它的代码元素，各一项，没有变化的为 `unchanged`；代码类型和函数另有 `linesChanged`，即它的声明在基准提交中和在工作区中所占的各行之间，按 `git diff` 计的增加和删除的行数，一边没有时按空计。`/compare` 的各项不带 `linesChanged`。
 
 **约定。** 接口只读：视图、输入、展开、选中项和导航路径都记在页面地址中，服务端不保存状态。标识中含有 `.`、`#`、`:` 和 `/`，一律放在查询参数里，不放在路径中。接口的源文件是 `api/*.tsp`，`api/openapi.yaml` 由它生成，`make api-check` 确认二者一致；各字段的含义和取法以源文件中的说明为准。证据（运行、结果、覆盖，M6）和评审记录（M7）的字段是可选的，图中有了这些数据之后才给出。
 
@@ -411,7 +411,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 - 节点和边是快照中的节点和边（§5.2、[model.md](model.md) §8），节点带内容哈希 `digest`。节点另有 `title`（页面上的名称）、`status`（`check` 给出的状态）、代码元素的 `bindings`（绑定边及其指向的设计节点）、步骤的 `step`（所在流程、序号、发起方、目标、接收方、外层步骤和子步骤）；边另有 `status`。
 - 诊断与 `unicode check --format json` 的相同。一条边加另一端的节点沿用 `query.Neighbor`，切片沿用 `query.Context`，影响沿用 `query.Affected`，单个节点沿用 `query.NodeView`。
 - 视图沿用 `view.View`（`kind`、`input`、`ancestors`、`expand`、`layer`、`level`、`nodes`、`edges`、`folded`、`hidden`），加上视图中各项的诊断。类型卡片带 `members`，即字段和枚举值与代码的逐项比较；容器卡片带 `contents`，展开时是其中的类型、操作、流程、性质和错误，折叠时是其中类型的名称；代码文件和代码类型带 `details`，即未画出的细节函数的个数。边的一端是折叠的容器时，`count` 是它代表的边数；`labels` 是边承载的操作。
-- 拒绝的请求返回 `{code, message, fix}`：标识、边、文件或接口不存在为 404 `serve.not-found`；视图不适用于输入为 400 `serve.not-applicable`，提交读不出为 400 `serve.bad-revision`，路径不是设计文件、录制文件或快照中的代码文件为 400 `serve.bad-path`，参数缺失或不合类型（包括不存在的视图、节点或边的种类）为 400 `serve.bad-parameter`。快照文件在运行中变得读不出时，请求得到 503 `serve.unreadable-snapshot`，文件恢复后照常回答；比较要等 `graph.Compare`，在此之前为 501 `serve.not-implemented`；服务端自身的失败为 500 `serve.internal-error`。
+- 拒绝的请求返回 `{code, message, fix}`：标识、边、文件或接口不存在为 404 `serve.not-found`；视图不适用于输入为 400 `serve.not-applicable`，提交读不出为 400 `serve.bad-revision`，路径不是设计文件、录制文件或快照中的代码文件为 400 `serve.bad-path`，参数缺失或不合类型（包括不存在的视图、节点或边的种类），以及 `layer` 给了类视图之外的视图、`level` 给了 C4 视图之外的视图（同 `unicode view` 的 `--layer` 和 `--level`），为 400 `serve.bad-parameter`。快照文件在运行中变得读不出时，请求得到 503 `serve.unreadable-snapshot`，文件恢复后照常回答；基准提交建不出图，或者服务端自身失败，为 500 `serve.internal-error`。
 
 **接口。** 路径都在 `/api` 之下：
 
@@ -537,7 +537,6 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
   | `serve.bad-path` | 请求的路径不是快照描述的文件，属于请求 |
   | `serve.bad-parameter` | 请求的参数缺失或不合类型，属于请求 |
   | `serve.unreadable-snapshot` | 快照文件在运行中读不出，属于环境 |
-  | `serve.not-implemented` | 查看器的比较尚未实现，属于工具链的能力 |
   | `serve.internal-error` | 服务端未能回答请求，属于工具链自身 |
   | `gen.duplicate-backend` | 同一种语言注册了多个生成后端 |
   | `gen.unsupported-language` | 配置的语言没有可用生成能力 |

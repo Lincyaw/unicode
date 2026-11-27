@@ -11,9 +11,8 @@ import (
 )
 
 // The content that a code node adds to its content hash (docs/model.md §6,
-// docs/design.md §5.2): a function's body, and a type's declaration without
-// its name, plus a concrete operation's native header. Each is the SHA-256
-// of a normal form that formatting and comments do not change.
+// docs/design.md §5.2): function bodies, type definitions, native operation
+// headers and file-level declarations. Each is a formatting-independent SHA-256.
 
 var (
 	posType      = reflect.TypeFor[token.Pos]()
@@ -38,6 +37,48 @@ func bodyDigest(body *ast.BlockStmt) string { return digest(body) }
 // declarationDigest is the digest of what a type declares: its type
 // parameters and its definition.
 func declarationDigest(spec *ast.TypeSpec) string { return digest(spec.TypeParams, spec.Type) }
+
+// globalsDigest is the digest of a file's top-level declarations that are no
+// nodes, in the order of the source: each declaration of variables,
+// constants or type aliases with those specs, and each init function or
+// function named _ whole; "" when it has none.
+func globalsDigest(file *ast.File) string {
+	var items []any
+	for _, decl := range file.Decls {
+		switch decl := decl.(type) {
+		case *ast.GenDecl:
+			if specs := looseSpecs(decl); len(specs) > 0 {
+				items = append(items, decl.Tok.String(), specs)
+			}
+		case *ast.FuncDecl:
+			if !funcIsNode(decl) {
+				items = append(items, decl)
+			}
+		}
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	return digest(items...)
+}
+
+// looseSpecs are the specs of a declaration that are no nodes: all of a
+// declaration of variables or constants, and a type declaration's aliases.
+func looseSpecs(decl *ast.GenDecl) []ast.Spec {
+	switch decl.Tok {
+	case token.VAR, token.CONST:
+		return decl.Specs
+	case token.TYPE:
+		var aliases []ast.Spec
+		for _, spec := range decl.Specs {
+			if !typeIsNode(spec.(*ast.TypeSpec)) {
+				aliases = append(aliases, spec)
+			}
+		}
+		return aliases
+	}
+	return nil
+}
 
 func digest(nodes ...any) string {
 	var b strings.Builder

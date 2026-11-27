@@ -42,7 +42,7 @@ model Problem {
   fix: string;
 }
 
-/** The request names a node, an edge or a file that the snapshot does not have (`serve.not-found`). */
+/** The request names a node, an edge, a file or an endpoint that the snapshot or the interface does not have (`serve.not-found`). */
 @error
 model NotFound {
   @statusCode _: 404;
@@ -51,10 +51,38 @@ model NotFound {
 
 /**
  * The request is malformed or does not apply: a view that does not take the input (`serve.not-applicable`), a
- * revision that git cannot read (`serve.bad-revision`), or a path outside the repository (`serve.bad-path`).
+ * revision that git cannot read (`serve.bad-revision`), a path outside the repository (`serve.bad-path`), or a
+ * parameter that is missing, not of its type, or not read by the view it is given to (`serve.bad-parameter`).
  */
 @error
 model BadRequest {
   @statusCode _: 400;
   ...Problem;
 }
+
+/** The request is not a GET or a HEAD: the interface is read-only (`serve.bad-parameter`). */
+@error
+model MethodNotAllowed {
+  @statusCode _: 405;
+  ...Problem;
+}
+
+/** The server failed to answer: the graph of a base revision cannot be built, or the server itself failed (`serve.internal-error`). */
+@error
+model ServerError {
+  @statusCode _: 500;
+  ...Problem;
+}
+
+/**
+ * The snapshot file stopped being readable while the server runs (`serve.unreadable-snapshot`); once it is readable
+ * again, the next request is answered.
+ */
+@error
+model Unavailable {
+  @statusCode _: 503;
+  ...Problem;
+}
+
+/** The refusals that any request can get, whatever it asks. */
+alias Refusals = MethodNotAllowed | ServerError | Unavailable;

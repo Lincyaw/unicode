@@ -28,7 +28,7 @@ func describeEdge(e graph.Edge) string {
 }
 
 // digestKeys are the attrs whose values are digests (docs/design.md §5.2).
-var digestKeys = []string{"body", "declaration"}
+var digestKeys = []string{"body", "declaration", "globals"}
 
 // digestClasses writes each digest of the nodes, sorted by identity, as the
 // class of the nodes that share it: "#0" for the first, "#1" for the next

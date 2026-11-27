@@ -154,25 +154,35 @@ func (w world) details(id string, drawn map[string]bool) int {
 	return count
 }
 
-// labels are the design operations an edge from the node from carries,
-// given the edges of the graph it stands for: for a depends, those the
-// callees of its calls realize; for a calls edge from a person, those the
-// steps call.
+// labels are the operations an edge from the node from carries, by design
+// name, given the edges of the graph it stands for: for a depends, those the
+// callees of its calls realize; for a calls edge from a person, each step's
+// call as the flow writes it, name(arguments).
 func (w world) labels(from string, stands []graph.Edge) []string {
+	name := func(id string) string {
+		parts := strings.Split(id, ".")
+		return parts[len(parts)-1]
+	}
 	var ops []string
 	for _, e := range stands {
+		var label []string
 		switch {
 		case e.Kind == graph.EdgeKindDepends:
 			for _, call := range e.Attrs["calls"] {
 				callee := call[strings.Index(call, " ")+1:]
 				for _, o := range w.to(callee, graph.EdgeKindRealizes) {
-					if n := w.nodes[o]; n.Kind == graph.NodeKindOp && n.Layer == graph.LayerDesign && !slices.Contains(ops, o) {
-						ops = append(ops, o)
+					if n := w.nodes[o]; n.Kind == graph.NodeKindOp && n.Layer == graph.LayerDesign {
+						label = append(label, name(o))
 					}
 				}
 			}
-		case e.Kind == graph.EdgeKindCalls && w.nodes[from].Kind == graph.NodeKindActor && w.nodes[from].Form == "person" && !slices.Contains(ops, e.To):
-			ops = append(ops, e.To)
+		case e.Kind == graph.EdgeKindCalls && w.nodes[from].Kind == graph.NodeKindActor && w.nodes[from].Form == "person":
+			label = append(label, name(e.To)+"("+strings.Join(w.nodes[e.From].Attrs["args"], ", ")+")")
+		}
+		for _, l := range label {
+			if !slices.Contains(ops, l) {
+				ops = append(ops, l)
+			}
 		}
 	}
 	slices.Sort(ops)
