@@ -1036,6 +1036,9 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 	for _, spec := range append(append([]*ast.ImportSpec{}, runtimeFile.Imports...), append(append(doubleFile.Imports, caseFile.Imports...), append(workerFile.Imports, aliasFile.Imports...)...)...) {
 		path, _ := strconv.Unquote(spec.Path.Value)
 		imports[path] = ""
+		if spec.Name != nil {
+			imports[path] = spec.Name.Name
+		}
 	}
 	for path, alias := range file.imports {
 		imports[path] = alias

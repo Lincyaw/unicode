@@ -16,12 +16,78 @@ import (
 
 func (c *contractCompiler) configureCodecs(unit *contractUnit) {
 	unit.spec.Codecs = map[string]ucCodec{}
-	for id, node := range c.nodes {
-		if node.Layer != graph.LayerDesign || node.Kind != graph.NodeKindType || len(node.Attrs["codec"]) != 2 {
+	seen := map[string]bool{}
+	var visitType func(string)
+	var visitOperation func(string)
+	visitOperation = func(id string) {
+		key := "op:" + id
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		op, ok := unit.spec.Operations[id]
+		if !ok {
+			return
+		}
+		if c.nodes[op.Owner].Kind == graph.NodeKindType {
+			visitType(op.Owner)
+		}
+		visitType(op.Result)
+		for _, model := range append(slices.Clone(op.Params), op.Raises...) {
+			visitType(model)
+		}
+	}
+	visitType = func(model string) {
+		if model == "" || seen[model] {
+			return
+		}
+		seen[model] = true
+		kind, args := ucSplitType(model)
+		for _, arg := range args {
+			visitType(arg)
+			if kind == "call" || kind == "replies" {
+				if c.nodes[arg].Kind == graph.NodeKindType {
+					for _, id := range c.visibleOperationIDs(arg) {
+						visitOperation(id)
+					}
+				} else {
+					visitOperation(arg)
+				}
+			}
+		}
+		node := c.nodes[model]
+		if len(node.Attrs["codec"]) == 2 {
+			encode := c.operationOf(node.Attrs["codec"][0])
+			unit.spec.Codecs[model] = ucCodec{Representation: encode.Result}
+			visitType(encode.Result)
+		}
+		ty := unit.spec.Types[model]
+		for _, field := range ty.Fields {
+			visitType(field.Type)
+		}
+		for _, parent := range ucParents(ty) {
+			visitType(parent)
+		}
+	}
+	for _, symbol := range unit.spec.Symbols {
+		visitType(symbol.Type)
+	}
+	for _, observer := range unit.spec.Observers {
+		visitType(observer.Type)
+	}
+	for _, edge := range c.plan.Graph.Edges() {
+		if edge.From != unit.node.Id && !strings.HasPrefix(edge.From, unit.node.Id+"#") {
 			continue
 		}
-		encode := c.operationOf(node.Attrs["codec"][0])
-		unit.spec.Codecs[id] = ucCodec{Representation: encode.Result}
+		if edge.Kind != graph.EdgeKindRefers && edge.Kind != graph.EdgeKindAbout && edge.Kind != graph.EdgeKindCalls {
+			continue
+		}
+		switch c.nodes[edge.To].Kind {
+		case graph.NodeKindType:
+			visitType(edge.To)
+		case graph.NodeKindOp:
+			visitOperation(edge.To)
+		}
 	}
 }
 func (c *contractCompiler) codecFunction(id string, pkg *packages.Package, imports map[string]string) (string, bool) {

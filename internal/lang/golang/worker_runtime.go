@@ -3,7 +3,7 @@ package golang
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
+	ucbinary "encoding/binary"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -63,7 +63,7 @@ func ucWorkerBits(seed string) []byte {
 	for i := 0; i < len(out); i += sha256.Size {
 		data := []byte(seed)
 		var n [8]byte
-		binary.LittleEndian.PutUint64(n[:], uint64(i))
+		ucbinary.LittleEndian.PutUint64(n[:], uint64(i))
 		data = append(data, n[:]...)
 		hash := sha256.Sum256(data)
 		copy(out[i:], hash[:])
