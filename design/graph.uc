@@ -210,21 +210,16 @@ property compare-reverses relation "compare(head, base) 是 compare(base, head) 
   manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
 }
 
-property compare-with-itself-is-empty invariant "一张图与它自己比较，或者与以另一种次序加入同一组节点和边的图比较，没有新增、删除和修改" {
+property compare-with-itself-is-empty postcondition "一张图与它自己比较，或者与以另一种次序加入同一组节点和边的图比较，没有新增、删除和修改" {
   about compare
-  forall content: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
+  forall content: Fragment generated "沿用标识互异的节点和两端存在的互异边的完整原分布"
   forall rotation: int
+  forall snapshot: Graph generated "按 content 的原始次序建图，不读取比较结果"
+  forall reordered: Graph generated "按 rotation 轮换相同节点和边的插入次序建图"
   where rotation in 0..1000
-  manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
-}
-
-property compare-self-contract postcondition "同一张图作为比较两端时，节点与边的差异均为空" {
-  about compare
-  forall snapshot: Graph generated "由有效片段建立的图，包含任意次序的节点和边"
-  observe none
-  changes none
-  call compare(snapshot, snapshot)
+  call compare(snapshot, reordered)
   ensure size(result.nodes) == 0 and size(result.edges) == 0
+  ensure size(compare(snapshot, snapshot).nodes) == 0 and size(compare(snapshot, snapshot).edges) == 0
 }
 
 property node-sequence-keeps-index transition "逐次加入节点后，每个节点都能按标识取回，且声明错误不减少原有节点数量" {
