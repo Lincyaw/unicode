@@ -120,6 +120,7 @@ func genFragment() *rapid.Generator[Fragment] {
 }
 
 //uc:generates graph.compare-self-contract.snapshot
+//uc:generates graph.node-sequence-keeps-index.snapshot
 func genComparisonSnapshot() *rapid.Generator[*Graph] {
 	return rapid.Custom(func(t *rapid.T) *Graph {
 		fragment := genFragment().Draw(t, "fragment")
