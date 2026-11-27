@@ -32,6 +32,21 @@ func (p *page) nodes(ids []string) []Node {
 	return out
 }
 
+// flowSteps groups steps that are in flow order by their flow: each flow's
+// node with its steps, as the entity page's 参与的流程 lists them.
+func (p *page) flowSteps(steps []string) []FlowSteps {
+	out := []FlowSteps{}
+	for _, s := range steps {
+		flow := p.st.stepInfo(s).Flow
+		if len(out) == 0 || out[len(out)-1].Flow.Id != flow {
+			out = append(out, FlowSteps{Flow: p.node(flow), Steps: []Node{}})
+		}
+		last := &out[len(out)-1]
+		last.Steps = append(last.Steps, p.node(s))
+	}
+	return out
+}
+
 func (p *page) neighbors(focus string, edges []graph.Edge) []Neighbor {
 	for _, e := range edges {
 		p.listed[e.From], p.listed[e.To] = true, true
@@ -58,7 +73,7 @@ func (st *state) entity(id string) (Entity, error) {
 		Tabs:       st.tabsWith(id, views),
 		RealizedBy: p.neighborsOf(st.realizations(id)),
 		Properties: p.nodes(st.relatedProperties(id)),
-		Flows:      p.nodes(st.participations(id)),
+		Flows:      p.flowSteps(st.participations(id)),
 		Sources:    st.sourcesOf(id),
 	}
 	switch {

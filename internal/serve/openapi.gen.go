@@ -695,9 +695,10 @@ type Entity struct {
 	// Flow A flow
 	Flow *FlowDetail `json:"flow,omitempty"`
 
-	// Flows 参与的流程: the steps it takes part in, each with its StepInfo: the steps that call it or one of its operations,
-	// call an operation whose signature refers to it, emit it or handle it, or that it sends as a person.
-	Flows []Node `json:"flows"`
+	// Flows 参与的流程: the flows it takes part in, in the order of their identities, each with the steps of it the node takes
+	// part in: the steps that call it or one of its operations, call an operation whose signature refers to it, emit it
+	// or handle it, or that it sends as a person.
+	Flows []FlowSteps `json:"flows"`
 
 	// Node The node, with its status
 	Node Node `json:"node"`
@@ -769,6 +770,15 @@ type FlowDetail struct {
 	Predicate *Neighbor `json:"predicate,omitempty"`
 
 	// Steps Its steps in their order, each with its StepInfo
+	Steps []Node `json:"steps"`
+}
+
+// FlowSteps A flow a node takes part in, and the steps of it that the node takes part in.
+type FlowSteps struct {
+	// Flow The flow, with its status
+	Flow Node `json:"flow"`
+
+	// Steps Its steps the node takes part in, in their order, each with its StepInfo
 	Steps []Node `json:"steps"`
 }
 

@@ -28,6 +28,7 @@ export type Evidence = Schemas['Evidence'];
 export type DriverMode = Schemas['DriverMode'];
 export type RunResult = Schemas['RunResult'];
 export type Entity = Schemas['Entity'];
+export type FlowSteps = Schemas['FlowSteps'];
 export type EdgeEntity = Schemas['EdgeEntity'];
 export type OpRow = Schemas['OpRow'];
 export type CaseRow = Schemas['CaseRow'];

@@ -4,7 +4,7 @@ import {
   ancestorsOf, calleesOf, callersOf, childrenOf, designContainerOf, detailCalleesOf, diagnosticsAbout, evidenceOf, findEdge, flowOf, full,
   incoming, membersOf, neighbor, outgoing, ownerOf, parentOf, plain, raw, realizersOf, senderOf, stepsOf, subjectsOf, SYSTEM_ID, targetOf,
 } from './graph';
-import type { Entity, Neighbor, Node, RawEdge, Revision, ViewKind, ViewRequest } from './schemaTypes';
+import type { Entity, FlowSteps, Neighbor, Node, RawEdge, Revision, ViewKind, ViewRequest } from './schemaTypes';
 import { opsOf } from './viewKit';
 import { callBefore } from './viewsFlow';
 
@@ -161,6 +161,11 @@ function steps(ids: string[]): Node[] {
   return ids.map(full);
 }
 
+/** Steps in flow order, grouped by their flow: each flow's node with its steps. */
+function flowSteps(ids: string[]): FlowSteps[] {
+  return [...Map.groupBy(ids, flowOf)].map(([flow, group]) => ({ flow: full(flow), steps: steps(group) }));
+}
+
 /** Uses and depends edges at a container, one per other end: a depends where there is one, else the uses. */
 function dependencyEdges(edges: RawEdge[], otherEnd: (each: RawEdge) => string): RawEdge[] {
   const depends = edges.filter(each => each.kind === 'depends');
@@ -203,7 +208,9 @@ export function entityOf(id: string, base?: Revision): Omit<Entity, 'tabs'> {
   };
   const realizedBy = (node.kind === 'actor' ? [id, ...descendantsOf(id)] : [id]).flatMap(target => incoming(target, 'realizes').map(each => neighbor(target, each, each.from)));
   const properties = list(relatedProperties(id)).map(plain);
-  const flows = steps(list(node.layer === 'design' && node.kind !== 'step' ? stepsTakingPart(id) : []));
+  const taking = list(node.layer === 'design' && node.kind !== 'step' ? stepsTakingPart(id) : []);
+  const flows = flowSteps(taking);
+  list(flows.map(each => each.flow.id));
   const sourced = node.layer === 'code' ? [id] : realizedBy.map(each => each.node.id);
   const covered = list(coveringCases(id));
   const evidence = evidenceOf(id);

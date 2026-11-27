@@ -1371,10 +1371,11 @@ components:
         flows:
           type: array
           items:
-            $ref: '#/components/schemas/Node'
+            $ref: '#/components/schemas/FlowSteps'
           description: |-
-            参与的流程: the steps it takes part in, each with its StepInfo: the steps that call it or one of its operations,
-            call an operation whose signature refers to it, emit it or handle it, or that it sends as a person.
+            参与的流程: the flows it takes part in, in the order of their identities, each with the steps of it the node takes
+            part in: the steps that call it or one of its operations, call an operation whose signature refers to it, emit it
+            or handle it, or that it sends as a person.
         sources:
           type: array
           items:
@@ -1491,6 +1492,22 @@ components:
             $ref: '#/components/schemas/Node'
           description: Its steps in their order, each with its StepInfo
       description: The sections of a flow's page.
+    FlowSteps:
+      type: object
+      required:
+        - flow
+        - steps
+      properties:
+        flow:
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: The flow, with its status
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+          description: Its steps the node takes part in, in their order, each with its StepInfo
+      description: A flow a node takes part in, and the steps of it that the node takes part in.
     Layer:
       type: string
       enum:

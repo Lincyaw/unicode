@@ -10,8 +10,8 @@ import table from '../../ui/table.module.css';
 import { CaseSections, CheckedSections, CodeSections, ContainerSections, EventSections, StepSections } from '../details/kindSections';
 import { DiagnosticTag, NodeRow, Section, SignaturePanel, SourcePanel, ViaTag } from '../details/sections';
 import { NodeLink } from '../marks/NodeLink';
-import { displayName, fileOf, opLine, placeOf, relative, scopeOf, statusOf, stepLine, stepName } from '../marks/format';
-import { ArrowRight, ArrowUpRight, Code, FileCode, KindIcon, Workflow } from '../marks/icons';
+import { displayName, fileOf, opLine, placeOf, relative, scopeOf, statusOf, stepLine } from '../marks/format';
+import { ArrowRight, ArrowUpRight, Code, FileCode, KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
 import { StatusDot } from '../marks/StatusDot';
@@ -154,20 +154,31 @@ function Between({ node, page, before, after, beforeTitle, afterTitle, badge }: 
   );
 }
 
-/** The flows it takes part in: each step with what it does, as its line in the flow reads. */
-function FlowSteps({ entity, children }: { entity: Entity; children?: (step: Node) => ReactNode }) {
+/**
+ * The flows it takes part in: each flow with its status and kind, then the steps of it the node takes part in, each by
+ * its index with what it does, as its line in the flow reads.
+ */
+function TakingPart({ entity, children }: { entity: Entity; children?: (step: Node) => ReactNode }) {
   if (entity.flows.length === 0) {
     return null;
   }
   return (
     <Section title={SECTIONS.flows}>
-      {entity.flows.map(step => (
-        <div key={step.id} className={styles.flowRow}>
-          <Icon glyph={Workflow} size="small" />
-          <NodeLink node={step} label={stepName(step)} />
-          <span className={styles.spacer} />
-          <span className={styles.stepLine}>{stepLine(step)}</span>
-          {children?.(step)}
+      {entity.flows.map(({ flow, steps }) => (
+        <div key={flow.id} className={styles.flowGroup}>
+          <div className={styles.flowRow}>
+            <StatusDot status={flow.status} />
+            <KindIcon node={flow} size="small" />
+            <NodeLink node={flow} />
+          </div>
+          {steps.map(step => (
+            <div key={step.id} className={clsx(styles.flowRow, styles.flowStep)}>
+              <NodeLink node={step} />
+              <span className={styles.spacer} />
+              <span className={styles.stepLine}>{stepLine(step)}</span>
+              {children?.(step)}
+            </div>
+          ))}
         </div>
       ))}
     </Section>
@@ -194,7 +205,7 @@ function TypeBody({ entity }: { entity: Entity }) {
         </Section>
       )}
       <EventSections entity={entity} />
-      <FlowSteps entity={entity} />
+      <TakingPart entity={entity} />
       <Sources entity={entity} />
     </>
   );
@@ -219,9 +230,9 @@ function OpBody({ entity }: { entity: Entity }) {
           />
         </Section>
       )}
-      <FlowSteps entity={entity}>
+      <TakingPart entity={entity}>
         {step => (step.step && step.step.children.length > 0 ? <Tag>{SECTIONS.children} {step.step.children.map(id => `#${id.split('#').at(-1) ?? ''}`).join(' ')}</Tag> : null)}
-      </FlowSteps>
+      </TakingPart>
       {entity.properties.length > 0 && (
         <Section title={SECTIONS.properties}>
           {entity.properties.map(property => (
@@ -252,7 +263,7 @@ function OtherBody({ entity }: { entity: Entity }) {
       return <CaseSections entity={entity} />;
     case 'flow':
     case 'property':
-      return <><CheckedSections entity={entity} /><FlowSteps entity={entity} /></>;
+      return <><CheckedSections entity={entity} /><TakingPart entity={entity} /></>;
     case 'type':
     case 'op':
     case 'observation':

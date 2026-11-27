@@ -4,12 +4,13 @@ import { Tag } from '../../ui/content';
 import { ButtonLink } from '../../ui/controls';
 import { Icon } from '../../ui/icons';
 import { fileOf, opLine, placeOf, relative, scopeOf, shortPath, stepLine, stepName, typeParts } from '../marks/format';
-import { ArrowRight, Check, FileCode, FlaskConical, KindIcon, Play, Split, TriangleAlert, Workflow, X } from '../marks/icons';
+import { ArrowRight, Check, FileCode, FlaskConical, KindIcon, Play, Split, TriangleAlert, X } from '../marks/icons';
 import { useLinks } from '../marks/links';
-import { caseSource } from './nodeWords';
-import { useFolded } from './folded';
 import { NodeLink } from '../marks/NodeLink';
 import { TypeText } from '../marks/Signature';
+import { StatusDot } from '../marks/StatusDot';
+import { useFolded } from './folded';
+import { caseSource } from './nodeWords';
 import { ChipList, CodePanel, DiagnosticTag, Facts, NodeRow, Section, SignaturePanel, SymbolLine, UnfoldButton, ViaTag } from './sections';
 import styles from './details.module.css';
 
@@ -37,29 +38,18 @@ function place(node: Node): string {
   return placeOf(node.origin);
 }
 
-/** The flow a step lies in, by its identity: the interface gives a step's flow only as that. */
-function flowOf(step: Node): string {
-  if (step.step === undefined) {
-    throw new Error(`The entity lists ${step.id} among the steps it takes part in, but the step carries no step information`);
-  }
-  return step.step.flow;
-}
-
-/**
- * The flows it takes part in: each flow, named by its identity relative to the node's component, with the steps the
- * node takes part in.
- */
+/** The flows it takes part in: each flow with its status and kind, and the steps of it the node takes part in. */
 export function FlowsSection({ entity }: { entity: Entity }) {
   if (entity.flows.length === 0) {
     return null;
   }
-  const scope = scopeOf(entity.node.id);
   return (
     <Section title={SECTIONS.flows}>
-      {[...Map.groupBy(entity.flows, flowOf)].map(([flow, steps]) => (
-        <div key={flow} className={styles.row}>
-          <Icon glyph={Workflow} size="small" />
-          <NodeLink node={{ id: flow, title: relative(flow, scope) }} />
+      {entity.flows.map(({ flow, steps }) => (
+        <div key={flow.id} className={styles.row}>
+          <StatusDot status={flow.status} />
+          <KindIcon node={flow} size="small" />
+          <NodeLink node={flow} />
           <span className={styles.indexes}>{steps.map(step => <NodeLink key={step.id} node={step} tone="inherit" />)}</span>
         </div>
       ))}

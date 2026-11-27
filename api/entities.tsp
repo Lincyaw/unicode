@@ -38,10 +38,11 @@ model Entity {
   properties: Node[];
 
   /**
-   * 参与的流程: the steps it takes part in, each with its StepInfo: the steps that call it or one of its operations,
-   * call an operation whose signature refers to it, emit it or handle it, or that it sends as a person.
+   * 参与的流程: the flows it takes part in, in the order of their identities, each with the steps of it the node takes
+   * part in: the steps that call it or one of its operations, call an operation whose signature refers to it, emit it
+   * or handle it, or that it sends as a person.
    */
-  flows: Node[];
+  flows: FlowSteps[];
 
   /** 代码: the source of the code elements that realize it; a code element's own source */
   sources: CodeExcerpt[];
@@ -177,6 +178,15 @@ model CaseRow {
 
   /** M6: its latest result and its coverage gain */
   evidence?: Evidence;
+}
+
+/** A flow a node takes part in, and the steps of it that the node takes part in. */
+model FlowSteps {
+  /** The flow, with its status */
+  flow: Node;
+
+  /** Its steps the node takes part in, in their order, each with its StepInfo */
+  steps: Node[];
 }
 
 /** The sections of a flow's page. */

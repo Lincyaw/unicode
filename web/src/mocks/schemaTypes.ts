@@ -22,6 +22,7 @@ export type ViewTab = Schemas['ViewTab'];
 export type Diagnostic = Schemas['Diagnostic'];
 export type Evidence = Schemas['Evidence'];
 export type Entity = Schemas['Entity'];
+export type FlowSteps = Schemas['FlowSteps'];
 export type EdgeEntity = Schemas['EdgeEntity'];
 export type CodeExcerpt = Schemas['CodeExcerpt'];
 export type NodeChange = Schemas['NodeChange'];
