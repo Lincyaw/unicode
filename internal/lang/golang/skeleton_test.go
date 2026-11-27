@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -41,7 +42,7 @@ func checkSkeletonsPreserveSource(t rapid.TB, sample SkeletonSample) {
 		return
 	}
 	defer func() { _ = os.RemoveAll(root) }()
-	files := map[string]string{"go.mod": "module example.test/skeleton\n\ngo 1.26.2\n\nrequire pgregory.net/rapid v1.3.0\n", "design/component.uc": "component demo \"sample\" {\n  paths \"src/**\"\n}\n"}
+	files := map[string]string{"docs/example/go.mod": "this is an unrelated documentation asset\n", "go.mod": "module example.test/skeleton\n\ngo 1.26.2\n\nrequire pgregory.net/rapid v1.3.0\n", "design/component.uc": "component demo \"sample\" {\n  paths \"src/**\"\n}\n"}
 	sum, err := os.ReadFile(filepath.Join("..", "..", "..", "go.sum"))
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +57,12 @@ func checkSkeletonsPreserveSource(t rapid.TB, sample SkeletonSample) {
 			source += fmt.Sprintf("func (receiver *%s) Bump(delta int) int { receiver.Value += delta; return receiver.Value }\n", nativeName)
 		}
 		files["src/existing.go"] = source
+		probe := "package main\nimport pkg \"example.test/skeleton/src\"\nfunc main(){if new(pkg.Child).Read()!=13 {panic(\"inherited implementation changed\")};"
+		if sample.ExistingMethod {
+			probe += "func(){defer func(){if recover()!=\"unicode: unimplemented\" {panic(\"explicit child operation is not a stub\")}}();new(pkg.ExplicitChild).Read()}();"
+		}
+		probe += "}\n"
+		files["inheritance-probe/main.go"] = probe
 	}
 	for name, content := range files {
 		writeSkeletonFixture(t, root, name, []byte(content))
@@ -96,6 +103,7 @@ func checkSkeletonsPreserveSource(t rapid.TB, sample SkeletonSample) {
 		writeSkeletonFixture(t, root, "go.work", []byte("go 1.26.2\nuse .\n"))
 	}
 	outsideBefore = skeletonTree(t, outside, true)
+	checkMalformedSkeletonModule(t, sample)
 	g := skeletonFixtureGraph(t, sample)
 	attachSkeletonCode(t, root, &g)
 	plan := lang.GenPlan{Root: root, Roots: []string{"src"}, Graph: &g}
@@ -188,6 +196,13 @@ func checkSkeletonsPreserveSource(t rapid.TB, sample SkeletonSample) {
 	}
 	if !factory {
 		t.Fatal("missing generated symbol factory was not bootstrapped")
+	}
+	if sample.ExistingType {
+		command := exec.Command("go", "run", "./inheritance-probe")
+		command.Dir = root
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("inherited or explicit child behavior is wrong: %v\n%s", err, output)
+		}
 	}
 	if !methods["Bump"] || !methods["Read"] {
 		t.Fatalf("type methods are incomplete: %v", methods)
@@ -309,6 +324,22 @@ func skeletonFixtureGraph(t rapid.TB, sample SkeletonSample) graph.Graph {
 	add(("demo.Counter" + upperFirst(sample.Name) + ".bump"), graph.NodeKindOp, "op", ("demo.Counter" + upperFirst(sample.Name)), map[string][]string{"signature": {"(delta: int) -> int"}})
 	add("demo.Port", graph.NodeKindType, "interface", "demo", nil)
 	add("demo.Port.read", graph.NodeKindOp, "op", "demo.Port", map[string][]string{"signature": {"() -> int"}, "pure": {"true"}})
+	if sample.ExistingType {
+		add("demo.Child", graph.NodeKindType, "object", "demo", nil)
+		if err := g.AddEdge(graph.Edge{Kind: graph.EdgeKindExtends, From: "demo.Child", To: "demo.Counter" + upperFirst(sample.Name), Source: graph.SourceDeclared}); err != nil {
+			t.Fatal(err)
+		}
+		if sample.ExistingMethod {
+			if err := g.AddEdge(graph.Edge{Kind: graph.EdgeKindImplements, From: "demo.Child", To: "demo.Port", Source: graph.SourceDeclared}); err != nil {
+				t.Fatal(err)
+			}
+			add("demo.ExplicitChild", graph.NodeKindType, "object", "demo", nil)
+			add("demo.ExplicitChild.read", graph.NodeKindOp, "op", "demo.ExplicitChild", map[string][]string{"signature": {"() -> int"}, "pure": {"true"}})
+			if err := g.AddEdge(graph.Edge{Kind: graph.EdgeKindExtends, From: "demo.ExplicitChild", To: "demo.Counter" + upperFirst(sample.Name), Source: graph.SourceDeclared}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	if err := g.AddEdge(graph.Edge{Kind: graph.EdgeKindImplements, From: ("demo.Counter" + upperFirst(sample.Name)), To: "demo.Port", Source: graph.SourceDeclared}); err != nil {
 		t.Fatal(err)
 	}
@@ -327,4 +358,23 @@ func skeletonFixtureGraph(t rapid.TB, sample SkeletonSample) graph.Graph {
 		}
 	}
 	return g
+}
+
+func checkMalformedSkeletonModule(t rapid.TB, sample SkeletonSample) {
+	root, err := os.MkdirTemp("", "unicode-skeleton-invalid-module-")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+	defer func() { _ = os.RemoveAll(root) }()
+	writeSkeletonFixture(t, root, "go.mod", []byte("this is not a module declaration\n"))
+	before := skeletonTree(t, root, true)
+	g := skeletonFixtureGraph(t, SkeletonSample{Name: sample.Name})
+	generated := NewBackend().Generate(lang.GenPlan{Root: root, Roots: []string{"src"}, Graph: &g})
+	if len(generated.Diagnostics) == 0 {
+		t.Fatal("a malformed main go.mod was ignored during skeleton generation")
+	}
+	if after := skeletonTree(t, root, true); !reflect.DeepEqual(before, after) {
+		t.Fatal("a failed malformed-module plan changed source entries")
+	}
 }
