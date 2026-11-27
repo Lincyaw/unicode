@@ -1,6 +1,7 @@
 package design
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"strconv"
@@ -94,6 +95,7 @@ property supplied invariant "A decoded value is checked at runtime" {
 
 //uc:checks design.codecs-are-typed
 func checkCodecsAreTyped(t rapid.TB, value, variant int) {
+	checkCodecFiniteRepresentations(t, value)
 	source, expected := codecProgram(value, variant)
 	files := map[string]string{"design/system.uc": "system example \"Codec fixture\"\n", "design/model.uc": source}
 	loaded := Load(parseAll(t, files, slices.Sorted(maps.Keys(files))))
@@ -122,6 +124,64 @@ func checkCodecsAreTyped(t rapid.TB, value, variant int) {
 			return edge.Kind == graph.EdgeKindRefers && edge.From == "model.Box" && edge.To == target
 		}) {
 			t.Fatalf("the codec has no refers edge to %s", target)
+		}
+	}
+}
+
+func checkCodecFiniteRepresentations(t rapid.TB, value int) {
+	for _, representation := range []struct {
+		name, fields, declarations string
+		finite                     bool
+	}{
+		{"required self cycle", "field next: Repr", "", false},
+		{"required indirect cycle", "field next: Link", `type Link record "An indirect link" {
+  field next: Repr
+}`, false},
+		{"optional termination", "field next: optional<Repr>", "", true},
+		{"list termination", "field next: list<Repr>", "", true},
+		{"set termination", "field next: set<Repr>", "", true},
+		{"map termination", "field next: map<string, Repr>", "", true},
+		{"codec termination", `codec encode, decodeRepr
+  field next: Repr
+  op encode() -> int pure`, "op decodeRepr(value: int) -> Repr", true},
+	} {
+		source := fmt.Sprintf(`component model "Codec fixture" {
+  focus core
+  paths "*.go"
+}
+
+type Repr object "Representation %d" {
+  %s
+}
+
+type Box object "A private value" {
+  codec encode, decode
+  op encode() -> Repr pure
+}
+
+%s
+
+op decode(value: Repr) -> Box
+`, value, representation.fields, representation.declarations)
+		files := map[string]string{"design/system.uc": "system example \"Codec fixture\"\n", "design/model.uc": source}
+		loaded := Load(parseAll(t, files, slices.Sorted(maps.Keys(files))))
+		wellFormed(t, loaded.Diagnostics, files)
+		if !representation.finite {
+			if !slices.ContainsFunc(loaded.Diagnostics, func(d diag.Diagnostic) bool {
+				return d.Code == "design.invalid-codec" && d.Position.Path == "design/model.uc"
+			}) {
+				t.Fatalf("%s was accepted as a finite codec representation: %v\n%s", representation.name, loaded.Diagnostics, source)
+			}
+			if node := loaded.Graph.Node("model.Box"); len(node.Attrs["codecType"]) != 0 {
+				t.Fatalf("%s retained a valid codec representation: %+v", representation.name, node)
+			}
+			continue
+		}
+		if len(loaded.Diagnostics) != 0 {
+			t.Fatalf("%s rejected a finite codec representation: %v\n%s", representation.name, loaded.Diagnostics, source)
+		}
+		if node := loaded.Graph.Node("model.Box"); !slices.Equal(node.Attrs["codecType"], []string{"model.Repr"}) {
+			t.Fatalf("%s lost its canonical codec representation: %+v", representation.name, node)
 		}
 	}
 }
