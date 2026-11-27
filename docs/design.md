@@ -499,7 +499,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 | `unicode test --explore DURATION [--record] [id...]` | 慢路径：在预算内探索，按覆盖挑选；带 `--record` 时写回录制文件 | `.unicode/results.json`、录制文件 |
 | `unicode diff <rev> [--to REV]` | 比较两个快照：`<rev>` 的与工作区的，带 `--to` 时与 `REV` 的 | 无 |
 | `unicode node get <id>` | 给出一个节点及其边 | 无 |
-| `unicode node search <text> [--kind K]` | 按名称和摘要搜索 | 无 |
+| `unicode node search [--kind K] [--] <text>` | 按名称和摘要搜索；以 `-` 开头的文字写在 `--` 之后，参数写在它之前 | 无 |
 | `unicode node refs <id>` | 给出指向它的边 | 无 |
 | `unicode slice <id>... [--expand ID]... [--with-code]` | 切片 | 无 |
 | `unicode impact <id>...` | 影响 | 无 |
@@ -625,7 +625,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 6. 并发的性质：并行的调用、线性一致性。
 7. 录制用例的数量上限（暂定每条 64 个）和探索预算在各性质之间的分配方式。
 8. 评审记录存放在哪里（M7）。
-9. 查看器用什么前端栈。
+9. `observe` 能否省略：不涉及设计之外的状态时，观察的通常就是 `changes` 路径的起点；可考虑只写 `changes` 时自动观察这些起点，只有读取外部状态时才写 `observe`，从而去掉 G18 的成对要求。
 10. 通用的 Go 规则放进 engineering-conventions skill 的 `reference/go.md`；本仓库的 AGENTS.md 只留本仓库特有的规则。
 11. 设计中的泛型类型（类型参数）：M1 不支持。
 12. 记法的词汇是否允许项目扩展。目前内置、固定，以保证校验。
