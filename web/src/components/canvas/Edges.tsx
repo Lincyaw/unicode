@@ -43,7 +43,7 @@ export function Lines({ width, height, lines, selected, onSelect }: {
         const key = line.select;
         return (
           <g key={line.id}>
-            <path d={line.route.d} className={styles.line} data-tone={tone} markerEnd={line.plain ? undefined : `url(#arrow-${tone})`} aria-hidden="true" />
+            {/* The target goes under the line it draws, so that its focus shows as a band on either side of the line. */}
             {key !== undefined && onSelect && (
               <path
                 d={line.route.d} className={styles.hit} data-hit role="button" tabIndex={0} aria-label={key} aria-pressed={key === selected}
@@ -56,6 +56,7 @@ export function Lines({ width, height, lines, selected, onSelect }: {
                 }}
               />
             )}
+            <path d={line.route.d} className={styles.line} data-tone={tone} markerEnd={line.plain ? undefined : `url(#arrow-${tone})`} aria-hidden="true" />
           </g>
         );
       })}
