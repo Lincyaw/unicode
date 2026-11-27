@@ -29,16 +29,19 @@
 .line { fill: none; stroke: var(--text-muted); stroke-width: var(--size-hairline); }
 .line[data-tone="dashed"] { stroke-dasharray: 4 3; }
 .line[data-tone="warning"] { stroke: var(--accent-warning); stroke-dasharray: 4 3; }
-.line[data-tone="brand"] { stroke: var(--accent-brand); stroke-width: var(--size-stroke); stroke-dasharray: 4 3; }
-.line[data-tone="brandSolid"] { stroke: var(--accent-brand); stroke-width: var(--size-stroke); }
+.line[data-tone="reach"] { stroke: var(--accent-info); stroke-width: var(--size-stroke); stroke-dasharray: 4 3; }
+.line[data-tone="chosen"] { stroke: var(--text-main); stroke-width: var(--size-border-thick); }
 .line[data-tone="event"] { stroke: var(--ink-warn); stroke-dasharray: 3 3; }
 .line[data-tone="faint"] { stroke: var(--text-faint); stroke-dasharray: 2 3; }
 .arrow { fill: none; stroke: var(--text-muted); stroke-width: var(--size-hairline); stroke-linecap: round; stroke-linejoin: round; }
 .arrow[data-tone="warning"] { stroke: var(--accent-warning); }
-.arrow[data-tone="brand"], .arrow[data-tone="brandSolid"] { stroke: var(--accent-brand); stroke-width: var(--size-stroke); }
+.arrow[data-tone="reach"] { stroke: var(--accent-info); stroke-width: var(--size-stroke); }
+.arrow[data-tone="chosen"] { stroke: var(--text-main); stroke-width: var(--size-stroke); }
 .arrow[data-tone="event"] { stroke: var(--ink-warn); }
 .arrow[data-tone="faint"] { stroke: var(--text-faint); }
 .hit { fill: none; stroke: transparent; stroke-width: var(--space-3); pointer-events: stroke; cursor: pointer; }
+/* A focused line shows the focus ring's colour along it, as an outline does not follow a path. */
+.hit:focus-visible { outline: none; stroke: var(--accent-brand); stroke-opacity: .35; }
 
 /* A marker never takes a click meant for the box under it; only the controls it holds, such as a hint, take clicks. */
 .marker { position: absolute; display: flex; align-items: center; gap: var(--space-1); transform: translate(-50%, -50%); white-space: nowrap; pointer-events: none; }

@@ -8,7 +8,9 @@
   width: 100%;
   height: 100%;
   padding: var(--space-3);
-  overflow: hidden;
+  /* Clipped a hairline outside, where a chosen card's ∞ edge runs. */
+  overflow: clip;
+  overflow-clip-margin: var(--size-hairline);
   border: var(--rule-emphasis);
   border-radius: var(--radius-md);
   background: var(--bg-page);
@@ -18,8 +20,9 @@
   transition: border-color var(--duration-fast), background-color var(--duration-fast);
 }
 .card:hover { border-color: var(--text-faint); }
+/* A chosen card takes the muted ground of a pressed control inside its still ∞ edge. */
+.card[data-selected="true"] { background: var(--bg-muted); }
 .card[data-status="contradicted"] { border-color: var(--accent-warning); }
-.card[data-selected="true"] { border-color: var(--accent-brand); background: var(--bg-brand-soft); box-shadow: 0 0 0 calc(var(--size-stroke) - var(--size-hairline)) var(--accent-brand); }
 
 .head { display: flex; flex: none; align-items: center; gap: var(--space-2); height: calc(var(--space-4) + var(--space-px)); min-width: 0; }
 .title { flex: 1; min-width: 0; overflow: hidden; font: var(--type-mono-strong); text-overflow: ellipsis; white-space: nowrap; }
@@ -42,7 +45,6 @@
 
 /* An external system: dashed, outside the system's own components. */
 .external { border-style: dashed; border-color: var(--border-emphasis); background: none; }
-.external[data-selected="true"] { border-style: dashed; }
 
 /* An expanded container: a box around what it holds. */
 .container {
@@ -54,8 +56,6 @@
   border-radius: var(--radius-lg);
   background: var(--bg-muted);
 }
-.container[data-selected="true"] { border: var(--size-stroke) solid var(--accent-brand); background: var(--bg-brand-soft); }
-.container[data-selected="true"] > .containerHead .title { color: var(--accent-brand); }
 .containerHead {
   position: absolute;
   top: var(--space-3);

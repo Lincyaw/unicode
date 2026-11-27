@@ -30,7 +30,7 @@ function stateOf(node: ViewNode, folded: ReadonlySet<string>): 'default' | 'deta
 
 function lineOf(edge: ViewEdge, details: ReadonlySet<string>): Line['tone'] {
   if (edge.kind === 'reaches') {
-    return 'brand';
+    return 'reach';
   }
   return details.has(edge.from) || details.has(edge.to) ? 'faint' : 'plain';
 }

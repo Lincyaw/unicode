@@ -1,3 +1,4 @@
+import { clsx } from 'clsx';
 import type { ReactNode } from 'react';
 import type { View, ViewNode } from '../../api/types';
 import { ABOUT, EVENTS_COLUMNS, VIEW_NAMES } from '../../terms';
@@ -10,7 +11,7 @@ import { monoWidth } from '../canvas/measure';
 import { DiagnosticTag } from '../details/sections';
 import { messageOf, relative, scopeOf, stepName } from '../marks/format';
 import { KindIcon } from '../marks/icons';
-import { useLinks } from '../marks/links';
+import { useSelectedBox } from '../marks/links';
 import { Above, CoverButton, NodeRef } from '../marks/NodeButton';
 import { NodeChip } from '../marks/NodeChip';
 import { StatusDot } from '../marks/StatusDot';
@@ -47,11 +48,11 @@ function cardHeight(card: Card): number {
 }
 
 function EventCard({ card, diagnostics }: { card: Card; diagnostics: View['diagnostics'] }) {
-  const links = useLinks();
   const { node } = card;
+  const box = useSelectedBox(node.id);
   const label = node.kind === 'step' ? stepName(node) : relative(node.id, scopeOf(node.id));
   return (
-    <div className={styles.eventCard} data-selected={links.selected === node.id}>
+    <div className={clsx(styles.eventCard, box.selected && 'loop-edge-still')} {...box.props}>
       <span className={styles.eventHead}>
         <CoverButton id={node.id}>
           <StatusDot status={node.status} />

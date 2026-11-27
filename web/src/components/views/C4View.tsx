@@ -1,3 +1,4 @@
+import { clsx } from 'clsx';
 import type { CSSProperties, ReactNode } from 'react';
 import type { View, ViewEdge, ViewNode } from '../../api/types';
 import { ABOUT, VIEW_NAMES } from '../../terms';
@@ -7,7 +8,7 @@ import { Lines, Marker, type Line } from '../canvas/Edges';
 import { arrange, routeAll, shifted, type Link, type Rect } from '../canvas/layout';
 import { linesOf, monoWidth, textWidth } from '../canvas/measure';
 import { KindIcon } from '../marks/icons';
-import { useLinks, useNodeActions } from '../marks/links';
+import { useLinks, useNodeActions, useSelectedBox } from '../marks/links';
 import { Above, CoverButton } from '../marks/NodeButton';
 import { StatusDot } from '../marks/StatusDot';
 import { HiddenCount, UndeclaredBadge } from './ArchitectureView';
@@ -32,10 +33,10 @@ function cardHeight(node: ViewNode): number {
 }
 
 function C4Card({ node, style }: { node: ViewNode; style?: CSSProperties }) {
-  const links = useLinks();
+  const box = useSelectedBox(node.id);
   const external = node.kind === 'actor' && node.form === 'external';
   return (
-    <div className={styles.c4Card} data-external={external} data-person={node.form === 'person'} data-selected={links.selected === node.id} style={style}>
+    <div className={clsx(styles.c4Card, box.selected && 'loop-edge-still')} data-external={external} data-person={node.form === 'person'} style={style} {...box.props}>
       <span className={styles.c4Head}>
         {node.form !== 'person' && <StatusDot status={node.status} />}
         <CoverButton id={node.id}>
@@ -48,6 +49,12 @@ function C4Card({ node, style }: { node: ViewNode; style?: CSSProperties }) {
       {(node.attrs.paths ?? []).map(path => <span key={path} className={styles.c4Path}>{path}</span>)}
     </div>
   );
+}
+
+/** The system's dashed boundary around its containers, with its head. */
+function Boundary({ boundary }: { boundary: ViewNode }) {
+  const box = useSelectedBox(boundary.id);
+  return <div className={clsx(styles.boundary, box.selected && 'loop-edge-still')} {...box.props}><BoundaryHead boundary={boundary} /></div>;
 }
 
 /** The head of the system's boundary, which previews the system. */
@@ -140,9 +147,7 @@ export function C4View({ view, toolbar }: { view: View; toolbar: ReactNode }) {
     <Canvas about={ABOUT.c4} label={VIEW_NAMES.c4} width={width} height={height} toolbar={toolbar} footer={view.hidden > 0 ? <HiddenCount hidden={view.hidden} /> : undefined}>
       {boundary && boundaryRect && (
         <Placed rect={boundaryRect}>
-          <div className={styles.boundary} data-selected={links.selected === boundary.id}>
-            <BoundaryHead boundary={boundary} />
-          </div>
+          <Boundary boundary={boundary} />
         </Placed>
       )}
       <Lines width={width} height={height} lines={lines} selected={links.selected} onSelect={links.select} />

@@ -138,7 +138,7 @@ function triggerOf(view: View, step: ViewNode): { event: string; emitter?: ViewN
 
 /** An on fragment's decision: the diamond previews its step. */
 function Diamond({ step }: { step: ViewNode }) {
-  return <button type="button" className={styles.diamond} aria-label={step.id} {...useNodeActions(step.id)} />;
+  return <button type="button" className={clsx(styles.diamond, 'loop-edge')} aria-label={step.id} {...useNodeActions(step.id)} />;
 }
 
 /**

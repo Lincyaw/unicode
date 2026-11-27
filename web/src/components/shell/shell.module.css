@@ -121,7 +121,7 @@
   transition: background-color var(--duration-fast);
 }
 .treeRow:hover { background: var(--bg-muted); }
-.treeRow[aria-current="true"] { background: var(--bg-brand-soft); color: var(--accent-brand); }
+.treeRow[aria-current="true"] { background: var(--row-chosen); }
 .treeRow[aria-current="true"] .treeLabel { font: var(--type-mono-strong); }
 .treeRow[data-dim="true"] { color: var(--text-faint); }
 .treeRow[data-dim="true"] [data-status] { opacity: .5; }

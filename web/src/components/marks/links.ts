@@ -55,3 +55,12 @@ export function useNodeActions(id: string) {
     },
   };
 }
+
+/**
+ * Marks a box that stands for a node on a drawing, such as a card, as the selected one: the kit's still ∞ edge
+ * (`loop-edge-still`, which the box adds to its class while selected) goes round it, and the canvas finds it there.
+ */
+export function useSelectedBox(id: string) {
+  const selected = useLinks().selected === id;
+  return { selected, props: { 'data-selected': selected, 'aria-current': selected ? ('true' as const) : undefined } };
+}

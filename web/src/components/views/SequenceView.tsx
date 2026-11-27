@@ -1,3 +1,4 @@
+import { clsx } from 'clsx';
 import type { View, ViewNode } from '../../api/types';
 import { ABOUT, VIEW_NAMES } from '../../terms';
 import { ICON_SMALL, ICON_TINY } from '../../ui/hint';
@@ -136,7 +137,7 @@ function LaneHead({ lane }: { lane: Lane }) {
   const { node } = lane;
   return (
     <button
-      type="button" className={styles.laneHead} data-person={node.kind === 'actor' && node.form === 'person'} data-external={node.kind === 'actor' && node.form === 'external'}
+      type="button" className={clsx(styles.laneHead, 'loop-edge')} data-person={node.kind === 'actor' && node.form === 'person'} data-external={node.kind === 'actor' && node.form === 'external'}
       {...useNodeActions(node.id)}
     >
       {node.kind !== 'actor' && <StatusDot status={node.status} />}
@@ -160,7 +161,7 @@ export function SequenceView({ view }: { view: View }) {
     ...marks.flatMap((mark): Line[] => {
       switch (mark.kind) {
         case 'message':
-          return [{ id: mark.step.id, route: { d: `M ${mark.from} ${mark.y} H ${mark.to}`, mid: { x: (mark.from + mark.to) / 2, y: mark.y } }, tone: links.selected === mark.step.id ? 'brandSolid' : 'plain' }];
+          return [{ id: mark.step.id, route: { d: `M ${mark.from} ${mark.y} H ${mark.to}`, mid: { x: (mark.from + mark.to) / 2, y: mark.y } }, tone: links.selected === mark.step.id ? 'chosen' : 'plain' }];
         case 'emit':
           return [{ id: mark.step.id, route: { d: `M ${mark.from} ${mark.y} H ${mark.pill}`, mid: { x: mark.pill, y: mark.y } }, tone: 'event' }];
         case 'fragment':

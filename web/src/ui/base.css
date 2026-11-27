@@ -159,8 +159,8 @@ button { padding: 0; border: 0; background: none; font: inherit; color: inherit;
  */
 @property --loop-angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
 @keyframes loop-sweep { to { --loop-angle: 360deg; } }
-.loop-edge { position: relative; isolation: isolate; }
-.loop-edge::before {
+.loop-edge, .loop-edge-still { position: relative; isolation: isolate; }
+.loop-edge::before, .loop-edge-still::before {
   content: "";
   position: absolute;
   inset: calc(-1 * var(--size-hairline));
@@ -177,6 +177,10 @@ button { padding: 0; border: 0; background: none; font: inherit; color: inherit;
 .loop-edge:hover::before { opacity: 1; animation: loop-sweep var(--duration-sweep) linear infinite; }
 .loop-edge:is([aria-pressed="true"], [aria-current="true"], [aria-expanded="true"])::before { opacity: 1; }
 .loop-edge:active { transform: scale(.97); }
+
+/* A chosen box that is not itself a control, such as a card on a drawing, holds the edge still: no sweep, no press. */
+.loop-edge-still { border-color: transparent; }
+.loop-edge-still::before { opacity: 1; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }

@@ -54,7 +54,7 @@ export function toneOf(edge: ViewEdge): LineTone {
     return 'warning';
   }
   if (edge.kind === 'reaches') {
-    return 'brand';
+    return 'reach';
   }
   return edge.kind === 'emits' ? 'event' : 'plain';
 }

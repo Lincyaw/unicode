@@ -8,7 +8,7 @@ import { ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
 import type { TypePart } from '../marks/format';
 import { opLine } from '../marks/format';
 import { KindIcon } from '../marks/icons';
-import { useLinks } from '../marks/links';
+import { useLinks, useSelectedBox } from '../marks/links';
 import { Above, CoverButton, NodeRef } from '../marks/NodeButton';
 import { StatusDot } from '../marks/StatusDot';
 import type { CardRow } from './sizes';
@@ -70,7 +70,7 @@ function Rows({ rows, onToggle }: { rows: CardRow[]; onToggle?: () => void }) {
  * sight wherever the drawing moves it.
  */
 export function TypeCard({ node, rows, onToggle, style }: { node: ViewNode; rows: CardRow[]; onToggle?: () => void; style?: CSSProperties }) {
-  const links = useLinks();
+  const box = useSelectedBox(node.id);
   const card = useRef<HTMLDivElement>(null);
   const toggled = useRef(false);
   useLayoutEffect(() => {
@@ -84,7 +84,7 @@ export function TypeCard({ node, rows, onToggle, style }: { node: ViewNode; rows
     onToggle();
   });
   return (
-    <div ref={card} className={styles.card} data-status={node.status} data-selected={links.selected === node.id} style={style}>
+    <div ref={card} className={clsx(styles.card, box.selected && 'loop-edge-still')} data-status={node.status} style={style} {...box.props}>
       <span className={styles.head}>
         <CoverButton id={node.id}>
           <StatusDot status={node.status} />
@@ -116,9 +116,10 @@ function Toggle({ href, open }: { href: string; open: boolean }) {
  */
 export function FoldedCard({ node, names, style }: { node: ViewNode; names: ViewNode[]; style?: CSSProperties }) {
   const links = useLinks();
+  const box = useSelectedBox(node.id);
   const expandHref = links.expandHref?.(node.id);
   return (
-    <div className={clsx(styles.card, styles.folded)} data-selected={links.selected === node.id} style={style}>
+    <div className={clsx(styles.card, styles.folded, box.selected && 'loop-edge-still')} style={style} {...box.props}>
       <span className={styles.head}>
         <StatusDot status={node.status} />
         {expandHref && <Toggle href={expandHref} open={false} />}
@@ -143,10 +144,10 @@ export function FoldedCard({ node, names, style }: { node: ViewNode; names: View
 
 /** An external system drawn with a dashed edge: its operations' signatures, each a reference to its operation. */
 export function ExternalCard({ node, style }: { node: ViewNode; style?: CSSProperties }) {
-  const links = useLinks();
+  const box = useSelectedBox(node.id);
   const ops = (node.contents ?? []).filter(child => child.kind === 'op');
   return (
-    <div className={clsx(styles.card, styles.external)} data-selected={links.selected === node.id} style={style}>
+    <div className={clsx(styles.card, styles.external, box.selected && 'loop-edge-still')} style={style} {...box.props}>
       <span className={styles.head}>
         <CoverButton id={node.id}>
           <KindIcon node={node} size={ICON_SMALL} />
@@ -164,9 +165,10 @@ export function ExternalCard({ node, style }: { node: ViewNode; style?: CSSPrope
  */
 export function ContainerBox({ node, style, collapsible, children }: { node: ViewNode; style?: CSSProperties; collapsible: boolean; children: ReactNode }) {
   const links = useLinks();
+  const box = useSelectedBox(node.id);
   const expandHref = collapsible ? links.expandHref?.(node.id) : undefined;
   return (
-    <div className={styles.container} data-selected={links.selected === node.id} style={style}>
+    <div className={clsx(styles.container, box.selected && 'loop-edge-still')} style={style} {...box.props}>
       <span className={styles.containerHead}>
         <StatusDot status={node.status} />
         {expandHref && <Toggle href={expandHref} open />}

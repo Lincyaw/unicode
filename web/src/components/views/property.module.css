@@ -3,7 +3,7 @@
 .block { display: grid; gap: var(--space-6); max-width: 45.5rem; }
 
 .card { display: grid; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-md); background: var(--bg-muted); }
-.cardHead { display: flex; align-items: center; gap: var(--space-2); color: var(--accent-brand); }
+.cardHead { display: flex; align-items: center; gap: var(--space-2); }
 .identity { color: var(--text-main); font: var(--type-mono-strong); }
 .statement { font: var(--type-heading); font-weight: 600; }
 .about { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
@@ -19,8 +19,7 @@
 .headRow { min-height: var(--space-8); padding: 0 var(--space-2); border-top: 0; color: var(--text-faint); font: var(--type-micro); }
 .bodyRow { min-height: calc(var(--space-8) + var(--space-2)); padding: 0 var(--space-2); cursor: pointer; }
 .bodyRow:hover { background: var(--bg-muted); }
-.bodyRow[aria-selected="true"] { background: var(--bg-brand-soft); }
-.bodyRow[aria-selected="true"] .code { color: var(--accent-brand); }
+.bodyRow[aria-selected="true"] { background: var(--row-chosen); }
 .values { overflow: hidden; font: var(--type-code); text-overflow: ellipsis; white-space: nowrap; }
 .outcome { display: inline-flex; align-items: center; gap: var(--space-1); font: var(--type-small); }
 .outcome[data-outcome="passed"] { color: var(--accent-success); }

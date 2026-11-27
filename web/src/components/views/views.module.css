@@ -16,9 +16,9 @@
 
 /* A file of the code view: a box of its types and functions, each with what it realizes. */
 .fileBox { position: relative; width: 100%; height: 100%; border: var(--rule-hairline); border-radius: var(--radius-md); background: var(--bg-page); }
-.fileBox[aria-current="true"] { border: var(--size-stroke) solid var(--accent-brand); background: var(--bg-brand-soft); }
+
 .fileHead { position: absolute; top: var(--space-3); left: var(--space-3); display: inline-flex; align-items: center; gap: var(--space-1); color: var(--text-faint); font: var(--type-mono); }
-.fileBox[aria-current="true"] .fileHead { color: var(--accent-brand); font: var(--type-code); }
+.fileBox[aria-current="true"] .fileHead { color: var(--text-main); font: var(--type-code); }
 .fileRow { position: absolute; display: flex; align-items: center; gap: var(--space-6); }
 .rowChip { border-color: transparent; background: none; }
 .fileBox[aria-current="true"] .rowChip[aria-pressed="true"] { background: var(--bg-page); }
@@ -44,13 +44,12 @@
   cursor: pointer;
 }
 .c4Card[data-external="true"] { border-style: dashed; }
-.c4Card[data-selected="true"] { border-color: var(--accent-brand); background: var(--bg-brand-soft); box-shadow: 0 0 0 calc(var(--size-stroke) - var(--size-hairline)) var(--accent-brand); }
+.c4Card[data-selected="true"] { background: var(--bg-muted); }
 .c4Head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); }
 .c4Title { flex: 1; min-width: 0; font: var(--type-mono-strong); }
 .c4Summary { color: var(--text-main); font: var(--type-small); }
 .c4Path { color: var(--text-faint); font: var(--type-mono); }
 .boundary { position: relative; width: 100%; height: 100%; border: var(--size-hairline) dashed var(--border-emphasis); border-radius: var(--radius-lg); }
-.boundary[data-selected="true"] { border-color: var(--accent-brand); }
 .boundaryHead { position: absolute; top: var(--space-4); left: var(--space-4); display: inline-flex; align-items: center; gap: var(--space-2); font: var(--type-mono-strong); }
 .edgeLabel { padding: 0 var(--space-1); color: var(--text-faint); font: var(--type-mono); text-shadow: var(--shadow-text-halo); }
 
@@ -70,7 +69,7 @@
   background: var(--bg-page);
   cursor: pointer;
 }
-.eventCard[data-selected="true"] { border-color: var(--accent-brand); background: var(--bg-brand-soft); }
+.eventCard[data-selected="true"] { background: var(--bg-muted); }
 .eventHead { display: flex; align-items: center; gap: var(--space-2); font: var(--type-code); white-space: nowrap; }
 .refLine { display: inline-flex; align-items: center; gap: var(--space-1); }
 .eventSecond { display: flex; align-items: center; gap: var(--space-1); padding-left: var(--space-4); color: var(--text-muted); font: var(--type-mono); white-space: nowrap; }
@@ -93,11 +92,10 @@
 }
 .laneHead[data-person="true"] { border-color: transparent; background: none; }
 .laneHead[data-external="true"] { border-style: dashed; }
-.laneHead[aria-pressed="true"] { border-color: var(--accent-brand); background: var(--bg-brand-soft); }
 .messageSlot { position: absolute; display: flex; align-items: center; overflow: visible; white-space: nowrap; }
 .stepLabel { display: inline-flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-1); border-radius: var(--radius-sm); color: var(--text-main); font: var(--type-code); white-space: nowrap; }
 .stepLabel:hover { background: var(--bg-muted); }
-.stepLabel[aria-pressed="true"] { background: var(--bg-brand-soft); color: var(--accent-brand); }
+.stepLabel[aria-pressed="true"] { background: var(--row-chosen); }
 .stepIndex { color: var(--text-faint); font: var(--type-mono); }
 .activation { position: absolute; border: var(--rule-emphasis); background: var(--bg-muted); }
 .fragment { position: absolute; border: var(--rule-emphasis); border-radius: var(--radius-sm); }
@@ -121,6 +119,5 @@
 .startDot { position: absolute; border-radius: var(--radius-full); background: var(--text-main); }
 .endDot { position: absolute; border: var(--size-stroke) solid var(--text-main); border-radius: var(--radius-full); background: radial-gradient(var(--text-main) 0 40%, var(--bg-page) 45%); }
 .diamondSlot { position: absolute; display: grid; place-items: center; }
-.diamond { width: 70%; height: 70%; border: var(--size-stroke) solid var(--text-muted); background: var(--bg-page); transform: rotate(45deg); }
-.diamond[aria-pressed="true"] { border-color: var(--accent-brand); background: var(--bg-brand-soft); }
+.diamond { width: 70%; height: 70%; border: var(--size-stroke) solid var(--text-muted); background: var(--bg-page); rotate: 45deg; }
 .decisionIndex { position: absolute; display: flex; align-items: center; justify-content: flex-end; color: var(--text-faint); font: var(--type-mono); }

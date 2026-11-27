@@ -1,3 +1,4 @@
+import { clsx } from 'clsx';
 import { Code, X } from 'lucide-react';
 import type { View, ViewNode } from '../../api/types';
 import { ABOUT, SECTIONS, VIEW_NAMES } from '../../terms';
@@ -151,7 +152,7 @@ export function CodeView({ view }: { view: View }) {
     const to = placeOf(edge.to);
     return from && to ? [{ edge, route: route(from, to, 0, 1, to.x >= from.x + from.width ? 'LR' : 'TB') }] : [];
   });
-  const lines: Line[] = routed.map(({ edge, route: path }) => ({ id: edgeKey(edge), route: path, tone: edge.kind === 'reaches' ? 'brand' : 'plain', select: edge.kind === 'reaches' ? edgeKey(edge) : undefined }));
+  const lines: Line[] = routed.map(({ edge, route: path }) => ({ id: edgeKey(edge), route: path, tone: edge.kind === 'reaches' ? 'reach' : 'plain', select: edge.kind === 'reaches' ? edgeKey(edge) : undefined }));
   const inputRect = rects.get(view.input.id);
   const branches = view.nodes.flatMap(node => [node, ...(node.contents ?? []).flatMap(child => [child, ...(child.contents ?? [])])]).flatMap(node => node.evidence?.branches ?? []);
   return (
@@ -162,7 +163,7 @@ export function CodeView({ view }: { view: View }) {
         const isInput = box.file.id === view.input.id;
         return rect && (
           <Placed key={box.file.id} rect={{ ...rect, height: box.height }}>
-            <div className={styles.fileBox} aria-current={isInput ? 'true' : undefined}>
+            <div className={clsx(styles.fileBox, isInput && 'loop-edge-still')} aria-current={isInput ? 'true' : undefined}>
               <FileHead file={box.file} />
               {box.rows.map(row => {
                 const bound = bindingOf(row.node);
