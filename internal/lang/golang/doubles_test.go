@@ -53,6 +53,8 @@ func (d *scriptedInterfaceValue) Notify() {
 
 //uc:checks lang.golang.scripted-doubles-follow-inputs
 func checkScriptedDoublesFollowInputs(t rapid.TB, sample DoubleSample) {
+	checkDoubleExpressionDependencies(t, sample)
+	checkDoubleLiteralIdentities(t, sample.Count)
 	const operation = "remote.fetch"
 	const errorID = "remote.Failure"
 	const carrier = "replies<remote.fetch>"
