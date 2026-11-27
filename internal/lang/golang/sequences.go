@@ -253,8 +253,7 @@ func (c *contractCompiler) recordLiteral(value *syntax.BraceValue, t string, nam
 			return "", fmt.Errorf("a record field needs a model name")
 		}
 		name := upperFirst(string(*entry.Key.Name))
-		object, index, _ := types.LookupFieldOrMethod(named, true, pkg.Types, name)
-		field, ok := object.(*types.Var)
+		field, index, ok := c.nativeFieldIndex(named, c.modelForNative(named), string(*entry.Key.Name), pkg)
 		if !ok || len(index) == 0 {
 			return "", fmt.Errorf("record field %s is unavailable or ambiguous", name)
 		}

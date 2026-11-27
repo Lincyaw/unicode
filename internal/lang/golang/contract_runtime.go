@@ -26,13 +26,14 @@ type ucExpr struct {
 }
 type ucField struct{ Name, GoName, Type string }
 type ucType struct {
-	Form    string
-	Fields  []ucField
-	Values  []string
-	Parent  string
-	Parents []string
-	Calls   []ucOperation
-	Double  *ucDoubleFactory `json:"-"`
+	Form                  string
+	NativeName, NativePkg string
+	Fields                []ucField
+	Values                []string
+	Parent                string
+	Parents               []string
+	Calls                 []ucOperation
+	Double                *ucDoubleFactory `json:"-"`
 }
 type ucObserver struct {
 	Name, Type string
@@ -365,7 +366,7 @@ func ucNormalizeAt(v reflect.Value, t string, types map[string]ucType, seen map[
 		}
 		fields := map[string]ucValue{}
 		for _, field := range ucFields(types, t) {
-			f := v.FieldByName(field.GoName)
+			f := ucOwnedField(v, types, t, field, false)
 			if !f.IsValid() {
 				ucFail("lang.golang.observation-failed", "the adapter cannot read model field "+t+"."+field.Name, nil)
 			}
@@ -447,7 +448,7 @@ func ucFieldValue(v ucValue, name string) ucValue {
 				if !native.IsValid() {
 					ucFail("lang.golang.expression-failed", "a field was read from none", nil)
 				}
-				field := native.FieldByName(f.GoName)
+				field := ucOwnedField(native, lazy.types, model, f, false)
 				if !field.IsValid() {
 					ucFail("lang.golang.observation-failed", "the model field is unavailable: "+name, nil)
 				}
@@ -1061,17 +1062,17 @@ func ucNative(v ucValue, t reflect.Type) reflect.Value {
 			model = args[0]
 		}
 		fields := ucFields(v.Schema, model)
-		known := map[string]bool{}
+		paths := map[string]bool{}
 		for _, field := range fields {
-			known[field.GoName] = true
-		}
-		for i := 0; i < t.NumField(); i++ {
-			if !known[t.Field(i).Name] {
-				ucFail("lang.golang.unsupported-contract", "a pure operation needs hidden Go state that cannot be reconstructed from the old model value: "+t.Field(i).Name, nil)
+			index, ok := ucOwnedFieldIndex(t, v.Schema, model, field)
+			if !ok {
+				ucFail("lang.golang.unsupported-contract", "a detached model field has no native owner path: "+field.Name, nil)
 			}
+			paths[ucIndexKey(index)] = true
 		}
+		ucRequireKnownNative(t, nil, paths)
 		for _, field := range fields {
-			target := out.FieldByName(field.GoName)
+			target := ucOwnedField(out, v.Schema, model, field, true)
 			if !target.IsValid() || !target.CanSet() {
 				ucFail("lang.golang.unsupported-contract", "a detached model field cannot be reconstructed: "+field.Name, nil)
 			}
@@ -1103,9 +1104,16 @@ func (env *ucEnvironment) prepare(e *ucExpr) (ucOperation, reflect.Value, []refl
 		op, ok = ucOperationFor(env.spec, base, callee.Text)
 		if ok {
 			op.receiver = receiver
-			fn = receiver.Native.MethodByName(op.GoName)
+			nativeReceiver := receiver.Native
+			if op.Owner != "" && op.Owner != base && env.spec.Types[op.Owner].NativeName != "" {
+				nativeReceiver = ucOwnerView(receiver.Native, env.spec.Types, base, op.Owner, false)
+			}
+			if !nativeReceiver.IsValid() {
+				ucFail("lang.golang.expression-failed", "the declaring native receiver is unavailable", e)
+			}
+			fn = nativeReceiver.MethodByName(op.GoName)
 			if !fn.IsValid() {
-				v := ucDeref(receiver.Native)
+				v := ucDeref(nativeReceiver)
 				if v.IsValid() {
 					if v.CanAddr() {
 						fn = v.Addr().MethodByName(op.GoName)
@@ -1145,19 +1153,7 @@ func (env *ucEnvironment) invoke(op ucOperation, fn reflect.Value, args []reflec
 	if pure && !op.Pure {
 		ucFail("lang.golang.expression-failed", "a non-pure operation was used in an expression", e)
 	}
-	snapshot := func() []ucValue {
-		var values []ucValue
-		if op.receiver.Native.IsValid() {
-			values = append(values, ucNormalize(op.receiver.Native, op.receiver.Type, env.spec.Types))
-		}
-		for i, arg := range args {
-			if i >= len(op.Params) {
-				ucFail("lang.golang.expression-failed", "the pure operation parameter types are unavailable", e)
-			}
-			values = append(values, ucNormalize(arg, op.Params[i], env.spec.Types))
-		}
-		return values
-	}
+	snapshot := func() []ucValue { return env.callInputs(op, args) }
 	before := snapshot()
 	invoke := func() ucValue {
 		result := fn.Call(args)
@@ -1695,7 +1691,7 @@ func ucDraw(t *rapid.T, typ reflect.Type, model string, types map[string]ucType,
 			out.SetString(rapid.SampledFrom(values).Draw(t, path))
 		} else {
 			for _, f := range ucFields(types, model) {
-				field := ucConstructField(out, f.GoName)
+				field := ucOwnedField(out, types, model, f, true)
 				if !field.IsValid() || !field.CanSet() {
 					ucFail("lang.golang.observation-failed", "cannot construct the model field "+f.Name, nil)
 				}
@@ -1843,6 +1839,13 @@ func (env *ucEnvironment) callInputs(op ucOperation, args []reflect.Value) []ucV
 	var out []ucValue
 	if op.receiver.Native.IsValid() {
 		out = append(out, ucDetach(ucNormalize(op.receiver.Native, op.receiver.Type, env.spec.Types)))
+		if op.Owner != "" && op.Owner != ucBaseType(op.receiver.Type) && env.spec.Types[op.Owner].NativeName != "" {
+			owner := ucOwnerView(op.receiver.Native, env.spec.Types, ucBaseType(op.receiver.Type), op.Owner, false)
+			if !owner.IsValid() {
+				ucFail("lang.golang.observation-failed", "the declaring receiver view is unavailable for "+op.Name, nil)
+			}
+			out = append(out, ucDetach(ucNormalize(owner, op.Owner, env.spec.Types)))
+		}
 	}
 	for i, arg := range args {
 		out = append(out, ucDetach(ucNormalize(arg, op.Params[i], env.spec.Types)))
@@ -2073,4 +2076,172 @@ func ucEmbeddedNative(value reflect.Value, target reflect.Type) reflect.Value {
 		return reflect.Value{}
 	}
 	return visit(value)
+}
+
+// ucModelOwnerPath follows the design's parent order, independently of the Go
+// embedding order or Go's globally promoted-field ambiguity.
+func ucModelOwnerPath(types map[string]ucType, model, owner string) ([]string, bool) {
+	seen := map[string]bool{}
+	var find func(string) ([]string, bool)
+	find = func(current string) ([]string, bool) {
+		if current == owner {
+			return []string{current}, true
+		}
+		if seen[current] {
+			return nil, false
+		}
+		seen[current] = true
+		for _, parent := range ucParents(types[current]) {
+			if path, ok := find(parent); ok {
+				return append([]string{current}, path...), true
+			}
+		}
+		return nil, false
+	}
+	return find(model)
+}
+func ucModelFieldOwner(types map[string]ucType, model, name string) string {
+	seen := map[string]bool{}
+	var find func(string) string
+	find = func(current string) string {
+		if seen[current] {
+			return ""
+		}
+		seen[current] = true
+		for _, field := range types[current].Fields {
+			if field.Name == name {
+				return current
+			}
+		}
+		for _, parent := range ucParents(types[current]) {
+			if owner := find(parent); owner != "" {
+				return owner
+			}
+		}
+		return ""
+	}
+	return find(model)
+}
+func ucNativeBaseType(typ reflect.Type) reflect.Type {
+	for typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	return typ
+}
+func ucOwnerIndex(typ reflect.Type, types map[string]ucType, model, owner string) ([]int, bool) {
+	path, ok := ucModelOwnerPath(types, model, owner)
+	if !ok {
+		return nil, false
+	}
+	current := ucNativeBaseType(typ)
+	var index []int
+	for _, parent := range path[1:] {
+		wanted := types[parent]
+		if current.Kind() != reflect.Struct || wanted.NativeName == "" {
+			return nil, false
+		}
+		found := false
+		for i := 0; i < current.NumField(); i++ {
+			field := current.Field(i)
+			native := ucNativeBaseType(field.Type)
+			if field.Anonymous && native.Name() == wanted.NativeName && native.PkgPath() == wanted.NativePkg {
+				index = append(index, i)
+				current = native
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, false
+		}
+	}
+	return index, true
+}
+func ucOwnedFieldIndex(typ reflect.Type, types map[string]ucType, model string, field ucField) ([]int, bool) {
+	owner := ucModelFieldOwner(types, model, field.Name)
+	if types[owner].NativeName == "" {
+		native, ok := ucNativeBaseType(typ).FieldByName(field.GoName)
+		return native.Index, ok
+	}
+	path, ok := ucOwnerIndex(typ, types, model, owner)
+	if !ok {
+		return nil, false
+	}
+	current := ucNativeBaseType(typ)
+	for _, index := range path {
+		current = ucNativeBaseType(current.Field(index).Type)
+	}
+	if current.Kind() != reflect.Struct {
+		return nil, false
+	}
+	for i := 0; i < current.NumField(); i++ {
+		if current.Field(i).Name == field.GoName {
+			return append(path, i), true
+		}
+	}
+	return nil, false
+}
+func ucValueAtIndex(value reflect.Value, index []int, create bool) reflect.Value {
+	for _, part := range index {
+		for value.IsValid() && (value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface) {
+			if value.IsNil() {
+				if !create || value.Kind() != reflect.Pointer || !value.CanSet() {
+					return reflect.Value{}
+				}
+				value.Set(reflect.New(value.Type().Elem()))
+			}
+			value = value.Elem()
+		}
+		if !value.IsValid() || value.Kind() != reflect.Struct {
+			return reflect.Value{}
+		}
+		value = value.Field(part)
+	}
+	return value
+}
+func ucOwnerView(value reflect.Value, types map[string]ucType, model, owner string, create bool) reflect.Value {
+	index, ok := ucOwnerIndex(value.Type(), types, model, owner)
+	if !ok {
+		return reflect.Value{}
+	}
+	return ucValueAtIndex(value, index, create)
+}
+func ucOwnedField(value reflect.Value, types map[string]ucType, model string, field ucField, create bool) reflect.Value {
+	if !value.IsValid() {
+		return reflect.Value{}
+	}
+	index, ok := ucOwnedFieldIndex(value.Type(), types, model, field)
+	if !ok {
+		return reflect.Value{}
+	}
+	return ucValueAtIndex(value, index, create)
+}
+func ucIndexKey(index []int) string {
+	var parts []string
+	for _, part := range index {
+		parts = append(parts, strconv.Itoa(part))
+	}
+	return strings.Join(parts, ".")
+}
+func ucRequireKnownNative(typ reflect.Type, prefix []int, known map[string]bool) {
+	typ = ucNativeBaseType(typ)
+	for i := 0; i < typ.NumField(); i++ {
+		path := append(append([]int{}, prefix...), i)
+		if known[ucIndexKey(path)] {
+			continue
+		}
+		field := typ.Field(i)
+		hasChild := false
+		for key := range known {
+			if strings.HasPrefix(key, ucIndexKey(path)+".") {
+				hasChild = true
+				break
+			}
+		}
+		if field.Anonymous && hasChild && ucNativeBaseType(field.Type).Kind() == reflect.Struct {
+			ucRequireKnownNative(field.Type, path, known)
+			continue
+		}
+		ucFail("lang.golang.unsupported-contract", "a pure operation needs hidden Go state that cannot be reconstructed from the old model value: "+field.Name, nil)
+	}
 }
