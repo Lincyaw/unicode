@@ -21,5 +21,7 @@ export function Preview({ address }: { address: ViewAddress }) {
   if (address.select !== undefined && isEdgeKey(address.select)) {
     return <EdgeData select={address.select} />;
   }
-  return <NodePreview id={address.select ?? address.input ?? system.id} address={address} />;
+  const id = address.select ?? address.input ?? system.id;
+  // A preview is drawn afresh for each node, so a list unfolded for one node is folded again for the next.
+  return <NodePreview key={id} id={id} address={address} />;
 }
