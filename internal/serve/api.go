@@ -295,14 +295,18 @@ func (st *state) view(kind view.ViewKind, input string, expand []string, layer v
 	return out, nil
 }
 
-// viewNode writes a node of a view with its card, and records it and the
-// nodes of its contents as drawn.
+// viewNode writes a node of a view with its card, a code type or function
+// with the file it is declared in, and records it and the nodes of its
+// contents as drawn.
 func (st *state) viewNode(n view.ViewNode, drawn map[string]bool) ViewNode {
 	drawn[n.Id] = true
 	d := st.node(n.Id)
 	out := ViewNode{Id: d.Id, Kind: d.Kind, Form: d.Form, Layer: d.Layer, Source: d.Source, Origin: d.Origin, Summary: d.Summary,
 		Salient: d.Salient, Digest: d.Digest, Attrs: d.Attrs, Title: d.Title, Status: d.Status, Refers: d.Refers, Bindings: d.Bindings, Step: d.Step,
 		Details: optional(int32(n.Details)), Evidence: st.evidenceOf(n.Id)}
+	if st.is(n.Id, graph.LayerCode, graph.NodeKindType, graph.NodeKindOp) {
+		out.File = optional(st.codeFile(n.Id))
+	}
 	if len(n.Members) > 0 {
 		members := make([]Member, 0, len(n.Members))
 		for _, m := range n.Members {

@@ -82,6 +82,9 @@ model ViewNode {
   /** A code file or type: how many detail functions it contains that the view does not draw */
   details?: int32;
 
+  /** A code type or function: the identity of the code file it is declared in */
+  file?: string;
+
   /** M6: the latest results and coverage, for a case, a property, a flow, a step or a function */
   evidence?: Evidence;
 }

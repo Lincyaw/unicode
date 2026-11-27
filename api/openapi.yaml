@@ -2446,6 +2446,9 @@ components:
           type: integer
           format: int32
           description: 'A code file or type: how many detail functions it contains that the view does not draw'
+        file:
+          type: string
+          description: 'A code type or function: the identity of the code file it is declared in'
         evidence:
           allOf:
             - $ref: '#/components/schemas/Evidence'

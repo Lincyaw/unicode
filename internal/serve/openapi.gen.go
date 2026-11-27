@@ -1340,6 +1340,9 @@ type ViewNode struct {
 	// Evidence M6: the latest results and coverage, for a case, a property, a flow, a step or a function
 	Evidence *Evidence `json:"evidence,omitempty"`
 
+	// File A code type or function: the identity of the code file it is declared in
+	File *string `json:"file,omitempty"`
+
 	// Form The form; its values depend on the kind and the layer (docs/model.md §3)
 	Form string `json:"form"`
 
