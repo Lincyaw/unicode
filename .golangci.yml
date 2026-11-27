@@ -55,6 +55,7 @@ linters:
           files: ["**/internal/lang/golang/**"]
           allow:
             - github.com/lincyaw/unicode/internal/lang
+            - github.com/lincyaw/unicode/internal/syntax
             - github.com/lincyaw/unicode/internal/graph
             - github.com/lincyaw/unicode/internal/diag
           deny:
