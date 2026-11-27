@@ -108,7 +108,7 @@ type Backend interface {
   - `enum` 对应 Go 的 `type X string` 和常量 `X<值>`，常量的值是设计中枚举值的名称；对应 Python 的 `enum.Enum`，成员的值也是设计中的名称。
 
   操作只有一个返回值；要返回几个结果时，写成一个记录。在 Go 中，`raises` 对应最后一个返回值 `error`，这是多返回值唯一的用法；在 Python 中，错误不出现在签名里。Python 中落实设计节点的函数和谓词，每个参数和返回值都必须有类型标注。
-- **生成器的签名**：带 `generates` 绑定的函数没有参数，返回该符号类型的生成器：Go 为 `func genX() *rapid.Generator[T]`，Python 为返回 Hypothesis strategy 的函数。
+- **生成器的签名**：带 `generates` 绑定的函数，参数是在该符号之前声明的符号中它用到的那些（按声明的次序，可以没有），返回该符号类型的生成器：Go 为 `func genX() *rapid.Generator[T]`，Python 为返回 Hypothesis strategy 的函数。
 
 ## 5 建图
 
