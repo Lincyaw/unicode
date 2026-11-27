@@ -26,12 +26,13 @@ type ucExpr struct {
 }
 type ucField struct{ Name, GoName, Type string }
 type ucType struct {
-	Form   string
-	Fields []ucField
-	Values []string
-	Parent string
-	Calls  []ucOperation
-	Double *ucDoubleFactory `json:"-"`
+	Form    string
+	Fields  []ucField
+	Values  []string
+	Parent  string
+	Parents []string
+	Calls   []ucOperation
+	Double  *ucDoubleFactory `json:"-"`
 }
 type ucObserver struct {
 	Name, Type string
@@ -162,14 +163,76 @@ func ucBaseType(t string) string {
 		t = args[0]
 	}
 }
-func ucFields(types map[string]ucType, t string) []ucField {
-	ty := types[t]
-	var out []ucField
-	if ty.Parent != "" {
-		out = append(out, ucFields(types, ty.Parent)...)
+func ucParents(ty ucType) []string {
+	if len(ty.Parents) > 0 {
+		return ty.Parents
 	}
-	return append(out, ty.Fields...)
+	if ty.Parent != "" {
+		return []string{ty.Parent}
+	}
+	return nil
 }
+func ucAncestors(types map[string]ucType, model string) []string {
+	var out []string
+	seen := map[string]bool{model: true}
+	var visit func(string)
+	visit = func(current string) {
+		for _, parent := range ucParents(types[current]) {
+			if !seen[parent] {
+				seen[parent] = true
+				out = append(out, parent)
+				visit(parent)
+			}
+		}
+	}
+	visit(model)
+	return out
+}
+
+func ucFields(types map[string]ucType, t string) []ucField {
+	var out []ucField
+	seenTypes, seenNames := map[string]bool{}, map[string]bool{}
+	var visit func(string)
+	visit = func(model string) {
+		if seenTypes[model] {
+			return
+		}
+		seenTypes[model] = true
+		ty := types[model]
+		for _, field := range ty.Fields {
+			if !seenNames[field.Name] {
+				seenNames[field.Name] = true
+				out = append(out, field)
+			}
+		}
+		for _, parent := range ucParents(ty) {
+			visit(parent)
+		}
+	}
+	visit(t)
+	return out
+}
+func ucOperationFor(s *ucContract, model, name string) (ucOperation, bool) {
+	seen := map[string]bool{}
+	var find func(string) (ucOperation, bool)
+	find = func(current string) (ucOperation, bool) {
+		if seen[current] {
+			return ucOperation{}, false
+		}
+		seen[current] = true
+		if operation, ok := s.Operations[current+"."+name]; ok {
+			return operation, true
+		}
+		for _, parent := range ucParents(s.Types[current]) {
+			if operation, ok := find(parent); ok {
+				return operation, true
+			}
+		}
+		return ucOperation{}, false
+	}
+	return find(model)
+}
+
 func ucDeref(v reflect.Value) reflect.Value {
 	for v.IsValid() && (v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface) {
 		if v.IsNil() {
@@ -851,7 +914,8 @@ func (env *ucEnvironment) typeOf(e *ucExpr, locals map[string]string) string {
 			if kind, args := ucSplitType(model); kind == "optional" {
 				model = args[0]
 			}
-			return env.spec.Operations[model+"."+callee.Text].Result
+			operation, _ := ucOperationFor(env.spec, model, callee.Text)
+			return operation.Result
 		}
 	case "binary":
 		switch e.Text {
@@ -1036,7 +1100,7 @@ func (env *ucEnvironment) prepare(e *ucExpr) (ucOperation, reflect.Value, []refl
 			_, a := ucSplitType(receiver.Type)
 			base = a[0]
 		}
-		op, ok = env.spec.Operations[base+"."+callee.Text]
+		op, ok = ucOperationFor(env.spec, base, callee.Text)
 		if ok {
 			op.receiver = receiver
 			fn = receiver.Native.MethodByName(op.GoName)
@@ -1802,8 +1866,17 @@ func (env *ucEnvironment) captureCall(op ucOperation, values []reflect.Value, ex
 				if slices.Contains(op.Raises, id) {
 					matched = true
 				}
-				for parent := env.spec.Types[id].Parent; parent != ""; parent = env.spec.Types[parent].Parent {
-					env.failures[parent] = ucDetach(ucNormalize(target.Elem(), parent, env.spec.Types))
+				for _, parent := range ucAncestors(env.spec.Types, id) {
+					view := target.Elem()
+					if native := env.spec.ErrorTypes[parent]; native != nil {
+						projected := reflect.New(native)
+						if errors.As(env.failure, projected.Interface()) {
+							view = projected.Elem()
+						} else if embedded := ucEmbeddedNative(view, native); embedded.IsValid() {
+							view = embedded
+						}
+					}
+					env.failures[parent] = ucDetach(ucNormalize(view, parent, env.spec.Types))
 					if slices.Contains(op.Raises, parent) {
 						matched = true
 					}
@@ -1961,4 +2034,43 @@ func ucConstructField(value reflect.Value, name string) reflect.Value {
 		}
 	}
 	return reflect.Value{}
+}
+
+// ucEmbeddedNative selects a declared parent view rather than a shadowing child
+// field. It follows only native embedding, preserving the actual error data.
+func ucEmbeddedNative(value reflect.Value, target reflect.Type) reflect.Value {
+	seen := map[reflect.Type]bool{}
+	var visit func(reflect.Value) reflect.Value
+	visit = func(current reflect.Value) reflect.Value {
+		if !current.IsValid() {
+			return reflect.Value{}
+		}
+		if current.Type() == target {
+			return current
+		}
+		current = ucDeref(current)
+		if !current.IsValid() {
+			return reflect.Value{}
+		}
+		wanted := target
+		for wanted.Kind() == reflect.Pointer {
+			wanted = wanted.Elem()
+		}
+		if current.Type() == wanted {
+			return current
+		}
+		if current.Kind() != reflect.Struct || seen[current.Type()] {
+			return reflect.Value{}
+		}
+		seen[current.Type()] = true
+		for i := 0; i < current.NumField(); i++ {
+			if current.Type().Field(i).Anonymous {
+				if found := visit(current.Field(i)); found.IsValid() {
+					return found
+				}
+			}
+		}
+		return reflect.Value{}
+	}
+	return visit(value)
 }

@@ -455,11 +455,9 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 				name, t, _ := strings.Cut(f, ": ")
 				ty.Fields = append(ty.Fields, ucField{name, upperFirst(name), t})
 			}
-			for _, e := range c.plan.Graph.Edges() {
-				if e.Kind == graph.EdgeKindExtends && e.From == node.Id {
-					ty.Parent = e.To
-				}
-			}
+
+			ty.Parents = c.modelParents(node.Id)
+			ty.Parent = first(ty.Parents)
 			unit.spec.Types[node.Id] = ty
 		}
 		if node.Kind == graph.NodeKindOp {
@@ -783,7 +781,11 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 						if kind, args := ucSplitType(receiverType); kind == "optional" {
 							receiverType = args[0]
 						}
-						name = receiverType + "." + e.Children[0].Text
+						if operation, ok := ucOperationFor(&unit.spec, receiverType, e.Children[0].Text); ok {
+							name = operation.Name
+						} else {
+							name = receiverType + "." + e.Children[0].Text
+						}
 					}
 					usedOps[name] = true
 				}
@@ -806,7 +808,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 			if ty.Form != "error" {
 				continue
 			}
-			for parent := ty.Parent; parent != ""; parent = unit.spec.Types[parent].Parent {
+			for _, parent := range ucAncestors(unit.spec.Types, id) {
 				if usedErrors[parent] {
 					usedErrors[id] = true
 					break

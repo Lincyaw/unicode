@@ -68,7 +68,7 @@ func (t *typ) ops() []*entity {
 		case r.target.is(graph.NodeKindOp):
 			out = append(out, r.target)
 		case r.target != nil:
-			out = append(out, r.target.ops...)
+			out = append(out, visibleOperations(r.target)...)
 		}
 	}
 	return out

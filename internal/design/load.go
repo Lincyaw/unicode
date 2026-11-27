@@ -50,7 +50,7 @@ func Load(files []syntax.File) Loaded {
 		l.corpus(f)
 	}
 	// Each stage may queue work for the next ones.
-	for _, queue := range []*[]func(){&l.uses, &l.signatures, &l.domains, &l.checks} {
+	for _, queue := range []*[]func(){&l.uses, &l.supertypes, &l.signatures, &l.domains, &l.checks} {
 		for i := 0; i < len(*queue); i++ {
 			(*queue)[i]()
 		}
@@ -80,6 +80,7 @@ type loader struct {
 	edges      []graph.Edge
 	seen       map[edgeKey]bool
 	uses       []func()
+	supertypes []func()
 	signatures []func()
 	domains    []func()
 	checks     []func()
@@ -378,6 +379,16 @@ func (l *loader) typeDecl(f *syntax.File, parent, scope *entity, d *syntax.TypeD
 	}
 	e.setAttr("labels", labels)
 	e.setAttr("values", e.values)
+	l.supertypes = append(l.supertypes, func() {
+		for _, line := range d.Lines {
+			switch line := line.(type) {
+			case *syntax.Extends:
+				l.supertype(e, scope, graph.EdgeKindExtends, line.Type)
+			case *syntax.Implements:
+				l.supertype(e, scope, graph.EdgeKindImplements, line.Type)
+			}
+		}
+	})
 	l.signatures = append(l.signatures, func() {
 		for _, line := range d.Lines {
 			switch line := line.(type) {
@@ -386,10 +397,6 @@ func (l *loader) typeDecl(f *syntax.File, parent, scope *entity, d *syntax.TypeD
 				e.fields = append(e.fields, member{string(line.Name), t})
 				l.refers(e, t)
 				l.depends(e, t.allRefs())
-			case *syntax.Extends:
-				l.supertype(e, scope, graph.EdgeKindExtends, line.Type)
-			case *syntax.Implements:
-				l.supertype(e, scope, graph.EdgeKindImplements, line.Type)
 			}
 		}
 		e.setAttr("fields", members(e.fields))
@@ -398,6 +405,9 @@ func (l *loader) typeDecl(f *syntax.File, parent, scope *entity, d *syntax.TypeD
 
 func (l *loader) supertype(e, scope *entity, kind graph.EdgeKind, r syntax.TypeRef) {
 	target := l.refer(e, scope, r.Segments, r.Pos, acceptType)
+	if kind == graph.EdgeKindExtends && target != nil {
+		e.bases = append(e.bases, target)
+	}
 	l.edge(kind, e, target, e.file, r.Pos, graph.SourceDeclared, nil)
 	l.depends(e, []ref{{strings.Join(r.Segments, "."), r.Pos, target}})
 }

@@ -241,7 +241,7 @@ func (l *loader) conformRecord(c *entity, v syntax.Value, n *entity, wrong func(
 	for _, entry := range braces.Entries {
 		var f *member
 		if entry.Key.Name != nil {
-			f = findMember(n.fields, string(*entry.Key.Name))
+			f = findMember(visibleFields(n), string(*entry.Key.Name))
 		}
 		switch {
 		case f == nil:
@@ -254,7 +254,7 @@ func (l *loader) conformRecord(c *entity, v syntax.Value, n *entity, wrong func(
 		given[f.name] = true
 		all = l.conform(c, entry.Value, f.typ) && all
 	}
-	for _, f := range n.fields {
+	for _, f := range visibleFields(n) {
 		if !given[f.name] {
 			all = wrong(v, "the field "+f.name+" is missing; a value gives every field")
 		}
@@ -344,7 +344,7 @@ func (l *loader) within(c *entity, v syntax.Value, t *typ, segs []string, lim *l
 		if len(segs) == 0 || t.named() == nil {
 			return
 		}
-		f := findMember(t.named().fields, segs[0])
+		f := findMember(visibleFields(t.named()), segs[0])
 		for _, entry := range v.(*syntax.BraceValue).Entries {
 			if string(*entry.Key.Name) == segs[0] {
 				l.within(c, entry.Value, f.typ, segs[1:], lim)

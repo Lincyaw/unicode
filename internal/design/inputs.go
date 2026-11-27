@@ -151,7 +151,7 @@ func generable(t *typ, required, seen map[*entity]bool) string {
 				}
 			}
 			for _, failure := range op.raises {
-				for _, f := range failure.fields {
+				for _, f := range visibleFields(failure) {
 					if why := generable(f.typ, required, seen); why != "" {
 						return why
 					}
@@ -188,7 +188,7 @@ func generable(t *typ, required, seen map[*entity]bool) string {
 	required[n], seen[n] = true, true
 	defer delete(required, n)
 	defer delete(seen, n)
-	for _, f := range n.fields {
+	for _, f := range visibleFields(n) {
 		base := f.typ
 		for base.kind == "optional" {
 			base = base.elems[0]
@@ -277,8 +277,8 @@ func (l *loader) place(e *entity, lim *limit) {
 				return
 			}
 			t, segs = p.typ, segs[2:]
-		case n != nil && len(n.fields) > 0:
-			f := findMember(n.fields, segs[0])
+		case n != nil && len(visibleFields(n)) > 0:
+			f := findMember(visibleFields(n), segs[0])
 			if f == nil {
 				bad(fmt.Sprintf("%s has no field %s", n.id, segs[0]))
 				return

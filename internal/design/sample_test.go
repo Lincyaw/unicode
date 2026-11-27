@@ -42,6 +42,7 @@ type gNode struct {
 	uses      []*gNode
 
 	typeDecl  *syntax.TypeDecl
+	bases     []*gNode
 	fields    []gField
 	values    []string
 	ops       []*gNode
@@ -705,10 +706,16 @@ func (d *designer) genFields() {
 		}
 		a := gHome(t)
 		others := slices.DeleteFunc(d.typesFor(a), func(o *gNode) bool { return o == t })
+		// The rich fixture's required record and event remain constructible;
+		// other hierarchies still draw arbitrary visible parent field types.
+		if t == d.skel.record || t == d.skel.event {
+			others = slices.DeleteFunc(others, func(o *gNode) bool { return o != d.skel.record && o != d.skel.event })
+		}
 		if len(others) > 0 && rapid.IntRange(0, 3).Draw(d.t, "extends?") == 0 {
 			super := pick(d, "super", others)
 			t.typeDecl.Lines = append(t.typeDecl.Lines, &syntax.Extends{Type: syntax.TypeRef{Segments: d.refTo(super, a)}})
 			d.edge("extends", t, super)
+			t.bases = append(t.bases, super)
 		}
 		ifaces := slices.DeleteFunc(d.typesFor(a, "interface"), func(o *gNode) bool { return o == t })
 		if len(ifaces) > 0 && rapid.IntRange(0, 2).Draw(d.t, "implements?") == 0 {
@@ -739,7 +746,7 @@ func (d *designer) genFields() {
 			if t.simple || t.recursive || t.form == "interface" || t.form == "error" {
 				continue
 			}
-			if !slices.ContainsFunc(t.fields, func(f gField) bool { return !d.simpleType(f.t) }) {
+			if !slices.ContainsFunc(gVisibleFields(t), func(f gField) bool { return !d.simpleType(f.t) }) {
 				t.simple, changed = true, true
 			}
 		}
@@ -877,4 +884,49 @@ func sampleTypeText(t *gType) string {
 		parts = append(parts, target.id)
 	}
 	return t.kind + "<" + strings.Join(parts, ", ") + ">"
+}
+
+func gVisibleFields(n *gNode) []gField {
+	var out []gField
+	seenTypes, seenNames := map[*gNode]bool{}, map[string]bool{}
+	var visit func(*gNode)
+	visit = func(current *gNode) {
+		if current == nil || seenTypes[current] {
+			return
+		}
+		seenTypes[current] = true
+		for _, field := range current.fields {
+			if !seenNames[field.name] {
+				seenNames[field.name] = true
+				out = append(out, field)
+			}
+		}
+		for _, base := range current.bases {
+			visit(base)
+		}
+	}
+	visit(n)
+	return out
+}
+func gVisibleOps(n *gNode) []*gNode {
+	var out []*gNode
+	visited, chosen := map[*gNode]bool{}, map[string]bool{}
+	var visit func(*gNode)
+	visit = func(current *gNode) {
+		if current == nil || visited[current] {
+			return
+		}
+		visited[current] = true
+		for _, operation := range current.ops {
+			if !chosen[operation.name] {
+				chosen[operation.name] = true
+				out = append(out, operation)
+			}
+		}
+		for _, base := range current.bases {
+			visit(base)
+		}
+	}
+	visit(n)
+	return out
 }
