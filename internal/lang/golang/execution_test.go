@@ -6,16 +6,16 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-
-	"golang.org/x/tools/go/packages"
 	"reflect"
 	"strconv"
 	"strings"
 
+	"golang.org/x/tools/go/packages"
 	"pgregory.net/rapid"
 
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/lang"
+	"github.com/lincyaw/unicode/internal/syntax"
 )
 
 //uc:realizes lang.golang.ExecutionSample
@@ -72,6 +72,29 @@ func executionSpec(t rapid.TB) *ucContract {
 
 //uc:checks lang.golang.executes-sequences-and-flows
 func checkExecutesSequencesAndFlows(t rapid.TB, sample ExecutionSample) {
+	// Built-in named types have no package and cannot be generated carriers.
+	extractor := &extraction{}
+	builtinError := types.Universe.Lookup("error").Type().(*types.Named)
+	if extractor.carrierModel(builtinError) != "" || extractor.namedType(builtinError) != "error" {
+		t.Fatal("the built-in error type was mistaken for a generated carrier")
+	}
+	// Manual flows own their execution boundary, including asynchronous first
+	// steps; the same timed automatic flow still requires a synchronous entry.
+	arrow := "app ->> app.work()"
+	if sample.Impure {
+		arrow = "app emits Ping()"
+	}
+	flowSource := fmt.Sprintf("component execution \"Execution flow fixture\" {\n  paths \"src/**\"\n}\nflow entry \"Manual boundary\" {\n  %s\n  within \"1s\"\n  manual \"The predicate prepares and times the asynchronous environment\"\n}\n", arrow)
+	parsed := syntax.Parse("design/execution.uc", syntax.FileKindComponent, []byte(flowSource))
+	if len(parsed.Diagnostics) > 0 {
+		t.Fatalf("a timed manual flow was rejected as an automatic entry: %v", parsed.Diagnostics)
+	}
+	automatic := strings.Replace(flowSource, "  manual \"The predicate prepares and times the asynchronous environment\"\n", "", 1)
+	checked := syntax.Parse("design/execution.uc", syntax.FileKindComponent, []byte(automatic))
+	if len(checked.Diagnostics) != 1 || checked.Diagnostics[0].Code != "syntax.invalid-flow-call" {
+		t.Fatalf("an automatic asynchronous entry escaped G17: %v", checked.Diagnostics)
+	}
+
 	initial := sample.Initial
 	if initial < 0 {
 		initial = -initial

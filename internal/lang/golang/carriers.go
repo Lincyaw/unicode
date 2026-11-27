@@ -111,6 +111,9 @@ func retainGeneratedCarriers(file *ast.File, source []byte, set *token.FileSet) 
 	return out
 }
 func (x *extraction) carrierModel(t *types.Named) string {
+	if t == nil || t.Obj() == nil || t.Obj().Pkg() == nil {
+		return ""
+	}
 	id := typeID(t.Origin().Obj())
 	for _, d := range x.declared {
 		if d.id == id && d.spec != nil {
