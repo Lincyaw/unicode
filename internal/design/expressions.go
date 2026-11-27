@@ -136,7 +136,7 @@ func (c *expressionCheck) infer(e *syntax.Expr) *typ {
 		if t == nil || t.builtin == "invalid" {
 			return builtin("invalid")
 		}
-		if n := t.named(); n != nil {
+		if n := t.named(); n.is(graph.NodeKindType, "record", "object", "event", "error") {
 			if f := findMember(visibleFields(n), e.Text); f != nil {
 				c.reference(n, e)
 				return f.typ

@@ -522,7 +522,10 @@ func insertStep(f *syntax.FlowDecl, step syntax.FlowLine, first bool) {
 		insertLine(&f.Lines, step, isInput[syntax.FlowLine])
 		return
 	}
-	insertLine(&f.Lines, step, func(l syntax.FlowLine) bool { _, isCase := l.(*syntax.CaseDecl); return !isCase })
+	insertLine(&f.Lines, step, func(l syntax.FlowLine) bool {
+		_, isStep := l.(syntax.Step)
+		return isInput(l) || isStep
+	})
 }
 
 var positionType = reflect.TypeFor[lexer.Position]()

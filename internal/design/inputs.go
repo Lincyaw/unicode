@@ -277,7 +277,7 @@ func (l *loader) place(e *entity, lim *limit) {
 				return
 			}
 			t, segs = p.typ, segs[2:]
-		case n != nil && len(visibleFields(n)) > 0:
+		case n.is(graph.NodeKindType, "record", "object", "event", "error") && len(visibleFields(n)) > 0:
 			f := findMember(visibleFields(n), segs[0])
 			if f == nil {
 				bad(fmt.Sprintf("%s has no field %s", n.id, segs[0]))

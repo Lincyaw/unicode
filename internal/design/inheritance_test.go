@@ -9,6 +9,7 @@ import (
 
 	"pgregory.net/rapid"
 
+	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
 )
 
@@ -131,6 +132,36 @@ func checkInheritanceMembersAreResolved(t rapid.TB, sample InheritanceSample) {
 		t.Fatal("a record case omitted a required inherited field without a diagnostic")
 	}
 	wellFormed(t, rejected.Diagnostics, missing)
+	// Enum values and interface scripts do not become record literals when
+	// their type extends a type that has fields.
+	for _, form := range []string{"enum", "interface"} {
+		lines, supplied := "", ""
+		if form == "enum" {
+			lines = "  value chosen\n"
+			supplied = "  case supplied {\n    nominal = chosen\n  }\n"
+		}
+		nominal := maps.Clone(files)
+		nominal["design/domain.uc"] = strings.Replace(nominal["design/domain.uc"], "property inherited-value", fmt.Sprintf("type Nominal %s \"A non-record value\" {\n  extends Parent\n%s}\n\nproperty inherited-value", form, lines), 1)
+		nominal["design/domain.uc"] += fmt.Sprintf(`
+
+property nominal-field invariant "Only record values expose fields" {
+  about Parent
+  forall nominal: Nominal
+  where nominal.stamp in %d..%d
+  ensure nominal.stamp == %d
+%s}
+`, sample.Value, sample.Value, sample.Value, supplied)
+		invalid := Load(parseAll(t, nominal, slices.Sorted(maps.Keys(nominal))))
+		for _, code := range []string{"design.invalid-limit-path", "design.expression-type"} {
+			if !slices.ContainsFunc(invalid.Diagnostics, func(diagnostic diag.Diagnostic) bool {
+				return diagnostic.Subject == "domain.nominal-field" && diagnostic.Code == code
+			}) {
+				t.Fatalf("%s inherited a record field without %s: %v", form, code, invalid.Diagnostics)
+			}
+		}
+		wellFormed(t, invalid.Diagnostics, nominal)
+	}
+
 	// A direct operation reference uses its declaring owner, unlike call<Child>.
 	owner := maps.Clone(files)
 	owner["design/domain.uc"] = strings.Replace(files["design/domain.uc"], "list<call<Child>>", "list<call<Parent.shift>>", 1)

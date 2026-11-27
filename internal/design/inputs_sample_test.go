@@ -169,7 +169,7 @@ func sites(t *gType, path []string, depth int) []site {
 		base = gElemOf(base)
 	}
 	switch {
-	case base.named != nil && !base.named.recursive:
+	case base.named != nil && base.named.form != "enum" && base.named.form != "interface" && !base.named.recursive:
 		for _, f := range gVisibleFields(base.named) {
 			out = append(out, sites(f.t, append(slices.Clone(path), f.name), depth+1)...)
 		}
