@@ -92,7 +92,7 @@ func describe(e *entity) string {
 
 func isUpper(s string) bool { return s != "" && s[0] >= 'A' && s[0] <= 'Z' }
 
-// resolve finds the node that a reference names (docs/language.md §2): one that
+// resolve finds the node that a reference names (docs/language.md §4.1, R1–R3): one that
 // starts with a type is looked up in scope, a single lower-case segment first
 // in scope and then at the root, any other from the root. It returns nil when
 // no node has the name.

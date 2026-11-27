@@ -263,7 +263,7 @@ var valueColumns = &runewidth.Condition{EastAsianWidth: false, StrictEmojiNeutra
 const valueWidth = 100
 
 // valueLayoutProblem describes the first line of a value in canonical text
-// that breaks docs/language.md §3.1, or returns "": a line wider than 100
+// that breaks docs/language.md §3 P6, or returns "": a line wider than 100
 // columns that still holds a bracketed value with items, or a value broken
 // across lines that would fit on one line at its indentation.
 func valueLayoutProblem(text []byte) string {

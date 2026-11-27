@@ -7,7 +7,7 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// maxWidth is the display width a value line may take (docs/language.md §3.1).
+// maxWidth is the display width a value line may take (docs/language.md §3, P6).
 const maxWidth = 100
 
 // widths measures display width with East Asian wide characters as two
