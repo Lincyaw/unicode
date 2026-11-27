@@ -58,6 +58,7 @@ type EdgeKind enum "边的种类（model.md §4）" {
   value generates
   value observes
   value substitutes
+  value publishes
   value owns
   value depends
   value traces
@@ -96,6 +97,7 @@ type DanglingEdge error "边的起点或终点不是图中的节点"
 type NotASnapshot error "字节不是 encode 写出的快照：不是 JSON，字段不符，或者其中的节点和边组不成一张图"
 
 type Graph object "一张图：节点按标识索引，边按种类、起点和终点索引" {
+  codec encode, graph.decode
   op addNode(node: Node) raises DuplicateNode "加入一个节点"
   op addEdge(edge: Edge) raises DuplicateEdge, DanglingEdge "加入一条边；它的起点和终点必须已经在图中"
   op addFragment(fragment: Fragment) raises DuplicateNode, DuplicateEdge, DanglingEdge "加入一组节点和边，先节点后边；终点不在图中的绑定边和方法的候选边先暂存，留给推导"
@@ -145,6 +147,15 @@ type EdgeChange record "一条边的差别：种类、起点、终点、差别�
 type Comparison record "两个快照的差别：新增、删除和修改的节点，按标识排序；新增、删除和修改的边，按种类、起点、终点排序" {
   field nodes: list<NodeChange>
   field edges: list<EdgeChange>
+}
+
+type FingerprintSample record "同一输入图、添加运行产物的图、修改源位置的图，以及三条受控变化的边" {
+  field base: Graph
+  field artifacts: Graph
+  field moved: Graph
+  field edge: Edge
+  field relocatedEdge: Edge
+  field changedEdge: Edge
 }
 
 op newGraph() -> Graph "一张空图"
@@ -223,4 +234,15 @@ property node-sequence-keeps-index transition "逐次加入节点后，每个节
   where steps size 0..8
   ensure size(snapshot.nodes()) >= old(size(snapshot.nodes()))
   ensure all(n in snapshot.nodes(): snapshot.node(n.id) == n)
+}
+
+property fingerprints-separate-inputs-and-artifacts postcondition "运行产物不改变执行输入摘要，源位置变化改变它；边的出处不参与内容摘要，属性变化参与" {
+  about inputDigest, edgeDigest
+  forall sample: FingerprintSample generated "独立构造基础图、运行产物、源位置与边属性变化，不调用被测摘要计算预期"
+  call inputDigest(sample.base)
+  ensure size(result) == 64
+  ensure result == inputDigest(sample.artifacts)
+  ensure result != inputDigest(sample.moved)
+  ensure edgeDigest(sample.edge) == edgeDigest(sample.relocatedEdge)
+  ensure edgeDigest(sample.edge) != edgeDigest(sample.changedEdge)
 }

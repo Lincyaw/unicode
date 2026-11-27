@@ -1,6 +1,6 @@
 component lang.golang "Go 后端：抽取、名称映射、生成与运行" {
   paths "internal/lang/golang/**"
-  uses lang, syntax
+  uses lang, syntax, evidence
 }
 
 type Backend object "Go 的后端：用 go/packages 和 go/types 静态抽取" {

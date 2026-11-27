@@ -1,7 +1,7 @@
 component serve "查看器的后端：读取 unicode build 写出的快照，载入时按 unicode check 的约束检查，回答 api/openapi.yaml 的只读接口；前端的构建结果嵌入在这个组件中" {
   focus support
   paths "internal/serve/**"
-  uses graph, diag, check, query, view, lang.golang, repo, review
+  uses graph, diag, check, query, view, lang.golang, repo, review, evidence
 }
 
 type Unreadable error "快照文件不存在、读不出，或者不是 unicode build 写出的快照"

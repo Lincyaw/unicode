@@ -49,6 +49,63 @@ type RunPlan record "一种语言的运行输入；ids 为空时运行全部可�
   field graph: graph.Graph
   field ids: list<string>
   field explore: duration
+  field record: bool
+}
+
+type Value record "可回放模型值；kind 决定 text、items 或 entries，编码值的 items 恰含其声明表示" {
+  field kind: string
+  field text: string
+  field items: list<Value>
+  field entries: list<ValueEntry>
+}
+
+type ValueEntry record "记录、映射、调用或应答脚本中的键和值" {
+  field key: Value
+  field value: Value
+}
+
+type Input record "调用前冻结的完整输入；对象的私有状态经声明的 codec 保存，替身保存原始脚本" {
+  field values: map<string, Value>
+}
+
+type Coverage record "一个真实覆盖点：代码块的原始位置，或设计步骤、分支、声明错误" {
+  field kind: string
+  field node: string
+  field path: string
+  field line: int
+  field column: int
+  field endLine: int
+  field endColumn: int
+  field label: string
+}
+
+type TraceEvent record "由 Go 运行轨迹得到的函数进入、退出、发布与错误，保留真实 goroutine 和创建关系" {
+  field kind: string
+  field node: string
+  field goroutine: int
+  field parent: int
+  field time: int
+  field detail: string
+}
+
+type CaseResult record "一次输入的最终结果；缩减尝试不累计成额外业务执行，只有真实结果产生覆盖" {
+  field id: string
+  field check: string
+  field form: string
+  field reason: string
+  field input: Input
+  field inputHash: string
+  field passed: bool
+  field rejected: bool
+  field coverage: list<Coverage>
+  field trace: list<TraceEvent>
+  field observations: list<string>
+  field differences: list<string>
+  field diagnostics: list<diag.Diagnostic>
+}
+
+type CandidateRunner interface "已经编译的语言执行边界，每次重建输入，在独立边界执行一个候选" {
+  op evaluate(input: Input) -> CaseResult "真实执行并返回覆盖与轨迹，不能以累计覆盖替代当前候选"
 }
 
 type RunResult record "一条性质的运行结论：有效执行、拒绝候选、观察边界、范围外差异与业务断言的定位诊断" {
@@ -59,11 +116,21 @@ type RunResult record "一条性质的运行结论：有效执行、拒绝候选
   field observations: list<string>
   field differences: list<string>
   field diagnostics: list<diag.Diagnostic>
+  field cases: list<CaseResult>
+  field codeTotal: int
+  field branchTotal: int
+  field errorTotal: int
 }
 
 type RunReport record "一次运行中各性质的结果；顶层诊断是工具、观察、前提、输入域或零有效执行等检查环境错误" {
   field results: list<RunResult>
   field diagnostics: list<diag.Diagnostic>
+  field version: int
+  field snapshot: string
+  field commit: string
+  field dirty: bool
+  field at: string
+  field mode: string
 }
 
 type Generator interface "后端可选的生成能力；不扩充只读 Backend 的必需方法" {

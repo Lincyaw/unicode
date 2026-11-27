@@ -118,7 +118,7 @@
 
 - `run` 是在一个提交上执行一组检查的一次运行；`result` 是一个检查在一次运行中的结论。
 - 黑盒契约的结果另记录有效执行数、拒绝的候选输入数、观察范围，以及失败子句的位置或范围外的实际差异。适配失败是检查环境的错误，不伪造成空快照或业务反例。声明的允许变化范围属于设计，实际差异属于证据。
-- 运行中由生成器产生、但没有录制的输入不进入快照。
+- 运行中由生成器产生、但没有录制的输入不作为 case 进入快照；完整运行记录可以保存其输入和覆盖，当前图只连接声明及录制的用例。
 - 用例执行到的代码和步骤记为 `covers` 边。
 - `review` 记录评审者、执行输入图摘要、提交与工作区信息、被评审的节点或边、当时的有效内容指纹、结论和意见；记录存于 `.unicode/reviews/`，不进入 Git。记录不可变，是否有效在读取当前图时重新计算，见 [design.md](design.md) §7.6。
 - `reviewed` 表示这份内容已经评过；结论 `approved` 或 `changes-requested` 独立保存。内容恢复到已评过的指纹时，原记录再次有效。它不改变设计与代码的一致性状态。
@@ -132,7 +132,7 @@
 | `uses` | container → container、actor | 声明 | 允许的依赖 |
 | `extends` | type → type | 声明；抽取 | 继承或嵌入 |
 | `implements` | type → type | 声明；抽取 | 实现接口 |
-| `refers` | type → type；op → type；property、flow → type、op；observation → type | 声明；抽取 | 字段、参数、返回值、错误、符号和观察引用的类型；契约子句引用的类型与操作；代码层的 op 另有函数体中构造或使用的类型。子句位置和字段路径写在边的属性中 |
+| `refers` | type → type、codec 操作；op → type；property、flow → type、op；observation → type | 声明；抽取 | 字段、参数、返回值、错误、符号和观察引用的类型；契约子句引用的类型与操作；代码层的 op 另有函数体中构造或使用的类型。子句位置和字段路径写在边的属性中 |
 | `subscribes` | op → type | 声明 | 操作订阅的事件 |
 | `imports` | container → container | 抽取 | 文件导入包 |
 | `calls` | op → op | 抽取 | 静态解析到的调用；属性列出每个调用位置 |
@@ -146,6 +146,7 @@
 | `generates` | 代码层 op → property、flow | 声明（代码中的绑定） | 该函数给出一个生成的符号的生成器；属性写明符号的名称 |
 | `observes` | 代码层 op → observation | 声明（代码中的绑定） | 只读适配器取得这项观察的快照 |
 | `substitutes` | 代码层 op → 外部系统直接提供的设计层 op | 声明（代码中的绑定） | 安装该客户端的确定性应答替身，返回清理函数 |
+| `publishes` | 代码层 op → 设计层 event | 声明（代码中的绑定） | 可观测的实际事件发布边界 |
 | `owns` | 设计层 container → 代码层 file | 推导 | 文件归属的容器 |
 | `depends` | 设计层 container → 设计层 container、actor | 推导 | 实际的依赖 |
 | `traces` | step → 代码层 op | 推导 | 落实该步骤所调用操作的函数 |
@@ -238,7 +239,7 @@
 - **D5 `exercises`**：若 checks(p, x)，函数 g 从 p 沿 `calls` 可达，则 exercises(p, g)。
 - **D6 显著性**：
   1. 设计层的节点都是显著的。
-  2. 代码层的类型和函数是显著的，当且仅当它落实设计节点（包括按 D2 落实操作的方法），或带 `checks`、`generates`、`observes`、`substitutes` 绑定；但 `gen` 产生的生成文件中的元素都是细节。
+  2. 代码层的类型和函数是显著的，当且仅当它落实设计节点（包括按 D2 落实操作的方法），或带 `checks`、`generates`、`observes`、`substitutes`、`publishes` 绑定；但 `gen` 产生的生成文件中的元素都是细节。
   3. 代码层的文件和包是显著的，当且仅当它含有显著的元素。
 - **D7 `reaches`**：对显著的函数 f 和 g，reaches(f, g) 当且仅当存在 f → h1 → … → hk → g 的 `calls` 路径，k ≥ 1，且 h1, …, hk 都是细节。属性列出每条这样的路径上的 h1, …, hk。f 直接调用 g 时只有 `calls`，没有 `reaches`。
 
@@ -282,6 +283,7 @@
     5. 方法不带 `realizes`；
     6. `observes` 指向具名观察，每个观察适配器是自由函数，恰带一个 `observes` 绑定；
     7. `substitutes` 的安装器是自由函数，恰指向一个外部直接操作；每个目标至多一个安装器，归属与其客户端相同的允许容器。Go 安装器接收与客户端完全同签名的函数，返回清理函数；安装器还是未实现骨架时，外部操作为 `stub`。
+    8. `publishes` 指向事件，来源是自由函数或方法，参数恰为该事件且没有返回值；发布边界与其事件满足允许依赖，每个函数至多一个发布绑定。
 16. 【状态】每个类型和每个操作，包括外部系统的，都恰被一个代码层元素落实。没有时为 `missing`；落实操作的函数是骨架时为 `stub`。
 17. 若 realizes(x, n)，则 x 所在的文件归属于 container(n)。n 属于外部系统 X 时，x 所在的文件归属于某个 `uses` X 的容器。
 18. 【状态】若 realizes(x, n)，则下列各项都成立，否则 n 为 `contradicted`：
@@ -330,6 +332,8 @@
 34. 每个具名观察恰有一个 `observes` 绑定。适配器的参数是 `from` 按次序列出的输入符号，类型一致，返回该观察的快照类型；适配器不接受测试句柄。Go 可带末尾的 `error`，Python 的异常也按观察失败处理，它们不是业务 `raises`。适配器的文件属于性质所在容器。签名和归属不符时是错误。
 35. 观察与允许变化的范围满足 [language.md](language.md) §4.5：快照类型可观察，允许变化的路径属于观察范围，下标的类型正确；它们描述设计约束，不推导实际写入边。
 36. 【评审】观察适配器的内容哈希变了，它所绑定观察的父性质列为待审。
+37. 【状态】与当前执行输入摘要相符的业务反例使所属性质或流程为 `contradicted`；检查环境错误不伪装为业务反例。当前证据中的纯性违规也使实际操作为 `contradicted`，旧证据不改变当前状态。
+38. codec 的编码、解码操作满足 [language.md](language.md) §5.3.1 的签名与有限表示规则；`encoded(v)` 恰用于声明 codec 的类型，v 合乎其表示类型。
 
 ## 附录 A 理由
 
@@ -390,7 +394,10 @@
 | 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5；自定义生成器按绑定命名，骨架默认命名与撞名检查见 [design.md](design.md) §6.1 | `design.rejects-broken-design` |
 | 31 | `design.expression-type` | `design.rejects-broken-design` |
 | 32 | `lang.golang.purity-violation`，核对表达式和被测调用的纯性；证据并图后的状态传播属于 M6 | `lang.golang.executes-contracts` |
-| 33 | 未实现：M7，评审 | — |
+| 33 | 由评审指纹决定待审状态 | `review.evaluation-follows-content` |
 | 34 | `check.missing-observer`、`check.multiple-observers`、`check.observer-signature`、`check.observer-outside-container` | `check.rejects-broken-graph` |
 | 35 | `design.invalid-observation`、`design.invalid-change-path`、`lang.golang.expression-failed`、`lang.golang.frame-violation`、`lang.golang.observation-failed` | `design.rejects-broken-design`、`lang.golang.executes-contracts` |
-| 36 | 未实现：M7，观察适配器的评审 | — |
+| 36 | 由评审指纹决定观察适配器变化后的待审状态 | `review.evaluation-follows-content` |
+
+| 37 | `check.runtime-counterexample`、`check.runtime-purity-violation` | `evidence.recordings-are-replayable` |
+| 38 | `design.invalid-codec`、`design.value-type-mismatch` | `design.rejects-broken-design`、`evidence.recordings-are-replayable` |

@@ -57,6 +57,7 @@ Label         = "label" Kebab NL .
 TypeDecl      = "type" Upper TypeForm String [ "{" NL { Label } { Member } "}" ] NL .
 TypeForm      = "object" | "record" | "interface" | "enum" | "error" | "event" .
 Member        = "extends" TypeRef NL | "implements" TypeRef NL
+              | "codec" OpRef "," OpRef NL
               | "field" Lower ":" TypeExpr NL | "value" Lower NL | OpDecl .
 OpDecl        = "op" Lower "(" [ Param { "," Param } ] ")" [ "->" TypeExpr ] [ "pure" ]
                 [ "raises" TypeRef { "," TypeRef } ] [ "handles" TypeRef ] [ String ] NL .
@@ -102,6 +103,7 @@ Limit         = "where" SymbolPath ( "in" Number ".." Number
 SymbolPath    = Lower { "." Lower } .
 CaseDecl      = "case" Kebab [ String ] "{" NL { Lower "=" Value NL } "}" NL .
 Value         = Number | String | "true" | "false" | "none" | Lower
+              | "encoded" "(" Value ")"
               | Lower "(" [ Lower ":" Value { "," Lower ":" Value } [ "," ] ] ")"
               | "[" [ Value { "," Value } [ "," ] ] "]"
               | "{" [ Entry { "," Entry } [ "," ] ] "}" .
@@ -139,7 +141,7 @@ NL            = 换行 { 换行 } .
 
 - **G0** 每个文件合乎 §3 中它的种类的产生式，包括产生式规定的声明次序、块的成员和只出现一次的子句。
 - **G1** 组件文件中的声明按组件、类型、操作、流程、性质分组，各组内部保持作者写的次序。
-- **G2** 类型的成员按 `label`、`extends`、`implements`、`field` 或 `value`、`op` 的次序排列。`value` 只出现在 `enum` 中；`field` 不出现在 `enum` 和 `interface` 中。
+- **G2** 类型的成员按 `label`、`extends`、`implements`、`codec`、`field` 或 `value`、`op` 的次序排列。`value` 只出现在 `enum` 中；`field` 不出现在 `enum` 和 `interface` 中。
 - **G3** 流程的成员按 `forall`、`where`、步骤、`within`、`ensure` 或有理由的 `manual`、`case` 的次序排列；性质的成员按 `about`、`forall`、`where`、`observe`、`requires`、`changes`、`call`、`within`、`ensure` 或 `manual`、`case` 的次序排列；流程的 `within` 和 `ensure` 在步骤之后、`case` 之前。
 - **G4** `{` 总在行尾，`}` 总在行首；同一行中 `{` 之后或 `}` 之前不能有别的内容。`alt` 的分支写作一行 `} else "标签" {`。
 - **G5** 在流程中，一行的第一个词之后是 `->`、`->>` 或 `.`，或是 `emits` 再接一个大驼峰的词或带 `.` 的引用时，这一行是一个步骤；否则第一个词是关键字。
@@ -378,6 +380,12 @@ NL            = 换行 { 换行 } .
 
 有语法错误的文件不参与载入；其余文件照常载入，指向缺失声明的引用报为未解析。
 
+### 5.3.1 可回放表示
+
+命名类型可在成员中声明一次 `codec 编码操作, 解码操作`。编码操作是该类型的纯方法，无参数、无声明错误、恰返回一个有限可序列化模型类型；解码操作是自由操作，恰接受这个表示类型，返回原类型，可声明解码错误。codec 不随继承隐式传给子类型，表示依赖不能循环；接口使用既有应答脚本，不声明 codec。
+
+用例值 `encoded(v)` 表示按该类型的 codec 解码表示值 v。v 在设计载入时按编码操作的返回类型检查；解码后的类型、限定和前提在运行前检查，不能静态执行解码操作来假装判定。没有 codec、表示类型不符或解码失败均为错误。运行时编码后解码再编码，须得到同一个规范表示；未建模的 Go 私有状态既不能以空记录录制，也不能以随机种子冒充模型值。`graph.Graph` 用既有 `encode` 和 `graph.decode`，因而图的完整内容可进入 corpus。普通字段值和替身脚本保持原写法。
+
 ### 5.4 链接
 
 链接把设计层与代码层合成一张图：每种已配置语言的后端抽取代码层，代码中的绑定（§6）成为 `realizes`、`checks`、`generates` 和 `observes` 边；合并之后按 [model.md](model.md) §9 推导其余的边和显著性，再按 [model.md](model.md) §10 检查约束，得到诊断和每个设计节点的状态。步骤、缓存和快照见 [design.md](design.md) §5。相同的程序和代码总是得到逐字节相同的快照。
@@ -388,7 +396,7 @@ NL            = 换行 { 换行 } .
 
 ## 6 绑定
 
-绑定写在代码中声明的正上方，参数都是字面量，语言后端不执行代码也能读出。绑定有五种：
+绑定写在代码中声明的正上方，参数都是字面量，语言后端不执行代码也能读出。绑定有六种：
 
 - **`realizes <标识>`**：写在类型或自由函数上，表示它落实这个类型，或容器、外部系统直接提供的这个操作。落实外部系统的操作的，是调用该外部系统的客户端函数。方法上不写绑定；方法按名称映射对应到它所在类型落实的那个类型的操作（[design.md](design.md) §4）。
 - **`checks <标识>`**：写在谓词上，表示它检查这条性质或这个流程。谓词的参数就是性质或流程的符号；驱动由 `gen` 生成（[design.md](design.md) §6.2）。一个函数至多带一个 `checks`。
@@ -397,8 +405,10 @@ NL            = 换行 { 换行 } .
 
 - **`substitutes <标识>`**：写在外部客户端的替身安装自由函数上。目标是外部直接操作；Go 参数是与真实客户端完全同签名的函数，唯一返回值是清理函数 `func()`。脚本通过 `forall answers: replies<外部操作>` 提供；`replies` 只作符号的直接类型，同一检查每个目标至多一个脚本；接口字段按操作名给出同形脚本。每项应答是 `{returns: 值}` 或 `{raises: "绝对错误标识", fields: {…}}`，无返回值的成功值为 `none`；脚本非空，末项重复。类型、声明错误及字段均在设计载入时检查。
 
-- **B1** 绑定的动词只有 `realizes`、`checks`、`generates`、`observes` 和 `substitutes`，后接一个空格和一个设计标识；`generates` 指向生成的符号，`observes` 指向具名观察。
-- **B2** 绑定写在类型或函数的文档注释中，独占一行；`checks`、`generates` 只写在函数上，`observes` 和 `substitutes` 只写在自由函数上。
+- **`publishes <事件标识>`**：实际发布边界的函数或方法，恰接收该事件的一个参数且没有返回值；多个发布边界可以指向同一事件，每个函数只声明一个。正常完成该边界产生一次发布轨迹，panic 或未完成不当作已发布。它是运行观测边界，不把构造事件或进入订阅者当成发布。
+
+- **B1** 绑定的动词只有 `realizes`、`checks`、`generates`、`observes`、`substitutes` 和 `publishes`，后接一个空格和一个设计标识；`generates` 指向生成的符号，`observes` 指向具名观察。
+- **B2** 绑定写在类型或函数的文档注释中，独占一行；`checks`、`generates` 只写在函数上，`observes` 和 `substitutes` 只写在自由函数上；`publishes` 写在自由函数或方法上。
 
 ### 6.1 Go
 
