@@ -39,9 +39,13 @@ func genLower(t *rapid.T, label string) Lower {
 	return Lower(gen.Filter(func(s string) bool { return !slices.Contains(reserved, s) && !slices.Contains(expressionWords, s) }).Draw(t, label))
 }
 
+// sentenceMarks are the marks that docs/language.md L8 counts in a summary.
+var sentenceMarks = []rune("。！？；")
+
 // interestingRunes are the characters strings are mostly made of: the ones
-// that need escaping, spaces, CJK, and characters of the format's own syntax.
-var interestingRunes = []rune(`"\ ab Z0{}[]()<>,:.=-/` + "中文　é  ")
+// that need escaping, spaces, CJK, the marks L8 counts, and characters of the
+// format's own syntax.
+var interestingRunes = []rune(`"\ ab Z0{}[]()<>,:.=-/` + "中文　é  " + string(sentenceMarks))
 
 // wideRunes make long strings whose display width is well below their
 // length in bytes, so that values come near the width limit of §3.1 by one
@@ -58,11 +62,22 @@ func genString(t *rapid.T, label string) Text {
 	return Text(rapid.StringOfN(rapid.OneOf(genRune(), genRune(), genRune(), rapid.SampledFrom([]rune{'\n', '\t'})), 0, 24, -1).Draw(t, label))
 }
 
+// genSummary builds a summary that L8 allows: text without its marks, then,
+// each about half the time, one ； somewhere after the first character and
+// one 。, ！ or ？ as the last character.
 func genSummary(t *rapid.T, label string) Summary {
-	return Summary(rapid.StringOfN(genRune(), 1, 24, -1).Filter(func(s string) bool {
+	plain := genRune().Filter(func(r rune) bool { return !slices.Contains(sentenceMarks, r) })
+	r := []rune(rapid.StringOfN(plain, 1, 24, -1).Filter(func(s string) bool {
 		r := []rune(s)
-		return !unicode.IsSpace(r[0]) && !unicode.IsSpace(r[len(r)-1]) && oneSentence(s)
+		return !unicode.IsSpace(r[0]) && !unicode.IsSpace(r[len(r)-1])
 	}).Draw(t, label))
+	if rapid.Bool().Draw(t, label+" semicolon") {
+		r = slices.Insert(r, rapid.IntRange(1, len(r)).Draw(t, label+" semicolon at"), '；')
+	}
+	if rapid.Bool().Draw(t, label+" end") {
+		r = append(r, rapid.SampledFrom([]rune("。！？")).Draw(t, label+" end mark"))
+	}
+	return Summary(r)
 }
 
 func genOptSummary(t *rapid.T, label string) *Summary {

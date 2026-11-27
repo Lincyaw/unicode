@@ -444,7 +444,7 @@ func (c *checker) summary(s string, pos lexer.Position) {
 	case unicode.IsSpace(first) || unicode.IsSpace(last):
 		c.report(pos, "syntax.summary-surrounding-space", "a summary may not begin or end with white space", "remove the white space at the summary's ends")
 	case !oneSentence(s):
-		c.report(pos, "syntax.summary-not-one-sentence", "a summary is one sentence: it has no 。, ！ or ？ before its end and at most one ；",
+		c.report(pos, "syntax.summary-not-one-sentence", "a summary is one sentence: it has at most one 。, ！ or ？, and only as its last character, and at most one ；",
 			"join the clauses into one sentence, or split the claims into declarations of their own and move details to the document section the declaration cites")
 	}
 }
@@ -453,9 +453,13 @@ func (c *checker) summary(s string, pos lexer.Position) {
 const sentenceEnds = "。！？"
 
 // oneSentence reports whether a summary is one sentence (docs/language.md L8):
-// a mark that ends a sentence stands only at its end, and it has at most one ；.
+// at most one mark that ends a sentence, as its last character, and at most
+// one ；. ASCII punctuation is not counted, and a mark inside quotes is.
 func oneSentence(s string) bool {
-	body := strings.TrimRightFunc(s, func(r rune) bool { return strings.ContainsRune(sentenceEnds, r) })
+	body := s
+	if last, size := utf8.DecodeLastRuneInString(s); strings.ContainsRune(sentenceEnds, last) {
+		body = s[:len(s)-size]
+	}
 	return !strings.ContainsAny(body, sentenceEnds) && strings.Count(s, "；") <= 1
 }
 
