@@ -3,3 +3,4 @@
 **/testdata/rapid/
 /api/node_modules/
 /internal/serve/ui/dist/
+/dist/
