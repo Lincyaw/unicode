@@ -93,7 +93,7 @@
 .laneHead[data-person="true"] { border-color: transparent; background: none; }
 .laneHead[data-external="true"] { border-style: dashed; }
 .messageSlot { position: absolute; display: flex; align-items: center; overflow: visible; white-space: nowrap; }
-.stepLabel { display: inline-flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-1); border-radius: var(--radius-sm); color: var(--text-main); font: var(--type-code); white-space: nowrap; }
+.stepLabel { display: inline-flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-1); border-radius: var(--radius-sm); color: var(--text-main); font: var(--type-code); white-space: nowrap; text-shadow: var(--shadow-text-halo); }
 .stepLabel:hover { background: var(--bg-muted); }
 .stepLabel[aria-pressed="true"] { background: var(--row-chosen); }
 .stepIndex { color: var(--text-faint); font: var(--type-mono); }

@@ -1,7 +1,7 @@
-import { Check, FileCode, FlaskConical, Play, Split, TriangleAlert, X } from 'lucide-react';
+import { ArrowRight, Check, FileCode, FlaskConical, Play, Split, TriangleAlert, X } from 'lucide-react';
 import type { Entity, Neighbor, Node, RunResult } from '../../api/types';
 import { ABOUT, CASE_SOURCES, DIAGNOSTIC_WORDS, HISTORY, SECTIONS } from '../../terms';
-import { ICON_SMALL, ICON_STROKE } from '../../ui/hint';
+import { ICON_SMALL, ICON_STROKE, ICON_TINY } from '../../ui/hint';
 import { Badge } from '../marks/Badge';
 import { fileOf, opLine, placeOf, relative, scopeOf, shortPath, stepLine, stepName, typeParts } from '../marks/format';
 import { KindIcon } from '../marks/icons';
@@ -107,7 +107,11 @@ export function ContainerSections({ entity }: { entity: Entity }) {
           {undeclared.map(({ edge }) => (
             <div key={`${edge.from} ${edge.to}`} className={styles.row} data-tone="warning">
               <TriangleAlert size={ICON_SMALL} strokeWidth={ICON_STROKE} aria-hidden="true" />
-              <span className={styles.code}><NodeLink node={{ id: edge.from, title: edge.from }} tone="inherit" /> -&gt; <NodeLink node={{ id: edge.to, title: edge.to }} tone="inherit" /></span>
+              <span className={styles.ends}>
+                <NodeLink node={{ id: edge.from, title: edge.from }} tone="inherit" />
+                <ArrowRight size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />
+                <NodeLink node={{ id: edge.to, title: edge.to }} tone="inherit" />
+              </span>
               <span className={styles.trailing}>
                 <Badge tone="warning">{DIAGNOSTIC_WORDS.undeclared} {(edge.attrs.imports?.length ?? 0) + (edge.attrs.calls?.length ?? 0)}</Badge>
               </span>

@@ -1,4 +1,4 @@
-import { ArrowUpRight, CornerDownRight, Plus } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, CornerDownRight, Plus } from 'lucide-react';
 import type { EdgeEntity } from '../../api/types';
 import { ABOUT, SECTIONS, VIEW_NAMES } from '../../terms';
 import { Badge } from '../marks/Badge';
@@ -8,7 +8,7 @@ import { StatusDot } from '../marks/StatusDot';
 import { statusWord } from './nodeWords';
 import { DiagnosticTag, NodeLink, NodeRow, Section } from './sections';
 import styles from './details.module.css';
-import { ICON_SIZE, ICON_STROKE, InfoHint } from '../../ui/hint';
+import { ICON_SIZE, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
 
 /**
  * The preview of an edge (Figma 04): what joins what, the nodes its attributes name (the detail functions a reaches
@@ -29,7 +29,11 @@ export function EdgePreview({ edge }: { edge: EdgeEntity }) {
           <span className={styles.identity}>{edge.edge.kind}</span>
           <InfoHint label={edge.edge.kind}>{`${edge.edge.origin.path}:${edge.edge.origin.line}`}</InfoHint>
         </div>
-        <p className={styles.codeLine}><NodeLink node={fromNode} tone="inherit" /> -&gt; <NodeLink node={toNode} tone="inherit" /></p>
+        <p className={styles.ends}>
+          <NodeLink node={fromNode} tone="inherit" />
+          <ArrowRight size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />
+          <NodeLink node={toNode} tone="inherit" />
+        </p>
       </div>
       {edge.nodes.length > 0 && (
         <Section title={edge.edge.kind === 'reaches' ? SECTIONS.via : SECTIONS.imports} about={edge.edge.kind === 'reaches' ? ABOUT.reachesCount : undefined}>

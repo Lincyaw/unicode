@@ -34,6 +34,8 @@
 .nodeLink[data-tone="inherit"] { color: inherit; font: inherit; }
 .nodeLink:hover { text-decoration: underline; text-underline-offset: var(--space-px); }
 .code { font: var(--type-code); }
+/* The two ends of an edge with the arrow between them, in the code face. */
+.ends { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); min-width: 0; font: var(--type-code); }
 .trailing { flex: none; margin-left: auto; color: var(--text-faint); font: var(--type-mono); }
 .row[data-tone] .trailing { color: var(--text-muted); font: var(--type-small); }
 .indexes { display: inline-flex; gap: var(--space-3); }
