@@ -119,11 +119,36 @@ func (r *writer) decls() {
 		case *gvar:
 			r.variable(decl)
 		case *gconst:
-			r.put("const " + decl.name + " " + decl.typ.name + " = " + strconv.Quote(decl.name) + "\n")
+			r.constant(decl)
 		case *gloose:
 			r.loose(decl)
 		}
 	}
+}
+
+// plainGlobals writes a file's declarations of package-level variables,
+// constants and init functions as their normal form reads them, in the
+// order of the source, so that two files share a digest exactly when they
+// write the same; "" when the file has none.
+func plainGlobals(f *gfile) string {
+	r := newWriter(f, true)
+	for _, decl := range f.decls {
+		switch decl := decl.(type) {
+		case *gvar:
+			r.variable(decl)
+		case *gconst:
+			r.constant(decl)
+		case *gloose:
+			if decl.kind != "floating" {
+				r.loose(decl)
+			}
+		}
+	}
+	return r.b.String()
+}
+
+func (r *writer) constant(c *gconst) {
+	r.put("const " + c.name + " " + c.typ.name + " = " + strconv.Quote(c.name) + "\n")
 }
 
 func (r *writer) typeSpec(ty *gtype, indent string) {
@@ -330,9 +355,13 @@ func (r *writer) loose(l *gloose) {
 		r.comments("", l.doc)
 		r.put("var " + l.name + " = 1\n")
 	case "trailing":
-		r.put("var " + l.name + " = 1 ")
-		r.at[&l.doc[0]] = r.pos()
-		r.put(l.doc[0].text + "\n")
+		r.put("var " + l.name + " = 1")
+		if !r.plain {
+			r.put(" ")
+			r.at[&l.doc[0]] = r.pos()
+			r.put(l.doc[0].text)
+		}
+		r.put("\n")
 	case "init":
 		r.comments("", l.doc)
 		r.put("func init() {}\n")

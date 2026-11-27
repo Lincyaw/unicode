@@ -114,6 +114,9 @@ func (x *extraction) addPackage(p *packages.Package) {
 		if unicodeGenerated(f.syntax) {
 			attrs["generated"] = []string{"true"}
 		}
+		if globals := globalsDigest(f.syntax); globals != "" {
+			attrs["globals"] = []string{globals}
+		}
 		x.addNode(graph.Node{
 			Id: fileID, Kind: graph.NodeKindContainer, Form: "file", Origin: x.position(p, f.syntax.Package),
 			Attrs: attrs,

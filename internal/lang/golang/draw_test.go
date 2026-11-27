@@ -750,7 +750,8 @@ func (w *world) misplaced(label string) []binding {
 	return lines
 }
 
-// drawLoose adds declarations that are no nodes, each carrying a binding.
+// drawLoose adds declarations that are no nodes, each carrying a binding,
+// then sometimes copies a file's to a file of another package.
 func (w *world) drawLoose() {
 	for range rapid.IntRange(0, 2).Draw(w.t, "loose") {
 		file := w.anyFile("looseFile")
@@ -759,7 +760,61 @@ func (w *world) drawLoose() {
 			kind: kind, name: w.fresh("loose", false), doc: []binding{w.drawBinding("looseBinding", "func")},
 		})
 	}
+	w.copyLoose()
 }
+
+// copyLoose gives a file that declares no package-level variable, constant
+// or init function the loose ones of a file in another package that
+// declares nothing else of the kind, with comments of their own and a
+// trailing comment or none, so that the two files' globals differ only in
+// what the normal form drops.
+func (w *world) copyLoose() {
+	var from, to []*gfile
+	for _, f := range w.files() {
+		if !declaresGlobals(f) {
+			to = append(to, f)
+		} else if !slices.ContainsFunc(f.decls, func(d any) bool { _, loose := d.(*gloose); return !loose && isGlobal(d) }) {
+			from = append(from, f)
+		}
+	}
+	if len(from) == 0 || !rapid.Bool().Draw(w.t, "copyLoose") {
+		return
+	}
+	source := rapid.SampledFrom(from).Draw(w.t, "looseFrom")
+	var targets []*gfile
+	for _, f := range to {
+		if f.pkg != source.pkg {
+			targets = append(targets, f)
+		}
+	}
+	if len(targets) == 0 {
+		return
+	}
+	target := rapid.SampledFrom(targets).Draw(w.t, "looseTo")
+	for _, decl := range source.decls {
+		if l, ok := decl.(*gloose); ok && l.kind != "floating" {
+			kind := l.kind
+			if kind == "var" || kind == "trailing" {
+				kind = rapid.SampledFrom([]string{"var", "trailing"}).Draw(w.t, "copiedKind")
+			}
+			target.decls = append(target.decls, &gloose{kind: kind, name: l.name, doc: []binding{w.drawBinding("looseBinding", "func")}})
+		}
+	}
+}
+
+// isGlobal tells whether a declaration is of a package-level variable, a
+// constant or an init function.
+func isGlobal(decl any) bool {
+	switch decl := decl.(type) {
+	case *gvar, *gconst:
+		return true
+	case *gloose:
+		return decl.kind != "floating"
+	}
+	return false
+}
+
+func declaresGlobals(f *gfile) bool { return slices.ContainsFunc(f.decls, isGlobal) }
 
 // bindingsOf returns a declaration's well-formed bindings that are in the
 // right place, each once: on a type only realizes binds.
