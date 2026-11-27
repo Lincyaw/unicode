@@ -91,12 +91,12 @@ func (w *world) drawType() {
 	ty.name = w.fresh("typeName", w.exported("typeExported"))
 	switch ty.form {
 	case "struct":
+		if twins := w.structTwins(file); len(twins) > 0 && rapid.IntRange(0, 3).Draw(w.t, "structTwin") == 0 {
+			w.copyStruct(ty, rapid.SampledFrom(twins).Draw(w.t, "structTwinOf"))
+			break
+		}
 		for range rapid.IntRange(0, 3).Draw(w.t, "fields") {
-			field := gfield{name: w.fresh("field", w.exported("fieldExported")), typ: w.drawExpr(file, 0)}
-			if rapid.IntRange(0, 5).Draw(w.t, "fieldDoc") == 0 {
-				field.doc = w.misplaced("fieldBindings")
-			}
-			ty.fields = append(ty.fields, field)
+			ty.fields = append(ty.fields, w.drawField(gfield{name: w.fresh("field", w.exported("fieldExported")), typ: w.drawExpr(file, 0)}))
 		}
 		if structs := w.visibleTypes(file, "struct"); len(structs) > 0 && rapid.Bool().Draw(w.t, "embeds") {
 			ty.embed = rapid.SampledFrom(structs).Draw(w.t, "embedded")
@@ -134,6 +134,40 @@ func (w *world) drawType() {
 	} else {
 		file.decls = append(file.decls, ty)
 	}
+}
+
+// drawField gives a field its doc comment and layout, which its type's
+// normal form drops.
+func (w *world) drawField(field gfield) gfield {
+	field.doc = nil
+	if rapid.IntRange(0, 5).Draw(w.t, "fieldDoc") == 0 {
+		field.doc = w.misplaced("fieldBindings")
+	}
+	field.layout = w.drawLayout()
+	return field
+}
+
+// structTwins are the structs that a struct in the file can copy: those of
+// its package in files that are test files exactly when it is, which name
+// the same types.
+func (w *world) structTwins(file *gfile) []*gtype {
+	var out []*gtype
+	for _, ty := range w.types {
+		if ty.form == "struct" && ty.file.pkg == file.pkg && ty.file.test == file.test {
+			out = append(out, ty)
+		}
+	}
+	return out
+}
+
+// copyStruct gives ty the fields and the embedded struct of another, with
+// doc comments and layouts of its own, so that it differs from that one only
+// in its name and in what the normal form drops.
+func (w *world) copyStruct(ty, of *gtype) {
+	for _, field := range of.fields {
+		ty.fields = append(ty.fields, w.drawField(field))
+	}
+	ty.embed, ty.embedPtr = of.embed, of.embedPtr
 }
 
 func lastDecl(f *gfile) any {
@@ -304,6 +338,10 @@ func (w *world) drawFunc(file *gfile, testName string) {
 // Bodies.
 
 func (w *world) drawBody(fn *gfunc) {
+	if twins := w.bodyTwins(fn); len(twins) > 0 && rapid.IntRange(0, 3).Draw(w.t, "bodyTwin") == 0 {
+		w.copyBody(fn, rapid.SampledFrom(twins).Draw(w.t, "bodyTwinOf"))
+		return
+	}
 	if rapid.IntRange(0, 4).Draw(w.t, "stub") == 0 {
 		fn.terminal = marker
 		return
@@ -318,7 +356,61 @@ func (w *world) drawBody(fn *gfunc) {
 	}
 }
 
+// bodyTwins are the functions whose bodies are drawn before fn's and that fn
+// can copy: in its file, named like a test exactly when fn is, so that a call
+// of rapid.Check finds its t, and ending in a panic when fn has results.
+func (w *world) bodyTwins(fn *gfunc) []*gfunc {
+	var out []*gfunc
+	for _, other := range w.funcs[:slices.Index(w.funcs, fn)] {
+		if other.file == fn.file && other.testName == fn.testName && (len(fn.sig.results) == 0 || other.terminal != "") {
+			out = append(out, other)
+		}
+	}
+	return out
+}
+
+// copyBody gives fn the statements and the panic of another body, with
+// layouts and comment lines of its own, so that the two differ only in what
+// the normal form drops.
+func (w *world) copyBody(fn, of *gfunc) {
+	fn.terminal = of.terminal
+	for _, s := range of.body {
+		if s.kind != "comment" {
+			fn.body = append(fn.body, w.relayout(s))
+		}
+	}
+	if rapid.Bool().Draw(w.t, "twinComment") {
+		at := rapid.IntRange(0, len(fn.body)).Draw(w.t, "twinCommentAt")
+		fn.body = slices.Insert(fn.body, at, gstmt{kind: "comment", comment: w.drawBinding("bodyBinding", "func")})
+	}
+}
+
+// relayout copies a statement with a layout of its own, its closure's too.
+func (w *world) relayout(s gstmt) gstmt {
+	s.layout = w.drawLayout()
+	if s.inner != nil {
+		inner := w.relayout(*s.inner)
+		s.inner = &inner
+	}
+	return s
+}
+
+func (w *world) drawLayout() layout {
+	return layout{
+		blank: rapid.IntRange(0, 4).Draw(w.t, "blank") == 0,
+		note:  rapid.IntRange(0, 4).Draw(w.t, "note") == 0,
+		split: rapid.Bool().Draw(w.t, "split"),
+	}
+}
+
 func (w *world) drawStmt(fn *gfunc, depth int) (gstmt, bool) {
+	s, ok := w.drawContent(fn, depth)
+	s.layout = w.drawLayout()
+	return s, ok
+}
+
+// drawContent draws what a statement does.
+func (w *world) drawContent(fn *gfunc, depth int) (gstmt, bool) {
 	kinds := []string{"call", "call", "call", "assign", "iface", "builtin", "ref", "comment"}
 	if depth == 0 {
 		kinds = append(kinds, "closure")

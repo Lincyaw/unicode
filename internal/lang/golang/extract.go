@@ -177,7 +177,7 @@ func (x *extraction) addType(p *packages.Package, f sourceFile, fileID string, d
 	d := declared{id: typeID(name), pkg: p, file: f, pos: spec.Name.Pos(), spec: spec, name: name}
 	x.addNode(graph.Node{
 		Id: d.id, Kind: graph.NodeKindType, Form: typeForm(name), Origin: x.position(p, d.pos),
-		Summary: synopsis(doc), Attrs: map[string][]string{"name": {name.Name()}},
+		Summary: synopsis(doc), Attrs: map[string][]string{"name": {name.Name()}, "declaration": {declarationDigest(spec)}},
 	})
 	x.addEdge(graph.EdgeKindContains, fileID, d.id, x.position(p, d.pos))
 	x.declared = append(x.declared, d)
@@ -200,9 +200,12 @@ func (x *extraction) addType(p *packages.Package, f sourceFile, fileID string, d
 }
 
 func (x *extraction) addOp(d declared, form, parent string, doc *ast.CommentGroup, testKind string, stub bool, docs map[*ast.CommentGroup]bound) {
+	attrs := map[string][]string{"testKind": {testKind}, "stub": {strconv.FormatBool(stub)}}
+	if d.decl != nil && d.decl.Body != nil {
+		attrs["body"] = []string{bodyDigest(d.decl.Body)}
+	}
 	x.addNode(graph.Node{
-		Id: d.id, Kind: graph.NodeKindOp, Form: form, Origin: x.position(d.pkg, d.pos), Summary: synopsis(doc),
-		Attrs: map[string][]string{"testKind": {testKind}, "stub": {strconv.FormatBool(stub)}},
+		Id: d.id, Kind: graph.NodeKindOp, Form: form, Origin: x.position(d.pkg, d.pos), Summary: synopsis(doc), Attrs: attrs,
 	})
 	x.addEdge(graph.EdgeKindContains, parent, d.id, x.position(d.pkg, d.pos))
 	x.declared = append(x.declared, d)

@@ -17,8 +17,9 @@ import (
 // computes the nodes and edges that extraction should give.
 
 // Module is a random Go module: its files, and the nodes, edges and
-// diagnostics that extraction should give, written by describeNode,
-// describeEdge and describeDiagnostic.
+// diagnostics that extraction should give, written by describeNode with
+// digests as their classes (digestClasses), describeEdge and
+// describeDiagnostic.
 //
 //uc:realizes lang.golang.Module
 type Module struct {
@@ -135,6 +136,7 @@ type gfield struct {
 	name string
 	typ  *gexpr
 	doc  []binding
+	layout
 }
 
 type gsig struct {
@@ -171,6 +173,14 @@ type gstmt struct {
 	inner   *gstmt // a closure's statement
 	name    string // an assignment's variable
 	comment binding
+	layout
+}
+
+// layout is how a statement or a field is written beyond what the normal
+// form of docs/design.md §5.2 keeps: a blank line before it, a comment after
+// it, and a call's arguments one to a line.
+type layout struct {
+	blank, note, split bool
 }
 
 // gconst is a constant of a defined type.

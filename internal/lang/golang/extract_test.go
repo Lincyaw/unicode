@@ -5,6 +5,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -25,6 +26,38 @@ func describeNode(n graph.Node) string {
 func describeEdge(e graph.Edge) string {
 	return fmt.Sprintf("%s %s %s %s%s", e.Kind, e.From, e.To, e.Source, describeAttrs(e.Attrs))
 }
+
+// digestKeys are the attrs whose values are digests (docs/design.md §5.2).
+var digestKeys = []string{"body", "declaration"}
+
+// digestClasses writes each digest of the nodes, sorted by identity, as the
+// class of the nodes that share it: "#0" for the first, "#1" for the next
+// other one, and so on, for each key apart. Two lists of nodes then describe
+// alike exactly when their digests split them alike, whatever the digests are.
+func digestClasses(nodes []graph.Node) []graph.Node {
+	out := slices.Clone(nodes)
+	for _, key := range digestKeys {
+		classes := map[string]string{}
+		for i, n := range out {
+			values, ok := n.Attrs[key]
+			if !ok {
+				continue
+			}
+			n.Attrs = maps.Clone(n.Attrs)
+			n.Attrs[key] = nil
+			for _, v := range values {
+				if _, seen := classes[v]; !seen {
+					classes[v] = fmt.Sprintf("#%d", len(classes))
+				}
+				n.Attrs[key] = append(n.Attrs[key], classes[v])
+			}
+			out[i] = n
+		}
+	}
+	return out
+}
+
+var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func describeAttrs(attrs map[string][]string) string {
 	var b strings.Builder
@@ -61,6 +94,13 @@ func checkExtractsGeneratedModule(t rapid.TB, module Module) {
 	}
 	var nodes, edges, diagnostics []string
 	for _, n := range extracted.Fragment.Nodes {
+		for _, key := range digestKeys {
+			if v, ok := n.Attrs[key]; ok && (len(v) != 1 || !sha256Hex.MatchString(v[0])) {
+				t.Fatalf("the %s of %s is %q, not one SHA-256 in lower-case hex", key, n.Id, v)
+			}
+		}
+	}
+	for _, n := range digestClasses(extracted.Fragment.Nodes) {
 		nodes = append(nodes, describeNode(n))
 	}
 	for _, e := range extracted.Fragment.Edges {

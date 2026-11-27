@@ -173,8 +173,10 @@ type Runner interface {
 | 种类 | 属性的键 |
 | --- | --- |
 | container（`package`、`file`） | `language`、`path`（文件的路径，或包的导入路径）；工具生成的文件另带 `generated: true` |
-| type | `name`、`fields`（每项 `名称: 类型`；未导出的字段是细节，不列出）、`values`（以字符串为底层类型、带常量的类型，每项是常量名按反向映射得到的枚举值，例如 `OrderStatusDraft` 写作 `draft`） |
-| op（`func`、`method`、`abstract`） | `name`（带 `checks` 绑定的谓词，写作性质或流程的名称）、`signature`、`testKind`（`none`、`example`、`property` 或 `fuzz`）、`stub`（`true` 或 `false`） |
+| type | `name`、`fields`（每项 `名称: 类型`；未导出的字段是细节，不列出）、`values`（以字符串为底层类型、带常量的类型，每项是常量名按反向映射得到的枚举值，例如 `OrderStatusDraft` 写作 `draft`）、`declaration`（不含方法体的声明：类型参数和类型的定义，不含名称，取归一化形式的 SHA-256） |
+| op（`func`、`method`、`abstract`） | `name`（带 `checks` 绑定的谓词，写作性质或流程的名称）、`signature`、`testKind`（`none`、`example`、`property` 或 `fuzz`）、`stub`（`true` 或 `false`）、`body`（函数体的归一化形式的 SHA-256；没有函数体的不写出，例如接口中声明的方法） |
+
+`declaration` 和 `body` 让内容哈希含有声明和函数体（[model.md](model.md) §6）。归一化形式由后端定义，只改格式或注释时不变：Go 后端按语法树编码，依次写出每个节点的类型和字段，位置只记有无，注释不写出；值都是小写十六进制。
 
 `calls` 边的属性 `sites` 列出每个调用位置，写作 `路径:行:列`；`generates` 边的属性 `symbols` 列出符号的名称。Go 签名的写法：指针 `*T` 写作 `optional<T>`，`check` 比较时把设计中 `object` 类型的 `optional<X>` 与 `X` 视为相同；末尾的 `error` 写作 ` raises error`，与设计中非空的 `raises` 相符；谓词的第一个参数（`rapid.TB`）保留在签名中，比较符号时跳过。绑定边的终点是设计层的标识。`Graph.AddFragment` 先暂存终点不在图中的绑定边和方法的候选边；推导时加入能解析的，绑定边中终点仍不存在的报为 `graph.unresolved-binding`，即 [model.md](model.md) §10 第 15 条中"目标存在"的一半；其余端点缺失的边仍是 `DanglingEdge`。
 

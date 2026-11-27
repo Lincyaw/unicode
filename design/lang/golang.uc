@@ -41,9 +41,9 @@ op newBackend() -> Backend "一个 Go 后端"
 
 op declaration(src: bytes, line: int, column: int) -> optional<Lines> "Go 源码中包含这一位置的顶层声明所占的行，从它的文档注释起；分组的类型声明中，取包含这一位置的那个类型；源码解析不了，或者这一位置不在任何声明之中时没有"
 
-property extracts-generated-module invariant "随机生成的 Go 模块，抽取得到的节点、边和诊断恰是生成时记下的那些，签名按 design.md §4 归一化；诊断写作 诊断码 路径:行" {
+property extracts-generated-module invariant "随机生成的 Go 模块，抽取得到的节点、边和诊断恰是生成时记下的那些，签名按 design.md §4 归一化，两个函数体或两个类型声明的哈希相同当且仅当它们的归一化形式相同；诊断写作 诊断码 路径:行" {
   about Backend
-  forall module: Module generated "一个随机的 Go 模块：几个包和文件，类型、函数、方法、调用、导入、嵌入、接口的实现、测试文件，以及 //uc: 绑定，其中有的写法不合格式"
+  forall module: Module generated "一个随机的 Go 模块：几个包和文件，类型、函数、方法、调用、导入、嵌入、接口的实现、测试文件，以及 //uc: 绑定，其中有的写法不合格式；有的函数体和结构体只在格式和注释上与另一个不同"
   manual "需要写入并抽取临时 Go 模块，比较源码位置、归一化签名和诊断，表达式不执行文件系统操作"
 }
 

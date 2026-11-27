@@ -53,7 +53,8 @@ func (w *world) module() Module {
 	}
 	x.addImplements()
 	m := Module{Files: files, Diagnostics: x.diagnostics}
-	for _, n := range x.nodes {
+	nodes := slices.SortedFunc(maps.Values(x.nodes), func(a, b graph.Node) int { return cmp.Compare(a.Id, b.Id) })
+	for _, n := range digestClasses(nodes) {
 		m.Nodes = append(m.Nodes, describeNode(n))
 	}
 	for key, e := range x.edges {
@@ -135,9 +136,11 @@ func summaryOf(doc []binding) string {
 	return strings.TrimPrefix(doc[0].text, "// ")
 }
 
+// addType expects a type's node, its declaration written in plain, so that
+// two types share a digest exactly when they declare the same.
 func (x *expectation) addType(ty *gtype, fileID string) {
 	id := typeIdentity(ty)
-	attrs := map[string][]string{"name": {ty.name}}
+	attrs := map[string][]string{"name": {ty.name}, "declaration": {plainType(ty)}}
 	switch ty.form {
 	case "struct":
 		attrs["fields"] = []string{}
@@ -191,7 +194,7 @@ func (x *expectation) values(ty *gtype) []string {
 // addAbstract expects the node of a method an interface declares.
 func (x *expectation) addAbstract(iface *gtype, sig *gsig) {
 	id := typeIdentity(iface) + "." + sig.name
-	x.op(id, "abstract", x.at[sig], sig, sig.doc, "none", false)
+	x.op(id, "abstract", x.at[sig], sig, sig.doc, "none", false, nil)
 	x.edge(graph.EdgeKindContains, typeIdentity(iface), id, graph.SourceExtracted)
 	x.refersSig(id, sig)
 	x.bindings(id, sig.doc, false, true)
@@ -216,7 +219,7 @@ func (x *expectation) addFunc(fn *gfunc, fileID string) {
 		}
 	}
 	stub := fn.terminal == marker && !slices.ContainsFunc(fn.body, isStatement)
-	x.op(id, form, x.at[fn], fn.sig, fn.doc, testKind, stub)
+	x.op(id, form, x.at[fn], fn.sig, fn.doc, testKind, stub, []string{plainBody(fn)})
 	x.edge(graph.EdgeKindContains, parent, id, graph.SourceExtracted)
 	x.refersSig(id, fn.sig)
 	x.bindings(id, fn.doc, false, fn.recv != nil)
@@ -228,14 +231,20 @@ func (x *expectation) addFunc(fn *gfunc, fileID string) {
 	}
 }
 
-func (x *expectation) op(id, form string, at diag.Position, sig *gsig, doc []binding, testKind string, stub bool) {
+// op expects an operation's node; a function's body is written in plain,
+// so that two functions share a digest exactly when their bodies are the same.
+func (x *expectation) op(id, form string, at diag.Position, sig *gsig, doc []binding, testKind string, stub bool, body []string) {
 	name := lowerFirst(sig.name)
 	if checks(doc) {
 		name = predicateOf(sig.name)
 	}
-	x.node(id, graph.NodeKindOp, form, at, summaryOf(doc), map[string][]string{
+	attrs := map[string][]string{
 		"name": {name}, "signature": {x.signature(sig)}, "testKind": {testKind}, "stub": {strconv.FormatBool(stub)},
-	})
+	}
+	if body != nil {
+		attrs["body"] = body
+	}
+	x.node(id, graph.NodeKindOp, form, at, summaryOf(doc), attrs)
 }
 
 // predicateOf is the property's or flow's name a predicate's name maps from.
