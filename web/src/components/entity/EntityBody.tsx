@@ -62,7 +62,7 @@ function MembersTable({ entity }: { entity: Entity }) {
   }
   return (
     <Section title={members[0]?.kind === 'value' ? SECTIONS.values : SECTIONS.fields} about={ABOUT.fields}>
-      <div className={clsx(table.table, styles.table)} role="table" style={{ '--columns': '8.5rem 13rem minmax(0, 1fr) 3rem' } as CSSProperties}>
+      <div className={clsx(table.table, styles.table)} role="table" style={{ '--columns': '8.5rem 13rem minmax(12rem, 1fr) 3rem' } as CSSProperties}>
         <div className={clsx(table.row, table.head, styles.headRow)} role="row">
           <span role="columnheader">{MEMBER_COLUMNS.name}</span>
           <span role="columnheader">{MEMBER_COLUMNS.type}</span>
@@ -97,7 +97,7 @@ function OpsTable({ entity }: { entity: Entity }) {
   }
   return (
     <Section title={SECTIONS.ops}>
-      <div className={clsx(table.table, styles.table)} role="table" style={{ '--columns': 'minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.9fr)' } as CSSProperties}>
+      <div className={clsx(table.table, styles.table)} role="table" style={{ '--columns': 'minmax(12rem, 1.3fr) minmax(9rem, 1fr) minmax(8rem, 0.9fr)' } as CSSProperties}>
         <div className={clsx(table.row, table.head, styles.headRow)} role="row">
           <span role="columnheader">{OP_COLUMNS.signature}</span>
           <span role="columnheader">{OP_COLUMNS.realizedBy}</span>

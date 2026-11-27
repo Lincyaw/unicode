@@ -97,7 +97,7 @@ function PropertyBlock({ property, view }: { property: ViewNode; view: View }) {
       </Section>
       {cases.length > 0 && (
         <Section title={SECTIONS.cases} about={ABOUT.cases}>
-          <div className={clsx(table.table, styles.table)} role="table" style={{ '--columns': '8rem 4.5rem minmax(0, 1fr) 4.5rem 4.5rem' } as CSSProperties}>
+          <div className={clsx(table.table, styles.table)} role="table" style={{ '--columns': '8rem 4.5rem minmax(8rem, 1fr) 4.5rem 4.5rem' } as CSSProperties}>
             <div className={clsx(table.row, table.head, styles.headRow)} role="row">
               {[CASE_COLUMNS.name, CASE_COLUMNS.source, CASE_COLUMNS.values, CASE_COLUMNS.outcome, CASE_COLUMNS.gain].map(column => <span key={column} role="columnheader">{column}</span>)}
             </div>
