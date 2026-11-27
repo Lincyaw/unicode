@@ -55,7 +55,7 @@ property slice-is-minimal-context invariant "切片恰好含有焦点、焦点�
   manual "需要独立计算图的闭包、最短路径、排序或文本子串，当前表达式没有这些构造"
 }
 
-property impact-is-reverse-reachability relation "影响恰是沿 design.md §7.4 的反向边与观察专用传播规则能到达焦点的显著节点；每条说明路径由相接的原图边组成，并且最短" {
+property impact-is-reverse-reachability relation "影响恰是沿 design.md §7.4 的反向边、代码绑定到设计节点的正向边与观察专用传播规则能到达焦点的显著节点；每条说明路径由相接的原图边组成，并且最短" {
   about impact
   forall question: Question generated "一张随机的图，焦点取自图中的节点"
   manual "需要独立计算图的闭包、最短路径、排序或文本子串，当前表达式没有这些构造"

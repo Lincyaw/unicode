@@ -27,6 +27,8 @@ func (c *checker) bindings() {
 			checks[e.From] = append(checks[e.From], e)
 		case graph.EdgeKindGenerates:
 			c.generatesBinding(e)
+		case graph.EdgeKindSubstitutes:
+			c.substituteBinding(e)
 		case graph.EdgeKindObserves:
 			if !c.isFunction(e.From) || c.isMethod(e.From) || !c.is(e.To, graph.LayerDesign, graph.NodeKindObservation, "snapshot") {
 				c.wrongKind(e, "an observation adapter is a free function that observes a named snapshot")

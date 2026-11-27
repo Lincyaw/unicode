@@ -115,6 +115,11 @@ func (l *loader) conform(c *entity, v syntax.Value, t *typ) bool {
 		return l.conformMap(c, v, t, wrong)
 	case "call":
 		return l.conformCall(c, v, t, wrong)
+	case "replies":
+		if len(t.refs) == 0 || t.refs[0].target == nil {
+			return true
+		}
+		return l.conformReplies(c, v, t.refs[0].target, wrong)
 	}
 	if t.builtin != "" {
 		if why := builtinMismatch(v, t.builtin); why != "" {
@@ -124,7 +129,9 @@ func (l *loader) conform(c *entity, v syntax.Value, t *typ) bool {
 	}
 	n := t.named()
 	switch {
-	case n == nil || n.form == "interface" || n.form == "error":
+	case n != nil && n.form == "interface":
+		return l.conformInterface(c, v, n, wrong)
+	case n == nil || n.form == "error":
 		return true
 	case n.form == "enum":
 		name, ok := v.(*syntax.NameValue)
