@@ -120,6 +120,12 @@ property encode-ignores-order relation "同一组节点和边，以任何次序�
   where rotation in 0..1000
 }
 
+property decode-inverts-encode relation "解码 encode 写出的快照，再编码，得到逐字节相同的快照；解码任何字节都不会 panic，不是快照的字节得到 NotASnapshot" {
+  about decode, Graph.encode
+  forall content: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
+  forall noise: bytes
+}
+
 property derive-matches-definition relation "推导出的边和显著性，与按 model.md §9 的定义逐条直接计算的结果相同" {
   about Graph.derive
   forall fragment: Fragment generated "一张随机的小图：带路径模式的设计层容器、类型、操作、流程和性质，带绑定的代码层文件、类型、函数和调用"

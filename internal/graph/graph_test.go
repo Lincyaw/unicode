@@ -79,6 +79,7 @@ func genNode() *rapid.Generator[Node] {
 // genFragment draws nodes with distinct identities and distinct edges between them.
 //
 //uc:generates graph.encode-ignores-order.content
+//uc:generates graph.decode-inverts-encode.content
 func genFragment() *rapid.Generator[Fragment] {
 	return rapid.Custom(func(t *rapid.T) Fragment {
 		var c Fragment

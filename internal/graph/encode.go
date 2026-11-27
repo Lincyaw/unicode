@@ -6,8 +6,12 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"maps"
 	"slices"
+
+	"github.com/lincyaw/unicode/internal/diag"
 )
 
 // Digest returns the SHA-256, in lower-case hex, of the content of the node
@@ -128,9 +132,35 @@ func (e NotASnapshot) Error() string { return "not a snapshot of the graph: " + 
 
 func (e NotASnapshot) Unwrap() error { return e.Cause }
 
-// Decode is the inverse of Encode: it rebuilds the graph a snapshot holds.
+// Decode is the inverse of Encode: it rebuilds the graph a snapshot holds,
+// adding its nodes, then its edges. The digests are not read: Digest
+// computes them from the content. Bytes that are not one JSON object of the
+// snapshot's fields, or whose nodes and edges make no graph, give NotASnapshot.
 //
 //uc:realizes graph.decode
 func Decode(data []byte) (Graph, error) {
-	panic("unicode: unimplemented")
+	var s snapshot
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&s); err != nil {
+		return Graph{}, NotASnapshot{Cause: err}
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return Graph{}, NotASnapshot{Cause: errors.New("more data follows the snapshot's JSON object")}
+	}
+	g := NewGraph()
+	for _, n := range s.Nodes {
+		node := Node{Id: n.Id, Kind: n.Kind, Form: n.Form, Layer: n.Layer, Source: n.Source,
+			Origin: diag.Position(n.Origin), Summary: n.Summary, Salient: n.Salient, Attrs: n.Attrs}
+		if err := g.AddNode(node); err != nil {
+			return Graph{}, NotASnapshot{Cause: err}
+		}
+	}
+	for _, e := range s.Edges {
+		edge := Edge{Kind: e.Kind, From: e.From, To: e.To, Source: e.Source, Origin: diag.Position(e.Origin), Attrs: e.Attrs}
+		if err := g.AddEdge(edge); err != nil {
+			return Graph{}, NotASnapshot{Cause: err}
+		}
+	}
+	return g, nil
 }
