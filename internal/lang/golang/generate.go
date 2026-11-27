@@ -233,14 +233,31 @@ func (c *contractCompiler) expression(n graph.Node, text, clause string, ordinal
 		source := syntax.Parse(n.Origin.Path, syntax.FileKindComponent, data)
 		if source.File != nil {
 			for _, decl := range source.File.Decls {
-				property, ok := decl.(*syntax.PropertyDecl)
-				if !ok || string(property.Name) != lastName(n.Id) {
+				var name string
+				var members []any
+				switch block := decl.(type) {
+				case *syntax.PropertyDecl:
+					name = string(block.Name)
+					for _, member := range block.Lines {
+						members = append(members, member)
+					}
+				case *syntax.FlowDecl:
+					name = string(block.Name)
+					for _, member := range block.Lines {
+						members = append(members, member)
+					}
+				}
+				if name != lastName(n.Id) {
 					continue
 				}
 				index := 0
-				for _, member := range property.Lines {
+				for _, member := range members {
 					var original *syntax.Expr
 					switch member := member.(type) {
+					case *syntax.Call:
+						if clause == "call" {
+							original = &syntax.Expr{Pos: member.Op.Pos}
+						}
 					case *syntax.Act:
 						if clause == "call" {
 							original = member.Expression.Expr()
@@ -926,7 +943,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		}
 		fmt.Fprintf(&body, "func ucInvoke%s(tb rapid.TB, s *ucContract, values map[string]reflect.Value){", id)
 		if unit.predicate != nil {
-			body.WriteString("pre:=*s;pre.Call=nil;pre.Ensures=nil;pre.Sequence=\"\";ucCheck(tb,&pre,values); started:=time.Now();defer func(){if ucCurrent!=nil&&s.Within>0 {ucCurrent.durations=append(ucCurrent.durations,time.Since(started))}}();")
+			body.WriteString("ucManual(tb,s,values,func(){pre:=*s;pre.SkipInstall=true;pre.Call=nil;pre.Ensures=nil;pre.Sequence=\"\";ucCheck(tb,&pre,values); started:=time.Now();defer func(){if ucCurrent!=nil&&s.Within>0 {ucCurrent.durations=append(ucCurrent.durations,time.Since(started))}}();")
 		}
 		var args []string
 		for _, s := range unit.spec.Symbols {
@@ -936,7 +953,11 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		if len(args) > 0 {
 			body.WriteString("," + strings.Join(args, ","))
 		}
-		body.WriteString(")}\n")
+		if unit.predicate != nil {
+			body.WriteString(")})}\n")
+		} else {
+			body.WriteString(")}\n")
+		}
 		fmt.Fprintf(&body, "func ucInputs%s(rt *rapid.T,s *ucContract) map[string]reflect.Value{ values:=map[string]reflect.Value{};", id)
 		for _, s := range unit.spec.Symbols {
 			if fn := unit.generators[s.Name]; fn != nil {

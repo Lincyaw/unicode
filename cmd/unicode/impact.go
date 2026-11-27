@@ -17,8 +17,8 @@ func impactCommand(g *globalOptions, stdout io.Writer) *cobra.Command {
 		Use:   "impact <id>...",
 		Short: "Give the salient nodes that a change to the nodes affects, each with a shortest path that says why",
 		Long: "impact gives the salient nodes affected by changes. Changes spread backwards along calls, reaches,\n" +
-			"refers, subscribes, emits, realizes, traces, exercises, depends, about, checks and observes.\n" +
-			"An adapter change also reaches its observation, and an observation change reaches its owning property\n" +
+			"refers, subscribes, emits, realizes, traces, exercises, depends, about, checks observes and substitutes.\n" +
+			"Bindings also propagate from code to their design targets, and an observation change reaches its owning property\n" +
 			"(docs/design.md §7.4). Results are grouped by kind, each with one shortest connected path of original edges.",
 		Args:        cobra.MinimumNArgs(1),
 		Annotations: queryAnnotations(),

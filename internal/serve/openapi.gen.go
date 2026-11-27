@@ -100,28 +100,29 @@ func (e DriverMode) Valid() bool {
 
 // Defines values for EdgeKind.
 const (
-	EdgeKindAbout      EdgeKind = "about"
-	EdgeKindCalls      EdgeKind = "calls"
-	EdgeKindChecks     EdgeKind = "checks"
-	EdgeKindContains   EdgeKind = "contains"
-	EdgeKindCovers     EdgeKind = "covers"
-	EdgeKindDepends    EdgeKind = "depends"
-	EdgeKindEmits      EdgeKind = "emits"
-	EdgeKindExercises  EdgeKind = "exercises"
-	EdgeKindExtends    EdgeKind = "extends"
-	EdgeKindFrom       EdgeKind = "from"
-	EdgeKindGenerates  EdgeKind = "generates"
-	EdgeKindHandles    EdgeKind = "handles"
-	EdgeKindImplements EdgeKind = "implements"
-	EdgeKindImports    EdgeKind = "imports"
-	EdgeKindObserves   EdgeKind = "observes"
-	EdgeKindOwns       EdgeKind = "owns"
-	EdgeKindReaches    EdgeKind = "reaches"
-	EdgeKindRealizes   EdgeKind = "realizes"
-	EdgeKindRefers     EdgeKind = "refers"
-	EdgeKindSubscribes EdgeKind = "subscribes"
-	EdgeKindTraces     EdgeKind = "traces"
-	EdgeKindUses       EdgeKind = "uses"
+	EdgeKindAbout       EdgeKind = "about"
+	EdgeKindCalls       EdgeKind = "calls"
+	EdgeKindChecks      EdgeKind = "checks"
+	EdgeKindContains    EdgeKind = "contains"
+	EdgeKindCovers      EdgeKind = "covers"
+	EdgeKindDepends     EdgeKind = "depends"
+	EdgeKindEmits       EdgeKind = "emits"
+	EdgeKindExercises   EdgeKind = "exercises"
+	EdgeKindExtends     EdgeKind = "extends"
+	EdgeKindFrom        EdgeKind = "from"
+	EdgeKindGenerates   EdgeKind = "generates"
+	EdgeKindHandles     EdgeKind = "handles"
+	EdgeKindImplements  EdgeKind = "implements"
+	EdgeKindImports     EdgeKind = "imports"
+	EdgeKindObserves    EdgeKind = "observes"
+	EdgeKindOwns        EdgeKind = "owns"
+	EdgeKindReaches     EdgeKind = "reaches"
+	EdgeKindRealizes    EdgeKind = "realizes"
+	EdgeKindRefers      EdgeKind = "refers"
+	EdgeKindSubscribes  EdgeKind = "subscribes"
+	EdgeKindSubstitutes EdgeKind = "substitutes"
+	EdgeKindTraces      EdgeKind = "traces"
+	EdgeKindUses        EdgeKind = "uses"
 )
 
 // Valid indicates whether the value is a known member of the EdgeKind enum.
@@ -166,6 +167,8 @@ func (e EdgeKind) Valid() bool {
 	case EdgeKindRefers:
 		return true
 	case EdgeKindSubscribes:
+		return true
+	case EdgeKindSubstitutes:
 		return true
 	case EdgeKindTraces:
 		return true
@@ -794,7 +797,7 @@ type Node struct {
 	// Attrs Everything else, as lists of strings in the canonical format; the keys are those of docs/design.md §5.2
 	Attrs map[string][]string `json:"attrs"`
 
-	// Bindings A code element: its realizes, checks, generates or observes edges with the design nodes they point at
+	// Bindings A code element: its realizes, checks, generates, observes or substitutes edges with the design nodes they point at
 	Bindings *[]Neighbor `json:"bindings,omitempty"`
 
 	// Digest The content hash, SHA-256 in lower-case hex (docs/model.md §6)
@@ -1169,7 +1172,7 @@ type ViewNode struct {
 	// Attrs Everything else, as lists of strings in the canonical format; the keys are those of docs/design.md §5.2
 	Attrs map[string][]string `json:"attrs"`
 
-	// Bindings A code element: its realizes, checks, generates or observes edges with the design nodes they point at
+	// Bindings A code element: its realizes, checks, generates, observes or substitutes edges with the design nodes they point at
 	Bindings *[]Neighbor `json:"bindings,omitempty"`
 
 	// Contents A container drawn as a card. Expanded: the types (with their operations), flows, properties and errors it

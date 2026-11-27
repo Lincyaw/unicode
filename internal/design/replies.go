@@ -137,3 +137,46 @@ func (l *loader) conformInterface(c *entity, v syntax.Value, n *entity, wrong fu
 	}
 	return all
 }
+
+func containsReplies(t *typ) bool {
+	if t.kind == "replies" {
+		return true
+	}
+	for _, e := range t.elems {
+		if containsReplies(e) {
+			return true
+		}
+	}
+	return false
+}
+
+func generableResponse(t *typ, required, seen map[*entity]bool) string {
+	n := t.named()
+	if !n.is(graph.NodeKindType, "interface") {
+		return generable(t, required, seen)
+	}
+	if required[n] {
+		return n.id + " requires itself through response fields that cannot be empty"
+	}
+	if seen[n] {
+		return ""
+	}
+	required[n], seen[n] = true, true
+	defer delete(required, n)
+	defer delete(seen, n)
+	for _, op := range n.ops {
+		if op.result != nil {
+			if why := generableResponse(op.result, required, seen); why != "" {
+				return why
+			}
+		}
+		for _, failure := range op.raises {
+			for _, field := range failure.fields {
+				if why := generableResponse(field.typ, required, seen); why != "" {
+					return why
+				}
+			}
+		}
+	}
+	return ""
+}

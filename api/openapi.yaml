@@ -889,6 +889,7 @@ components:
         - checks
         - generates
         - observes
+        - substitutes
         - owns
         - depends
         - traces
@@ -1192,7 +1193,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Neighbor'
-          description: 'A code element: its realizes, checks, generates or observes edges with the design nodes they point at'
+          description: 'A code element: its realizes, checks, generates, observes or substitutes edges with the design nodes they point at'
         step:
           allOf:
             - $ref: '#/components/schemas/StepInfo'
@@ -1849,7 +1850,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Neighbor'
-          description: 'A code element: its realizes, checks, generates or observes edges with the design nodes they point at'
+          description: 'A code element: its realizes, checks, generates, observes or substitutes edges with the design nodes they point at'
         step:
           allOf:
             - $ref: '#/components/schemas/StepInfo'
