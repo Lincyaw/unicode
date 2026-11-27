@@ -10,32 +10,32 @@ type FileKind enum "文件的种类，决定按哪一种文件的语法解析" {
   value corpus
 }
 
-type NotADesignFile error "路径既不是 design/ 下的 .uc 文件，也不是 corpus/ 下的 .uc 文件"
+type NotADesignFile error "路径按 language.md §5.1 的分类不是本语言的源文件"
 
-type File object "一个文件的语法树，带注释和各节点的位置；节点的类型是细节" {
+type File object "一个设计文件或录制文件的语法树：路径、种类，以及带位置的语法成分和注释；语法成分的类型不在设计中声明" {
   field path: string
   field kind: FileKind
   op print() -> bytes "按规范格式打印"
 }
 
-type Parsed record "解析的结果；有诊断时，语法树可能不完整，也可能没有" {
+type Parsed record "解析的结果：没有诊断时有语法树，有诊断时只有诊断" {
   field file: optional<File>
   field diagnostics: list<diag.Diagnostic>
 }
 
-type Expr object "表达式语法树；节点的内部结构由 syntax 管理，供载入与后端生成使用"
+type Expr object "一条表达式的语法树；内部结构不在设计中声明，供 design 载入和 Go 后端生成代码时读取"
 
-type ExprParsed record "单条表达式的解析结果与诊断" {
+type ExprParsed record "单条表达式的解析结果：没有诊断时有语法树，有诊断时只有诊断" {
   field expr: optional<Expr>
   field diagnostics: list<diag.Diagnostic>
 }
 
-type Sample record "一个合法文件的种类和文本，供性质使用" {
+type Sample record "format-is-stable 和 expression-format-is-stable 的输入：一个合法的设计文件或录制文件的种类和文本" {
   field kind: FileKind
   field text: string
 }
 
-type Broken record "一个合法文件做了一处违反某条规则的改动：种类、文本、改动所在的行和列，以及这处改动应当得到的诊断码" {
+type Broken record "syntax 中三条拒绝非法文本的性质的输入：做了一处违规改动的合法文件的种类和文本，改动所在的行和列，以及应当得到的诊断码" {
   field kind: FileKind
   field text: string
   field line: int
@@ -45,13 +45,13 @@ type Broken record "一个合法文件做了一处违反某条规则的改动：
 
 op kindOf(path: string) -> FileKind raises NotADesignFile "由仓库中的相对路径判断文件的种类"
 
-op parse(path: string, kind: FileKind, src: bytes) -> Parsed pure "按 language.md 的词法和语法解析一个文件，包括黑盒契约与具名观察"
+op parse(path: string, kind: FileKind, src: bytes) -> Parsed pure "以 kind 的文法，按 language.md 的词法、语法和静态规则解析 path 处的源文本 src，不合规则时只给出诊断"
 
-op parseExpr(path: string, text: string) -> ExprParsed pure "解析单条表达式，位置从给定路径的首行首列起"
+op parseExpr(path: string, text: string) -> ExprParsed pure "解析单条表达式 text，诊断的位置记在 path 上，表达式的第一个字符是第 1 行第 1 列"
 
-op exprText(expr: Expr) -> string pure "表达式的规范文本，保留源中的引用拼写，避免引入符号遮蔽"
+op exprText(expr: Expr) -> string pure "表达式的规范文本，其中的引用保持源文本的写法，不改写成绝对标识，以免与输入符号同名而改变含义"
 
-flow parse-entry-describes-outcome "语法解析入口返回文件或定位诊断，成功时保留输入路径与种类" {
+flow parse-entry-describes-outcome "用户直接调用 parse：没有诊断时语法树的路径和种类与输入相同，每条诊断都在输入路径上、行列不小于 1；与性质 parse-result-is-described 不同，这里不要求原因和修正不为空" {
   forall path: string
   forall kind: FileKind
   forall src: bytes
@@ -67,10 +67,10 @@ flow parse-entry-describes-outcome "语法解析入口返回文件或定位诊�
   }
 }
 
-property kind-of-follows-path invariant "design/system.uc 是系统文件；design/ 下其余文件名为 <名称>.uc、名称不为空的整洁路径是组件文件；corpus/ 下同样的路径是录制文件；其余路径都被拒绝，包括只叫 .uc 的文件和不整洁的路径（含 .、.. 或连续的 /）" {
+property kind-of-follows-path invariant "kindOf 按 language.md §5.1 的分类由路径给出文件的种类，不是本语言源文件的路径得到 NotADesignFile" {
   about kindOf
-  forall path: string generated "形如 design/…、corpus/… 和其他目录下的相对路径，扩展名有的是 .uc，有的不是，有的文件名只是 .uc，有的路径不整洁"
-  manual "需要比较完整语法树、路径分段或诊断的源位置与排序；这些结构不由表达式语言直接提供"
+  forall path: string generated "相对路径：约四分之一取自固定的边界情形（只叫 .uc 的文件、扩展名大小写不同、含 .、.. 或空段、以 / 开头或结尾），其余由 design、corpus 或其他首段、零至两段目录和带各种扩展名的文件名拼成，其中约四分之一另插入 .、.. 或空段"
+  manual "需要按 / 切分路径并检查每一段，表达式没有字符串切分"
   case system-file {
     path = "design/system.uc"
   }
@@ -91,57 +91,57 @@ property kind-of-follows-path invariant "design/system.uc 是系统文件；desi
   }
 }
 
-property parse-is-total invariant "解析任何字节都会返回，不会崩溃；每条诊断的位置都在文件之内，写明修正的办法；诊断按行、列、诊断码排序" {
+property parse-is-total invariant "解析任何字节都正常返回而不 panic，每条诊断的位置都在文件之内、带修正办法，诊断按行、列和诊断码排序" {
   about parse
-  forall path: string generated "沿用路径生成器，长度一至六十四，保留原测试的字符与边界分布"
-  forall kind: FileKind generated "从三种文件种类中取值"
-  forall src: bytes generated "沿用不超过 4096 字节的原始字节、片段拼接、合法文件编辑和截断混合生成器"
-  manual "需要比较完整语法树、路径分段或诊断的源位置与排序；这些结构不由表达式语言直接提供"
+  forall path: string generated "1 至 64 个任意字符、不超过 64 字节的路径"
+  forall kind: FileKind generated "三种文件种类之一"
+  forall src: bytes generated "不超过 4096 字节的输入，来自四种来源之一：任意字节，语法片段（含制表符、CR、NUL 和不完整的 UTF-8）的拼接，对合法文件做一至四处编辑（复制、删除、交换或插入行，或替换几个字节），或合法文件的截断"
+  manual "需要在调用 parse 时捕获 panic，表达式没有这种构造"
 }
 
 property format-is-stable relation "合法的文本 s 解析后打印得到 t：t 是规范格式，t 解析出的语法树与 s 的相同，t 再解析再打印仍是 t" {
   about parse, File.print
-  forall sample: Sample generated "一个合法的文件：随机的语法树，以随意而合法的空白和空行写成文本"
-  manual "需要比较完整语法树、路径分段或诊断的源位置与排序；这些结构不由表达式语言直接提供"
+  forall sample: Sample generated "一个合法的文件：约三分之一是 expression-format-is-stable 的含随机表达式的组件文件，其余是随机种类的随机语法树，以随意而合法的缩进、空格、空行、注释和数的写法写成文本"
+  manual "需要比较忽略位置的两棵语法树，表达式不能构造或比较语法树"
 }
 
 property rejects-broken-text postcondition "合法的文件做一处违反某条规则的改动之后，解析在改动所在的行和列给出这条规则的诊断，并且不给出语法树" {
   about parse
-  forall broken: Broken generated "一个随机的合法文件，在随机的一处做了违反 language.md 某条规则的改动，附上改动所在的行和应当得到的诊断码"
-  forall path: string generated "按 broken.kind 给出原有解析路径"
-  forall src: bytes generated "broken.text 的源码字节，不改变非法文本及独立预期位置"
+  forall broken: Broken generated "一个随机的合法文件，在随机的一处做了违反 language.md 某条规则的改动，附改动所在的行、列和应当得到的诊断码；约三分之一是 contract-syntax-rejects-invalid-claims 的改动"
+  forall path: string generated "与 broken.kind 相符的一条固定路径"
+  forall src: bytes generated "broken.text 的 UTF-8 字节"
   call parse(path, broken.kind, src)
   ensure result.file == none
   ensure any(d in result.diagnostics: d.code == broken.code and d.position.line == broken.line and d.position.column == broken.column)
 }
 
-property expression-format-is-stable relation "深度三的表达式在复合项均有括号时解析、规范打印并再次解析，语法树与规范文本均保持稳定" {
+property expression-format-is-stable relation "ensure 是随机表达式的组件文件解析后打印，再解析得到相同的语法树、再打印得到相同的文本；与 expression-text-is-stable 不同，表达式经整份文件解析，不经 parseExpr" {
   about parse, File.print
-  forall sample: Sample generated "独立的表达式输入域，覆盖运算符、量词、old 与错误形式，保留每轮完整的测试次数"
-  manual "需要比较忽略位置的完整语法树、布局和规范文本，沿用格式性质的独立判定"
+  forall sample: Sample generated "一份固定的组件文件，其中一条性质的 ensure 是至多四层嵌套的随机表达式，用到全部二元运算符、not、字段和下标访问、两个实参的调用、量化式、old、raised 和 failure，每个复合子表达式都带括号，表达式不必类型正确"
+  manual "需要比较忽略位置的两棵语法树，表达式不能构造或比较语法树；谓词复用 format-is-stable 的手写谓词"
 }
 
-property contract-syntax-rejects-invalid-claims postcondition "契约在陈述、调用、前提、观察、变化范围或关键字上有一处非法写法时，在正确位置拒绝" {
+property contract-syntax-rejects-invalid-claims postcondition "黑盒契约或流程的陈述违反 language.md 的 G0、G13 至 G18 中的一条时，解析在出错处的行列给出该规则的诊断" {
   about parse
-  forall broken: Broken generated "沿用非法契约的十一个变体及其预期诊断和位置"
-  forall path: string generated "按 broken.kind 给出原有解析路径"
-  forall src: bytes generated "broken.text 的源码字节，不改变非法文本及独立预期位置"
+  forall broken: Broken generated "一条固定的黑盒契约，性质名随机，做十一种改动之一：删去 ensure 或 call，加上 manual、changes none、不是时长的 within 或带运算的 changes，符号改名为 size，== 两边去掉空格，改成以 alt 开头或没有步骤的流程，或改用 observation-syntax-rejects-malformed-paths 的一处改动；附应得的诊断码和行列"
+  forall path: string generated "与 broken.kind 相符的一条固定路径"
+  forall src: bytes generated "broken.text 的 UTF-8 字节"
   call parse(path, broken.kind, src)
   ensure result.file == none
   ensure any(d in result.diagnostics: d.code == broken.code and d.position.line == broken.line and d.position.column == broken.column)
 }
 
-property observation-syntax-rejects-malformed-paths postcondition "直接观察路径的名称、大小写或分段不合文法时，在正确位置拒绝" {
+property observation-syntax-rejects-malformed-paths postcondition "直接观察路径中有一段名称写成大驼峰或带短横线时，解析在这一段的行列给出 syntax.invalid-name" {
   about parse
-  forall broken: Broken generated "一至四条观察路径，每条一至五段，保留非法名称变体和预期位置"
-  forall path: string generated "按 broken.kind 给出原有解析路径"
-  forall src: bytes generated "broken.text 的源码字节，不改变非法文本及独立预期位置"
+  forall broken: Broken generated "一至四条直接观察路径，每条一至五段小驼峰名称，其中一段换成大驼峰名称或带短横线的名称，附这一段的行列"
+  forall path: string generated "与 broken.kind 相符的一条固定路径"
+  forall src: bytes generated "broken.text 的 UTF-8 字节"
   call parse(path, broken.kind, src)
   ensure result.file == none
   ensure any(d in result.diagnostics: d.code == broken.code and d.position.line == broken.line and d.position.column == broken.column)
 }
 
-property parse-result-is-described postcondition "解析成功时返回路径和种类正确的文件；每条诊断有相同路径、正的位置以及原因和修正" {
+property parse-result-is-described postcondition "parse 的结果合乎输入：没有诊断时语法树的路径和种类与输入相同，每条诊断都在输入路径上、行列不小于 1、原因和修正都不为空" {
   about parse
   forall path: string
   forall kind: FileKind
@@ -158,7 +158,7 @@ property parse-result-is-described postcondition "解析成功时返回路径和
   }
 }
 
-property expression-text-is-stable postcondition "表达式解析成功后，规范文本再次解析和打印得到相同文本；错误时有定位诊断" {
+property expression-text-is-stable postcondition "parseExpr 解析成功时，exprText 的结果再经 parseExpr 和 exprText 得到同一段文本，失败时每条诊断都在输入路径上、行列不小于 1、原因和修正都不为空" {
   about parseExpr, exprText
   forall path: string
   forall text: string

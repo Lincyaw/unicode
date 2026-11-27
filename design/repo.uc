@@ -1,4 +1,4 @@
-component repo "仓库：经 git 读出提交、工作区和提交中的文件，以及 build 写在快照旁边的记录" {
+component repo "仓库：经 git 读出提交、工作区和提交中的文件，以及 build 记录" {
   focus utility
   paths "internal/repo/**"
 }
@@ -9,7 +9,7 @@ type BadRevision error "git 读不出这个提交"
 
 type GitFailed error "git 的命令失败，原因不是提交读不出"
 
-type BadRecord error "build 写出的记录不存在、读不出，或者不是 {commit, dirty}"
+type BadRecord error "build 记录不存在、读不出，或者不是 {commit, dirty}"
 
 type Revision record "一个提交：完整的哈希、缩写的哈希、检出在它上面的分支（没有时为空）、提交说明的第一行和提交时间（UTC）" {
   field commit: string
@@ -28,7 +28,7 @@ type WorkingTree record "工作区：它所在的提交，各字段同 Revision�
   field dirty: bool
 }
 
-type Head record "build 写在快照旁边的记录 build.json：仓库所在的提交，不在 Git 的工作区中或者还没有提交时没有；工作区是否有改动" {
+type Head record "build 记录 build.json：仓库所在的提交（不在 Git 工作区中或还没有提交时为空），以及工作区是否有改动" {
   field commit: optional<string>
   field dirty: bool
 }
@@ -39,10 +39,10 @@ op log(root: string, rev: string, limit: int) -> list<Revision> raises NoGit, Ba
 
 op show(root: string, commit: string, path: string) -> bytes raises NoGit, BadRevision "提交中一个文件的内容"
 
-op readWorkingTree(root: string, out: string) -> WorkingTree raises NoGit, BadRevision, GitFailed "工作区所在的提交，以及工作区是否有改动；build 写到目录 out 中的快照和记录不算改动"
+op readWorkingTree(root: string, out: string) -> WorkingTree raises NoGit, BadRevision, GitFailed "工作区所在的提交，以及工作区是否有改动；build 写到目录 out 中的快照和 build 记录不算改动"
 
 op readHead(root: string, out: string) -> Head raises GitFailed "build 要记下的仓库状态：没有 git 或者没有提交时，提交为空，算作有改动"
 
-op readRecord(dir: string) -> Head raises BadRecord "读出 build 写在目录 dir 中的记录"
+op readRecord(dir: string) -> Head raises BadRecord "读出 build 写在目录 dir 中的 build 记录"
 
 op linesChanged(before: string, after: string) -> int raises NoGit, GitFailed "两段文本之间的行差别，按 git diff 计：增加的行数加删除的行数"

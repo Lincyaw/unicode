@@ -1,10 +1,10 @@
-component lang "语言后端的接口、名称映射、生成计划和运行计划" {
+component lang "语言后端的接口和名称映射，以及后端生成和运行的输入、输出类型" {
   focus support
   paths "internal/lang/**"
   uses graph, diag
 }
 
-type NameRole enum "名称映射作用的对象（design.md §4）" {
+type NameRole enum "名称映射作用的名称的种类（design.md §4）" {
   value type
   value op
   value field
@@ -22,28 +22,28 @@ type Extracted record "一次抽取的结果：代码层的节点和边，以及
 
 type Backend interface "一种语言的后端：静态抽取代码层，给出名称映射" {
   op language() -> string "语言的名称，写法与系统文件中的 language 相同"
-  op extract(root: string, srcRoots: list<string>) -> Extracted raises ExtractFailed "抽取源码根目录下的代码层：节点、边，以及方法按反向名称映射落实的操作"
+  op extract(root: string, srcRoots: list<string>) -> Extracted raises ExtractFailed "抽取源码根目录下的代码层：节点、边，以及方法的候选边（design.md §4）"
   op mapName(role: NameRole, designName: string) -> string "设计中的名称在这种语言中的写法"
 }
 
-type Edit record "生成计划中的一个文件，路径相对于仓库根目录" {
+type Edit record "生成计划中的一个文件：相对仓库根目录的路径、内容，以及是否只在文件不存在时创建（createOnly，骨架为真）" {
   field path: string
   field content: bytes
   field createOnly: bool
 }
 
-type Generation record "生成的文件及诊断；有诊断时不应用计划" {
+type Generation record "一种语言的生成计划：要写的文件和诊断；有诊断时 gen 不写入其中任何文件" {
   field edits: list<Edit>
   field diagnostics: list<diag.Diagnostic>
 }
 
-type GenPlan record "一种语言的生成输入：仓库、源码根目录与已链接的图" {
+type GenPlan record "一种语言的生成输入：仓库根目录、源码根目录和已链接的图" {
   field root: string
   field roots: list<string>
   field graph: graph.Graph
 }
 
-type RunPlan record "一种语言的运行输入；ids 为空时运行全部可执行性质" {
+type RunPlan record "一种语言的运行输入：仓库根目录、源码根目录、图、要运行的性质和流程（ids 为空时全部）和探索时长（explore 为零时只回放）" {
   field root: string
   field roots: list<string>
   field graph: graph.Graph
@@ -114,7 +114,7 @@ type CandidateRunner interface "已经编译的语言执行边界，每次重建
   op evaluate(input: Input) -> CandidateEvaluation "真实执行并返回覆盖与轨迹，不能以累计覆盖替代当前候选"
 }
 
-type RunResult record "一条性质的运行结论：有效执行、拒绝候选、观察边界、范围外差异与业务断言的定位诊断" {
+type RunResult record "一条性质或一个流程的运行结论：是否通过、有效执行数、拒绝的候选输入数、观察范围、范围外的差异，以及 ensure 不成立或有范围外的差异时的诊断" {
   field id: string
   field passed: bool
   field accepted: int
@@ -128,7 +128,7 @@ type RunResult record "一条性质的运行结论：有效执行、拒绝候选
   field errorTotal: int
 }
 
-type RunReport record "一次运行中各性质的结果；顶层诊断是工具、观察、前提、输入域或零有效执行等检查环境错误" {
+type RunReport record "一次运行中各性质和流程的结论，以及不属于任何一条结论的诊断：工具失败和检查错误（观察失败、前提求值错误、域外输入、没有有效执行）" {
   field results: list<RunResult>
   field diagnostics: list<diag.Diagnostic>
   field version: int
@@ -139,17 +139,17 @@ type RunReport record "一次运行中各性质的结果；顶层诊断是工具
   field mode: string
 }
 
-type Generator interface "后端可选的生成能力；不扩充只读 Backend 的必需方法" {
+type Generator interface "后端可以另外实现的生成能力；不实现它的后端仍是完整的 Backend" {
   op language() -> string "系统文件中的语言名称"
-  op generate(plan: GenPlan) -> Generation "生成语言文件；不写仓库，未支持的目标给出诊断"
+  op generate(plan: GenPlan) -> Generation "给出这种语言的生成计划：骨架和生成文件；不写仓库，不支持的目标给出诊断"
 }
 
-type GenerationExtractor interface "生成规划可选的代码抽取能力，排除本工具拥有的旧生成测试以修复陈旧输出" {
+type GenerationExtractor interface "计算生成计划时可用的抽取能力：把旧生成测试读成只有包声明的文件，它们中的类型错误（例如接口改名之后）因此不妨碍重新生成" {
   op language() -> string "系统文件中的语言名称"
-  op extractForGeneration(root: string, srcRoots: list<string>) -> Extracted raises ExtractFailed "以只读内存覆盖排除已确认归属的生成测试；手写源码仍严格检查，普通 extract 不受影响"
+  op extractForGeneration(root: string, srcRoots: list<string>) -> Extracted raises ExtractFailed "像 extract 一样抽取，但在内存中把带生成标记的测试文件读成只有包声明的文件，不改动磁盘；手写源码的错误照常报出"
 }
 
 type Runner interface "后端可选的运行能力" {
   op language() -> string "系统文件中的语言名称"
-  op run(plan: RunPlan) -> RunReport "核对已生成文件，执行回放或预算内探索，返回每条性质的结论"
+  op run(plan: RunPlan) -> RunReport "核对生成文件后回放，或在 explore 时长内探索，返回每条性质和流程的结论"
 }

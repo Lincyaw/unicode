@@ -1,10 +1,10 @@
-component graph "图：节点与边的类型、合并、推导、摘要、序列化和比较" {
+component graph "图：节点与边的类型、合并、推导、内容哈希、序列化和比较" {
   focus core
   paths "internal/graph/**"
   uses diag
 }
 
-type Layer enum "节点所在的抽象层（model.md §1）" {
+type Layer enum "节点所在的层：设计、代码、证据或评审（model.md §1）" {
   value design
   value code
   value evidence
@@ -67,7 +67,7 @@ type EdgeKind enum "边的种类（model.md §4）" {
   value covers
 }
 
-type Node record "一个节点：标识、种类、形式、层、来源、出处、摘要和属性；属性的键见 design.md §5" {
+type Node record "一个节点：标识、种类、形式、层、来源、出处、摘要、是否显著和属性；属性的键见 design.md §5.2" {
   field id: string
   field kind: NodeKind
   field form: string
@@ -100,8 +100,8 @@ type Graph object "一张图：节点按标识索引，边按种类、起点和�
   codec encode, graph.decode
   op addNode(node: Node) raises DuplicateNode "加入一个节点"
   op addEdge(edge: Edge) raises DuplicateEdge, DanglingEdge "加入一条边；它的起点和终点必须已经在图中"
-  op addFragment(fragment: Fragment) raises DuplicateNode, DuplicateEdge, DanglingEdge "加入一组节点和边，先节点后边；终点不在图中的绑定边和方法的候选边先暂存，留给推导"
-  op derive() -> list<diag.Diagnostic> "按 model.md §9 推导 owns、方法的 realizes、depends、traces、exercises、显著性和 reaches；暂存的绑定边中终点仍不存在的，报为 graph.unresolved-binding"
+  op addFragment(fragment: Fragment) raises DuplicateNode, DuplicateEdge, DanglingEdge "加入一组节点和边，先节点后边；绑定边和方法的候选边（design.md §4）的终点还不在图中时先暂存，推导时再加入"
+  op derive() -> list<diag.Diagnostic> "按 model.md §9 推导边和显著性，并把终点仍不在图中的暂存绑定边报为 graph.unresolved-binding"
   op node(id: string) -> optional<Node> pure "按标识取一个节点"
   op nodes() -> list<Node> pure "全部节点，按标识排序"
   op edges() -> list<Edge> pure "全部边，按种类、起点、终点排序"
@@ -109,25 +109,25 @@ type Graph object "一张图：节点按标识索引，边按种类、起点和�
   op encode() -> bytes pure "编码成确定的 JSON 快照（model.md §8）"
 }
 
-type Fragment record "一组节点和边：一种语言抽取出的代码层，或者性质的输入" {
+type Fragment record "可以整体加入图中的一组节点和边，例如一种语言的后端抽取出的代码层" {
   field nodes: list<Node>
   field edges: list<Edge>
 }
 
-type ChangeKind enum "两个快照之间一项的差别（model.md §8）" {
+type ChangeKind enum "比较中一项的差别（model.md §8）" {
   value added
   value removed
   value modified
   value unchanged
 }
 
-type AttrChange record "一个属性键上，比较去掉的值和加上的值" {
+type AttrChange record "一个属性键上的差别：从 base 到 head 去掉的值和加上的值" {
   field key: string
   field removed: list<string>
   field added: list<string>
 }
 
-type NodeChange record "一个节点的差别：标识、差别的种类、它在 base 和 head 中的样子，以及属性上去掉和加上的值" {
+type NodeChange record "一个节点的差别：标识、差别的种类、该节点在 base 和 head 中的内容，以及各属性键上去掉和加上的值" {
   field id: string
   field change: ChangeKind
   field before: optional<Node>
@@ -135,7 +135,7 @@ type NodeChange record "一个节点的差别：标识、差别的种类、它�
   field attrs: list<AttrChange>
 }
 
-type EdgeChange record "一条边的差别：种类、起点、终点、差别的种类，以及它在 base 和 head 中的样子" {
+type EdgeChange record "一条边的差别：种类、起点、终点、差别的种类，以及该边在 base 和 head 中的内容" {
   field kind: EdgeKind
   field from: string
   field to: string
@@ -144,7 +144,7 @@ type EdgeChange record "一条边的差别：种类、起点、终点、差别�
   field after: optional<Edge>
 }
 
-type Comparison record "两个快照的差别：新增、删除和修改的节点，按标识排序；新增、删除和修改的边，按种类、起点、终点排序" {
+type Comparison record "两张图的差别：新增、删除和修改的节点，按标识排序；新增、删除和修改的边，按种类、起点、终点排序" {
   field nodes: list<NodeChange>
   field edges: list<EdgeChange>
 }
@@ -168,39 +168,39 @@ op compare(base: Graph, head: Graph) -> Comparison pure "按标识对齐两张�
 
 op decode(data: bytes) -> Graph raises NotASnapshot "encode 的逆：从快照还原出图"
 
-property encode-ignores-order relation "同一组节点和边，以任何次序加入，编码出的快照逐字节相同；快照中节点按标识、边按种类、起点、终点排序" {
+property encode-ignores-order relation "同一组节点和边以任何次序加入，编码出的快照都逐字节相同，其中节点按标识、边按种类、起点和终点排序" {
   about Graph.encode
-  forall content: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
+  forall content: Fragment generated "零至八个标识互不相同的节点，以及零至十二条两端都在其中、彼此不同的边：标识是 a、b、.、#、- 组成的一至四个字符，种类、层和来源任取，形式、摘要和属性取自含引号、< 和中文的短文字，可以有空的属性列表和自环，节点都不显著"
   forall rotation: int
   where rotation in 0..1000
-  manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
+  manual "需要以三种次序把同一个片段加入三张图再比较编码，表达式不能构造图"
 }
 
-property decode-inverts-encode relation "解码 encode 写出的快照，再编码，得到逐字节相同的快照；解码任何字节都不会 panic，不是快照的字节得到 NotASnapshot" {
+property decode-inverts-encode relation "解码 encode 写出的快照再编码，得到逐字节相同的快照，解码任何字节都不会 panic，不是快照的字节得到 NotASnapshot" {
   about decode, Graph.encode
-  forall content: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
-  forall noise: bytes generated "沿用零至十二段 JSON 附近片段与任意字节的混合生成器"
-  manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
+  forall content: Fragment generated "零至八个标识互不相同的节点，以及零至十二条两端都在其中、彼此不同的边：标识是 a、b、.、#、- 组成的一至四个字符，种类、层和来源任取，形式、摘要和属性取自含引号、< 和中文的短文字，可以有空的属性列表和自环，节点都不显著"
+  forall noise: bytes generated "零至十二段拼成的字节串：每段约六分之五是快照 JSON 中的一个记号（括号、引号、冒号、逗号、空格、数、null、true 或快照的字段名），其余是一个任意字节"
+  manual "需要把噪声字节插入编码出的快照再解码，表达式不能拼接字节串"
 }
 
 property derive-matches-definition relation "推导出的边和显著性，与按 model.md §9 的定义逐条直接计算的结果相同" {
   about Graph.derive
-  forall fragment: Fragment generated "一张随机的小图：带路径模式的设计层容器、类型、操作、流程和性质，带绑定的代码层文件、类型、函数和调用"
-  manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
+  forall fragment: Fragment generated "一张随机的小图：带路径模式的设计层容器、类型、操作、流程和性质，带绑定的代码层文件、类型、函数和调用，其中有不合写法的路径模式和指向不存在的节点的绑定"
+  manual "需要按 model.md §9 的定义另行算出推导的结果再比较，表达式不能遍历图的边"
 }
 
-property digest-follows-content invariant "相同的种类、形式、摘要和属性得到相同的内容哈希；标识、层、来源、出处与显著性不参与；内容哈希是 64 位小写十六进制的 SHA-256" {
+property digest-follows-content invariant "两个节点的内容哈希相同，当且仅当种类、形式、摘要和属性相同，与标识、层、来源、出处和显著性无关，内容哈希写成 64 位小写十六进制" {
   about Graph.digest
-  forall first: Node generated "沿用小字母表、短属性、空列表与随机元数据的节点生成器"
-  forall second: Node generated "依赖 first，沿用独立节点、相同内容不同元数据和局部内容改动三个分支"
-  manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
+  forall first: Node generated "任意节点：标识、形式、摘要和属性取自 a、b、引号、< 和中文中的零至三个字符，种类是容器、类型或操作，属性可以为空或有空的列表，层、来源和出处随机"
+  forall second: Node generated "取决于 first，三种情形各约三分之一：与 first 无关的节点，内容与 first 相同而标识、层、来源或出处不同的节点（空的属性列表有时省去），或在 first 上改了一处种类、形式、摘要或属性的节点"
+  manual "需要把两个节点分别放进图中取内容哈希，表达式不能构造图"
 }
 
 property compare-follows-identity relation "compare 按 model.md §8 对齐节点和边，恰列出新增、删除和修改的项并按此排序，before 和 after 是该项在 base 和 head 中的内容" {
   about compare
-  forall base: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
-  forall head: Fragment generated "base 的一份改动：去掉一些节点和边，改动一些节点的内容和一些边的属性，改动一些项的出处、来源、层或显著性而不改内容，再加上一些新的节点和边"
-  manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
+  forall base: Fragment generated "零至八个标识互不相同的节点，以及零至十二条两端都在其中、彼此不同的边：标识是 a、b、.、#、- 组成的一至四个字符，种类、层和来源任取，形式、摘要和属性取自含引号、< 和中文的短文字，可以有空的属性列表和自环，节点都不显著"
+  forall head: Fragment generated "base 的一份改动：每个节点和边约五分之一删去、五分之一改内容或属性、五分之一只改出处、来源、层或显著性，其余不变，再加上零至三个节点和零至四条边，新节点可能用回删去的节点的标识"
+  manual "需要从片段构造两张图再比较，表达式不能构造图"
 }
 
 property compare-lists-changed-attrs relation "比较中每个节点的 attrs 按键排序，恰列出两边的值不同的键，每个键上去掉和加上的值分别是 base 和 head 中的值的子序列，两者没有相同的值，各自除去之后剩下的值相同" {
@@ -210,16 +210,16 @@ property compare-lists-changed-attrs relation "比较中每个节点的 attrs �
   manual "需要判断去掉和加上的值是不是两边的值的子序列，表达式没有子序列的判断"
 }
 
-property compare-reverses relation "compare(head, base) 是 compare(base, head) 的反面：列出的项和次序相同，新增与删除互换，修改仍是修改，before 与 after 互换，每个属性键上去掉的值与加上的值互换" {
+property compare-reverses relation "compare(head, base) 与 compare(base, head) 列出相同的项且次序相同，其中新增与删除、before 与 after、每个属性键上去掉与加上的值都互换" {
   about compare
-  forall base: Fragment generated "标识互不相同的节点，以及起点和终点都在这些节点之中、彼此互不相同的边"
-  forall head: Fragment generated "base 的一份改动：去掉一些节点和边，改动一些节点的内容和一些边的属性，改动一些项的出处、来源、层或显著性而不改内容，再加上一些新的节点和边"
-  manual "需要从片段构造多张图、排列输入或核对规范编码和推导闭包；当前符号不能直接表达这些操作"
+  forall base: Fragment generated "零至八个标识互不相同的节点，以及零至十二条两端都在其中、彼此不同的边：标识是 a、b、.、#、- 组成的一至四个字符，种类、层和来源任取，形式、摘要和属性取自含引号、< 和中文的短文字，可以有空的属性列表和自环，节点都不显著"
+  forall head: Fragment generated "base 的一份改动：每个节点和边约五分之一删去、五分之一改内容或属性、五分之一只改出处、来源、层或显著性，其余不变，再加上零至三个节点和零至四条边，新节点可能用回删去的节点的标识"
+  manual "需要从片段构造两张图并在两个方向各比较一次，表达式不能构造图"
 }
 
 property compare-with-itself-is-empty postcondition "一张图与它自己比较，或者与以另一种次序加入同一组节点和边的图比较，没有新增、删除和修改" {
   about compare
-  forall content: Fragment generated "沿用标识互异的节点和两端存在的互异边的完整原分布"
+  forall content: Fragment generated "零至八个标识互不相同的节点，以及零至十二条两端都在其中、彼此不同的边：标识是 a、b、.、#、- 组成的一至四个字符，种类、层和来源任取，形式、摘要和属性取自含引号、< 和中文的短文字，可以有空的属性列表和自环，节点都不显著"
   forall rotation: int
   forall snapshot: Graph generated "按 content 的原始次序建图，不读取比较结果"
   forall reordered: Graph generated "按 rotation 轮换相同节点和边的插入次序建图"
@@ -229,9 +229,9 @@ property compare-with-itself-is-empty postcondition "一张图与它自己比较
   ensure size(compare(snapshot, snapshot).nodes) == 0 and size(compare(snapshot, snapshot).edges) == 0
 }
 
-property node-sequence-keeps-index transition "逐次加入节点后，每个节点都能按标识取回，且声明错误不减少原有节点数量" {
+property node-sequence-keeps-index transition "依次调用 addNode 之后，图中的每个节点都能按标识取回，某次调用抛出 DuplicateNode 时节点不减少" {
   about Graph.addNode
-  forall snapshot: Graph generated "沿用原有随机图生成器，包含节点、边和既有标识"
+  forall snapshot: Graph generated "按片段的次序把 encode-ignores-order 的 content 那样的节点和边加入图中，不推导"
   forall steps: list<call<Graph.addNode>>
   where steps size 0..8
   ensure size(snapshot.nodes()) >= old(size(snapshot.nodes()))
