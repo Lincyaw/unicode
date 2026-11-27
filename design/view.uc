@@ -17,7 +17,7 @@ type ViewKind enum "视图的种类（design.md §7.1）" {
   value c4
 }
 
-type ClassLayer enum "类视图画出的层：设计中的类型，或落实它们的代码类型" {
+type ClassLayer enum "类视图画出的层：设计中的类型，或实现它们的代码类型" {
   value design
   value code
 }
@@ -36,7 +36,7 @@ type ViewNode record "视图画出的一个节点，加上卡片上显示的内�
   field details: int
 }
 
-type ViewEdge record "视图画出的一条边；一端是折叠的容器或 C4 元素时，这条边合并了图中的 count 条边，本身不是图中的边，labels 是经过它的调用所落实的操作" {
+type ViewEdge record "视图画出的一条边；一端是折叠的容器或 C4 元素时，这条边合并了图中的 count 条边，本身不是图中的边，labels 是经过它的调用所实现的操作" {
   extends graph.Edge
   field count: int
   field labels: list<string>
@@ -115,6 +115,6 @@ property view-names-input-ancestors invariant "视图的输入是图中标识为
 
 property view-cards-show-contents invariant "视图中卡片附带的成员、容器的内容、未画出的细节函数的个数和边上的操作名称，与按 design.md §7.5.1 的定义直接算出的相同" {
   about select, check.members
-  forall request: Request generated "一张随机的图，类型带字段或枚举值，落实它们的代码类型有的字段相同、有的缺少或不同，依赖带调用，以及一次输入取自图中节点的视图请求"
+  forall request: Request generated "一张随机的图，类型带字段或枚举值，实现它们的代码类型有的字段相同、有的缺少或不同，依赖带调用，以及一次输入取自图中节点的视图请求"
   manual "需要按定义另行算出每张卡片的内容再比较，表达式不能遍历图的边"
 }

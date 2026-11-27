@@ -24,7 +24,7 @@ type MemberKind enum "类型的成员是字段还是枚举值" {
   value value
 }
 
-type Member record "设计类型的一个成员与落实该类型的代码类型的比较（model.md §10 第 18 条）：种类、名称、设计中和代码中的类型、两边各有没有它、类型中引用的设计类型，以及比较的状态" {
+type Member record "设计类型的一个成员与实现该类型的代码类型的比较（model.md §10 第 18 条）：种类、名称、设计中和代码中的类型、两边各有没有它、类型中引用的设计类型，以及比较的状态" {
   field kind: MemberKind
   field name: string
   field type: string
@@ -37,11 +37,11 @@ type Member record "设计类型的一个成员与落实该类型的代码类型
 
 op conform(g: graph.Graph) -> Checked "在推导过的图上，检查需要代码才能判断的约束（design.md §5.3）"
 
-op members(g: graph.Graph, ids: list<string>) -> map<string, list<Member>> "ids 中每个设计类型的成员：设计中写出的字段按书写次序，枚举的值另加只在代码中出现的值；类型恰被一个代码类型落实时，各成员带比较的状态"
+op members(g: graph.Graph, ids: list<string>) -> map<string, list<Member>> "ids 中每个设计类型的成员：设计中写出的字段按书写次序，枚举的值另加只在代码中出现的值；类型恰被一个代码类型实现时，各成员带比较的状态"
 
 property accepts-conforming-graph postcondition "合乎约束的图推导、检查之后没有诊断，每个声明项和依赖恰有一个 verified 状态" {
   about conform
-  forall sample: Sample generated "一张随机的、合乎 design.md §5.3 全部约束的图：二至四个组件，各有类型、操作、性质、具名观察、流程和落实它们的 Go 代码，有时带外部系统、接口的实现和继承"
+  forall sample: Sample generated "一张随机的、合乎 design.md §5.3 全部约束的图：二至四个组件，各有类型、操作、性质、具名观察、流程和实现它们的 Go 代码，有时带外部系统、实现接口的类型和继承"
   forall snapshot: graph.Graph generated "把 sample.fragment 加入一张新图并推导"
   forall declaredIds: list<string> generated "snapshot 中全部声明项和 depends 边的标识，不经 conform 取得"
   call conform(snapshot)

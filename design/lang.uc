@@ -139,7 +139,7 @@ type RunReport record "一次运行的报告：各性质和流程的结论，不
   field mode: string
 }
 
-type Generator interface "后端可以另外实现的生成能力；不实现它的后端仍是完整的 Backend" {
+type Generator interface "后端可以另外实现的接口，即生成能力；不实现这个接口的后端仍是完整的 Backend" {
   op language() -> string "系统文件中的语言名称"
   op generate(plan: GenPlan) -> Generation "给出这种语言的生成计划：骨架和生成文件；不写仓库，不支持的目标给出诊断"
 }

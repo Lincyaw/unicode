@@ -15,7 +15,7 @@ type PlanSample record "plan-follows-language-roots 的输入：一张图，以�
   field generations: map<string, lang.Generation>
 }
 
-op plan(root: string, g: graph.Graph, backends: list<lang.Backend>) -> lang.Generation "对 g 的系统文件中配置的每种语言，调用 backends 中有生成能力的后端，把生成计划按路径排序合并；缺少落实的代码或谓词不妨碍生成"
+op plan(root: string, g: graph.Graph, backends: list<lang.Backend>) -> lang.Generation "对 g 的系统文件中配置的每种语言，调用 backends 中有生成能力的后端，把生成计划按路径排序合并；缺少实现的代码或谓词不妨碍生成"
 
 op write(root: string, edits: list<lang.Edit>) -> list<diag.Diagnostic> "先检查 edits 的全部路径、重复目标、符号链接和生成标记，再逐个文件原子写入：只改写带生成标记的文件，createOnly 的文件只在不存在时创建，多个文件之间不保证同时成功"
 

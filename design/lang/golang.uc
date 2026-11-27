@@ -73,7 +73,7 @@ op declaration(src: bytes, line: int, column: int) -> optional<Lines> "src 中�
 
 property extracts-generated-module invariant "抽取随机 Go 模块得到的节点、边和诊断，与按 design.md §4、§5.2 的规则从生成模块时的模型算出的相同" {
   about Backend
-  forall module: Module generated "一个随机的 Go 模块：一至三个包，含测试文件、类型、函数、方法、调用、导入、嵌入、接口的实现、包级变量和 //uc: 绑定，部分绑定和生成标记故意写错，部分声明只在排版和注释上与另一个不同"
+  forall module: Module generated "一个随机的 Go 模块：一至三个包，含测试文件、类型、函数、方法、调用、导入、嵌入、实现接口的类型、包级变量和 //uc: 绑定，部分绑定和生成标记故意写错，部分声明只在排版和注释上与另一个不同"
   manual "需要写出临时 Go 模块并用 go/packages 抽取，表达式不能读写文件"
 }
 
