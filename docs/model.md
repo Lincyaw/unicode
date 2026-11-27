@@ -355,4 +355,4 @@
 | 27 | `design.recorded-case-name` | `design.rejects-broken-design` |
 | 28 | 未实现：M4，要等 `gen` | — |
 | 29 | `design.unresolved-reference`、`design.wrong-reference-kind`、`cli.not-canonical` | `design.rejects-broken-design`、`cli.check-design` |
-| 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5 | `design.rejects-broken-design` |
+| 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射未实现：M5；生成器的 map 名称未实现：[design.md](design.md) §4 没有给出生成器的名称映射 | `design.rejects-broken-design` |
