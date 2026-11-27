@@ -1,8 +1,8 @@
-import { EyeOff, TriangleAlert } from 'lucide-react';
+import { EyeOff, TriangleAlert } from '../marks/icons';
 import type { View, ViewEdge, ViewNode } from '../../api/types';
 import { edgeKey } from '../../api/types';
-import { ABOUT, DIAGNOSTIC_WORDS, VIEW_NAMES } from '../../terms';
-import { ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
+import { ABOUT, DIAGNOSTIC_WORDS, MARKS, VIEW_NAMES } from '../../terms';
+import { InfoHint } from '../../ui/hint';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { ContainerBox, ExternalCard, FoldedCard, TypeCard } from '../canvas/cards';
 import { useUnfolded } from '../canvas/unfolded';
@@ -13,6 +13,7 @@ import { useLinks } from '../marks/links';
 import { componentGraph, evidenceCount, externalsBeside } from './graphParts';
 import { NodeChip } from '../marks/NodeChip';
 import styles from './views.module.css';
+import { Icon } from '../../ui/icons';
 
 /** The type cards of an expanded container sit in this many columns, this far apart. */
 const COLUMNS = 3;
@@ -66,10 +67,10 @@ export function UndeclaredBadge({ edge }: { edge: ViewEdge }) {
   return (
     <>
       <span className={styles.warningBadge}>
-        <TriangleAlert size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />
+        <Icon glyph={TriangleAlert} size="tiny" />
         {DIAGNOSTIC_WORDS.count(evidenceCount(edge))}
       </span>
-      <InfoHint label={DIAGNOSTIC_WORDS.undeclared}>{ABOUT.undeclared}</InfoHint>
+      <InfoHint subject={DIAGNOSTIC_WORDS.undeclared}>{ABOUT.undeclared}</InfoHint>
     </>
   );
 }
@@ -78,9 +79,9 @@ export function UndeclaredBadge({ edge }: { edge: ViewEdge }) {
 export function HiddenCount({ hidden }: { hidden: number }) {
   return (
     <>
-      <EyeOff size={ICON_SMALL} strokeWidth={ICON_STROKE} aria-hidden="true" />
+      <Icon glyph={EyeOff} size="small" />
       <span className="t-mono">{hidden}</span>
-      <InfoHint label={ABOUT.hidden}>{ABOUT.hidden}</InfoHint>
+      <InfoHint subject={MARKS.hidden}>{ABOUT.hidden}</InfoHint>
     </>
   );
 }

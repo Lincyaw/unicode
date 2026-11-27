@@ -49,12 +49,6 @@
   --type-page-title: 600 18px/1.4 var(--font-text);
   /* Identities and names in a drawing or a list: medium for a heading, regular for a row. */
   --type-mono-strong: 500 12px/1.5 var(--font-mono);
-  /* Line icons: 16px in a row of text, 14px beside small text, 12px inside a tag. */
-  --icon-size: 16px;
-  --icon-small: 14px;
-  --icon-tiny: 12px;
-  --hint-width: 16.25rem;
-  --shadow-hint: 0 4px 12px var(--effect-shadow);
   /* A tool page's bars and side panes. */
   --bar-height: 55px;
   --header-height: 80px;

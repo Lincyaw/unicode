@@ -1,11 +1,11 @@
 import { clsx } from 'clsx';
-import { ArrowUpRight, Ellipsis, TriangleAlert, type LucideIcon } from 'lucide-react';
+import { ArrowUpRight, Ellipsis, TriangleAlert, type LucideIcon } from '../marks/icons';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { requestedView } from '../../routes/address';
 import type { CodeExcerpt, Diagnostic, Node, ViewRequest } from '../../api/types';
 import { ABOUT, CONTROLS, kindWord, SECTIONS, VIEW_NAMES } from '../../terms';
-import { ICON_SIZE, ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
+import { InfoHint } from '../../ui/hint';
 import { Badge } from '../marks/Badge';
 import { displayName, statusOf, typeParts } from '../marks/format';
 import { KindIcon } from '../marks/icons';
@@ -16,6 +16,7 @@ import { Signature, TypeText } from '../marks/Signature';
 import { StatusDot } from '../marks/StatusDot';
 import { useFolded } from './folded';
 import styles from './details.module.css';
+import { Icon } from '../../ui/icons';
 
 /*
  * The parts the right pane and the entity pages are made of: a section with its head, rows of facts, rows and chips of
@@ -28,7 +29,7 @@ export function Section({ title, about, children, className }: { title: string; 
     <section className={clsx(styles.section, className)}>
       <h3 className={styles.sectionHead}>
         {title}
-        {about !== undefined && <InfoHint label={title}>{about}</InfoHint>}
+        {about !== undefined && <InfoHint subject={title}>{about}</InfoHint>}
       </h3>
       {children}
     </section>
@@ -56,7 +57,7 @@ export function NodeRow({ node, label, icon = false, dot = true, tone = 'main', 
   return (
     <div className={styles.row}>
       {dot && <StatusDot status={statusOf(node)} />}
-      {icon && <KindIcon node={node} size={ICON_SMALL} />}
+      {icon && <KindIcon node={node} size="small" />}
       <NodeLink node={node} label={label} tone={tone} />
       {trailing !== undefined && <span className={styles.trailing}>{trailing}</span>}
     </div>
@@ -112,7 +113,7 @@ export function DiagnosticTag({ diagnostic }: { diagnostic: Diagnostic }) {
   return (
     <span className={styles.diagnostic}>
       <Badge tone="warning" icon={TriangleAlert}>{diagnostic.code}</Badge>
-      <InfoHint label={diagnostic.code}>
+      <InfoHint subject={diagnostic.code}>
         <span>{diagnostic.message}</span>
         <span>{SECTIONS.fix}{CONTROLS.colon}{diagnostic.fix}</span>
       </InfoHint>
@@ -156,11 +157,11 @@ export function PreviewHead({ node, icon, label }: { node: Node; icon?: ReactNod
   return (
     <div className={styles.previewHead}>
       <StatusDot status={statusOf(node)} />
-      {icon ?? <KindIcon node={node} size={ICON_SIZE} />}
+      {icon ?? <KindIcon node={node} />}
       <span className={styles.identity}>{label ?? node.id}</span>
-      <InfoHint label={node.id}>{ABOUT.card(kindWord(node.kind, node.form, node.layer), node.form, `${node.origin.path}:${node.origin.line}`)}</InfoHint>
+      <InfoHint subject={node.id}>{ABOUT.card(kindWord(node.kind, node.form, node.layer), node.form, `${node.origin.path}:${node.origin.line}`)}</InfoHint>
       <Link className={styles.enter} to={links.entityHref(node.id)} aria-label={CONTROLS.open}>
-        <ArrowUpRight size={ICON_SIZE} strokeWidth={ICON_STROKE} aria-hidden="true" />
+        <Icon glyph={ArrowUpRight} />
       </Link>
     </div>
   );
@@ -173,5 +174,5 @@ export function ViaBadge({ count }: { count: number }) {
 
 /** The small icon of a node beside text, at the tag size. */
 export function TinyIcon({ node }: { node: Node }) {
-  return <KindIcon node={node} size={ICON_TINY} />;
+  return <KindIcon node={node} size="tiny" />;
 }

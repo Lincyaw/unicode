@@ -29,8 +29,9 @@
 
 .copy { display: inline-flex; align-items: center; gap: var(--space-3); }
 .copied { display: inline-flex; align-items: center; gap: var(--space-1); }
-@keyframes draw-check { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
-.copied path { stroke-dasharray: 1; animation: draw-check var(--duration-slow) var(--ease-out) both; }
+/* Lucide's check runs a little under 24 units of its 24-unit box, so a dash of 24 draws it whole. */
+@keyframes draw-check { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+.copied path { stroke-dasharray: 24; animation: draw-check var(--duration-slow) var(--ease-out) both; }
 
 .icon { width: var(--control-icon); height: var(--control-icon); padding: 0; }
 .icon.small { width: var(--control-small); height: var(--control-small); }
@@ -84,6 +85,10 @@
 .field { justify-content: flex-start; width: 15rem; padding: 0 var(--space-4); color: var(--text-faint); }
 .field input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text-main); font: inherit; }
 .field:focus-within { border-color: var(--text-faint); }
+.keys { display: inline-flex; flex: none; gap: var(--space-px); color: var(--text-faint); font: var(--type-mono); }
+
+/* A mark that acts is styled by its user, whose rules win over these; the kit gives it only the motion every control shares. */
+:where(.mark) { text-align: inherit; transition: var(--control-transition); }
 
 /* Links underline in the ∞ gradient from the left as the pointer arrives. */
 .textLink {

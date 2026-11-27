@@ -4,9 +4,15 @@ import { InfoHint } from './hint';
 import styles from './content.module.css';
 import { UI_WORDS } from './words';
 
-/** A label that is not clickable, such as a version or a state. */
-export function Tag({ children, dashed = false }: { children: ReactNode; dashed?: boolean }) {
-  return <span className={clsx(styles.tag, dashed && styles.dashed, 't-micro')}>{children}</span>;
+/**
+ * What a tag's edge says: nothing beyond its words, or a real status, a failure, a success or something to heed, in the
+ * status colour; the words keep the text colour, so they read as well as any other.
+ */
+export type TagTone = 'neutral' | 'warning' | 'success' | 'caution';
+
+/** A label that is not clickable, such as a version, a count or a state, optionally led by an icon. */
+export function Tag({ children, dashed = false, tone = 'neutral' }: { children: ReactNode; dashed?: boolean; tone?: TagTone }) {
+  return <span className={clsx(styles.tag, dashed && styles.dashed, 't-micro')} data-tone={tone}>{children}</span>;
 }
 
 /**
@@ -17,7 +23,7 @@ export function HintedHeading({ rank: Heading, className, title, about }: { rank
   return (
     <div className={styles.hinted}>
       <Heading className={className}>{title}</Heading>
-      {about && <InfoHint label={UI_WORDS.about(title)}>{about}</InfoHint>}
+      {about && <InfoHint subject={title}>{about}</InfoHint>}
     </div>
   );
 }
@@ -62,7 +68,7 @@ export function FactList({ facts, layout }: { facts: Fact[]; layout: 'stacked' |
 export function StatTile({ label, value, about, note }: { label: string; value: ReactNode; about?: ReactNode; note?: string }) {
   return (
     <div className={styles.stat}>
-      <dt className={clsx(styles.statLabel, 't-micro c-muted')}>{label}{about && <InfoHint label={UI_WORDS.about(label)}>{about}</InfoHint>}</dt>
+      <dt className={clsx(styles.statLabel, 't-micro c-muted')}>{label}{about && <InfoHint subject={label}>{about}</InfoHint>}</dt>
       <dd className={styles.statValue}>{value}</dd>
       {note && <dd className="t-micro c-faint">{note}</dd>}
     </div>

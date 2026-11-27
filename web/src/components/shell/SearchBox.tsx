@@ -1,14 +1,15 @@
 import * as Popover from '@radix-ui/react-popover';
 import { clsx } from 'clsx';
-import { Search } from 'lucide-react';
+import { Search } from '../marks/icons';
 import { useEffect, useRef, useState } from 'react';
 import type { Node } from '../../api/types';
 import { APP } from '../../terms';
-import { ICON_SMALL, ICON_STROKE } from '../../ui/hint';
+
 import hintStyles from '../../ui/hint.module.css';
 import { KindIcon } from '../marks/icons';
 import { StatusDot } from '../marks/StatusDot';
 import styles from './shell.module.css';
+import { Icon } from '../../ui/icons';
 
 /** The key that, with ⌘ or Ctrl, puts the cursor in the search box from anywhere on the page. */
 const FOCUS_KEY = 'k';
@@ -39,7 +40,7 @@ export function SearchBox({ text, onText, results, onPick }: { text: string; onT
     <Popover.Root open={focused && text.trim() !== ''}>
       <Popover.Anchor asChild>
         <label className={styles.search}>
-          <Search size={ICON_SMALL} strokeWidth={ICON_STROKE} aria-hidden="true" />
+          <Icon glyph={Search} size="small" />
           <input
             ref={input} type="search" placeholder={APP.search} aria-label={APP.search} value={text}
             onChange={event => onText(event.target.value)} onFocus={() => setFocused(true)}
@@ -65,7 +66,7 @@ export function SearchBox({ text, onText, results, onPick }: { text: string; onT
               <li key={node.id}>
                 <button type="button" className={styles.result} onClick={() => pick(node.id)}>
                   <StatusDot status={node.status} />
-                  <KindIcon node={node} size={ICON_SMALL} />
+                  <KindIcon node={node} size="small" />
                   <span className="t-code">{node.title}</span>
                   <span className={clsx(styles.resultId, 't-mono c-faint')}>{node.id}</span>
                 </button>

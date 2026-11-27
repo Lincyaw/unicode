@@ -1,9 +1,9 @@
 import { clsx } from 'clsx';
-import { Dices, FileCode, Play, Repeat, type LucideIcon } from 'lucide-react';
+import { Dices, FileCode, Play, Repeat, type LucideIcon } from '../marks/icons';
 import type { CSSProperties } from 'react';
 import type { DriverMode, View, ViewNode } from '../../api/types';
 import { ABOUT, ADEQUACY, CASE_COLUMNS, CONTROLS, DRIVER_MODES, OUTCOMES, SECTIONS } from '../../terms';
-import { ICON_STROKE, ICON_TINY } from '../../ui/hint';
+
 import table from '../../ui/table.module.css';
 import { caseSource } from '../details/nodeWords';
 import { CodePanel, Section, SymbolLine } from '../details/sections';
@@ -16,6 +16,7 @@ import { Signature } from '../marks/Signature';
 import { NodeChip } from '../marks/NodeChip';
 import { StatusDot } from '../marks/StatusDot';
 import styles from './property.module.css';
+import { Icon } from '../../ui/icons';
 
 const DRIVER_ICONS: Record<DriverMode, LucideIcon> = { replay: Play, explore: Dices, fuzz: Repeat };
 
@@ -60,7 +61,7 @@ function PropertyBlock({ property, view }: { property: ViewNode; view: View }) {
       <div className={styles.card}>
         <div className={styles.cardHead}>
           <StatusDot status={property.status} />
-          <KindIcon node={property} size={16} />
+          <KindIcon node={property} />
           <button type="button" className={styles.identity} {...useNodeActions(property.id)}>{property.id}</button>
           <span className="t-small c-muted">{property.form}</span>
         </div>
@@ -80,7 +81,7 @@ function PropertyBlock({ property, view }: { property: ViewNode; view: View }) {
             <div className={styles.predicate}>
               <StatusDot status={statusOf(predicate)} />
               <NodeRef id={predicate.id} className={styles.code}>{predicateLine(predicate, scope)}</NodeRef>
-              <span className={styles.place}><FileCode size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{placeOf(predicate.origin)}</span>
+              <span className={styles.place}><Icon glyph={FileCode} size="tiny" />{placeOf(predicate.origin)}</span>
             </div>
           )
           : <span className={styles.absent}>{CONTROLS.none}</span>}

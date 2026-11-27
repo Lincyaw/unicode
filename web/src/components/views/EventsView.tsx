@@ -2,7 +2,7 @@ import { clsx } from 'clsx';
 import type { ReactNode } from 'react';
 import type { View, ViewNode } from '../../api/types';
 import { ABOUT, EVENTS_COLUMNS, VIEW_NAMES } from '../../terms';
-import { ICON_SMALL, ICON_TINY } from '../../ui/hint';
+
 import { Canvas, Placed } from '../canvas/Canvas';
 import { CHIP_HEIGHT, chipWidth } from '../canvas/sizes';
 import { Lines, type Line, type LineTone } from '../canvas/Edges';
@@ -18,6 +18,7 @@ import { NodeRef } from '../marks/NodeRef';
 import { NodeChip } from '../marks/NodeChip';
 import { StatusDot } from '../marks/StatusDot';
 import styles from './views.module.css';
+import { ICON_TINY } from '../../ui/icons';
 
 const COLUMN_GAP = 40;
 const ROW_GAP = 28;
@@ -58,13 +59,13 @@ function EventCard({ card, diagnostics }: { card: Card; diagnostics: View['diagn
       <span className={styles.eventHead}>
         <CoverButton id={node.id}>
           <StatusDot status={node.status} />
-          <KindIcon node={node} size={ICON_SMALL} />
+          <KindIcon node={node} size="small" />
           {label}
         </CoverButton>
       </span>
       {card.second && (
         <span className={styles.eventSecond}>
-          <NodeRef id={card.second.node.id} className={styles.refLine}><KindIcon node={card.second.node} size={ICON_TINY} />{card.second.text}</NodeRef>
+          <NodeRef id={card.second.node.id} className={styles.refLine}><KindIcon node={card.second.node} size="tiny" />{card.second.text}</NodeRef>
         </span>
       )}
       {diagnostics.filter(diagnostic => diagnostic.subject === node.id).map(diagnostic => <Above key={diagnostic.code}><DiagnosticTag diagnostic={diagnostic} /></Above>)}

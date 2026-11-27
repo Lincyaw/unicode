@@ -1,0 +1,2 @@
+/* An icon keeps its size in a row that runs short of room; the text beside it gives way. */
+.icon { flex: none; }

@@ -1,7 +1,7 @@
 import { clsx } from 'clsx';
 import type { View, ViewNode } from '../../api/types';
 import { ABOUT, VIEW_NAMES } from '../../terms';
-import { ICON_SMALL, ICON_TINY } from '../../ui/hint';
+
 import { Canvas, Placed } from '../canvas/Canvas';
 import { Lines, type Line } from '../canvas/Edges';
 import { monoWidth } from '../canvas/measure';
@@ -14,6 +14,7 @@ import { StatusDot } from '../marks/StatusDot';
 import { StepLabel } from './StepLabel';
 import { descendants, diagnosticsAbout, stepTree, type StepTree } from './stepTree';
 import styles from './views.module.css';
+import { ICON_SMALL } from '../../ui/icons';
 
 /*
  * The geometry of a sequence: lane heads in a row, then one band per step down the lanes. A message's arrow runs
@@ -141,7 +142,7 @@ function LaneHead({ lane }: { lane: Lane }) {
       {...useNodeActions(node.id)}
     >
       {node.kind !== 'actor' && <StatusDot status={node.status} />}
-      <KindIcon node={node} size={ICON_SMALL} />
+      <KindIcon node={node} size="small" />
       {node.title}
     </button>
   );
@@ -196,7 +197,7 @@ export function SequenceView({ view }: { view: View }) {
                 <Placed rect={{ x: mark.pill, y: mark.y - 12, width: 0, height: 24 }} className={styles.messageSlot}>
                   {mark.step.step?.target && (
                     <NodeRef id={mark.step.step.target.id} className={styles.pill}>
-                      <KindIcon node={mark.step} size={ICON_TINY} />
+                      <KindIcon node={mark.step} size="tiny" />
                       {relative(mark.step.step.target.id, scope)}
                     </NodeRef>
                   )}
@@ -213,7 +214,7 @@ export function SequenceView({ view }: { view: View }) {
       {fragments.map(mark => (
         <Placed key={`tag ${mark.step.id}`} rect={{ x: mark.left + 8, y: mark.top + 8, width: 0, height: LABEL }} className={styles.messageSlot}>
           <StepLabel step={mark.step} diagnostics={diagnosticsAbout(view, mark.step.id)} className={styles.fragmentTag}>
-            <KindIcon node={mark.step} size={ICON_TINY} />
+            <KindIcon node={mark.step} size="tiny" />
             {mark.step.form} {relative(mark.step.step?.target?.id ?? '', scope)}
           </StepLabel>
         </Placed>

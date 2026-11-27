@@ -1,10 +1,14 @@
 import * as RadixSelect from '@radix-ui/react-select';
 import { clsx } from 'clsx';
-import { Maximize, Minus, Plus } from 'lucide-react';
-import { useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, File, Maximize, Menu, Minimize, Minus, Moon, Plus, Search, Sun, X,
+} from 'lucide-react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { Link } from 'react-router';
 import styles from './controls.module.css';
-import { Hint, ICON_STROKE, ICON_TINY } from './hint';
+import { Hint } from './hint';
+import { Icon } from './icons';
+import type { Theme } from './theme';
 import { UI_WORDS } from './words';
 
 /**
@@ -16,12 +20,34 @@ export type ControlVariant = 'line' | 'quiet';
 /** A solid button leads the page forward and carries an arrow; a line or quiet button is any other action. */
 type ButtonVariant = 'solid' | ControlVariant;
 
-export function ButtonLink({ to, variant, children }: { to: string; variant: ButtonVariant; children: ReactNode }) {
-  return <Link className={clsx(styles.pill, styles.large, variant === 'solid' && styles.solid, variant === 'quiet' ? styles.quiet : 'loop-edge')} to={to}>{children}</Link>;
+/** A pill's height: large for a page's actions, medium for a bar's controls, small for a dense row such as a tool bar or a list. */
+export type PillSize = 'large' | 'medium' | 'small';
+
+/** The classes of a pill that acts or leads somewhere, by its variant and size. */
+function buttonClasses(variant: ButtonVariant, size: PillSize): string {
+  return clsx(styles.pill, styles[size], variant === 'solid' && styles.solid, variant === 'quiet' ? styles.quiet : 'loop-edge');
 }
 
-export function Button({ variant, onClick, children }: { variant: ButtonVariant; onClick: () => void; children: ReactNode }) {
-  return <button type="button" className={clsx(styles.pill, styles.large, variant === 'solid' && styles.solid, variant === 'quiet' ? styles.quiet : 'loop-edge')} onClick={onClick}>{children}</button>;
+export function ButtonLink({ to, variant, size = 'large', children }: { to: string; variant: ButtonVariant; size?: PillSize; children: ReactNode }) {
+  return <Link className={buttonClasses(variant, size)} to={to}>{children}</Link>;
+}
+
+/**
+ * A pill that runs an action. `label` names it for screen readers when its words alone do not, such as a count; a
+ * popover's trigger hands it handlers and a ref as props, which the spread passes on.
+ */
+export function Button({ variant, size = 'large', label, onClick, children, ...trigger }: {
+  variant: ButtonVariant; size?: PillSize; label?: string; onClick?: () => void; children: ReactNode;
+}) {
+  return <button {...trigger} type="button" className={buttonClasses(variant, size)} aria-label={label} onClick={onClick}>{children}</button>;
+}
+
+/**
+ * A mark that acts when pressed, such as a node on a drawing, a row of a tree or a result in a list. It is data before
+ * it is a control, so it is no pill: its class gives its look, and it keeps the kit's focus ring and transitions.
+ */
+export function MarkButton({ className, children, ...props }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type'>) {
+  return <button {...props} type="button" className={clsx(styles.mark, className)}>{children}</button>;
 }
 
 /**
@@ -30,7 +56,7 @@ export function Button({ variant, onClick, children }: { variant: ButtonVariant;
  */
 export function SubmitButton({ variant, pending, form, children }: { variant: ButtonVariant; pending: boolean; form?: string; children: ReactNode }) {
   return (
-    <button type="submit" form={form} className={clsx(styles.pill, styles.large, variant === 'solid' && styles.solid, variant === 'quiet' ? styles.quiet : 'loop-edge')} disabled={pending} aria-busy={pending}>
+    <button type="submit" form={form} className={buttonClasses(variant, 'large')} disabled={pending} aria-busy={pending}>
       {children}
     </button>
   );
@@ -69,9 +95,7 @@ export function TextArea({ label, value, onChange, rows }: { label: string; valu
 export function ToggleChip({ pressed, onToggle, disabled = false, children }: { pressed: boolean; onToggle: () => void; disabled?: boolean; children: ReactNode }) {
   return (
     <button type="button" className={clsx(styles.pill, styles.medium, styles.chip, 'loop-edge')} aria-pressed={pressed} disabled={disabled} onClick={onToggle}>
-      <span className={styles.chipCheck} aria-hidden="true">
-        <svg viewBox="0 0 12 12" width="12" height="12"><path d="M2.5 6.2 5 8.5 9.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-      </span>
+      <span className={styles.chipCheck}><Icon glyph={Check} size="tiny" /></span>
       {children}
     </button>
   );
@@ -83,12 +107,12 @@ export function CopyButton({ label, text }: { label: string; text: () => string 
   return (
     <span className={styles.copy}>
       <Button variant="line" onClick={() => void navigator.clipboard.writeText(text()).then(() => setCopied(true))}>
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h8" /></svg>
+        <Icon glyph={Copy} size="small" />
         {label}
       </Button>
       {copied && (
         <span className={clsx(styles.copied, 't-micro c-ok')} role="status">
-          <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M2.5 6.2 5 8.5 9.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" pathLength="1" /></svg>
+          <Icon glyph={Check} size="tiny" />
           {UI_WORDS.copied}
         </span>
       )}
@@ -223,68 +247,99 @@ export function SegmentedLinks<T extends string>({ label, choices, value }: { la
   );
 }
 
-/** A search box; `className` lets the parent place and size it. */
-export function SearchField({ label, value, onChange, className }: { label: string; value: string; onChange: (value: string) => void; className?: string }) {
+/** Whether the reader's keyboard is Apple's, whose shortcuts take the command key where others take Ctrl. */
+const APPLE_KEYS = /Mac|iPhone|iPad/.test(navigator.userAgent);
+
+/** The modifier a shortcut takes, as the reader's keyboard labels it. */
+const MODIFIER_KEY = APPLE_KEYS ? '⌘' : 'Ctrl';
+
+/**
+ * A search box; `className` lets the parent place and size it. With a `shortcut` key, the platform's modifier and that
+ * key put the cursor in the box from anywhere on the page, and the box shows them: ⌘K on macOS, Ctrl K elsewhere. A
+ * parent that lists results under the box follows its focus and its keys.
+ */
+export function SearchField({ label, value, onChange, shortcut, onFocus, onBlur, onKeyDown, className }: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  shortcut?: string;
+  onFocus?: () => void;
+  onBlur?: () => void;
+  onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
+  className?: string;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (shortcut === undefined) {
+      return undefined;
+    }
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if ((APPLE_KEYS ? event.metaKey : event.ctrlKey) && event.key === shortcut) {
+        event.preventDefault();
+        input.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [shortcut]);
   return (
     <label className={clsx(styles.pill, styles.medium, styles.field, className)}>
-      <svg viewBox="0 0 14 14" width="13" height="13" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.4" /><path d="m9.5 9.5 3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
-      <input type="search" placeholder={label} aria-label={label} value={value} onChange={event => onChange(event.target.value)} />
+      <Icon glyph={Search} size="small" />
+      <input
+        ref={input} type="search" placeholder={label} aria-label={label} value={value} onChange={event => onChange(event.target.value)}
+        onFocus={onFocus} onBlur={onBlur} onKeyDown={onKeyDown}
+      />
+      {shortcut !== undefined && <kbd className={styles.keys}><span>{MODIFIER_KEY}</span><span>{shortcut.toUpperCase()}</span></kbd>}
     </label>
   );
 }
 
 /** An arrow for stepping back or forth; in an icon button it nudges its way on hover instead of turning. */
 export function ArrowIcon({ direction }: { direction: 'left' | 'right' }) {
-  return <svg viewBox="0 0 12 12" width="12" height="12" data-direction={direction} aria-hidden="true"><path d={direction === 'left' ? 'M7.5 3 4.5 6l3 3' : 'M4.5 3l3 3-3 3'} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <Icon glyph={direction === 'left' ? ChevronLeft : ChevronRight} size="tiny" data-direction={direction} />;
 }
 
 export function ChevronIcon() {
-  return <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <Icon glyph={ChevronDown} size="tiny" />;
 }
 
-export function ThemeIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-      <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor" />
-    </svg>
-  );
+/** The theme to switch to: a sun while the page is dark, a moon while it is light. */
+export function ThemeIcon({ theme }: { theme: Theme }) {
+  return <Icon glyph={theme === 'dark' ? Sun : Moon} />;
 }
 
 export function MenuIcon() {
-  return <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 4.5h12M2 8h12M2 11.5h12" stroke="currentColor" strokeWidth="1.5" /></svg>;
+  return <Icon glyph={Menu} />;
 }
 
 /** A cross, for closing or taking something out. */
 export function CloseIcon() {
-  return <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="m3 3 6 6M9 3 3 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>;
+  return <Icon glyph={X} size="tiny" />;
 }
 
 /** An arrow up and out, for a link to another page; in an icon button it nudges its way on hover. */
 export function LinkArrowIcon() {
-  return <svg viewBox="0 0 12 12" width="12" height="12" data-direction="up-right" aria-hidden="true"><path d="M4 2.5h5.5V8M9.5 2.5 2.5 9.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <Icon glyph={ArrowUpRight} size="tiny" data-direction="up-right" />;
 }
 
-/** A page with a folded corner, for a record's files; in an icon button it keeps upright on hover. */
+/** A page, for a record's files; in an icon button it keeps upright on hover. */
 export function FileIcon() {
-  return <svg viewBox="0 0 12 12" width="12" height="12" data-upright aria-hidden="true"><path d="M3 1.5h4l2.5 2.5v6.5H3zM7 1.5V4h2.5" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" /></svg>;
+  return <Icon glyph={File} size="tiny" data-upright />;
 }
 
-/** Four corners pointing out, to fill the screen, or in, to leave it; in an icon button they keep upright on hover. */
+/** Corners pointing out, to fill the screen, or in, to leave it; in an icon button they keep upright on hover. */
 export function FullscreenIcon({ leave }: { leave: boolean }) {
-  const corners = leave ? 'M4.5 1.5v3h-3M7.5 1.5v3h3M4.5 10.5v-3h-3M7.5 10.5v-3h3' : 'M1.5 4.5v-3h3M10.5 4.5v-3h-3M1.5 7.5v3h3M10.5 7.5v3h-3';
-  return <svg viewBox="0 0 12 12" width="12" height="12" data-upright aria-hidden="true"><path d={corners} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  return <Icon glyph={leave ? Minimize : Maximize} size="tiny" data-upright />;
 }
 
 /** A plus or a minus, for making something larger or smaller; in an icon button it keeps upright on hover. */
 export function ZoomIcon({ direction }: { direction: 'in' | 'out' }) {
-  const Icon = direction === 'in' ? Plus : Minus;
-  return <Icon size={ICON_TINY} strokeWidth={ICON_STROKE} data-upright aria-hidden="true" />;
+  return <Icon glyph={direction === 'in' ? Plus : Minus} size="tiny" data-upright />;
 }
 
 /** Four corners around the room, for fitting a drawing to the room it has; in an icon button it keeps upright on hover. */
 export function FitIcon() {
-  return <Maximize size={ICON_TINY} strokeWidth={ICON_STROKE} data-upright aria-hidden="true" />;
+  return <Icon glyph={Maximize} size="tiny" data-upright />;
 }
 
 /**
@@ -307,9 +362,7 @@ export function Select<T extends string>({ label, choices, value, onChange, vari
             {choices.map(choice => (
               <RadixSelect.Item key={choice.value} value={choice.value} className={clsx(styles.option, 't-small')}>
                 <RadixSelect.ItemText>{choice.label}</RadixSelect.ItemText>
-                <RadixSelect.ItemIndicator className={styles.check}>
-                  <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M2.5 6.2 5 8.5 9.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                </RadixSelect.ItemIndicator>
+                <RadixSelect.ItemIndicator className={styles.check}><Icon glyph={Check} size="tiny" /></RadixSelect.ItemIndicator>
               </RadixSelect.Item>
             ))}
           </RadixSelect.Viewport>
@@ -321,7 +374,7 @@ export function Select<T extends string>({ label, choices, value, onChange, vari
 }
 
 /**
- * The scope a page keeps to, such as the model the reader came from, named in a small pill whose × leads back to
+ * The scope a page keeps to, such as the model the reader came from, named in a small pill whose cross leads back to
  * everything: `to` is the page's address without the scope, and it replaces the current entry in the history.
  */
 export function ScopeChip({ name, to }: { name: string; to: string }) {
@@ -329,7 +382,7 @@ export function ScopeChip({ name, to }: { name: string; to: string }) {
   return (
     <Hint content={clear}>
       <Link className={clsx(styles.pill, styles.small, styles.scope, 'loop-edge')} aria-label={clear} to={to} replace preventScrollReset>
-        {name}<span aria-hidden="true">×</span>
+        {name}<Icon glyph={X} size="tiny" />
       </Link>
     </Hint>
   );

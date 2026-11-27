@@ -1,10 +1,10 @@
 import { clsx } from 'clsx';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight } from '../marks/icons';
 import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Node, ViewNode } from '../../api/types';
 import { ABOUT, CONTROLS, kindWord } from '../../terms';
-import { Hint, ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
+import { Hint, InfoHint } from '../../ui/hint';
 import { opLine } from '../marks/format';
 import { KindIcon } from '../marks/icons';
 import { useLinks, useSelectedBox } from '../marks/links';
@@ -16,6 +16,7 @@ import { StatusDot } from '../marks/StatusDot';
 import { useReveal } from './panZoom';
 import type { CardRow } from './sizes';
 import styles from './cards.module.css';
+import { Icon } from '../../ui/icons';
 
 /*
  * The boxes the node-and-edge views draw (the prototype's type cards, node chips and container cards): each is sized in
@@ -28,7 +29,7 @@ import styles from './cards.module.css';
 function NodeHint({ node }: { node: Node }) {
   return (
     <Above>
-      <InfoHint label={node.id}>
+      <InfoHint subject={node.id}>
         <span>{ABOUT.card(kindWord(node.kind, node.form, node.layer), node.form, `${node.origin.path}:${node.origin.line}`)}</span>
         {node.summary !== '' && <span>{node.summary}</span>}
       </InfoHint>
@@ -74,7 +75,7 @@ export function TypeCard({ node, rows, onUnfold, style }: { node: ViewNode; rows
       <span className={styles.head}>
         <CoverButton id={node.id}>
           <StatusDot status={node.status} />
-          <KindIcon node={node} size={ICON_SMALL} />
+          <KindIcon node={node} size="small" />
           <span className={styles.title}>{node.title}</span>
         </CoverButton>
         <NodeHint node={node} />
@@ -90,7 +91,7 @@ function Toggle({ href, open }: { href: string; open: boolean }) {
   return (
     <Above>
       <Link className={styles.toggle} to={href} aria-label={open ? CONTROLS.collapseRow : CONTROLS.expandRow}>
-        <Chevron size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />
+        <Icon glyph={Chevron} size="tiny" />
       </Link>
     </Above>
   );
@@ -110,7 +111,7 @@ export function FoldedCard({ node, names, style }: { node: ViewNode; names: View
         <StatusDot status={node.status} />
         {expandHref && <Toggle href={expandHref} open={false} />}
         <CoverButton id={node.id}>
-          <KindIcon node={node} size={ICON_SMALL} />
+          <KindIcon node={node} size="small" />
           <span className={clsx(styles.title, styles.mutedTitle)}>{node.title}</span>
         </CoverButton>
       </span>
@@ -118,7 +119,7 @@ export function FoldedCard({ node, names, style }: { node: ViewNode; names: View
         <span className={styles.names}>
           {names.map(child => (
             <NodeRef key={child.id} id={child.id} className={styles.name}>
-              <KindIcon node={child} size={ICON_TINY} />
+              <KindIcon node={child} size="tiny" />
               {child.title}
             </NodeRef>
           ))}
@@ -136,7 +137,7 @@ export function ExternalCard({ node, style }: { node: ViewNode; style?: CSSPrope
     <div className={clsx(styles.card, styles.external, box.selected && 'loop-edge-still')} style={style} {...box.props}>
       <span className={styles.head}>
         <CoverButton id={node.id}>
-          <KindIcon node={node} size={ICON_SMALL} />
+          <KindIcon node={node} size="small" />
           <span className={styles.title}>{node.title}</span>
         </CoverButton>
       </span>
@@ -159,7 +160,7 @@ export function ContainerBox({ node, style, collapsible, children }: { node: Vie
         <StatusDot status={node.status} />
         {expandHref && <Toggle href={expandHref} open />}
         <CoverButton id={node.id}>
-          <KindIcon node={node} size={ICON_SMALL} />
+          <KindIcon node={node} size="small" />
           <span className={styles.title}>{node.title}</span>
         </CoverButton>
         <NodeHint node={node} />

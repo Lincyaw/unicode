@@ -1,10 +1,11 @@
-import { Moon } from 'lucide-react';
+import { Moon } from '../marks/icons';
 import type { ReactNode } from 'react';
 import { APP } from '../../terms';
-import { ICON_SIZE, ICON_STROKE } from '../../ui/hint';
+
 import { toggleTheme } from '../../ui/theme';
 import { Badge } from '../marks/Badge';
 import styles from './shell.module.css';
+import { Icon } from '../../ui/icons';
 
 /** The top bar: the wordmark, the system's name as a link to its page, the search box and the theme switch. */
 export function TopBar({ system, systemHref, search }: { system: string; systemHref: string; search: ReactNode }) {
@@ -15,7 +16,7 @@ export function TopBar({ system, systemHref, search }: { system: string; systemH
       <Badge tone="neutral" to={systemHref}>{system}</Badge>
       {search}
       <button type="button" className={styles.themeSwitch} aria-label={APP.theme} onClick={toggleTheme}>
-        <Moon size={ICON_SIZE} strokeWidth={ICON_STROKE} aria-hidden="true" />
+        <Icon glyph={Moon} />
       </button>
     </header>
   );

@@ -1,8 +1,8 @@
-import { X } from 'lucide-react';
+import { X } from '../marks/icons';
 import { Link } from 'react-router';
 import type { View, ViewEdge, ViewNode } from '../../api/types';
-import { ABOUT, SECTIONS, VIEW_NAMES } from '../../terms';
-import { ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
+import { ABOUT, MARKS, SECTIONS, VIEW_NAMES } from '../../terms';
+import { InfoHint } from '../../ui/hint';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { CHIP_HEIGHT, chipWidth } from '../canvas/sizes';
 import { Lines, Marker, type Line } from '../canvas/Edges';
@@ -14,6 +14,7 @@ import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
 import { edgeKey } from './graphParts';
 import styles from './views.module.css';
+import { Icon } from '../../ui/icons';
 
 const SPACING = { node: 28, rank: 160 };
 const DETAIL_GAP = 72;
@@ -108,8 +109,8 @@ export function CallsView({ view }: { view: View }) {
             <NodeChip node={node} state={stateOf(node, folded)} status={statusOf(node)} />
             {count !== undefined && (
               <span className={styles.count}>
-                <Badge tone="neutral"><X size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{count}</Badge>
-                <InfoHint label={ABOUT.merged}>{ABOUT.merged}</InfoHint>
+                <Badge tone="neutral"><Icon glyph={X} size="tiny" />{count}</Badge>
+                <InfoHint subject={MARKS.merged}>{ABOUT.merged}</InfoHint>
               </span>
             )}
           </Placed>
@@ -121,7 +122,7 @@ export function CallsView({ view }: { view: View }) {
       })}
       {collapse && (
         <Placed rect={{ x: detailStart, y: lowest + CHIP_HEIGHT, width: 120, height: CHIP_HEIGHT }} className={styles.chipSlot}>
-          <Link className={styles.collapse} to={collapse}><X size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{SECTIONS.collapse}</Link>
+          <Link className={styles.collapse} to={collapse}><Icon glyph={X} size="tiny" />{SECTIONS.collapse}</Link>
         </Placed>
       )}
     </Canvas>

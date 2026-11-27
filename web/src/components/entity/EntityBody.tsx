@@ -1,10 +1,10 @@
 import { clsx } from 'clsx';
-import { ArrowRight, ArrowUpRight, Code, FileCode } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Code, FileCode } from '../marks/icons';
 import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Entity, Neighbor, Node } from '../../api/types';
 import { ABOUT, kindWord, MEMBER_COLUMNS, OP_COLUMNS, SECTIONS } from '../../terms';
-import { ICON_SIZE, ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
+import { InfoHint } from '../../ui/hint';
 import table from '../../ui/table.module.css';
 import { CaseSections, CheckedSections, CodeSections, ContainerSections, StepSections, TypeSections } from '../details/kindSections';
 import { DiagnosticTag, NodeRow, Section, SourcePanel, ViaBadge } from '../details/sections';
@@ -18,6 +18,7 @@ import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
 import { StatusDot } from '../marks/StatusDot';
 import styles from './entity.module.css';
+import { Icon } from '../../ui/icons';
 
 /*
  * The entity page (Figma 05, 06): a node in full on the canvas. Every kind has the common head (identity, status,
@@ -32,21 +33,21 @@ function Head({ entity }: { entity: Entity }) {
   return (
     <header className={styles.head}>
       <div className={styles.identity}>
-        <span className={styles.kindIcon}><KindIcon node={node} size={ICON_SIZE} /></span>
+        <span className={styles.kindIcon}><KindIcon node={node} /></span>
         <span className="t-mono-strong">{node.id}</span>
         <StatusDot status={statusOf(node)} />
         {(node.attrs.labels ?? []).map(label => <Badge key={label} tone="info">{label}</Badge>)}
         <span className={styles.spacer} />
-        <InfoHint label={node.id}>{ABOUT.card(kindWord(node.kind, node.form, node.layer), node.form, `${node.origin.path}:${node.origin.line}`)}</InfoHint>
+        <InfoHint subject={node.id}>{ABOUT.card(kindWord(node.kind, node.form, node.layer), node.form, `${node.origin.path}:${node.origin.line}`)}</InfoHint>
       </div>
       {node.summary !== '' && <h2 className={styles.summary}>{node.summary}</h2>}
       {node.kind === 'op' && node.layer === 'design' && <OpSignature op={node} />}
       <p className={styles.origin}>
         {file
-          ? <NodeLink node={file} className={styles.place} tone="inherit" label={<><FileCode size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{node.origin.path}:{node.origin.line}</>} />
-          : <span className={styles.place}><FileCode size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{node.origin.path}:{node.origin.line}</span>}
+          ? <NodeLink node={file} className={styles.place} tone="inherit" label={<><Icon glyph={FileCode} size="tiny" />{node.origin.path}:{node.origin.line}</>} />
+          : <span className={styles.place}><Icon glyph={FileCode} size="tiny" />{node.origin.path}:{node.origin.line}</span>}
         {realized && (
-          <NodeLink node={realized} className={styles.place} label={<><Code size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{realized.origin.path}:{realized.origin.line}</>} />
+          <NodeLink node={realized} className={styles.place} label={<><Icon glyph={Code} size="tiny" />{realized.origin.path}:{realized.origin.line}</>} />
         )}
       </p>
     </header>
@@ -82,7 +83,7 @@ function MembersTable({ entity }: { entity: Entity }) {
               <span role="cell" className="t-code">{member.name}</span>
               <span role="cell" className="t-code">
                 {member.refers.length > 0
-                  ? <Link className={styles.typeLink} to={links.entityHref(member.refers[0] ?? '')}><ArrowUpRight size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{type}</Link>
+                  ? <Link className={styles.typeLink} to={links.entityHref(member.refers[0] ?? '')}><Icon glyph={ArrowUpRight} size="tiny" />{type}</Link>
                   : type}
               </span>
               <span role="cell" className="t-code">{member.inCode ? `${member.name}: ${relative(member.codeType ?? '', scope)}` : ''}</span>
@@ -113,10 +114,10 @@ function OpsTable({ entity }: { entity: Entity }) {
           <div key={row.op.id} className={clsx(table.row, styles.bodyRow)} role="row">
             <span role="cell"><NodeLink node={row.op} label={opLine(row.op)} className={styles.plainLink} /></span>
             <span role="cell" className={styles.cellLinks}>
-              {row.realizedBy.map(({ node }) => <NodeLink key={node.id} node={node} label={<><Code size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{node.title} · {placeOf(node.origin)}</>} className={styles.iconLink} />)}
+              {row.realizedBy.map(({ node }) => <NodeLink key={node.id} node={node} label={<><Icon glyph={Code} size="tiny" />{node.title} · {placeOf(node.origin)}</>} className={styles.iconLink} />)}
             </span>
             <span role="cell" className={styles.cellLinks}>
-              {row.properties.map(property => <NodeLink key={property.id} node={property} label={<><KindIcon node={property} size={ICON_TINY} />{property.title}</>} className={styles.iconLink} />)}
+              {row.properties.map(property => <NodeLink key={property.id} node={property} label={<><KindIcon node={property} size="tiny" />{property.title}</>} className={styles.iconLink} />)}
             </span>
           </div>
         ))}
@@ -140,9 +141,9 @@ function Between({ node, page, before, after, beforeTitle, afterTitle, badge }: 
         <span className="t-micro c-faint">{beforeTitle}</span>
         {before.map(item => <NodeChip key={item.id} node={item} label={displayName(item, scope)} status={statusOf(item)} mode="link" />)}
       </div>
-      <ArrowRight className={styles.arrow} size={ICON_SMALL} strokeWidth={ICON_STROKE} aria-hidden="true" />
+      <Icon glyph={ArrowRight} className={styles.arrow} size="small" />
       <div className={styles.center}><NodeChip node={node} label={displayName(node, scope)} mode={node.id === page ? 'current' : 'link'} /></div>
-      <ArrowRight className={styles.arrow} size={ICON_SMALL} strokeWidth={ICON_STROKE} aria-hidden="true" />
+      <Icon glyph={ArrowRight} className={styles.arrow} size="small" />
       <div className={styles.column}>
         <span className="t-micro c-faint">{afterTitle}</span>
         {after.map((item, index) => {
@@ -169,7 +170,7 @@ function FlowSteps({ entity, children }: { entity: Entity; children?: (step: Nod
     <Section title={SECTIONS.flows}>
       {entity.flows.map(step => (
         <div key={step.id} className={styles.flowRow}>
-          <KindIcon node={{ kind: 'flow', form: 'flow', layer: 'design', salient: true }} size={ICON_SMALL} />
+          <KindIcon node={{ kind: 'flow', form: 'flow', layer: 'design', salient: true }} size="small" />
           <NodeLink node={step} label={stepName(step)} />
           <span className={styles.spacer} />
           <span className={styles.stepLine}>{stepLine(step)}</span>

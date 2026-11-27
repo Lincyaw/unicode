@@ -74,7 +74,7 @@ export function Canvas({ about, label, width, height, toolbar, footer, margin = 
           </div>
         </div>
       </div>
-      <div className={aboutBelow ? styles.aboutBelow : styles.about}><InfoHint label={label}>{about}</InfoHint></div>
+      <div className={aboutBelow ? styles.aboutBelow : styles.about}><InfoHint subject={label}>{about}</InfoHint></div>
       {toolbar && <div className={styles.toolbar}>{toolbar}</div>}
       {footer && <div className={styles.footer}>{footer}</div>}
       <div className={styles.zoom}>

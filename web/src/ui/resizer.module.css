@@ -14,5 +14,7 @@
   background: transparent;
   transition: background-color var(--duration-fast) var(--ease-out);
 }
-.handle:hover::after, .handle:active::after, .handle:focus-visible::after { background: var(--accent-brand); }
+.handle:hover::after, .handle:active::after { background: var(--border-emphasis); }
+/* Focused from the keyboard, the line is the focus ring. */
+.handle:focus-visible::after { background: var(--accent-brand); }
 .handle:focus-visible { outline: none; }

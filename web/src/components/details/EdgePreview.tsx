@@ -1,4 +1,4 @@
-import { ArrowRight, ArrowUpRight, CornerDownRight, Plus } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, CornerDownRight, Plus } from '../marks/icons';
 import type { EdgeEntity } from '../../api/types';
 import { ABOUT, SECTIONS, VIEW_NAMES } from '../../terms';
 import { Badge } from '../marks/Badge';
@@ -9,7 +9,8 @@ import { statusWord } from './nodeWords';
 import { NodeLink } from '../marks/NodeLink';
 import { DiagnosticTag, NodeRow, Section } from './sections';
 import styles from './details.module.css';
-import { ICON_SIZE, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
+import { InfoHint } from '../../ui/hint';
+import { Icon } from '../../ui/icons';
 
 /**
  * The preview of an edge (Figma 04): what joins what, the nodes its attributes name (the detail functions a reaches
@@ -26,13 +27,13 @@ export function EdgePreview({ edge }: { edge: EdgeEntity }) {
       <div className={styles.previewTop}>
         <div className={styles.previewHead}>
           <StatusDot status={edge.edge.status} />
-          <CornerDownRight size={ICON_SIZE} strokeWidth={ICON_STROKE} aria-hidden="true" />
+          <Icon glyph={CornerDownRight} />
           <span className={styles.identity}>{edge.edge.kind}</span>
-          <InfoHint label={edge.edge.kind}>{`${edge.edge.origin.path}:${edge.edge.origin.line}`}</InfoHint>
+          <InfoHint subject={edge.edge.kind}>{`${edge.edge.origin.path}:${edge.edge.origin.line}`}</InfoHint>
         </div>
         <p className={styles.ends}>
           <NodeLink node={fromNode} tone="inherit" />
-          <ArrowRight size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />
+          <Icon glyph={ArrowRight} size="tiny" />
           <NodeLink node={toNode} tone="inherit" />
         </p>
       </div>

@@ -279,6 +279,13 @@ export const CONTROLS = {
   none: '—',
 } as const;
 
+/** What the marks a ⓘ explains are called, so that its name for screen readers says what it explains. */
+export const MARKS = {
+  status: '状态',
+  hidden: '未画出的组件',
+  merged: '合并的边',
+} as const;
+
 /** The explanations behind the ⓘ marks; the pages show data only (CLAUDE.md principle 10). */
 export const ABOUT = {
   tree: '设计层的节点按包含关系组成的树：系统，各组件按关注级别排列，然后是外部系统、参与者与工具组件。圆点是声明项与代码比较的状态。',

@@ -2,7 +2,7 @@ import { clsx } from 'clsx';
 import type { CSSProperties, ReactNode } from 'react';
 import type { View, ViewEdge, ViewNode } from '../../api/types';
 import { ABOUT, VIEW_NAMES } from '../../terms';
-import { ICON_SMALL, InfoHint } from '../../ui/hint';
+import { InfoHint } from '../../ui/hint';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { Lines, Marker, type Line } from '../canvas/Edges';
 import { arrange, routeAll, shifted, type Link, type Rect } from '../canvas/layout';
@@ -41,10 +41,10 @@ function C4Card({ node, style }: { node: ViewNode; style?: CSSProperties }) {
       <span className={styles.c4Head}>
         {node.form !== 'person' && <StatusDot status={node.status} />}
         <CoverButton id={node.id}>
-          <KindIcon node={node} size={ICON_SMALL} />
+          <KindIcon node={node} size="small" />
           <span className={styles.c4Title}>{node.title}</span>
         </CoverButton>
-        <Above><InfoHint label={node.id}>{node.id}</InfoHint></Above>
+        <Above><InfoHint subject={node.id}>{node.id}</InfoHint></Above>
       </span>
       {node.summary !== '' && <span className={styles.c4Summary}>{node.summary}</span>}
       {(node.attrs.paths ?? []).map(path => <span key={path} className={styles.c4Path}>{path}</span>)}
@@ -63,7 +63,7 @@ function BoundaryHead({ boundary }: { boundary: ViewNode }) {
   return (
     <button type="button" className={styles.boundaryHead} {...useNodeActions(boundary.id)}>
       <StatusDot status={boundary.status} />
-      <KindIcon node={boundary} size={ICON_SMALL} />
+      <KindIcon node={boundary} size="small" />
       {boundary.title}
     </button>
   );

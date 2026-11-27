@@ -2,7 +2,7 @@ import { clsx } from 'clsx';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Node } from '../../api/types';
-import { ICON_SMALL } from '../../ui/hint';
+
 import { KindIcon } from './icons';
 import { useLinks, useNodeActions } from './links';
 import { StatusDot } from './StatusDot';
@@ -32,7 +32,7 @@ export function NodeChip({ node, label, state = 'default', mode = 'select', stat
   const content = (
     <>
       {state !== 'detail' && <StatusDot status={status ?? node.status} />}
-      <KindIcon node={node} size={ICON_SMALL} />
+      <KindIcon node={node} size="small" />
       <span className={styles.chipLabel}>{label ?? node.title}</span>
       {children}
     </>

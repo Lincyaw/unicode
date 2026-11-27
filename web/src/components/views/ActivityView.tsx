@@ -2,7 +2,7 @@ import { clsx } from 'clsx';
 import type { ReactNode } from 'react';
 import type { View, ViewNode } from '../../api/types';
 import { ABOUT, VIEW_NAMES } from '../../terms';
-import { ICON_TINY } from '../../ui/hint';
+
 import { Canvas, Placed } from '../canvas/Canvas';
 import { Lines, type Line, type LineTone } from '../canvas/Edges';
 import { route, type Rect, type Route } from '../canvas/layout';
@@ -201,7 +201,7 @@ export function ActivityView({ view }: { view: View }) {
       {drawn.pieces.filter(piece => piece.kind === 'async' || piece.kind === 'group').map(piece => 'step' in piece && (
         <Placed key={`box ${piece.step.id}`} rect={piece.rect} className={clsx(styles.activityBox, piece.kind === 'async' && styles.asyncBox)}>
           {piece.kind === 'async'
-            ? <span className={styles.asyncHead}><span className={styles.fragmentIndex} aria-hidden="true">{piece.step.title}</span>{label(piece.step, <><KindIcon node={piece.step} size={ICON_TINY} />async {relative(piece.step.step?.target?.id ?? '', scope)}</>, styles.fragmentTag)}</span>
+            ? <span className={styles.asyncHead}><span className={styles.fragmentIndex} aria-hidden="true">{piece.step.title}</span>{label(piece.step, <><KindIcon node={piece.step} size="tiny" />async {relative(piece.step.step?.target?.id ?? '', scope)}</>, styles.fragmentTag)}</span>
             : <span className={styles.groupHead}>{label(piece.step, boxText(piece.step), styles.plainLabel)}</span>}
         </Placed>
       ))}
@@ -215,7 +215,7 @@ export function ActivityView({ view }: { view: View }) {
           case 'step':
             return (
               <Placed key={piece.step.id} rect={piece.rect} className={styles.activityStep}>
-                {label(piece.step, <>{piece.step.form === 'emit' && <KindIcon node={piece.step} size={ICON_TINY} />}{boxText(piece.step)}</>, styles.boxLabel)}
+                {label(piece.step, <>{piece.step.form === 'emit' && <KindIcon node={piece.step} size="tiny" />}{boxText(piece.step)}</>, styles.boxLabel)}
               </Placed>
             );
           case 'decision':
@@ -226,7 +226,7 @@ export function ActivityView({ view }: { view: View }) {
                 </Placed>
                 <Placed rect={{ x: piece.rect.x - 40, y: piece.rect.y, width: 32, height: DIAMOND }} className={styles.decisionIndex}><span aria-hidden="true">{piece.step.title}</span></Placed>
                 <Placed rect={piece.tag} className={styles.messageSlot}>
-                  {label(piece.step, <><KindIcon node={piece.step} size={ICON_TINY} />on {relative(piece.step.step?.target?.id ?? '', scope)}</>, styles.fragmentTag)}
+                  {label(piece.step, <><KindIcon node={piece.step} size="tiny" />on {relative(piece.step.step?.target?.id ?? '', scope)}</>, styles.fragmentTag)}
                 </Placed>
               </div>
             );
@@ -235,7 +235,7 @@ export function ActivityView({ view }: { view: View }) {
               <Placed key={`event ${piece.step.id}`} rect={piece.rect} className={styles.chipSlot}>
                 {piece.step.step?.target && (
                   <NodeRef id={piece.step.step.target.id} className={styles.pill}>
-                    <KindIcon node={{ kind: 'type', form: 'event', layer: 'design', salient: true }} size={ICON_TINY} />
+                    <KindIcon node={{ kind: 'type', form: 'event', layer: 'design', salient: true }} size="tiny" />
                     {relative(piece.step.step.target.id, scope)}
                   </NodeRef>
                 )}

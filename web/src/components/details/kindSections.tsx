@@ -1,7 +1,7 @@
-import { ArrowRight, Check, FileCode, FlaskConical, Play, Split, TriangleAlert, X } from 'lucide-react';
+import { ArrowRight, Check, FileCode, FlaskConical, Play, Split, TriangleAlert, X } from '../marks/icons';
 import type { Entity, Neighbor, Node, RunResult } from '../../api/types';
 import { ABOUT, CASE_SOURCES, DIAGNOSTIC_WORDS, HISTORY, SECTIONS } from '../../terms';
-import { ICON_SMALL, ICON_STROKE, ICON_TINY } from '../../ui/hint';
+
 import { Badge } from '../marks/Badge';
 import { fileOf, opLine, placeOf, relative, scopeOf, shortPath, stepLine, stepName, typeParts } from '../marks/format';
 import { KindIcon } from '../marks/icons';
@@ -12,6 +12,7 @@ import { NodeLink } from '../marks/NodeLink';
 import { TypeText } from '../marks/Signature';
 import { ChipList, CodePanel, DiagnosticTag, Facts, MoreBadge, NodeRow, Section, SignaturePanel, SymbolLine, ViaBadge } from './sections';
 import styles from './details.module.css';
+import { Icon } from '../../ui/icons';
 
 /*
  * The sections of a node's page by its kind (api/entities.tsp), shared by the right pane's preview and the canvas's
@@ -108,10 +109,10 @@ export function ContainerSections({ entity }: { entity: Entity }) {
           {declared.map(({ node: other }) => <NodeRow key={other.id} node={other} />)}
           {undeclared.map(({ edge }) => (
             <div key={`${edge.from} ${edge.to}`} className={styles.row} data-tone="warning">
-              <TriangleAlert size={ICON_SMALL} strokeWidth={ICON_STROKE} aria-hidden="true" />
+              <Icon glyph={TriangleAlert} size="small" />
               <span className={styles.ends}>
                 <NodeLink node={{ id: edge.from, title: edge.from }} tone="inherit" />
-                <ArrowRight size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />
+                <Icon glyph={ArrowRight} size="tiny" />
                 <NodeLink node={{ id: edge.to, title: edge.to }} tone="inherit" />
               </span>
               <span className={styles.trailing}>
@@ -322,10 +323,10 @@ export function CaseSections({ entity }: { entity: Entity }) {
         <Section title={SECTIONS.history} about={ABOUT.history}>
           {history.map((result, index) => {
             const replay = result.mode === 'replay' && index === history.length - 1;
-            const Icon = result.outcome === 'failed' ? X : replay ? Play : Check;
+            const glyph = result.outcome === 'failed' ? X : replay ? Play : Check;
             return (
               <div key={`${result.commit}${result.at}`} className={styles.row} data-tone={result.outcome === 'failed' ? 'warning' : replay ? undefined : 'success'}>
-                <Icon size={ICON_SMALL} strokeWidth={ICON_STROKE} aria-hidden="true" />
+                <Icon glyph={glyph} size="small" />
                 <span className={styles.code}>{replay ? result.at.slice(11, 16) : result.commit.slice(0, 7)}</span>
                 <span className={styles.trailing}>{words[index]}</span>
               </div>
@@ -403,7 +404,7 @@ export function CodeSections({ entity }: { entity: Entity }) {
       {detail && detail.details.length > 0 && (
         <Section title={SECTIONS.details} about={ABOUT.details}>
           <div className={styles.chips}>
-            {detail.details.map(fn => <Badge key={fn.id} tone="neutral" mono to={links.entityHref(fn.id)}><KindIcon node={fn} size={12} />{fn.title}</Badge>)}
+            {detail.details.map(fn => <Badge key={fn.id} tone="neutral" mono to={links.entityHref(fn.id)}><KindIcon node={fn} size="tiny" />{fn.title}</Badge>)}
           </div>
         </Section>
       )}

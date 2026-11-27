@@ -1,26 +1,27 @@
 import * as Popover from '@radix-ui/react-popover';
 import { clsx } from 'clsx';
-import { TriangleAlert } from 'lucide-react';
+import { TriangleAlert } from '../marks/icons';
 import { Link } from 'react-router';
 import type { Diagnostic } from '../../api/types';
 import { ABOUT, CONTROLS, SECTIONS } from '../../terms';
-import { ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
+import { InfoHint } from '../../ui/hint';
 import hintStyles from '../../ui/hint.module.css';
 import styles from './shell.module.css';
+import { Icon } from '../../ui/icons';
 
 /** The header's diagnostic count, which opens the list of every diagnostic with its cause and fix. */
 export function DiagnosticsButton({ diagnostics, subjectHref }: { diagnostics: Diagnostic[]; subjectHref: (subject: string) => string | undefined }) {
   return (
     <Popover.Root>
       <Popover.Trigger className={styles.diagnosticCount} aria-label={CONTROLS.diagnostics}>
-        <TriangleAlert size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />
+        <Icon glyph={TriangleAlert} size="tiny" />
         {diagnostics.length}
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content className={clsx(hintStyles.popover, styles.panel)} align="start" sideOffset={8} collisionPadding={12} onOpenAutoFocus={event => event.preventDefault()}>
           <div className={styles.panelHead}>
             <span className="t-micro c-faint">{SECTIONS.diagnostics}</span>
-            <InfoHint label={SECTIONS.diagnostics}>{ABOUT.diagnostics}</InfoHint>
+            <InfoHint subject={SECTIONS.diagnostics}>{ABOUT.diagnostics}</InfoHint>
           </div>
           <ul className={styles.diagnosticList}>
             {diagnostics.map(diagnostic => {
@@ -28,7 +29,7 @@ export function DiagnosticsButton({ diagnostics, subjectHref }: { diagnostics: D
               return (
                 <li key={`${diagnostic.code} ${diagnostic.subject}`} className={styles.diagnostic}>
                   <span className={styles.diagnosticCode}>
-                    <TriangleAlert size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />
+                    <Icon glyph={TriangleAlert} size="tiny" />
                     {diagnostic.code}
                   </span>
                   {href === undefined ? <span className="t-mono">{diagnostic.subject}</span> : <Link className="t-mono" to={href}>{diagnostic.subject}</Link>}

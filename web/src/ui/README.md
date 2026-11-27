@@ -1,6 +1,19 @@
 # 设计系统
 
-本目录复制自 aegis-bench-site 的 `src/ui`，在 unicode 查看器中有以下改动：链接用 react-router 的 `Link`，控件自己的文案在 `words.ts`；悬浮说明按 Figma 原型画成反色的小卡片，ⓘ 用 Lucide 的 `info`；`base.css` 另有图标尺寸、页头与侧栏尺寸、`mono-strong` 等查看器用到的令牌。以下是原文。
+本目录复制自 aegis-bench-site 的 `src/ui`。Figma 原型与本设计系统不一致时，以本设计系统为准。在 unicode 查看器中有以下改动，其余见后面的原文：
+
+- 链接用 react-router 的 `Link`，控件自己的文案在 `words.ts`；面包屑不带 `useReturnPath`。
+- 图标只用 Lucide 一套。控件用的图标（箭头、折叠、主题、菜单、关闭、外链、文件、全屏、缩放、适合窗口、对勾、复制、搜索）都换成 Lucide 的图形，由 `icons.tsx` 的 `Icon` 画出。图标的三种尺寸（16、14、12）和笔画 1.4 只在 `icons.tsx` 中定义一次；排版代码按像素计算时读取其中的 `ICON_REGULAR`、`ICON_SMALL`、`ICON_TINY`。
+- `InfoHint` 接收 `subject`，读屏名称一律是 `UI_WORDS.about(subject)`。
+- `ThemeIcon` 随主题变化：深色时是太阳，浅色时是月亮。`theme.ts` 的 `useTheme` 给出当前主题和切换函数，由页面交给主题按钮。
+- `Button` 和 `ButtonLink` 有 `size`，取大、中、小三档；`Button` 可带读屏名称 `label`，也能作为弹层的触发器。
+- `SearchField` 可带 `shortcut`：平台的修饰键加这个键把光标移进搜索框，框内按平台显示，macOS 上是 ⌘K，其他平台是 Ctrl K。它另外接收焦点和按键，供在框下列出结果的组件使用。
+- `MarkButton` 是作为数据标记的可点元素，例如图上的节点、树的行、结果列表中的一项。它不是胶囊，样式由使用方给出；`src/ui` 之外不直接写 `<button>`。
+- `Tag` 有 `tone`：中性，或失败、通过、需留意三种真实状态。状态色画在边线和图标上，文字保持正文色。标签里可以带图标。
+- 拖动条在悬停和拖动时显出的线用 `--border-emphasis`；只有键盘聚焦时才用焦点色。
+- `base.css` 另有查看器用到的令牌：`--type-page-title`、`--type-mono-strong` 及对应的 `.t-code`、`.t-mono-strong`，以及页头和侧栏的尺寸。
+
+以下是原文。
 
 本目录是 Aegis Bench 对外站点的设计系统：设计令牌、全局样式和通用组件都在这里，站点各页面只从这里取颜色、尺寸、动效和控件。本目录不依赖任何业务领域，可以整体复制到别的项目中参考或使用。
 

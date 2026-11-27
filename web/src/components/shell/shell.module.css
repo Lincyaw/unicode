@@ -78,7 +78,7 @@
 .revisions { display: grid; gap: var(--space-px); }
 .revision { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); border-radius: var(--radius-md); }
 .revision:hover { background: var(--bg-muted); }
-.revisionMark { display: grid; place-items: center; width: var(--icon-tiny); }
+.revisionMark { display: grid; flex: none; place-items: center; width: var(--space-3); }
 .revisionSubject { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .changes { display: grid; gap: var(--space-1); padding-top: var(--space-3); border-top: var(--rule-hairline); }
 .change { display: flex; align-items: baseline; gap: var(--space-2); }
@@ -107,6 +107,6 @@
 .treeRow[aria-current="true"] .treeLabel { font: var(--type-mono-strong); }
 .treeRow[data-dim="true"] { color: var(--text-faint); }
 .treeRow[data-dim="true"] [data-status] { opacity: .5; }
-.treeToggle { display: grid; flex: none; place-items: center; width: var(--icon-tiny); height: var(--icon-tiny); color: var(--text-faint); }
+.treeToggle { display: grid; flex: none; place-items: center; width: var(--space-3); height: var(--space-3); color: var(--text-faint); }
 .treeItem { display: flex; flex: 1; align-items: center; gap: var(--space-2); min-width: 0; height: 100%; text-align: left; }
 .treeLabel { flex: 1; min-width: 0; overflow: hidden; font: var(--type-code); text-overflow: ellipsis; white-space: nowrap; }

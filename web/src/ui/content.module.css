@@ -1,6 +1,8 @@
 .tag {
   display: inline-flex;
+  flex: none;
   align-items: center;
+  gap: var(--space-1);
   height: var(--space-6);
   padding: 0 var(--space-2);
   border: var(--rule-emphasis);
@@ -9,6 +11,13 @@
   white-space: nowrap;
 }
 .dashed { border-style: dashed; }
+/* A status tag draws its edge and its icon in the status colour. */
+.tag[data-tone="warning"] { border-color: var(--accent-warning); }
+.tag[data-tone="success"] { border-color: var(--accent-success); }
+.tag[data-tone="caution"] { border-color: var(--ink-warn); }
+.tag[data-tone="warning"] svg { color: var(--accent-warning); }
+.tag[data-tone="success"] svg { color: var(--accent-success); }
+.tag[data-tone="caution"] svg { color: var(--ink-warn); }
 
 .sectionHeading { margin-bottom: var(--space-10); }
 

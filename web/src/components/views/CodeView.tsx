@@ -1,8 +1,8 @@
 import { clsx } from 'clsx';
-import { Code, X } from 'lucide-react';
+import { Code, X } from '../marks/icons';
 import type { View, ViewNode } from '../../api/types';
-import { ABOUT, SECTIONS, VIEW_NAMES } from '../../terms';
-import { ICON_SMALL, ICON_STROKE, ICON_TINY, InfoHint } from '../../ui/hint';
+import { ABOUT, MARKS, SECTIONS, VIEW_NAMES } from '../../terms';
+import { InfoHint } from '../../ui/hint';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { CHIP_HEIGHT, chipWidth } from '../canvas/sizes';
 import { Lines, Marker, type Line } from '../canvas/Edges';
@@ -17,6 +17,7 @@ import { NodeRef } from '../marks/NodeRef';
 import { NodeChip } from '../marks/NodeChip';
 import { edgeKey } from './graphParts';
 import styles from './views.module.css';
+import { ICON_SMALL, Icon } from '../../ui/icons';
 
 const CALLER_GAP = 44;
 const CALLEE_GAP = 72;
@@ -80,7 +81,7 @@ function fileBox(file: ViewNode, input: boolean): FileBox {
 function FileHead({ file }: { file: ViewNode }) {
   return (
     <button type="button" className={styles.fileHead} {...useNodeActions(file.id)}>
-      <KindIcon node={file} size={ICON_TINY} />
+      <KindIcon node={file} size="tiny" />
       {shortPath(file.title)}
     </button>
   );
@@ -172,7 +173,7 @@ export function CodeView({ view }: { view: View }) {
                     <NodeChip node={row.node} label={rowLabel(row.node, row.depth)} status={statusOf(row.node)} className={styles.rowChip} />
                     {bound && (
                       <NodeRef id={bound.id} className={styles.binding}>
-                        <KindIcon node={bound} size={ICON_TINY} />
+                        <KindIcon node={bound} size="tiny" />
                         {relative(bound.id, scopeOf(bound.id))}
                       </NodeRef>
                     )}
@@ -181,8 +182,8 @@ export function CodeView({ view }: { view: View }) {
               })}
               {box.details && (
                 <Placed rect={box.details} className={styles.detailsCount}>
-                  <Code size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />+{box.file.details}
-                  <InfoHint label={SECTIONS.details}>{ABOUT.details}</InfoHint>
+                  <Icon glyph={Code} size="tiny" />+{box.file.details}
+                  <InfoHint subject={SECTIONS.details}>{ABOUT.details}</InfoHint>
                 </Placed>
               )}
             </div>
@@ -197,8 +198,8 @@ export function CodeView({ view }: { view: View }) {
             <NodeChip node={node} state="folded" />
             {count !== undefined && (
               <span className={styles.count}>
-                <Badge tone="neutral"><X size={ICON_TINY} strokeWidth={ICON_STROKE} aria-hidden="true" />{count}</Badge>
-                <InfoHint label={ABOUT.merged}>{ABOUT.merged}</InfoHint>
+                <Badge tone="neutral"><Icon glyph={X} size="tiny" />{count}</Badge>
+                <InfoHint subject={MARKS.merged}>{ABOUT.merged}</InfoHint>
               </span>
             )}
           </Placed>
@@ -209,7 +210,7 @@ export function CodeView({ view }: { view: View }) {
       ))}
       {input && inputRect && cases.length > 0 && (
         <Placed rect={{ x: inputRect.x, y: inputRect.y + input.height + 24, width: input.width, height: 48 }} className={styles.coverage}>
-          <span className={styles.coverageHead}>{SECTIONS.coveredBy}<InfoHint label={SECTIONS.coveredBy}>{ABOUT.coveredBy}</InfoHint></span>
+          <span className={styles.coverageHead}>{SECTIONS.coveredBy}<InfoHint subject={SECTIONS.coveredBy}>{ABOUT.coveredBy}</InfoHint></span>
           <span className={styles.coverageChips}>
             {branches.map(branch => <Badge key={branch.label} tone="neutral">{branch.label} {branch.cases}</Badge>)}
             {cases.map(item => <Badge key={item.id} tone="info" to={links.entityHref(item.id)}>{item.title}</Badge>)}

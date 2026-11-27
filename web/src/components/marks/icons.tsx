@@ -2,14 +2,19 @@ import {
   Box, Braces, Cloud, Code, CornerDownRight, Eye, FileCode, FlaskConical, List, Network, OctagonX, Package, Puzzle, Radio, ShieldCheck, Split,
   SquareFunction, User, Workflow, Zap, type LucideIcon,
 } from 'lucide-react';
-import { createElement } from 'react';
 import type { Node } from '../../api/types';
-import { ICON_SIZE, ICON_STROKE } from '../../ui/hint';
+import { Icon, type IconSize } from '../../ui/icons';
 
 /*
- * Node kinds are icons from Lucide (docs/design.md §7.5's icon table), 16px with a 1.4 stroke, coloured like their
- * text; a smaller size is given where the text beside it is smaller.
+ * The viewer's icons, after docs/design.md §7.5's icon table: every Lucide glyph a page draws is named here, so the
+ * table and the pages keep one icon for each meaning. Node kinds are drawn by KindIcon; the glyphs of actions,
+ * statuses and links are passed on for the components to draw with the kit's Icon.
  */
+
+export {
+  ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronRight, ChevronUp, Code, CornerDownRight, Dices, Ellipsis, EyeOff, FileCode, FlaskConical,
+  GitCommitHorizontal, GitCompareArrows, Moon, Play, Plus, Repeat, Search, Split, TriangleAlert, X, type LucideIcon,
+} from 'lucide-react';
 
 const TYPE_ICONS: Record<string, LucideIcon> = {
   object: Braces,
@@ -60,6 +65,7 @@ function iconOf(node: Pick<Node, 'kind' | 'form' | 'layer' | 'salient'>): Lucide
   }
 }
 
-export function KindIcon({ node, size = ICON_SIZE }: { node: Pick<Node, 'kind' | 'form' | 'layer' | 'salient'>; size?: number }) {
-  return createElement(iconOf(node), { size, strokeWidth: ICON_STROKE, 'aria-hidden': true });
+/** A node's kind and form as its icon, at the size of the text beside it. */
+export function KindIcon({ node, size = 'regular' }: { node: Pick<Node, 'kind' | 'form' | 'layer' | 'salient'>; size?: IconSize }) {
+  return <Icon glyph={iconOf(node)} size={size} />;
 }
