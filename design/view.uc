@@ -66,7 +66,7 @@ type Request record "一张图和一次视图请求：视图的种类、输入�
 
 op select(g: graph.Graph, kind: ViewKind, id: string, expand: list<string>, layer: ClassLayer, level: C4Level) -> View raises NotApplicable "按视图的种类选取子图并折叠；层只用于类视图，层级只用于 C4 视图"
 
-property view-is-folded-subgraph invariant "视图的节点都在图中；不带 count 的边是图中两端都画出的边，带 count 的边代表 count 条同种类的图中的边，它们的两端各是这条边的一端或由它代表；不展开时没有细节节点；架构、类、调用、代码、DDD 和 C4 视图中，support 容器折叠成一个节点，utility 容器和指向它的依赖都不出现，类视图中输入之外的其他容器也折叠；时序、活动和事件视图不折叠；各视图照 design.md §7.1 选取，展开的标识照 §7.2 展开" {
+property view-is-folded-subgraph invariant "视图的节点都在图中；不带 count 的边是图中两端都画出的边，带 count 的边代表 count 条同种类的图中的边，它们的两端各是这条边的一端或由它代表（折叠的容器代表其中的节点，C4 视图中系统或容器代表其中的节点，步骤由发起它的人代表）；不展开时没有细节节点；架构、类、调用、代码、DDD 和 C4 视图中，support 容器折叠成一个节点，utility 容器和指向它的依赖都不出现，类视图中输入之外的其他容器也折叠；时序、活动和事件视图不折叠；各视图照 design.md §7.1 选取，展开的标识照 §7.2 展开" {
   about select
   forall request: Request generated "一张随机的图，带各种关注度的容器、显著和细节的函数，以及一次输入取自图中节点的视图请求"
   manual "需要按视图规则独立计算折叠、排列与首次出现次序，当前表达式没有这些构造"

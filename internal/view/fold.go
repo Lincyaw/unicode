@@ -93,13 +93,22 @@ func (f *folding) place(id string) {
 	}
 }
 
-// stand returns the drawn node that stands for id: id itself, or the folded
-// container it was placed into; "" when the view draws neither.
-func (f *folding) stand(id string) string {
+// stand returns the drawn node that stands for id: id itself, the folded
+// container it was placed into, or what stands for the node the selection
+// maps it to; "" when the view draws none of them.
+func (f *folding) stand(id string, sel selection) string {
 	if f.drawn[id] {
 		return id
 	}
-	return f.into[id]
+	if c, placed := f.into[id]; placed {
+		return c
+	}
+	if sel.boxOf != nil {
+		if b := sel.boxOf(id); b != "" && b != id {
+			return f.stand(b, sel)
+		}
+	}
+	return ""
 }
 
 // edges draws each edge of the kinds the selection picks, and each edge an
@@ -114,7 +123,7 @@ func (f *folding) edges(sel selection, revealed map[edgeKey]bool) []ViewEdge {
 		if !slices.Contains(sel.kinds, e.Kind) && !revealed[edgeKey{e.Kind, e.From, e.To}] {
 			continue
 		}
-		from, to := f.stand(e.From), f.stand(e.To)
+		from, to := f.stand(e.From, sel), f.stand(e.To, sel)
 		shifted := from != e.From || to != e.To
 		if from == "" || to == "" || shifted && from == to {
 			continue

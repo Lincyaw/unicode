@@ -265,15 +265,8 @@ func checkViewNamesInputAncestors(t rapid.TB, request Request) {
 		}
 		ancestors = append(ancestors, a.Id)
 	}
-	var want []string
-	for at := input; ; {
-		parents := w.from(at, graph.EdgeKindContains)
-		if len(parents) == 0 || parents[0] == input || slices.Contains(want, parents[0]) {
-			break
-		}
-		want = append([]string{parents[0]}, want...)
-		at = parents[0]
-	}
+	want := slices.Clone(w.containers(input))
+	slices.Reverse(want)
 	if !slices.Equal(ancestors, want) {
 		t.Fatalf("the %s view of %q gives the ancestors %q, not the nodes that contain %q, the outermost first: %q", request.Kind, request.Id, ancestors, input, want)
 	}

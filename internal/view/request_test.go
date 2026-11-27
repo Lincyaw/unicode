@@ -83,8 +83,13 @@ func (b *builder) subset(label string, values []string) []string {
 // between them, the reaches edges those calls imply, and bindings.
 func genGraph(t *rapid.T, minFlows int) graph.Fragment {
 	b := &builder{t: t, at: map[string]int{}, keys: map[edgeKey]bool{}}
-	sys := b.node("sys", graph.NodeKindContainer, "system", graph.LayerDesign, true,
-		map[string][]string{"notations": b.subset("notation", []string{"ddd", "c4"})})
+	var notations []string
+	for _, n := range []string{"ddd", "c4"} {
+		if rapid.IntRange(0, 3).Draw(t, "notation") > 0 {
+			notations = append(notations, n)
+		}
+	}
+	sys := b.node("sys", graph.NodeKindContainer, "system", graph.LayerDesign, true, map[string][]string{"notations": notations})
 	focuses := []string{"core", "core", "support", "support", "utility"}
 	var components []string
 	for i := range rapid.IntRange(1, 6).Draw(t, "components") {
@@ -104,7 +109,7 @@ func genGraph(t *rapid.T, minFlows int) graph.Fragment {
 		b.edge(graph.EdgeKindContains, parent, id)
 	}
 	var actors, externals []string
-	for i := range rapid.IntRange(0, 2).Draw(t, "actors") {
+	for i := range rapid.IntRange(0, 3).Draw(t, "actors") {
 		form := rapid.SampledFrom([]string{"external", "person"}).Draw(t, "actorForm")
 		id := b.node(fmt.Sprintf("a%d", i), graph.NodeKindActor, form, graph.LayerDesign, true, nil)
 		b.edge(graph.EdgeKindContains, sys, id)

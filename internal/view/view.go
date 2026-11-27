@@ -152,6 +152,10 @@ type selection struct {
 	// home, when set, is the container outside which every design container
 	// folds whatever its focus; only utility ones are still left out.
 	home string
+	// boxOf, when set, maps a node that is not drawn to the node that stands
+	// for it in the view, which is drawn, folded or left out in its turn; ""
+	// when nothing stands for it.
+	boxOf func(string) string
 }
 
 func (s *selection) add(ids ...string) {

@@ -160,7 +160,7 @@ var drawnKinds = map[ViewKind][]graph.EdgeKind{
 	ViewKindProperty: {graph.EdgeKindAbout, graph.EdgeKindContains, graph.EdgeKindChecks},
 	ViewKindCode:     {graph.EdgeKindContains, graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindCovers},
 	ViewKindDdd:      {graph.EdgeKindRefers, graph.EdgeKindExtends, graph.EdgeKindImplements, graph.EdgeKindContains},
-	ViewKindC4:       {graph.EdgeKindUses, graph.EdgeKindDepends, graph.EdgeKindContains},
+	ViewKindC4:       {graph.EdgeKindUses, graph.EdgeKindDepends, graph.EdgeKindCalls},
 }
 
 // stepsOf returns the steps of a flow in the order of their index.
@@ -229,15 +229,27 @@ func (w world) candidates(a asked) map[string]bool {
 			}
 		}
 	case ViewKindC4:
+		for id := range w.boxes(a) {
+			add(id)
+		}
 		for id := range below {
-			if w.designContainer(id) && hasAny(w.nodes[id].Attrs["labels"], "software-system", "container", "component") {
+			if w.nodes[id].Kind == graph.NodeKindActor {
 				add(id)
 			}
 		}
-		for _, id := range keys(c) {
+		for _, id := range append(keys(below), input) {
 			for _, o := range w.adjacent(id, graph.EdgeKindUses, graph.EdgeKindDepends) {
-				if w.external(o) {
+				if w.designContainer(id) && w.external(o) {
 					add(o)
+				}
+			}
+		}
+		for _, e := range w.edges {
+			if p := w.nodes[e.To]; e.Kind == graph.EdgeKindFrom && p.Kind == graph.NodeKindActor && p.Form == "person" {
+				for _, op := range w.to(e.From, graph.EdgeKindCalls) {
+					if below[op] {
+						add(e.To)
+					}
 				}
 			}
 		}
@@ -457,6 +469,8 @@ type expectation struct {
 	edges                 map[edgeKey][]graph.Edge
 	// home maps a node folded into a container, or left out with one, to that container.
 	home map[string]string
+	// box maps, in a C4 view, a node to the node that stands for it.
+	box func(string) string
 }
 
 // placeInto draws id, or the support container it folds into, or records the
@@ -477,13 +491,71 @@ func (w world) placeInto(x *expectation, id string, exempt map[string]bool, home
 // standIn is the drawn node that stands for id: id, or the folded container
 // it is in; "" when neither is drawn.
 func (x expectation) standIn(id string) string {
-	if c, ok := x.home[id]; ok && x.folded[c] {
+	c, placed := x.home[id]
+	switch {
+	case placed && x.folded[c]:
 		return c
-	}
-	if x.nodes[id] {
+	case x.nodes[id]:
 		return id
+	case !placed && x.box != nil && x.box(id) != "" && x.box(id) != id:
+		return x.standIn(x.box(id))
 	}
 	return ""
+}
+
+// boxes are the nodes of a C4 view that stand for what they contain: the
+// input at the context level, the containers in it labelled container at
+// the container level (§7.1).
+func (w world) boxes(a asked) map[string]bool {
+	boxes := map[string]bool{}
+	if a.level == C4LevelContext {
+		boxes[a.input] = true
+		return boxes
+	}
+	for id := range w.below(a.input) {
+		if w.designContainer(id) && slices.Contains(w.nodes[id].Attrs["labels"], "container") {
+			boxes[id] = true
+		}
+	}
+	return boxes
+}
+
+// box maps, in a C4 view, a step to its person, and any other node to the
+// innermost actor or box among it and the nodes that contain it.
+func (w world) box(a asked) func(string) string {
+	if a.kind != ViewKindC4 {
+		return nil
+	}
+	boxes := w.boxes(a)
+	return func(id string) string {
+		if w.nodes[id].Kind == graph.NodeKindStep {
+			for _, p := range w.to(id, graph.EdgeKindFrom) {
+				if w.nodes[p].Kind == graph.NodeKindActor && w.nodes[p].Form == "person" {
+					return p
+				}
+			}
+			return ""
+		}
+		for _, c := range append([]string{id}, w.containers(id)...) {
+			if boxes[c] || w.nodes[c].Kind == graph.NodeKindActor {
+				return c
+			}
+		}
+		return ""
+	}
+}
+
+// containers returns the nodes that contain id along contains, innermost first.
+func (w world) containers(id string) []string {
+	var chain []string
+	for at := id; ; {
+		parents := w.from(at, graph.EdgeKindContains)
+		if len(parents) == 0 || parents[0] == id || slices.Contains(chain, parents[0]) {
+			return chain
+		}
+		chain = append(chain, parents[0])
+		at = parents[0]
+	}
 }
 
 func (w world) detailFunction(id string) bool {
@@ -495,7 +567,8 @@ func (w world) detailFunction(id string) bool {
 // then what each expansion reveals placed, then the edges between drawn nodes.
 func (w world) expected(a asked, expand []string) expectation {
 	kind, input := a.kind, a.input
-	x := expectation{nodes: map[string]bool{}, folded: map[string]bool{}, hiders: map[string]bool{}, edges: map[edgeKey][]graph.Edge{}, home: map[string]string{}}
+	x := expectation{nodes: map[string]bool{}, folded: map[string]bool{}, hiders: map[string]bool{}, edges: map[edgeKey][]graph.Edge{},
+		home: map[string]string{}, box: w.box(a)}
 	exempt, home := w.exempt(kind, input, expand), w.home(a)
 	for _, id := range keys(w.candidates(a)) {
 		if w.nodes[id].Salient {

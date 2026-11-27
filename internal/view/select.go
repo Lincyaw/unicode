@@ -2,6 +2,7 @@ package view
 
 import (
 	"cmp"
+	"maps"
 	"math"
 	"slices"
 	"strconv"
@@ -25,7 +26,6 @@ var selectors = map[ViewKind]func(index, request) selection{
 
 var (
 	dddTypeLabels = []string{"aggregate", "entity", "value", "domain-service", "repository", "factory"}
-	c4Labels      = []string{"software-system", "container", "component"}
 )
 
 func isExternal(n graph.Node) bool { return n.Kind == graph.NodeKindActor && n.Form == "external" }
@@ -285,23 +285,67 @@ func ddd(ix index, r request) selection {
 	return s
 }
 
-// c4: the container, the containers in it that carry a C4 label, and the
-// external systems at the other end of their dependencies.
+// c4: at the context level, the input standing for everything in it; at
+// the container level, the input and the design containers in it labelled
+// container, each standing for what it contains. Either level draws the
+// actors in the input, the external systems that the input or a container
+// in it uses or depends on, and the persons whose steps call an operation
+// in it, each step standing in for its person. The edges are the uses and
+// depends between what stands for their ends, and the calls of the
+// persons' steps.
 func c4(ix index, r request) selection {
 	input := r.input
-	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindUses, graph.EdgeKindDepends, graph.EdgeKindContains}}
+	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindUses, graph.EdgeKindDepends, graph.EdgeKindCalls}}
 	s.add(input)
-	for _, d := range ix.descendants(input) {
-		if n := ix.nodes[d]; isDesignContainer(n) && hasLabel(n, c4Labels) {
+	inside := ix.descendants(input)
+	boxes := map[string]bool{}
+	if r.level == C4LevelContext {
+		boxes[input] = true
+	}
+	for _, d := range inside {
+		if n := ix.nodes[d]; r.level == C4LevelContainer && isDesignContainer(n) && slices.Contains(n.Attrs["labels"], "container") {
+			boxes[d] = true
 			s.add(d)
 		}
 	}
-	for _, id := range slices.Clone(s.nodes) {
-		for _, o := range ix.neighbors(id, graph.EdgeKindUses, graph.EdgeKindDepends) {
-			if isExternal(ix.nodes[o]) {
-				s.add(o)
+	within := map[string]bool{input: true}
+	for _, d := range inside {
+		within[d] = true
+		if ix.nodes[d].Kind == graph.NodeKindActor {
+			s.add(d)
+		}
+	}
+	for _, c := range append([]string{input}, inside...) {
+		if isDesignContainer(ix.nodes[c]) {
+			for _, o := range ix.neighbors(c, graph.EdgeKindUses, graph.EdgeKindDepends) {
+				if isExternal(ix.nodes[o]) {
+					s.add(o)
+				}
 			}
 		}
+	}
+	for _, id := range slices.Sorted(maps.Keys(ix.nodes)) {
+		if isPerson(ix.nodes[id]) && slices.ContainsFunc(ix.sources(id, graph.EdgeKindFrom), func(step string) bool {
+			return slices.ContainsFunc(ix.targets(step, graph.EdgeKindCalls), func(op string) bool { return within[op] })
+		}) {
+			s.add(id)
+		}
+	}
+	s.boxOf = func(id string) string {
+		if ix.nodes[id].Kind == graph.NodeKindStep {
+			for _, p := range ix.targets(id, graph.EdgeKindFrom) {
+				if isPerson(ix.nodes[p]) {
+					return p
+				}
+			}
+			return ""
+		}
+		for _, c := range append([]string{id}, ix.containers(id)...) {
+			if boxes[c] || ix.nodes[c].Kind == graph.NodeKindActor {
+				return c
+			}
+		}
+		return ""
 	}
 	return s
 }
