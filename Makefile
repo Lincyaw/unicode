@@ -1,7 +1,7 @@
-.PHONY: check lint test fmt-check gen-check self-check rule-check api api-check serve-gen serve-gen-check deep
+.PHONY: check lint test fmt-check gen-check self-check rule-check api api-check serve-gen serve-gen-check web-check deep
 
 # check is what a lane runs before it commits: fast, default rapid settings.
-check: lint fmt-check gen-check self-check rule-check api-check serve-gen-check
+check: lint fmt-check gen-check self-check rule-check api-check serve-gen-check web-check
 	$(MAKE) test
 
 lint:
@@ -35,6 +35,12 @@ api:
 api-check:
 	pnpm --dir api install --frozen-lockfile --silent
 	pnpm --dir api run --silent check
+
+# The viewer's frontend (docs/design.md §7.5): web/ generates its types from
+# api/openapi.yaml, then typechecks, lints its code and styles, and builds.
+web-check:
+	pnpm --dir web install --frozen-lockfile --silent
+	pnpm --dir web run --silent check
 
 # The server's Go code (docs/design.md §3) is generated from api/openapi.yaml by
 # oapi-codegen. serve-gen regenerates it; serve-gen-check fails when it differs.
