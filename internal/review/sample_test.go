@@ -142,7 +142,7 @@ func genSample() *rapid.Generator[Sample] {
 func sampleReview(g *graph.Graph, target Target, at, decision string) Record {
 	// The identity and digest make this a legal input record. Expected validity
 	// below is computed from model content, not from these production digests.
-	r := Record{Version: 1, Reviewer: "reviewer", At: at, Snapshot: graph.InputDigest(g), Target: target, Digest: item(g, target, nil).Digest, Decision: decision, Comment: "sample review"}
+	r := Record{Version: 1, Reviewer: "reviewer", At: at, Snapshot: graph.InputDigest(g), Target: target, Digest: indexContent(g).item(target, nil).Digest, Decision: decision, Comment: "sample review"}
 	r.Id = recordId(r)
 	return r
 }

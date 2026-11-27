@@ -133,22 +133,44 @@ func boolInt(value bool) int {
 	return 0
 }
 
-func eligible(g *graph.Graph) map[string]bool {
+// content is a graph indexed once for the fingerprints of its targets: its
+// edges, each edge by its target, and the edges at each node by start and by
+// end. Evaluate and Write index each graph once, so a fingerprint looks up
+// only the edges at its target instead of scanning the graph.
+type content struct {
+	g          *graph.Graph
+	edges      []graph.Edge
+	byTarget   map[Target]graph.Edge
+	from, into map[string][]graph.Edge
+}
+
+func indexContent(g *graph.Graph) *content {
+	c := &content{g: g, edges: g.Edges(), byTarget: map[Target]graph.Edge{}, from: map[string][]graph.Edge{}, into: map[string][]graph.Edge{}}
+	for _, edge := range c.edges {
+		c.byTarget[Target{EdgeKind: string(edge.Kind), From: edge.From, To: edge.To}] = edge
+		c.from[edge.From] = append(c.from[edge.From], edge)
+		c.into[edge.To] = append(c.into[edge.To], edge)
+	}
+	return c
+}
+
+func (c *content) eligible() map[string]bool {
 	out, generated := map[string]bool{}, map[string]bool{}
-	for _, n := range g.Nodes() {
+	nodes := c.g.Nodes()
+	for _, n := range nodes {
 		if n.Layer == graph.LayerCode && slices.Contains(n.Attrs["generated"], "true") {
 			generated[n.Id] = true
 		}
 	}
 	for changed := true; changed; {
 		changed = false
-		for _, e := range g.Edges() {
+		for _, e := range c.edges {
 			if e.Kind == graph.EdgeKindContains && generated[e.From] && !generated[e.To] {
 				generated[e.To], changed = true, true
 			}
 		}
 	}
-	for _, n := range g.Nodes() {
+	for _, n := range nodes {
 		if (n.Layer == graph.LayerDesign || n.Layer == graph.LayerCode) && !generated[n.Id] {
 			out[n.Id] = true
 		}
@@ -156,14 +178,14 @@ func eligible(g *graph.Graph) map[string]bool {
 	return out
 }
 
-func candidates(g *graph.Graph) map[string]Target {
+func (c *content) candidates() map[string]Target {
 	out := map[string]Target{}
-	allowed := eligible(g)
+	allowed := c.eligible()
 	for id := range allowed {
 		target := Target{Node: id}
 		out[targetKey(target)] = target
 	}
-	for _, edge := range g.Edges() {
+	for _, edge := range c.edges {
 		if allowed[edge.From] && allowed[edge.To] && edge.Kind != graph.EdgeKindCovers {
 			target := Target{EdgeKind: string(edge.Kind), From: edge.From, To: edge.To}
 			out[targetKey(target)] = target
@@ -172,46 +194,47 @@ func candidates(g *graph.Graph) map[string]Target {
 	return out
 }
 
-func edgeOf(g *graph.Graph, target Target) (graph.Edge, bool) {
-	for _, edge := range g.Edges() {
-		if string(edge.Kind) == target.EdgeKind && edge.From == target.From && edge.To == target.To {
-			return edge, true
-		}
-	}
-	return graph.Edge{}, false
+// edge is the edge that target names, whether or not target is marked removed.
+func (c *content) edge(target Target) (graph.Edge, bool) {
+	edge, found := c.byTarget[Target{EdgeKind: target.EdgeKind, From: target.From, To: target.To}]
+	return edge, found
 }
 
-func fingerprint(g *graph.Graph, target Target) string {
+func (c *content) fingerprint(target Target) string {
 	if target.Node == "" {
-		edge, found := edgeOf(g, target)
+		edge, found := c.edge(target)
 		if !found {
 			return ""
 		}
 		return graph.EdgeDigest(edge)
 	}
-	node := g.Node(target.Node)
+	node := c.g.Node(target.Node)
 	if node == nil {
 		return ""
 	}
-	own := g.Digest(node.Id)
+	own := c.g.Digest(node.Id)
 	if node.Layer != graph.LayerDesign || node.Kind != graph.NodeKindProperty && node.Kind != graph.NodeKindFlow {
 		return own
 	}
 	parts := map[string]string{}
-	for _, edge := range g.Edges() {
-		if len(node.Attrs["manual"]) > 0 && edge.Kind == graph.EdgeKindChecks && edge.To == node.Id {
-			parts["predicate:"+edge.From] = g.Digest(edge.From)
-			parts["binding:"+graph.EdgeDigest(edge)] = graph.EdgeDigest(edge)
+	if len(node.Attrs["manual"]) > 0 {
+		for _, edge := range c.into[node.Id] {
+			if edge.Kind == graph.EdgeKindChecks {
+				parts["predicate:"+edge.From] = c.g.Digest(edge.From)
+				parts["binding:"+graph.EdgeDigest(edge)] = graph.EdgeDigest(edge)
+			}
 		}
-		if node.Kind == graph.NodeKindProperty && edge.Kind == graph.EdgeKindContains && edge.From == node.Id {
-			observation := g.Node(edge.To)
-			if observation == nil || observation.Kind != graph.NodeKindObservation {
+	}
+	if node.Kind == graph.NodeKindProperty {
+		for _, edge := range c.from[node.Id] {
+			observation := c.g.Node(edge.To)
+			if edge.Kind != graph.EdgeKindContains || observation == nil || observation.Kind != graph.NodeKindObservation {
 				continue
 			}
-			parts["observation:"+observation.Id] = g.Digest(observation.Id)
-			for _, binding := range g.Edges() {
-				if binding.Kind == graph.EdgeKindObserves && binding.To == observation.Id {
-					parts["adapter:"+binding.From] = g.Digest(binding.From)
+			parts["observation:"+observation.Id] = c.g.Digest(observation.Id)
+			for _, binding := range c.into[observation.Id] {
+				if binding.Kind == graph.EdgeKindObserves {
+					parts["adapter:"+binding.From] = c.g.Digest(binding.From)
 					parts["binding:"+graph.EdgeDigest(binding)] = graph.EdgeDigest(binding)
 				}
 			}
@@ -232,15 +255,17 @@ func newer(a, b Record) bool {
 	return cmp.Or(at.Compare(bt), cmp.Compare(a.Id, b.Id)) > 0
 }
 
-func item(g *graph.Graph, target Target, records []Record) Item {
-	current := Item{Target: target, Digest: fingerprint(g, target), State: "pending"}
+// item is target with its fingerprint in c and the newest of records that
+// name target with that fingerprint.
+func (c *content) item(target Target, records []Record) Item {
+	current := Item{Target: target, Digest: c.fingerprint(target), State: "pending"}
 	if target.Removed {
 		copy := target
 		copy.Removed = false
 		current.Digest = digest(struct {
 			Target Target `json:"target"`
 			Before string `json:"before"`
-		}{target, fingerprint(g, copy)})
+		}{target, c.fingerprint(copy)})
 	}
 	for _, record := range records {
 		if record.Target != target || record.Digest != current.Digest {
@@ -267,14 +292,17 @@ func Evaluate(g *graph.Graph, base *graph.Graph, records []Record) Evaluation {
 	if len(out.Diagnostics) > 0 {
 		return out
 	}
-	current := candidates(g)
+	head := indexContent(g)
+	current := head.candidates()
 	selected := map[string]Target{}
+	var before *content
 	if base == nil {
 		selected = current
 	} else {
-		previous := candidates(base)
+		before = indexContent(base)
+		previous := before.candidates()
 		for key, target := range current {
-			if _, existed := previous[key]; !existed || fingerprint(g, target) != fingerprint(base, target) {
+			if _, existed := previous[key]; !existed || head.fingerprint(target) != before.fingerprint(target) {
 				selected[key] = target
 			}
 		}
@@ -284,7 +312,7 @@ func Evaluate(g *graph.Graph, base *graph.Graph, records []Record) Evaluation {
 			}
 			missing := target.Node != "" && g.Node(target.Node) == nil
 			if target.Node == "" {
-				_, found := edgeOf(g, target)
+				_, found := head.edge(target)
 				missing = !found
 			}
 			if missing {
@@ -293,13 +321,17 @@ func Evaluate(g *graph.Graph, base *graph.Graph, records []Record) Evaluation {
 			}
 		}
 	}
+	named := map[Target][]Record{}
+	for _, record := range records {
+		named[record.Target] = append(named[record.Target], record)
+	}
 	for _, key := range slices.Sorted(maps.Keys(selected)) {
 		target := selected[key]
-		view := g
+		view := head
 		if target.Removed {
-			view = base
+			view = before
 		}
-		out.Items = append(out.Items, item(view, target, records))
+		out.Items = append(out.Items, view.item(target, named[target]))
 	}
 	slices.SortFunc(out.Items, func(a, b Item) int { return compareTargets(a.Target, b.Target) })
 	return out

@@ -278,17 +278,17 @@ func knownTarget(g, base *graph.Graph, target Target) bool {
 		if base == nil {
 			return false
 		}
-		_, before := candidates(base)[targetKey(current)]
+		_, before := indexContent(base).candidates()[targetKey(current)]
 		if !before {
 			return false
 		}
 		if target.Node != "" {
 			return g.Node(target.Node) == nil
 		}
-		_, exists := edgeOf(g, current)
+		_, exists := indexContent(g).edge(current)
 		return !exists
 	}
-	_, exists := candidates(g)[targetKey(current)]
+	_, exists := indexContent(g).candidates()[targetKey(current)]
 	return exists
 }
 
@@ -307,7 +307,7 @@ func Write(root string, g *graph.Graph, base *graph.Graph, request Request) Writ
 				problem.Position = node.Origin
 				break
 			}
-			if edge, found := edgeOf(source, request.Target); found && edge.Origin.Path != "" {
+			if edge, found := indexContent(source).edge(request.Target); found && edge.Origin.Path != "" {
 				problem.Position = edge.Origin
 				break
 			}
@@ -336,11 +336,11 @@ func Write(root string, g *graph.Graph, base *graph.Graph, request Request) Writ
 	if !knownTarget(g, base, request.Target) {
 		return fail("review.unknown-target", "the graph or comparison has no such reviewable target", "select a current target or a deletion from a comparison with its base")
 	}
-	view := g
+	view := indexContent(g)
 	if request.Target.Removed {
-		view = base
+		view = indexContent(base)
 	}
-	current := item(view, request.Target, nil)
+	current := view.item(request.Target, nil)
 	if request.ExpectedDigest != "" && request.ExpectedDigest != current.Digest {
 		return fail("review.stale-target", "the target content changed since the expected review digest", "read the current target and review the changed content before recording it")
 	}
@@ -354,7 +354,7 @@ func Write(root string, g *graph.Graph, base *graph.Graph, request Request) Writ
 	if why := validateRecord(record); why != "" {
 		return fail("review.invalid-record", why, "give valid UTF-8 review metadata and a complete commit hash when supplied")
 	}
-	if existing := item(view, request.Target, loaded.Records).Record; existing != nil {
+	if existing := view.item(request.Target, loaded.Records).Record; existing != nil {
 		copy := record
 		copy.At, copy.Id = existing.At, existing.Id
 		if copy == *existing {
