@@ -228,6 +228,24 @@ func checkExecutionPurity(t rapid.TB, sample ExecutionSample, initial int) {
 	if returnedCalls != 1 || returned.Infrastructure || len(returned.Diagnostics) > 0 {
 		t.Fatalf("a normal returned value lost its real receiver: calls=%d outcome=%+v", returnedCalls, returned)
 	}
+	// Purity compares frozen model values while downstream expressions keep the
+	// first live receiver, including private implementation state.
+	makeItem := returnedSpec.Operations["makeItem"]
+	makeItem.Pure = true
+	returnedSpec.Operations["makeItem"] = makeItem
+	returnedCalls = 0
+	pureReturned := ucExecute(returnedSpec, nil, false)
+	if returnedCalls != 2 || pureReturned.Infrastructure || len(pureReturned.Diagnostics) > 0 {
+		t.Fatalf("a pure tested result lost its first native receiver: calls=%d outcome=%+v", returnedCalls, pureReturned)
+	}
+	nested := *returnedSpec
+	nested.Call = nil
+	nested.Ensures = []*ucExpr{runtimeExpr(t, "makeItem().total() == "+strconv.Itoa(initial+fee))}
+	returnedCalls = 0
+	nestedReturned := ucExecute(&nested, nil, false)
+	if returnedCalls != 2 || nestedReturned.Infrastructure || len(nestedReturned.Diagnostics) > 0 {
+		t.Fatalf("an intermediate pure result lost its first native receiver: calls=%d outcome=%+v", returnedCalls, nestedReturned)
+	}
 	counter := &executionCounter{Value: initial}
 	calls := 0
 	spec := &ucContract{ID: "execution.pure", Path: "design/execution.uc", Line: 1, Column: 1, Symbols: []ucSymbol{{"counter", "Counter"}}, Types: map[string]ucType{"Counter": {Form: "object", Fields: []ucField{{"value", "Value", "int"}}}}, Operations: map[string]ucOperation{}, Call: runtimeExpr(t, "touch(counter)"), Ensures: []*ucExpr{runtimeExpr(t, "true")}}

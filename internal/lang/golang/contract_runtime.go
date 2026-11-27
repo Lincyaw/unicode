@@ -1170,10 +1170,11 @@ func (env *ucEnvironment) invoke(op ucOperation, fn reflect.Value, args []reflec
 		return ucNormalize(result[0], op.Result, env.spec.Types)
 	}
 	first := invoke()
+	firstModel := ucDetach(first)
 	afterFirst := snapshot()
 	second := invoke()
 	afterSecond := snapshot()
-	if !ucEqual(first, second) {
+	if !ucEqual(firstModel, ucDetach(second)) {
 		ucFail("lang.golang.purity-violation", "repeated pure calls returned different model values", e)
 	}
 	for i := range before {
@@ -1449,6 +1450,7 @@ func ucExecuteSingle(s *ucContract, inputs map[string]reflect.Value, explore boo
 		phase = "assertion"
 		env.captureCall(op, values, s.Call, &out)
 		if op.Pure {
+			firstModel := ucDetach(env.result)
 			afterFirst = env.callInputs(op, args)
 			firstErrorText := ""
 			if env.failure != nil {
@@ -1461,7 +1463,7 @@ func ucExecuteSingle(s *ucContract, inputs map[string]reflect.Value, explore boo
 			var ignored ucOutcome
 			second.captureCall(op, repeated, s.Call, &ignored)
 			afterSecond := env.callInputs(op, args)
-			different := (env.failure == nil) != (second.failure == nil) || !ucEqual(env.result, second.result)
+			different := (env.failure == nil) != (second.failure == nil) || !ucEqual(firstModel, ucDetach(second.result))
 			if env.failure != nil && second.failure != nil {
 				different = different || reflect.TypeOf(env.failure) != reflect.TypeOf(second.failure) || firstErrorText != second.failure.Error()
 			}
@@ -1894,9 +1896,7 @@ func (env *ucEnvironment) captureCall(op ucOperation, values []reflect.Value, ex
 	}
 	if env.failure == nil && len(values) > 0 {
 		env.result = ucResultValue(values[0], op.Result, env.spec.Types)
-		if op.Pure {
-			env.result = ucDetach(env.result)
-		}
+
 	}
 }
 func ucExecute(s *ucContract, inputs map[string]reflect.Value, explore bool) (out ucOutcome) {

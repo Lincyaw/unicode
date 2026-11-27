@@ -462,7 +462,10 @@ func (c *contractCompiler) literalTypeObject(text string, pkg *packages.Package)
 	if original := c.foreignOriginal[name]; original != "" {
 		name = original
 	}
-	path := pkg.PkgPath
+	path := ""
+	if pkg != nil {
+		path = pkg.PkgPath
+	}
 	if alias, member, qualified := strings.Cut(name, "."); qualified {
 		path = ""
 		for imported, current := range c.literalImports {
@@ -482,7 +485,7 @@ func (c *contractCompiler) literalTypeObject(text string, pkg *packages.Package)
 		object, _ := declaration.obj.(*types.TypeName)
 		return object
 	}
-	if path == pkg.PkgPath && pkg.Types != nil {
+	if pkg != nil && path == pkg.PkgPath && pkg.Types != nil {
 		object, _ := pkg.Types.Scope().Lookup(name).(*types.TypeName)
 		return object
 	}
