@@ -46,3 +46,11 @@ property executes-contracts invariant "前提不成立时不调用被测函数�
   forall sample: ContractSample generated "随机余额、账户标识、金额、外部账户改动和错误结果，含缺失键、重复标识及共享对象"
   manual "需要构造实际函数与观察适配器并记录是否调用，独立谓词逐项核对运行时与生成文件"
 }
+
+property generation-extraction-is-read-only invariant "普通抽取严格检查生成测试；生成模式仅排除本工具拥有的常规生成测试，手写错误和符号链接不作为可修复输出；两种抽取均不改变磁盘文件" {
+  about Backend
+  forall repairable: bool
+  forall linked: bool
+  forall sourceName: string generated "合法且非关键字的 Go 标识符，用于构造已改名的函数及旧引用"
+  manual "需要建立实际 Go 模块、旧生成文件和符号链接，调用两种抽取并逐字节比较磁盘内容"
+}
