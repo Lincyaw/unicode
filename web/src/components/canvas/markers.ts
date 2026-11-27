@@ -1,4 +1,4 @@
-import type { Point, Rect, Route } from './layout';
+import { pointAlong, type Point, type Rect, type Route } from './layout';
 
 /*
  * Where the labels and badges of a drawing's lines stand. Each is tried at its line's own label point, then at points
@@ -30,22 +30,6 @@ const CLEAR = 2;
 
 /** Where along its line a label is tried after the line's own label point: outward from the middle. */
 const FRACTIONS = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.12, 0.88];
-
-/** A point along the line at a fraction of its length, and whether the stretch it lies on runs down. */
-function pointAlong(points: Point[], fraction: number): { point: Point; down: boolean } {
-  const lengths = points.slice(1).map((point, index) => Math.hypot(point.x - (points[index]?.x ?? point.x), point.y - (points[index]?.y ?? point.y)));
-  let rest = lengths.reduce((sum, length) => sum + length, 0) * fraction;
-  for (const [index, length] of lengths.entries()) {
-    const start = points[index];
-    const end = points[index + 1];
-    if (start && end && (rest <= length || index === lengths.length - 1)) {
-      const t = length === 0 ? 0 : Math.min(1, rest / length);
-      return { point: { x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t }, down: start.x === end.x };
-    }
-    rest -= length;
-  }
-  return { point: points[0] ?? { x: 0, y: 0 }, down: false };
-}
 
 /** Whether a stretch of the line runs down at the point: the stretch the point lies on. */
 function runsDown(points: Point[], at: Point): boolean {

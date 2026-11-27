@@ -209,24 +209,24 @@ export interface Route {
   mid: Point;
 }
 
-/** The point half-way along a line through the points. */
-function halfway(points: Point[]): Point {
+/** The point a fraction of the way along a line through the points, and whether the stretch it lies on runs down. */
+export function pointAlong(points: Point[], fraction: number): { point: Point; down: boolean } {
   const lengths = points.slice(1).map((point, index) => Math.hypot(point.x - (points[index]?.x ?? point.x), point.y - (points[index]?.y ?? point.y)));
-  let rest = lengths.reduce((sum, length) => sum + length, 0) / 2;
+  let rest = lengths.reduce((sum, length) => sum + length, 0) * fraction;
   for (const [index, length] of lengths.entries()) {
     const start = points[index];
     const end = points[index + 1];
-    if (start && end && rest <= length) {
-      const t = length === 0 ? 0 : rest / length;
-      return { x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t };
+    if (start && end && (rest <= length || index === lengths.length - 1)) {
+      const t = length === 0 ? 0 : Math.min(1, rest / length);
+      return { point: { x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t }, down: start.x === end.x };
     }
     rest -= length;
   }
-  return points[0] ?? { x: 0, y: 0 };
+  return { point: points[0] ?? { x: 0, y: 0 }, down: false };
 }
 
 /** The line through the points, each joined to the next straight across or down; its label sits at `mid`, by default half-way along. */
-export function routeThrough(points: Point[], mid: Point = halfway(points)): Route {
+export function routeThrough(points: Point[], mid: Point = pointAlong(points, 0.5).point): Route {
   const [first, ...rest] = points;
   let d = first ? `M ${first.x} ${first.y}` : '';
   let at = first;
