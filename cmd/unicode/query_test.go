@@ -109,7 +109,8 @@ func isDesignContainerCandidate(c candidate) bool {
 // genQueryCommand draws a query command and its arguments for the repository:
 // node get, node refs, node search, slice, impact or view, with identities of
 // its graph's nodes and now and then one that is not, and now and then
-// --rev HEAD.
+// --rev HEAD. A search text goes after --, as a user writes free text, when it
+// starts with - and now and then otherwise; -- comes last, since it ends the flags.
 //
 //uc:generates cli.query-graph.command
 func genQueryCommand(files map[string]RepoFile) *rapid.Generator[[]string] {
@@ -132,7 +133,7 @@ func genQueryCommand(files map[string]RepoFile) *rapid.Generator[[]string] {
 			}
 			return out
 		}
-		var command []string
+		var command, free []string
 		switch rapid.IntRange(0, 5).Draw(t, "command") {
 		case 0:
 			command = []string{"node", "get", id("get", nil)}
@@ -147,7 +148,13 @@ func genQueryCommand(files map[string]RepoFile) *rapid.Generator[[]string] {
 			text := id("searched", nil)
 			runes := []rune(text)
 			start := rapid.IntRange(0, len(runes)).Draw(t, "start")
-			command = []string{"node", "search", string(runes[start:rapid.IntRange(start, len(runes)).Draw(t, "end")])}
+			searched := string(runes[start:rapid.IntRange(start, len(runes)).Draw(t, "end")])
+			command = []string{"node", "search"}
+			if strings.HasPrefix(searched, "-") || rapid.Bool().Draw(t, "endOfFlags?") {
+				free = []string{searched}
+			} else {
+				command = append(command, searched)
+			}
 			if rapid.Bool().Draw(t, "kind?") {
 				command = append(command, "--kind", string(rapid.SampledFrom(nodeKinds).Draw(t, "kind")))
 			}
@@ -182,6 +189,9 @@ func genQueryCommand(files map[string]RepoFile) *rapid.Generator[[]string] {
 		if rapid.IntRange(0, 4).Draw(t, "rev?") == 0 {
 			command = append(command, "--rev", "HEAD")
 		}
+		if free != nil {
+			command = append(append(command, "--"), free...)
+		}
 		return command
 	})
 }
@@ -210,6 +220,9 @@ func parseCommand(command []string) parsedCommand {
 			p.rev = true
 		case "--with-code":
 			p.withCode = true
+		case "--":
+			p.positional = append(p.positional, command[i+1:]...)
+			return p
 		default:
 			p.positional = append(p.positional, command[i])
 		}

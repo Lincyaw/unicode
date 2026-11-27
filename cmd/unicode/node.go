@@ -54,8 +54,11 @@ func nodeGetCommand(g *globalOptions, stdout io.Writer) *cobra.Command {
 func nodeSearchCommand(g *globalOptions, stdout io.Writer) *cobra.Command {
 	kind := ""
 	c := &cobra.Command{
-		Use:         "search <text>",
-		Short:       "Give the nodes whose identity or summary contains the text, sorted by identity",
+		Use:   "search <text>",
+		Short: "Give the nodes whose identity or summary contains the text, sorted by identity",
+		Long: "search gives the nodes whose identity or summary contains the text, sorted by identity; --kind keeps only\n" +
+			"the nodes of one kind. A text that starts with - reads as a flag, so write it after --, which ends the\n" +
+			"flags: unicode node search --kind case -- -0000c0e3.",
 		Args:        cobra.ExactArgs(1),
 		Annotations: queryAnnotations(),
 		RunE: func(_ *cobra.Command, args []string) error {
