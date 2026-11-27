@@ -31,6 +31,7 @@
 | `navigation.tsx` | 面包屑、标签行、页内分区链接、翻页 |
 | `content.tsx` | 标签、带说明的标题、分区标题、事实列表、关键数字、加载提示 |
 | `hint.tsx` | 悬浮说明：说明文字和标记的细节不直接写在页面上，悬停或聚焦时才显示 |
+| `icons.tsx` | 图标：Lucide 线条图标的三种尺寸与笔画，以及画图标的 `Icon` |
 | `resizer.tsx`、`storedSize.ts` | 读者自己调宽度的分栏：栏间的拖动条，以及记在浏览器里的宽度 |
 | `fullscreen.ts` | 工具型页面的全屏开关 |
 | `table.module.css` | 数据表的行与表头 |

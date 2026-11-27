@@ -60,7 +60,7 @@ export function FlowsSection({ entity }: { entity: Entity }) {
         <div key={flow} className={styles.row}>
           <Icon glyph={Workflow} size="small" />
           <NodeLink node={{ id: flow, title: relative(flow, scope) }} />
-          <span className={styles.trailing}><span className={styles.indexes}>{steps.map(step => <NodeLink key={step.id} node={step} tone="inherit" />)}</span></span>
+          <span className={styles.indexes}>{steps.map(step => <NodeLink key={step.id} node={step} tone="inherit" />)}</span>
         </div>
       ))}
     </Section>
