@@ -48,6 +48,8 @@ op attach(g: graph.Graph, reports: list<lang.RunReport>) -> Attached pure "按�
 
 op recordings(root: string, g: graph.Graph, cases: list<lang.CaseResult>) -> Recording "以规范格式规划 corpus 文件；录制名是输入摘要前八位，碰撞、不可回放输入或上限冲突均禁止写入"
 
+op applyRecordings(root: string, recording: Recording) -> list<diag.Diagnostic> "先预检全部写入与移除项，只发布本工具拥有的规范 corpus 文件，不跟随符号链接或改写声明用例；每文件安全写入，不承诺跨文件事务"
+
 property reduction-preserves-evidence postcondition "缩减保留声明与反例及全部覆盖，不因重复用例或顺序丢失证据" {
   about reduce
   forall sample: Sample generated "独立覆盖集合与声明、反例、覆盖用例组合；上限有时不足"
@@ -58,7 +60,7 @@ property reduction-preserves-evidence postcondition "缩减保留声明与反例
 }
 
 property recordings-are-replayable invariant "录制前冻结模型值，编码往返保持完整状态；规范文件可重新解析并生成同一输入；失败和损坏不写空结果" {
-  about recordings, shrink, save, read, attach
+  about recordings, applyRecordings, shrink, save, read, attach
   forall sample: Sample generated "整数、集合、记录、codec、替身脚本和错误输入，以及当前与陈旧结果"
   manual "准备模型编解码和真实文件边界，逐字节核对独立输入、失败复现与证据图，不用最终布尔值代替原始数据"
 }
