@@ -1,0 +1,37 @@
+/*
+ * Rows of a data table; each table names its columns with --columns, and a table that names none has one. A table
+ * whose columns need more than the page's width scrolls sideways inside itself, so the page never does.
+ */
+.table { display: grid; overflow-x: auto; overscroll-behavior-x: contain; }
+.row {
+  display: grid;
+  grid-template-columns: var(--columns, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: center;
+  min-height: 3.5rem;
+  padding: 0 var(--space-4);
+  border-bottom: var(--rule-hairline);
+  transition: background-color var(--duration-base);
+}
+.head { min-height: var(--space-10); border-top: var(--rule-hairline); }
+/* A column's name with the ⓘ that explains what the column's cells hold. */
+.hinted { display: flex; align-items: center; gap: var(--space-1); }
+/*
+ * A row that opens something does so from anywhere on it: its primary link stretches over the row, which takes the
+ * keyboard at the link, and the row's other links and buttons stay above the stretch. Nothing between the primary
+ * link and its row may be positioned or transformed, or the stretch stops there.
+ */
+.link { position: relative; isolation: isolate; cursor: pointer; }
+.link:hover { background: var(--bg-muted); }
+/* A row that takes focus itself draws its ring inside, where the table's scrolling cannot cut it off. */
+.row:focus-visible { outline-offset: calc(-1 * var(--size-border-thick)); }
+.primary::after { content: ""; position: absolute; inset: 0; z-index: 1; }
+/* A mark that explains itself on hover stays above the stretch too, so its title still shows. */
+.link :is(a, button):not(.primary), .link [title] { position: relative; z-index: 2; }
+.arrow { display: inline-block; color: var(--text-faint); transition: transform var(--duration-base), color var(--duration-base); }
+.link:hover .arrow { color: var(--text-main); transform: translateX(var(--space-1)); }
+
+@media (max-width: 760px) {
+  .row { padding: var(--space-3) 0; }
+  .head { display: none; }
+}

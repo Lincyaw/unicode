@@ -1,0 +1,41 @@
+/* The entity page: a document on the canvas, scrolled in its column. */
+.scroll { position: absolute; inset: 0; overflow: auto; }
+.page { display: grid; gap: var(--space-6); align-content: start; max-width: 45.5rem; padding: var(--space-6) var(--space-8) var(--space-12); }
+
+.head { display: grid; gap: var(--space-2); }
+.identity { display: flex; align-items: center; gap: var(--space-2); }
+.kindIcon { display: grid; color: var(--accent-brand); }
+.spacer { flex: 1; }
+.summary { font: var(--type-heading); font-weight: 600; }
+.origin { display: flex; flex-wrap: wrap; gap: var(--space-4); color: var(--text-faint); font: var(--type-mono); }
+.place { display: inline-flex; align-items: center; gap: var(--space-1); }
+.call { color: var(--accent-info); }
+
+.table { margin: 0 calc(-1 * var(--space-2)); }
+.headRow { min-height: var(--space-8); padding: 0 var(--space-2); border-top: 0; color: var(--text-faint); font: var(--type-micro); }
+.bodyRow { min-height: calc(var(--space-8) + var(--space-1)); padding: var(--space-2); overflow-wrap: anywhere; }
+.bodyRow[data-warn="true"] { color: var(--accent-warning); }
+.typeLink, .iconLink { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--accent-info); font: var(--type-code); }
+.plainLink { color: var(--text-main); }
+.cellLinks { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); min-width: 0; }
+
+.between { display: grid; grid-template-columns: repeat(5, max-content); gap: var(--space-4); align-items: center; }
+.column { display: grid; gap: var(--space-2); justify-items: start; }
+.center { display: grid; }
+.self { pointer-events: none; }
+.arrow { color: var(--text-faint); }
+.withBadge { display: inline-flex; align-items: center; gap: var(--space-1); }
+.chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+.flowRow { display: flex; align-items: center; gap: var(--space-2); min-height: var(--space-6); }
+.stepLine { color: var(--text-muted); font: var(--type-mono); }
+.property { display: grid; gap: var(--space-2); }
+
+/* The entity page's right pane. */
+.pane { display: grid; gap: var(--space-5); align-content: start; }
+.trailRow { display: flex; align-items: center; gap: var(--space-2); color: var(--accent-info); font: var(--type-code); }
+.trailRow[aria-current="page"] { color: var(--text-main); }
+.trailRow a:hover { text-decoration: underline; text-underline-offset: var(--space-px); }
+.changeRow { display: flex; align-items: center; gap: var(--space-2); color: var(--text-faint); }
+.changeRow .t-mono { color: var(--text-muted); }
+.changeWords { margin-left: auto; color: var(--text-main); font: var(--type-small); }

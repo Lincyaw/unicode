@@ -1,0 +1,86 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc", "jsx-a11y"],
+  "jsPlugins": ["./scripts/lint-rules.js"],
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "error",
+    "react/only-export-components": ["error", { "allowConstantExport": true }],
+    "curly": ["error", "all"],
+    "typescript/consistent-type-imports": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    // Tables are grids of divs with ARIA roles, so their rows lay out with CSS grid and stay keyboard-navigable as rows.
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "jsx-a11y/control-has-associated-label": "error",
+    "jsx-a11y/anchor-has-content": "error",
+    "jsx-a11y/anchor-is-valid": "error",
+    "jsx-a11y/alt-text": "error",
+    "jsx-a11y/aria-props": "error",
+    "jsx-a11y/aria-proptypes": "error",
+    "jsx-a11y/aria-role": "error",
+    "jsx-a11y/role-has-required-aria-props": "error",
+    "jsx-a11y/role-supports-aria-props": "error",
+    "jsx-a11y/no-redundant-roles": "error",
+    "react/button-has-type": "error",
+    "jsx-a11y/no-autofocus": "error",
+    "viewer/english-comments": "error"
+  },
+  "overrides": [
+    {
+      "files": ["src/*/**", "src/*.ts", "src/*.tsx"],
+      "rules": {
+        "no-restricted-imports": ["error", { "patterns": [{ "group": ["**/mocks/*", "!./mocks/browser"], "message": "The viewer reaches data only through the API client; the mock server answers its requests." }] }],
+        "no-restricted-globals": ["error", { "name": "fetch", "message": "The viewer reads the API through src/api/client.ts, which the interface types." }]
+      }
+    },
+    {
+      "files": ["src/components/**", "src/pages/**", "src/routes/**", "src/api/**", "src/main.tsx"],
+      "rules": { "viewer/words-from-terms": "error" }
+    },
+    {
+      "files": ["src/components/**", "src/pages/**"],
+      "rules": { "viewer/paths-from-routes": "error" }
+    },
+    {
+      "files": ["src/api/**"],
+      "rules": { "no-restricted-globals": "off" }
+    },
+    {
+      "files": ["src/mocks/**"],
+      "rules": {
+        "no-restricted-imports": ["error", { "patterns": [{ "group": ["../**", "!../api/**", "../api/client", "../api/types"], "message": "The mock server implements the interface: it imports only the generated schema and its own modules." }] }],
+        "no-restricted-globals": "off"
+      }
+    },
+    {
+      "files": ["src/ui/**"],
+      "rules": {
+        "no-restricted-imports": ["error", {
+          "patterns": [{ "group": ["**/api/**", "**/components/**", "**/mocks/*", "**/pages/**", "**/routes/**", "**/terms"], "message": "The design kit knows no domain: it is copied from aegis-bench-site and stays usable in any project." }]
+        }]
+      }
+    },
+    {
+      "files": ["src/routes/**"],
+      "rules": {
+        "no-restricted-imports": ["error", { "patterns": [{ "group": ["../**", "!../api/**", "../api/client"], "message": "An address is built from the interface's types alone: pages and components read the routes, and the routes read neither." }] }]
+      }
+    },
+    {
+      "files": ["src/components/**"],
+      "rules": {
+        "no-restricted-imports": ["error", {
+          "paths": [
+            { "name": "react-router", "importNames": ["useLocation", "useMatches", "useParams", "useSearchParams", "useNavigate"], "message": "A component does not read or change the address: the page reads it and passes down what the component shows and where its links lead." }
+          ],
+          "patterns": [
+            { "group": ["**/mocks/*"], "message": "The viewer reaches data only through the API client; the mock server answers its requests." },
+            { "group": ["**/api/client"], "message": "A component renders what its props give it: the page reads the data and passes it down." },
+            { "group": ["**/pages/**"], "message": "A component knows no page: pages compose components." }
+          ]
+        }]
+      }
+    }
+  ]
+}

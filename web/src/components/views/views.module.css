@@ -1,0 +1,121 @@
+.warningBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-px) var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--bg-warning-soft);
+  color: var(--accent-warning);
+  font: var(--type-micro);
+}
+.chipSlot { position: absolute; display: flex; }
+.chipSlot > :first-child { width: 100%; }
+.count { position: absolute; top: 50%; left: calc(100% + var(--space-2)); display: flex; align-items: center; gap: var(--space-1); transform: translateY(-50%); }
+.collapse { display: inline-flex; align-items: center; gap: var(--space-1); width: fit-content; height: fit-content; padding: var(--space-px) var(--space-2); border-radius: var(--radius-sm); background: var(--bg-info-soft); color: var(--accent-info); font: var(--type-micro); }
+.inlineLabel { margin-left: var(--space-px); }
+
+/* A file of the code view: a box of its types and functions, each with what it realizes. */
+.fileBox { position: relative; width: 100%; height: 100%; border: var(--rule-hairline); border-radius: var(--radius-md); background: var(--bg-page); }
+.fileBox[aria-current="true"] { border: var(--size-stroke) solid var(--accent-brand); background: var(--bg-brand-soft); }
+.fileHead { position: absolute; top: var(--space-3); left: var(--space-3); display: inline-flex; align-items: center; gap: var(--space-1); color: var(--text-faint); font: var(--type-mono); }
+.fileBox[aria-current="true"] .fileHead { color: var(--accent-brand); font: var(--type-code); }
+.fileRow { position: absolute; display: flex; align-items: center; gap: var(--space-6); }
+.rowChip { border-color: transparent; background: none; }
+.fileBox[aria-current="true"] .rowChip[aria-pressed="true"] { background: var(--bg-page); }
+.binding { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-px) var(--space-2); border-radius: var(--radius-sm); background: var(--bg-info-soft); color: var(--accent-info); font: var(--type-micro); white-space: nowrap; }
+.detailsCount { position: absolute; display: flex; align-items: center; gap: var(--space-1); color: var(--text-muted); font: var(--type-mono); }
+.coverage { position: absolute; display: grid; gap: var(--space-2); }
+.coverageHead { display: flex; align-items: center; gap: var(--space-1); color: var(--text-faint); font: var(--type-micro); }
+.coverageChips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+/* C4: cards with a summary and paths, the system's dashed boundary, and the operations labelling each edge. */
+.c4Card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-3);
+  border: var(--rule-emphasis);
+  border-radius: var(--radius-md);
+  background: var(--bg-page);
+  cursor: pointer;
+}
+.c4Card[data-external="true"] { border-style: dashed; }
+.c4Card[aria-pressed="true"] { border-color: var(--accent-brand); background: var(--bg-brand-soft); box-shadow: 0 0 0 calc(var(--size-stroke) - var(--size-hairline)) var(--accent-brand); }
+.c4Head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-1); }
+.c4Title { flex: 1; min-width: 0; font: var(--type-mono-strong); }
+.c4Summary { color: var(--text-main); font: var(--type-small); }
+.c4Path { color: var(--text-faint); font: var(--type-mono); }
+.boundary { position: relative; width: 100%; height: 100%; border: var(--size-hairline) dashed var(--border-emphasis); border-radius: var(--radius-lg); }
+.boundary[aria-pressed="true"] { border-color: var(--accent-brand); }
+.boundaryHead { position: absolute; top: var(--space-4); left: var(--space-4); display: inline-flex; align-items: center; gap: var(--space-2); font: var(--type-mono-strong); }
+.edgeLabel { padding: 0 var(--space-1); color: var(--text-faint); font: var(--type-mono); text-shadow: var(--shadow-text-halo); }
+
+/* Events: cards of steps and operations either side of an event's pill or an error's chip. */
+.columnHead { position: absolute; color: var(--text-faint); font: var(--type-micro); }
+.eventCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: var(--rule-emphasis);
+  border-radius: var(--radius-md);
+  background: var(--bg-page);
+  cursor: pointer;
+}
+.eventCard[aria-pressed="true"] { border-color: var(--accent-brand); background: var(--bg-brand-soft); }
+.eventHead { display: flex; align-items: center; gap: var(--space-2); font: var(--type-code); white-space: nowrap; }
+.eventSecond { display: flex; align-items: center; gap: var(--space-1); padding-left: var(--space-4); color: var(--text-muted); font: var(--type-mono); white-space: nowrap; }
+.eventPill { border-color: var(--ink-warn); border-radius: var(--radius-full); background: var(--bg-warn-soft); color: var(--ink-warn); }
+
+/* Flows: lifelines and their heads, messages, activations, fragments and the activity's boxes. */
+.laneHead {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 100%;
+  border: var(--rule-emphasis);
+  border-radius: var(--radius-sm);
+  background: var(--bg-page);
+  font: var(--type-code);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.laneHead[data-person="true"] { border-color: transparent; background: none; }
+.laneHead[data-external="true"] { border-style: dashed; }
+.laneHead[aria-pressed="true"] { border-color: var(--accent-brand); background: var(--bg-brand-soft); }
+.messageSlot { position: absolute; display: flex; align-items: center; overflow: visible; white-space: nowrap; }
+.stepLabel { display: inline-flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-1); border-radius: var(--radius-sm); color: var(--text-main); font: var(--type-code); white-space: nowrap; }
+.stepLabel:hover { background: var(--bg-muted); }
+.stepLabel[aria-pressed="true"] { background: var(--bg-brand-soft); color: var(--accent-brand); }
+.stepIndex { color: var(--text-faint); font: var(--type-mono); }
+.activation { position: absolute; border: var(--rule-emphasis); background: var(--bg-muted); }
+.fragment { position: absolute; border: var(--rule-emphasis); border-radius: var(--radius-sm); }
+.fragmentIndex { position: absolute; top: var(--space-2); left: calc(-1 * var(--space-6)); color: var(--text-faint); font: var(--type-mono); }
+.fragmentTag { background: var(--bg-muted); color: var(--text-muted); font: var(--type-small); }
+.fragmentTag .stepIndex { display: none; }
+.pill { display: inline-flex; align-items: center; gap: var(--space-1); height: calc(var(--space-6)); padding: 0 var(--space-2); border: var(--size-hairline) solid var(--ink-warn); border-radius: var(--radius-full); background: var(--bg-warn-soft); color: var(--ink-warn); font: var(--type-code); white-space: nowrap; }
+.diagnosticCard { z-index: 60; display: grid; gap: var(--space-2); max-width: 21rem; padding: var(--space-3) var(--space-4); font: var(--type-small); }
+.diagnosticHead { display: flex; align-items: center; gap: var(--space-2); }
+.diagnosticBody { display: grid; gap: var(--space-2); }
+.diagnosticCode { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--ink-warn); font: var(--type-micro); }
+
+.activityStep { position: absolute; display: flex; align-items: center; justify-content: center; border: var(--rule-emphasis); border-radius: var(--radius-sm); background: var(--bg-page); }
+.boxLabel { width: 100%; height: 100%; justify-content: center; }
+.activityBox { position: absolute; border: var(--rule-emphasis); border-radius: var(--radius-sm); background: var(--bg-panel); }
+.asyncBox { border-style: dashed; background: none; }
+.groupHead { position: absolute; top: var(--space-2); left: var(--space-2); }
+.asyncHead { position: absolute; top: var(--space-2); left: var(--space-3); display: flex; align-items: center; gap: var(--space-2); }
+.asyncHead .fragmentIndex { position: static; }
+.plainLabel { color: var(--text-main); }
+.startDot { position: absolute; border-radius: var(--radius-full); background: var(--text-main); }
+.endDot { position: absolute; border: var(--size-stroke) solid var(--text-main); border-radius: var(--radius-full); background: radial-gradient(var(--text-main) 0 40%, var(--bg-page) 45%); }
+.diamondSlot { position: absolute; display: grid; place-items: center; }
+.diamond { width: 70%; height: 70%; border: var(--size-stroke) solid var(--text-muted); background: var(--bg-page); transform: rotate(45deg); }
+.diamond[aria-pressed="true"] { border-color: var(--accent-brand); background: var(--bg-brand-soft); }
+.decisionIndex { position: absolute; display: flex; align-items: center; justify-content: flex-end; color: var(--text-faint); font: var(--type-mono); }

@@ -1,0 +1,160 @@
+/* Every clickable control is a pill, so it reads apart from the rectangular cards and panels. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: var(--rule-emphasis);
+  border-radius: var(--radius-full);
+  color: var(--text-main);
+  white-space: nowrap;
+  transition: var(--control-transition);
+}
+.pill:hover, .pill:is([aria-pressed="true"], [aria-current="true"], [aria-expanded="true"], [data-state="open"]) { background: var(--bg-muted); }
+
+/* A quiet control keeps the pill's shape and size but not its outline, its text muted until the pointer reaches it; a bar of them leaves its one outlined pill to stand out. */
+.quiet { border-color: transparent; color: var(--text-muted); }
+.quiet:is(:hover, [aria-expanded="true"]) { color: var(--text-main); }
+
+.large { height: var(--control-large); padding: 0 var(--space-5); font: var(--type-label); line-height: 1; }
+.medium { height: var(--control-medium); padding: 0 var(--space-4); font: var(--type-small); line-height: 1; }
+.small { height: var(--control-small); padding: 0 var(--space-2); gap: var(--space-1); font: var(--type-micro); line-height: 1; color: var(--text-muted); }
+.small:hover, .small[aria-current="true"] { color: var(--text-main); }
+
+.solid { border-color: transparent; background: var(--bg-inverted); color: var(--text-on-inverted); }
+.solid:hover { background: var(--bg-inverted); box-shadow: var(--shadow-glow); }
+.solid:disabled { box-shadow: none; opacity: .5; cursor: progress; }
+.solid::after { content: "→"; transition: transform var(--duration-slow) var(--ease-out); }
+.solid:hover::after { transform: translateX(var(--space-1)); }
+
+.copy { display: inline-flex; align-items: center; gap: var(--space-3); }
+.copied { display: inline-flex; align-items: center; gap: var(--space-1); }
+@keyframes draw-check { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.copied path { stroke-dasharray: 1; animation: draw-check var(--duration-slow) var(--ease-out) both; }
+
+.icon { width: var(--control-icon); height: var(--control-icon); padding: 0; }
+.icon.small { width: var(--control-small); height: var(--control-small); }
+.icon svg { transition: transform var(--duration-slow) var(--ease-out); }
+.icon:hover svg { transform: rotate(180deg); }
+/* An arrow keeps its direction and nudges the way it points; a picture with a right way up stays as it is. */
+.icon:hover svg[data-direction="left"] { transform: translateX(calc(-1 * var(--space-px))); }
+.icon:hover svg[data-direction="right"] { transform: translateX(var(--space-px)); }
+.icon:hover svg[data-direction="up-right"] { transform: translate(var(--space-px), calc(-1 * var(--space-px))); }
+.icon:hover svg[data-upright] { transform: none; }
+.icon:disabled { color: var(--text-faint); background: none; cursor: default; }
+.icon:disabled svg { transform: none; }
+
+/*
+ * The track is the control and its edge is the only line, so a choice never draws an edge of its own against it: the
+ * chosen one sits on a thumb that slides between choices, and the one under the pointer brightens. In a row of taller
+ * controls the track keeps its own height, so its edge still hugs the choices.
+ */
+.segmented { position: relative; display: inline-flex; align-self: center; padding: var(--space-px); border: var(--rule-hairline); border-radius: var(--radius-full); background: var(--bg-muted); transition: var(--control-transition); }
+.thumb { position: absolute; top: var(--space-px); left: 0; height: var(--control-small); border-radius: var(--radius-full); background: var(--bg-page); transition: transform var(--duration-slow) var(--ease-out), width var(--duration-slow) var(--ease-out); }
+/* Positioned after the thumb in source order, the choices paint above it. */
+.segment { position: relative; height: var(--control-small); padding: 0 var(--space-4); border-radius: var(--radius-full); color: var(--text-muted); font: var(--type-micro); line-height: 1; white-space: nowrap; transition: color var(--duration-base); }
+.segment:hover, .segment[aria-pressed="true"] { color: var(--text-main); }
+
+/*
+ * Captions sit over runs of choices: the track takes its columns from the captions' grid, so a run of choices widens
+ * to its caption when the caption is the wider, and every caption stays over its own choices. A caption wraps before
+ * the choices under it do, and only between words, so a Chinese name stays whole.
+ */
+.captioned { display: inline-grid; row-gap: var(--space-2); max-width: 100%; }
+.captioned > .segmented { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
+.caption { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); padding: 0 var(--space-1); text-align: center; word-break: keep-all; }
+
+.textField { display: grid; gap: var(--space-2); }
+.input { justify-content: flex-start; width: 100%; padding: 0 var(--space-5); background: none; font: var(--type-body); outline: 0; }
+.input:hover { background: none; }
+.input:focus { border-color: var(--text-faint); }
+
+/* A text area is a field, not a control, so it keeps a panel's corners. */
+.area { width: 100%; padding: var(--space-3) var(--space-4); border: var(--rule-emphasis); border-radius: var(--radius-lg); background: none; color: var(--text-main); font: var(--type-body); resize: vertical; outline: 0; transition: border-color var(--duration-base); }
+.area:focus { border-color: var(--text-faint); }
+
+.chip { gap: var(--space-2); color: var(--text-muted); }
+.chip[aria-pressed="true"] { color: var(--text-main); }
+.chip:disabled { cursor: default; opacity: .6; }
+.chipCheck { display: grid; place-items: center; width: var(--space-4); height: var(--space-4); border: var(--rule-emphasis); border-radius: var(--radius-full); color: transparent; transition: var(--control-transition); }
+.chip[aria-pressed="true"] .chipCheck { border-color: transparent; background: var(--bg-inverted); color: var(--text-on-inverted); }
+
+.field { justify-content: flex-start; width: 15rem; padding: 0 var(--space-4); color: var(--text-faint); }
+.field input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--text-main); font: inherit; }
+.field:focus-within { border-color: var(--text-faint); }
+
+/* Links underline in the ∞ gradient from the left as the pointer arrives. */
+.textLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: fit-content;
+  padding-bottom: var(--size-hairline);
+  color: var(--text-main);
+  background: var(--loop-gradient) left bottom / 0 var(--size-hairline) no-repeat;
+  transition: color var(--duration-base), background-size var(--duration-slow) var(--ease-out);
+}
+.textLink::after { content: "→"; transition: transform var(--duration-slow) var(--ease-out); }
+.textLink:hover { background-size: 100% var(--size-hairline); }
+.textLink:hover::after { transform: translateX(var(--space-1)); }
+
+/* A list's next page stays quiet until pointed at, and fades while it loads. */
+.more { color: var(--text-muted); transition: color var(--duration-base); }
+.more:hover { color: var(--text-main); }
+.more:disabled { color: var(--text-faint); cursor: progress; }
+
+.trigger { justify-content: space-between; gap: var(--space-3); min-width: 9.5rem; padding: 0 var(--space-3) 0 var(--space-4); }
+.chevron { display: grid; color: var(--text-faint); transition: transform var(--duration-slow) var(--ease-out), color var(--duration-base); }
+.trigger:hover .chevron, .trigger[data-state="open"] .chevron { color: var(--text-main); }
+.trigger[data-state="open"] .chevron { transform: rotate(180deg); }
+/* Without an outline to fill, a quiet select is as wide as its value and its chevron. */
+.trigger.quiet { min-width: 0; gap: var(--space-2); }
+
+/* The panel's corners stay concentric with the pill options inside its padding. */
+.menu {
+  z-index: 50;
+  min-width: var(--radix-select-trigger-width);
+  max-height: min(22.5rem, var(--radix-select-content-available-height));
+  padding: var(--space-2);
+  border: var(--size-hairline) solid var(--border-glass);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-glass-strong);
+  backdrop-filter: blur(var(--blur-glass));
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+  animation: menu-in var(--duration-base) var(--ease-out);
+}
+/* A popover approaches from its trigger's side and never zooms. */
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(calc(-1 * var(--space-1))); }
+}
+.options { display: grid; gap: var(--space-px); }
+.option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  height: var(--space-8);
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border-radius: var(--radius-full);
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  transition: background-color var(--duration-fast), color var(--duration-fast);
+}
+/* The highlight is the focus indicator, so the global focus ring stays off the options. */
+.option[data-highlighted] { background: var(--bg-muted); color: var(--text-main); }
+.option[data-state="checked"] { color: var(--text-main); font-weight: 500; }
+.check { display: grid; }
+.scroll { display: grid; place-items: center; height: var(--space-6); color: var(--text-faint); cursor: default; }
+.up { display: grid; transform: rotate(180deg); }
+
+/*
+ * A page's scope closes from its own chip. Chips that end a row keep to its far end; a chip that leads other controls
+ * stays beside them.
+ */
+.scope { gap: var(--space-2); }
+/* The first of the chips that end a row takes the free space, so the chips after it stay together beside it. */
+.scope:not(.scope + .scope, :has(~ :not(.scope))) { margin-left: auto; }
