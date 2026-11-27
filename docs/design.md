@@ -191,6 +191,8 @@ type Runner interface {
 
 M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通过。
 
+代码层 `op` 的 `attrs.body` 是去掉注释和出处的规范 Go AST 函数体；包括函数体中的闭包，接口抽象操作没有此属性。代码层 `type` 的 `attrs.declaration` 是同形规范类型声明，不含方法体。以新的空 `token.FileSet` 对 AST 节点作 `go/format` 打印，排版和位置不进入值。比较只改函数体的工作区时也必须改变操作内容哈希；顶层变量的赋值跟踪仍按现有模型，不扩大为运行证据。
+
 ## 6 生成与运行
 
 `unicode gen` 产生两类文件：骨架和生成文件。`unicode test` 运行生成的驱动。
@@ -512,7 +514,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 - **路径参数**：按工作目录解析，必须是根目录下 `design/` 或 `corpus/` 之内的文件或目录。路径不存在、不在这两个目录之内，或者找不到缺省的根目录，都是参数错误。目录会被遍历。`design/` 或 `corpus/` 中 `KindOf` 拒绝的文件给出诊断 `cli.not-a-design-file`，读不出的文件给出 `cli.unreadable-file`，符号链接给出诊断 `cli.symlink`，既不跟随读取，也不改写。全局参数也可以写在命令之后。
 - **改写与输出**：改写是原子的，并保留文件的权限，失败时不留下临时文件；写入或输出失败时退出码为 1。`cli.not-canonical` 的位置是与规范格式第一处不同的字节。`--help` 写到标准输出，退出码为 0。JSON 缩进两个空格。带 `--format json` 时，诊断是数据，写在标准输出的 JSON 中，标准错误只放日志；文本模式下，诊断写到标准错误，标准输出只列出改写了的或不是规范格式的文件。
 - **诊断的 JSON**：`{code, subject, path, line, column, message, fix}`。`code` 是稳定的诊断码，写作 `<组件>.<短横线名称>`，例如 `syntax.unexpected-token`；每条约束有一个或几个，修正办法不同的子规则各用一个。`syntax` 和 `cli` 的诊断，对象是文件的路径。
-- **生成的 JSON**：与 `lang.Generation` 同形，为 `{edits: [{path, content}], diagnostics: [...]}`；`content` 是 UTF-8 源码字符串，不是字节的 base64。`--dry-run` 返回同样的计划，不写文件。普通生成遇到诊断时不应用计划，文本模式只列生成文件的路径。已有文件缺少生成标记属于覆盖冲突，退出码为 5。
+- **生成的 JSON**：与 `lang.Generation` 同形，为 `{edits: [{path, content, createOnly}], diagnostics: [...]}`；`content` 是 UTF-8 源码字符串，不是字节的 base64。`--dry-run` 返回同样的计划，不写文件。普通生成遇到诊断时不应用计划，文本模式只列生成文件的路径。已有文件缺少生成标记属于覆盖冲突，退出码为 5。
 - **运行的 JSON**：与 `lang.RunReport` 同形，为 `{results: [{id, passed, accepted, rejected, observations, differences, diagnostics}], diagnostics}`，数组为空时也输出 `[]`。顶层诊断表示工具、观察、前提、域外输入、无有效执行或结果写入错误，退出码为 10；工具链不存在仍为 7。没有顶层诊断且有 `passed = false` 的性质时退出码为 11，其内部诊断定位 `ensure`、范围或后置表达式的失败。适配错误可另关联到该性质，但顶层必须保留。命令输出和 `.unicode/results.json` 均使用小驼峰字段，所有层级的诊断都使用上面的扁平 JSON 形状；`diag.Diagnostic` 的 JSON 编解码统一实现此形状。
 - **诊断码与规则**：违反规则的诊断码按规则列在 [language.md](language.md) 和 [model.md](model.md) 的附录 B 中。不属于任何规则的诊断码如下：
 
@@ -623,5 +625,3 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
 10. 通用的 Go 规则放进 engineering-conventions skill 的 `reference/go.md`；本仓库的 AGENTS.md 只留本仓库特有的规则。
 11. 设计中的泛型类型（类型参数）：M1 不支持。
 12. 记法的词汇是否允许项目扩展。目前内置、固定，以保证校验。
-
-M4 的增量检查按操作体的规范 Go AST 内容计算变化，忽略排版和源码位置；只改函数体也必须改变操作的内容哈希。生成载体的 model-type 不接受任意源码声明，也不作为新设计节点。
