@@ -60,17 +60,57 @@ func checkSkeletonsPreserveSource(t rapid.TB, sample SkeletonSample) {
 	for name, content := range files {
 		writeSkeletonFixture(t, root, name, []byte(content))
 	}
+	outside, err := os.MkdirTemp("", "unicode-skeleton-outside-")
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+	defer func() { _ = os.RemoveAll(outside) }()
+	writeSkeletonFixture(t, outside, "untouched.txt", []byte("outside data"))
+	if err = os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Fatal(err)
+		return
+	}
+	outsideBefore := skeletonTree(t, outside, true)
+	if _, err = loadPlannedGo(lang.GenPlan{Root: root, Roots: []string{"src"}}, []lang.Edit{{Path: "escape/missing/stub.go", Content: []byte("package escaped\n"), CreateOnly: true}}, false); err == nil {
+		t.Fatal("planning followed an outside directory symlink")
+	}
+	if after := skeletonTree(t, outside, true); !reflect.DeepEqual(outsideBefore, after) {
+		t.Fatal("planning through a directory symlink changed outside entries")
+	}
+	if sample.External && !sample.ExistingType {
+		writeSkeletonFixture(t, outside, "go.mod", []byte(files["go.mod"]))
+		if err = os.Remove(filepath.Join(root, "go.mod")); err != nil {
+			t.Fatal(err)
+			return
+		}
+		if err = os.Symlink(filepath.Join(outside, "go.mod"), filepath.Join(root, "go.mod")); err != nil {
+			t.Fatal(err)
+			return
+		}
+		writeSkeletonFixture(t, outside, "workspace-sentinel", []byte("outside workspace sentinel"))
+		if err = os.Symlink(filepath.Join(outside, "workspace-sentinel"), filepath.Join(root, "unicode-skeleton.go.work")); err != nil {
+			t.Fatal(err)
+			return
+		}
+		writeSkeletonFixture(t, root, "go.work", []byte("go 1.26.2\nuse .\n"))
+	}
+	outsideBefore = skeletonTree(t, outside, true)
 	g := skeletonFixtureGraph(t, sample)
 	attachSkeletonCode(t, root, &g)
 	plan := lang.GenPlan{Root: root, Roots: []string{"src"}, Graph: &g}
 	before := skeletonTree(t, root)
+	planningBefore := skeletonTree(t, root, true)
 	generated := NewBackend().Generate(plan)
 	if len(generated.Diagnostics) > 0 {
 		t.Fatalf("generation failed: %+v", generated.Diagnostics)
 		return
 	}
-	if after := skeletonTree(t, root); !reflect.DeepEqual(before, after) {
+	if after := skeletonTree(t, root, true); !reflect.DeepEqual(planningBefore, after) {
 		t.Fatal("planning skeletons changed repository entries")
+	}
+	if after := skeletonTree(t, outside, true); !reflect.DeepEqual(outsideBefore, after) {
+		t.Fatal("module or workspace planning changed outside entries")
 	}
 	count := 0
 	for _, edit := range generated.Edits {
@@ -122,6 +162,33 @@ func checkSkeletonsPreserveSource(t rapid.TB, sample SkeletonSample) {
 	if sample.External && !realized["gateway.charge"] {
 		t.Fatal("external client was not realized")
 	}
+	if sample.External {
+		installed := false
+		for _, edge := range strict.Fragment.Edges {
+			if edge.Kind == graph.EdgeKindSubstitutes && edge.To == "gateway.charge" {
+				installed = true
+				if len(edge.Attrs["nativeSignature"]) != 1 || edge.Attrs["nativeSignature"][0] != "true" {
+					t.Fatal("installer skeleton does not preserve the native client signature")
+				}
+			}
+		}
+		if !installed {
+			t.Fatal("external replies have no installer skeleton")
+		}
+	}
+	factory := false
+	for _, edge := range strict.Fragment.Edges {
+		if edge.Kind == graph.EdgeKindGenerates && edge.To == "demo.manual" {
+			for _, name := range edge.Attrs["symbols"] {
+				if name == "n" {
+					factory = true
+				}
+			}
+		}
+	}
+	if !factory {
+		t.Fatal("missing generated symbol factory was not bootstrapped")
+	}
 	if !methods["Bump"] || !methods["Read"] {
 		t.Fatalf("type methods are incomplete: %v", methods)
 	}
@@ -138,6 +205,9 @@ func checkSkeletonsPreserveSource(t rapid.TB, sample SkeletonSample) {
 	if len(replanned.Diagnostics) > 0 {
 		t.Fatalf("replanning failed: %+v", replanned.Diagnostics)
 		return
+	}
+	if after := skeletonTree(t, outside, true); !reflect.DeepEqual(outsideBefore, after) {
+		t.Fatal("replanning changed outside module or workspace data")
 	}
 	firstGenerated := map[string][]byte{}
 	for _, edit := range generated.Edits {
@@ -161,7 +231,7 @@ type skeletonEntry struct {
 	Modified         int64
 }
 
-func skeletonTree(t rapid.TB, root string) map[string]skeletonEntry {
+func skeletonTree(t rapid.TB, root string, directories ...bool) map[string]skeletonEntry {
 	out := map[string]skeletonEntry{}
 	err := filepath.WalkDir(root, func(name string, entry os.DirEntry, err error) error {
 		if err != nil {
@@ -177,13 +247,13 @@ func skeletonTree(t rapid.TB, root string) map[string]skeletonEntry {
 		}
 		// Directory mtimes change when the plan is applied; existing file and
 		// link contents/modes are the preservation oracle across application.
-		if entry.IsDir() {
+		if entry.IsDir() && (len(directories) == 0 || !directories[0]) {
 			return nil
 		}
 		item := skeletonEntry{Mode: info.Mode(), Modified: info.ModTime().UnixNano()}
 		if entry.Type()&os.ModeSymlink != 0 {
 			item.Target, err = os.Readlink(name)
-		} else {
+		} else if !entry.IsDir() {
 			var content []byte
 			content, err = os.ReadFile(name)
 			item.Contents = string(content)
@@ -251,6 +321,7 @@ func skeletonFixtureGraph(t rapid.TB, sample SkeletonSample) graph.Graph {
 	if sample.External {
 		add("gateway", graph.NodeKindActor, "external", "", nil)
 		add("gateway.charge", graph.NodeKindOp, "op", "gateway", map[string][]string{"signature": {"(n: int) -> int"}})
+		add("demo.gateway-works", graph.NodeKindProperty, "postcondition", "demo", map[string][]string{"symbols": {"n: int", "answers: replies<gateway.charge>"}, "call": {"gateway.charge(n)"}, "ensure": {"result >= 0"}})
 		if err := g.AddEdge(graph.Edge{Kind: graph.EdgeKindUses, From: "demo", To: "gateway", Source: graph.SourceDeclared}); err != nil {
 			t.Fatal(err)
 		}

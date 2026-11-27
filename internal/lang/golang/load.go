@@ -74,6 +74,7 @@ func loadPackagesOverlay(root string, srcRoots []string, forGeneration bool, ext
 	// checkout whose git status cannot be read.
 	cfg := &packages.Config{Mode: loadMode, Dir: abs, Tests: true, BuildFlags: []string{"-buildvcs=false"}}
 	if forGeneration {
+		cfg.BuildFlags = append(cfg.BuildFlags, "-mod=readonly")
 		cfg.Overlay, err = generatedTestOverlay(abs, srcRoots)
 		if err != nil {
 			return loaded{}, err

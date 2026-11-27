@@ -12,6 +12,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -34,6 +35,9 @@ func loadPlannedGo(plan lang.GenPlan, edits []lang.Edit, bootstrapCarriers bool)
 	root, roots := plan.Root, plan.Roots
 	abs, err := filepath.Abs(root)
 	if err != nil {
+		return loaded{}, err
+	}
+	if err := validatePlannedGoPaths(abs, edits); err != nil {
 		return loaded{}, err
 	}
 	extra := map[string][]byte{}
@@ -110,14 +114,24 @@ func copySkeletonModule(root, temp string) error {
 		if entry.IsDir() {
 			return os.MkdirAll(target, 0o700)
 		}
+		regular := entry.Type().IsRegular()
 		if entry.Type()&os.ModeSymlink != 0 {
-			link, err := os.Readlink(name)
+			info, err := os.Stat(name)
 			if err != nil {
 				return err
 			}
-			return os.Symlink(link, target)
+			if info.IsDir() {
+				// Directory links are retained for read-only package imports.
+				// Resolve their original destination before moving the link.
+				resolved, err := filepath.EvalSymlinks(name)
+				if err != nil {
+					return err
+				}
+				return os.Symlink(resolved, target)
+			}
+			regular = info.Mode().IsRegular()
 		}
-		if !entry.Type().IsRegular() {
+		if !regular {
 			return fmt.Errorf("cannot copy nonregular module entry %s for skeleton loading", rel)
 		}
 		src, err := os.Open(name)
@@ -140,7 +154,7 @@ func rewriteSkeletonModules(root, temp string) error {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() || entry.Name() != "go.mod" {
+		if !entry.Type().IsRegular() || entry.Name() != "go.mod" {
 			return nil
 		}
 		src, err := os.ReadFile(name)
@@ -236,13 +250,17 @@ func loadSkeletonMirror(root, temp string, roots []string) (loaded, error) {
 				}
 			}
 		}
-		name := filepath.Join(temp, "unicode-skeleton.go.work")
-		if err = os.WriteFile(name, modfile.Format(parsed.Syntax), 0o600); err != nil {
+		file, err := os.CreateTemp(temp, "unicode-skeleton-*.go.work")
+		if err != nil {
 			return loaded{}, err
 		}
-		env = append(env, "GOWORK="+name)
+		_, writeErr := file.Write(modfile.Format(parsed.Syntax))
+		if err = errors.Join(writeErr, file.Close()); err != nil {
+			return loaded{}, err
+		}
+		env = append(env, "GOWORK="+file.Name())
 	}
-	cfg := &packages.Config{Mode: loadMode, Dir: temp, Tests: true, Env: env, BuildFlags: []string{"-buildvcs=false"}}
+	cfg := &packages.Config{Mode: loadMode, Dir: temp, Tests: true, Env: env, BuildFlags: []string{"-buildvcs=false", "-mod=readonly"}}
 	cfg.ParseFile = func(set *token.FileSet, name string, source []byte) (*ast.File, error) {
 		rel, err := filepath.Rel(temp, name)
 		if err == nil && filepath.IsLocal(rel) {
@@ -325,6 +343,41 @@ func addSkeletonCarriers(plan lang.GenPlan, edits []lang.Edit, extra map[string]
 			}
 		}
 		extra[name] = source
+	}
+	return nil
+}
+
+// validatePlannedGoPaths runs before any temporary mirror writes. Copying a
+// source symlink is harmless, but no planned path may traverse one: otherwise
+// writing through a copied absolute link could change the original repository.
+func validatePlannedGoPaths(root string, edits []lang.Edit) error {
+	for _, edit := range edits {
+		if !filepath.IsLocal(edit.Path) || edit.Path == "." || strings.ContainsAny(edit.Path, "\\\x00") || path.Clean(edit.Path) != edit.Path {
+			return fmt.Errorf("the planned path %q is not a clean relative repository file", edit.Path)
+		}
+		parts := strings.Split(edit.Path, "/")
+		name := root
+		for i := -1; i < len(parts); i++ {
+			if i >= 0 {
+				name = filepath.Join(name, parts[i])
+			}
+			info, err := os.Lstat(name)
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("the planned path %q traverses a symbolic link at %s", edit.Path, name)
+			}
+			if i < len(parts)-1 && !info.IsDir() {
+				return fmt.Errorf("the planned path %q has a non-directory parent %s", edit.Path, name)
+			}
+			if i == len(parts)-1 && !info.Mode().IsRegular() {
+				return fmt.Errorf("the planned target %q is not a regular file", edit.Path)
+			}
+		}
 	}
 	return nil
 }

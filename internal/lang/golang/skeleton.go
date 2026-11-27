@@ -6,6 +6,7 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"maps"
 	"os"
 	"path"
@@ -57,13 +58,7 @@ func prepareSkeletons(plan lang.GenPlan) (lang.GenPlan, loaded, []lang.Edit, []d
 		}
 	}
 	edits := p.edits()
-	for _, edit := range edits {
-		if _, err := os.Lstat(filepath.Join(plan.Root, filepath.FromSlash(edit.Path))); err == nil {
-			p.diagnostics = append(p.diagnostics, diag.Diagnostic{Code: "lang.golang.skeleton-failed", Subject: edit.Path, Position: diag.Position{Path: edit.Path, Line: 1, Column: 1}, Message: "the create-only skeleton target already exists", Fix: "restore its intended binding or move the conflicting file before rebuilding the generation plan"})
-		} else if !os.IsNotExist(err) {
-			p.diagnostics = append(p.diagnostics, runDiagnostic("lang.golang.skeleton-failed", err.Error(), "make prospective skeleton paths readable before generation"))
-		}
-	}
+	p.checkDestinations(edits)
 	if len(p.diagnostics) > 0 {
 		return plan, loaded{}, nil, p.diagnostics
 	}
@@ -77,35 +72,157 @@ func prepareSkeletons(plan lang.GenPlan) (lang.GenPlan, loaded, []lang.Edit, []d
 	if err != nil {
 		return plan, loaded{}, nil, []diag.Diagnostic{runDiagnostic("lang.golang.generate-failed", err.Error(), "make the handwritten packages and planned skeleton declarations load before generation")}
 	}
-	if len(edits) == 0 {
+	if len(edits) == 0 && len(p.installerTargets()) == 0 {
 		return plan, l, nil, nil
 	}
+	plan, ds := linkSkeletonGraph(plan, l)
+	if len(ds) > 0 {
+		return plan, loaded{}, nil, ds
+	}
+	installers := p.installerEdits(plan, l)
+	p.checkDestinations(installers)
+	if len(p.diagnostics) > 0 {
+		return plan, loaded{}, nil, p.diagnostics
+	}
+	if len(installers) > 0 {
+		edits = append(edits, installers...)
+		l, err = loadWithSkeletons(plan, edits)
+		if err != nil {
+			return plan, loaded{}, nil, []diag.Diagnostic{runDiagnostic("lang.golang.generate-failed", err.Error(), "make native client and installer skeleton signatures compile before generation")}
+		}
+		plan, ds = linkSkeletonGraph(plan, l)
+		if len(ds) > 0 {
+			return plan, loaded{}, nil, ds
+		}
+	}
+	return plan, l, edits, nil
+}
+func (p *skeletonPlanner) checkDestinations(edits []lang.Edit) {
+	for _, edit := range edits {
+		if _, err := os.Lstat(filepath.Join(p.plan.Root, filepath.FromSlash(edit.Path))); err == nil {
+			p.diagnostics = append(p.diagnostics, diag.Diagnostic{Code: "lang.golang.skeleton-failed", Subject: edit.Path, Position: diag.Position{Path: edit.Path, Line: 1, Column: 1}, Message: "the create-only skeleton target already exists", Fix: "restore its intended binding or move the conflicting file before rebuilding the generation plan"})
+		} else if !os.IsNotExist(err) {
+			p.diagnostics = append(p.diagnostics, runDiagnostic("lang.golang.skeleton-failed", err.Error(), "make prospective skeleton paths readable before generation"))
+		}
+	}
+}
+func linkSkeletonGraph(plan lang.GenPlan, l loaded) (lang.GenPlan, []diag.Diagnostic) {
 	g := graph.NewGraph()
 	var fragment graph.Fragment
+	nodes := map[string]graph.Node{}
 	for _, n := range plan.Graph.Nodes() {
+		nodes[n.Id] = n
 		if n.Layer == graph.LayerDesign {
 			fragment.Nodes = append(fragment.Nodes, n)
 		}
 	}
 	for _, e := range plan.Graph.Edges() {
-		if p.nodes[e.From].Layer == graph.LayerDesign && p.nodes[e.To].Layer == graph.LayerDesign {
+		if nodes[e.From].Layer == graph.LayerDesign && nodes[e.To].Layer == graph.LayerDesign {
 			fragment.Edges = append(fragment.Edges, e)
 		}
 	}
-	if err = g.AddFragment(fragment); err != nil {
-		return plan, loaded{}, nil, []diag.Diagnostic{runDiagnostic("lang.golang.generate-failed", err.Error(), "correct the design graph before planning skeletons")}
+	if err := g.AddFragment(fragment); err != nil {
+		return plan, []diag.Diagnostic{runDiagnostic("lang.golang.generate-failed", err.Error(), "correct the design graph before planning skeletons")}
 	}
 	extracted := extract(l)
-	if err = g.AddFragment(extracted.Fragment); err != nil {
-		return plan, loaded{}, nil, []diag.Diagnostic{runDiagnostic("lang.golang.generate-failed", err.Error(), "give planned declarations distinct bindings")}
+	if err := g.AddFragment(extracted.Fragment); err != nil {
+		return plan, []diag.Diagnostic{runDiagnostic("lang.golang.generate-failed", err.Error(), "give planned declarations distinct bindings")}
 	}
 	ds := append(extracted.Diagnostics, g.Derive()...)
-	if len(ds) > 0 {
-		return plan, loaded{}, nil, ds
-	}
 	plan.Graph = &g
-	return plan, l, edits, nil
+	return plan, ds
 }
+func (p *skeletonPlanner) installerTargets() []string {
+	bound := map[string]bool{}
+	for _, e := range p.plan.Graph.Edges() {
+		if e.Kind == graph.EdgeKindSubstitutes {
+			bound[e.To] = true
+		}
+	}
+	targets := map[string]bool{}
+	for _, n := range p.plan.Graph.Nodes() {
+		if n.Layer != graph.LayerDesign || (n.Kind != graph.NodeKindProperty && n.Kind != graph.NodeKindFlow) {
+			continue
+		}
+		for _, symbol := range n.Attrs["symbols"] {
+			_, model, _ := strings.Cut(symbol, ": ")
+			kind, args := ucSplitType(strings.TrimSuffix(model, " generated"))
+			if kind == "replies" && len(args) == 1 && !bound[args[0]] {
+				targets[args[0]] = true
+			}
+		}
+	}
+	return slices.Sorted(maps.Keys(targets))
+}
+func (p *skeletonPlanner) installerEdits(plan lang.GenPlan, l loaded) []lang.Edit {
+	var edits []lang.Edit
+	functions := map[string]nativeDeclaration{}
+	for _, pkg := range l.packages {
+		for _, obj := range pkg.TypesInfo.Defs {
+			if fn, ok := obj.(*types.Func); ok {
+				functions[funcID(fn)] = nativeDeclaration{obj: fn, pkg: pkg}
+			}
+		}
+	}
+	for _, target := range p.installerTargets() {
+		var clients []nativeDeclaration
+		for _, edge := range plan.Graph.Edges() {
+			if edge.Kind == graph.EdgeKindRealizes && edge.To == target {
+				if client, ok := functions[edge.From]; ok {
+					clients = append(clients, client)
+				}
+			}
+		}
+		if len(clients) != 1 {
+			p.fail(p.nodes[target], "an installer has no unique native client signature", "realize exactly one external free function before generating its installer")
+			continue
+		}
+		client := clients[0]
+		fn := client.obj.(*types.Func)
+		if fn.Signature().Recv() != nil {
+			p.fail(p.nodes[target], "the external client is a method", "realize an external direct operation with a free function")
+			continue
+		}
+		imports := map[string]string{}
+		signature := types.TypeString(fn.Type(), func(pkg *types.Package) string {
+			if pkg.Path() == client.pkg.Types.Path() {
+				return ""
+			}
+			if alias := imports[pkg.Path()]; alias != "" {
+				return alias
+			}
+			alias := "skeletonpkg" + strconv.Itoa(len(imports))
+			imports[pkg.Path()] = alias
+			return alias
+		})
+		owner := p.nodes[p.parents[target]]
+		name := "install" + upperCamel(lastName(owner.Id)) + upperFirst(lastName(target)) + "Double"
+		var src strings.Builder
+		fmt.Fprintf(&src, "// Unicode skeleton. Implement the declarations in this file.\npackage %s\n", client.pkg.Name)
+		if len(imports) > 0 {
+			src.WriteString("import (\n")
+			for _, key := range slices.Sorted(maps.Keys(imports)) {
+				fmt.Fprintf(&src, "%s %s\n", imports[key], strconv.Quote(key))
+			}
+			src.WriteString(")\n")
+		}
+		fmt.Fprintf(&src, "//uc:substitutes %s\nfunc %s(replacement %s) func() { panic(%s) }\n", target, name, signature, strconv.Quote(unimplemented))
+		content, err := format.Source([]byte(src.String()))
+		if err != nil {
+			p.fail(p.nodes[target], err.Error(), "correct the external client signature before generating its installer")
+			continue
+		}
+		files := filesUnder(l.root, client.pkg)
+		if len(files) == 0 {
+			p.fail(p.nodes[target], "the native client package has no source file", "place the client in an owned source directory")
+			continue
+		}
+		dir := path.Dir(files[0].rel)
+		edits = append(edits, lang.Edit{Path: path.Join(dir, skeletonFileName("substitutes:"+target, true)), Content: content, CreateOnly: true})
+	}
+	return edits
+}
+
 func (p *skeletonPlanner) fail(n graph.Node, message, fix string) {
 	p.diagnostics = append(p.diagnostics, diag.Diagnostic{Code: "lang.golang.skeleton-failed", Subject: n.Id, Position: n.Origin, Message: message, Fix: fix})
 }
