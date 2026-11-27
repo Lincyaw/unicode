@@ -9,7 +9,8 @@ const STEP_EDGES = ['contains', 'from', 'calls', 'emits', 'handles'];
 
 /**
  * A flow's lifelines in the order they first appear, each step's sender before its receiver, then its steps in their
- * order; the edges that place the steps: contains, from, calls, emits and handles.
+ * order; the edges that place the steps: contains, from, calls, emits and handles, and the subscribes edge of the
+ * operation an async step runs, which ties it to the event that triggers it.
  */
 export function flowDrawing(input: string): Drawing {
   if (raw(input).kind !== 'flow') {
@@ -26,7 +27,11 @@ export function flowDrawing(input: string): Drawing {
   }
   const nodes: ViewNode[] = [...lifelines.map(id => viewNode(id)), ...steps.map(id => viewNode(id))];
   const edges = [input, ...steps].flatMap(id => outgoing(id).filter(each => STEP_EDGES.includes(each.kind) && (each.kind !== 'contains' || raw(each.to).kind === 'step')));
-  return { nodes, edges: edges.map(each => viewEdge(each)) };
+  const triggers = steps.filter(id => raw(id).form === 'async').flatMap(id => {
+    const op = targetOf(id);
+    return op === undefined ? [] : outgoing(op, 'subscribes');
+  });
+  return { nodes, edges: [...edges, ...triggers].map(each => viewEdge(each)) };
 }
 
 /** Every design node under a container, the container excluded. */

@@ -1,0 +1,46 @@
+.canvas { position: absolute; inset: 0; }
+.viewport { position: absolute; inset: 0; overflow: auto; cursor: grab; }
+.viewport:active { cursor: grabbing; }
+.sizer { position: relative; }
+.drawing { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.placed { position: absolute; }
+.about { position: absolute; top: var(--space-5); left: var(--space-6); display: flex; }
+.aboutBelow { position: absolute; bottom: var(--space-10); left: var(--space-6); display: flex; }
+.toolbar { position: absolute; top: var(--space-4); right: var(--space-6); }
+.footer { position: absolute; bottom: var(--space-8); left: var(--space-6); display: flex; align-items: center; gap: var(--space-1); color: var(--text-faint); }
+
+.zoom {
+  position: absolute;
+  right: var(--space-5);
+  bottom: var(--space-8);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  border: var(--rule-emphasis);
+  border-radius: var(--radius-full);
+  background: var(--bg-page);
+  color: var(--text-main);
+}
+.zoom button { display: grid; place-items: center; color: var(--text-muted); transition: color var(--duration-fast); }
+.zoom button:hover { color: var(--text-main); }
+.zoom span { min-width: 2.25rem; text-align: center; }
+
+.lines { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
+.line { fill: none; stroke: var(--text-muted); stroke-width: var(--size-hairline); }
+.line[data-tone="dashed"] { stroke-dasharray: 4 3; }
+.line[data-tone="warning"] { stroke: var(--accent-warning); stroke-dasharray: 4 3; }
+.line[data-tone="brand"] { stroke: var(--accent-brand); stroke-width: var(--size-stroke); stroke-dasharray: 4 3; }
+.line[data-tone="brandSolid"] { stroke: var(--accent-brand); stroke-width: var(--size-stroke); }
+.line[data-tone="event"] { stroke: var(--ink-warn); stroke-dasharray: 3 3; }
+.line[data-tone="faint"] { stroke: var(--text-faint); stroke-dasharray: 2 3; }
+.arrow { fill: none; stroke: var(--text-muted); stroke-width: var(--size-hairline); stroke-linecap: round; stroke-linejoin: round; }
+.arrow[data-tone="warning"] { stroke: var(--accent-warning); }
+.arrow[data-tone="brand"], .arrow[data-tone="brandSolid"] { stroke: var(--accent-brand); stroke-width: var(--size-stroke); }
+.arrow[data-tone="event"] { stroke: var(--ink-warn); }
+.arrow[data-tone="faint"] { stroke: var(--text-faint); }
+.hit { fill: none; stroke: transparent; stroke-width: var(--space-3); pointer-events: stroke; cursor: pointer; }
+
+.marker { position: absolute; display: flex; align-items: center; gap: var(--space-1); transform: translate(-50%, -50%); white-space: nowrap; }
+.marker[data-side="right"] { transform: translate(var(--space-2), -50%); }
+.marker[data-side="above"] { transform: translate(-50%, calc(-100% - var(--space-1))); }

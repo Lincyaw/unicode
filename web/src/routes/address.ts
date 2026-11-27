@@ -125,6 +125,11 @@ export function requestedView(request: ViewRequest, base: string | undefined): V
   };
 }
 
+/** Whether a selection names an edge, written `kind from to`, rather than a node. */
+export function isEdgeKey(select: string): boolean {
+  return select.includes(' ');
+}
+
 /** The same view selecting another node or edge; nothing else changes. */
 export function selecting(address: ViewAddress, select: string | undefined): ViewAddress {
   return { ...address, select };

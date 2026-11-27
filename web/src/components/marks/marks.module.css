@@ -1,0 +1,55 @@
+/* A status dot; a stub is hollow, so the status does not rest on colour alone. */
+.dot { display: inline-block; flex: none; width: var(--size-dot); height: var(--size-dot); border-radius: var(--radius-full); }
+.dot[data-status="verified"] { background: var(--accent-success); }
+.dot[data-status="missing"] { background: var(--ink-warn); }
+.dot[data-status="contradicted"] { background: var(--accent-warning); }
+.dot[data-status="stub"] { border: var(--size-stroke) solid var(--text-faint); }
+
+/* A tag: a label, a count or a link (the prototype's tag). */
+.badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  width: fit-content;
+  padding: var(--space-px) var(--space-2);
+  border-radius: var(--radius-sm);
+  font: var(--type-micro);
+  white-space: nowrap;
+}
+.badge[data-tone="neutral"] { background: var(--bg-muted); color: var(--text-muted); }
+.badge[data-tone="warning"] { background: var(--bg-warning-soft); color: var(--accent-warning); }
+.badge[data-tone="success"] { background: var(--bg-success-soft); color: var(--accent-success); }
+.badge[data-tone="info"] { background: var(--bg-info-soft); color: var(--accent-info); }
+.badge[data-tone="caution"] { background: var(--bg-warn-soft); color: var(--ink-warn); }
+a.badge { transition: box-shadow var(--duration-fast); }
+a.badge:hover { box-shadow: inset 0 0 0 var(--size-hairline) currentcolor; }
+.mono { font: var(--type-mono); }
+
+/* A node as a chip (the prototype's node chip): default, selected, detail (dashed) and folded (muted). */
+.chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: var(--rule-emphasis);
+  border-radius: var(--radius-sm);
+  background: var(--bg-page);
+  color: var(--text-main);
+  font: var(--type-code);
+  text-align: left;
+  white-space: nowrap;
+  transition: border-color var(--duration-fast), background-color var(--duration-fast);
+}
+.chip:hover { border-color: var(--text-faint); }
+.chip[data-state="detail"] { border-style: dashed; background: none; color: var(--text-faint); }
+.chip[data-state="folded"] { border-color: var(--border-hairline); background: var(--bg-muted); color: var(--text-muted); }
+.chip[aria-pressed="true"] {
+  border-color: var(--accent-brand);
+  background: var(--bg-brand-soft);
+  box-shadow: 0 0 0 calc(var(--size-stroke) - var(--size-hairline)) var(--accent-brand);
+  font: var(--type-mono-strong);
+}
+.chipLabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

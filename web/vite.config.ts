@@ -8,7 +8,9 @@ import { defineConfig } from 'vite';
 export const SERVE_MODE = 'serve';
 export const DEFAULT_SERVE_ADDRESS = 'http://127.0.0.1:7090';
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ command, mode }) => ({
   plugins: [react()],
+  // public/ holds only the mock's service worker, which a build for unicode serve leaves out.
+  publicDir: command === 'serve' ? 'public' : false,
   server: mode === SERVE_MODE ? { proxy: { '/api': process.env.UNICODE_SERVE ?? DEFAULT_SERVE_ADDRESS } } : {},
 }));

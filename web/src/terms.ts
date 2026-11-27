@@ -92,6 +92,7 @@ export const SECTIONS = {
   code: '代码',
   views: '相关视图',
   signature: '签名',
+  signatureTypes: '签名中的类型',
   calls: '调用',
   caller: '调用方',
   callee: '被调用方',
@@ -269,6 +270,7 @@ export const CONTROLS = {
   level: '层级',
   linesUnit: '行',
   colon: '：',
+  none: '—',
 } as const;
 
 /** The explanations behind the ⓘ marks; the pages show data only (CLAUDE.md principle 10). */
@@ -309,5 +311,6 @@ export const ABOUT = {
 
 export const PROBLEM_WORDS = {
   title: '请求被拒绝',
+  failed: '页面未能绘制',
   loading: '正在载入',
 } as const;
