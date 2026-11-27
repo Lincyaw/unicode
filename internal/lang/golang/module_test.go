@@ -138,11 +138,12 @@ type gfield struct {
 }
 
 type gsig struct {
-	pkg     *gpkg // where the method or function is declared
-	name    string
-	params  []gparam
-	results []*gexpr
-	doc     []binding // an interface's method's
+	pkg         *gpkg // where the method or function is declared
+	name        string
+	params      []gparam
+	results     []*gexpr
+	resultNames []string
+	doc         []binding // an interface's method's
 }
 
 type gparam struct {
