@@ -118,7 +118,8 @@ type RepoFile struct {
 	Mode    int
 }
 
-// symlinkMode is the mode of every symbolic link on Linux.
+// symlinkMode marks a generated symbolic link. Predicates observe its actual
+// permissions after the operating system creates it.
 const symlinkMode = int(os.ModeSymlink | 0o777)
 
 func isSymlink(f RepoFile) bool { return os.FileMode(f.Mode)&os.ModeSymlink != 0 }
@@ -146,12 +147,17 @@ func genLink(t *rapid.T, link string, files map[string]RepoFile) RepoFile {
 	return RepoFile{Content: rapid.SampledFrom(targets).Draw(t, "target"), Mode: symlinkMode}
 }
 
+// genFormatFiles draws the files of the format-files flow.
+//
+//uc:generates cli.format-files.files
+func genFormatFiles() *rapid.Generator[map[string]RepoFile] {
+	return genFiles(fileModes)
+}
+
 // genFiles draws the design and corpus files of a repository, always with a
 // design/system.uc, each with permission bits among modes, and now and then
 // a symbolic link among them. No other directory of the repository holds a
 // design/system.uc, which would make it the root of a repository of its own.
-//
-//uc:generates cli.format-files.files
 func genFiles(modes []int) *rapid.Generator[map[string]RepoFile] {
 	return rapid.Custom(func(t *rapid.T) map[string]RepoFile {
 		files := map[string]RepoFile{"design/system.uc": genRepoFile(t, "design/system.uc", modes)}
@@ -506,6 +512,7 @@ func checkFlowFormatFiles(t rapid.TB, files map[string]RepoFile, check bool, tar
 	jsonRoot, textRoot := writeRepo(t, files), writeRepo(t, files)
 	defer removeAll(t, filepath.Dir(jsonRoot))
 	defer removeAll(t, filepath.Dir(textRoot))
+	files = readRepo(t, jsonRoot)
 	// run runs fmt on the repository at root from the working directory at,
 	// with the root and the path arguments written relative to it.
 	run := func(root string, options ...string) (int, string, string) {
