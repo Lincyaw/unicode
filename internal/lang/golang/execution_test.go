@@ -32,6 +32,14 @@ func genExecutionSample() *rapid.Generator[ExecutionSample] {
 type executionCounter struct{ Value, Calls, FailAt int }
 type executionFailure struct{ Attempt int }
 
+// executionReturnedItem keeps implementation data outside its modeled fields.
+type executionReturnedItem struct {
+	Value int
+	fee   int
+}
+
+func (item *executionReturnedItem) Total() int { return item.Value + item.fee }
+
 func (f executionFailure) Error() string { return "attempt " + strconv.Itoa(f.Attempt) }
 func (c *executionCounter) Apply(delta int) error {
 	attempt := c.Calls
@@ -136,6 +144,20 @@ func checkExecutesSequencesAndFlows(t rapid.TB, sample ExecutionSample) {
 	}
 }
 func checkExecutionPurity(t rapid.TB, sample ExecutionSample, initial int) {
+	// Normal call results keep their actual native receiver so pure methods can
+	// use private implementation data while modeled fields remain frozen values.
+	fee := len(sample.Deltas) + 1
+	returnedCalls := 0
+	returnedSpec := &ucContract{ID: "execution.returned-value", Path: "design/execution.uc", Types: map[string]ucType{"Item": {Form: "record", Fields: []ucField{{"value", "Value", "int"}}}}, Operations: map[string]ucOperation{}, Call: runtimeExpr(t, "makeItem()"), Ensures: []*ucExpr{runtimeExpr(t, "result.value == "+strconv.Itoa(initial)), runtimeExpr(t, "result.total() == "+strconv.Itoa(initial+fee))}}
+	returnedSpec.Operations["makeItem"] = ucOperation{Name: "makeItem", Result: "Item", Function: reflect.ValueOf(func() *executionReturnedItem {
+		returnedCalls++
+		return &executionReturnedItem{Value: initial, fee: fee}
+	})}
+	returnedSpec.Operations["Item.total"] = ucOperation{Name: "Item.total", Owner: "Item", GoName: "Total", Result: "int", Pure: true}
+	returned := ucExecute(returnedSpec, nil, false)
+	if returnedCalls != 1 || returned.Infrastructure || len(returned.Diagnostics) > 0 {
+		t.Fatalf("a normal returned value lost its real receiver: calls=%d outcome=%+v", returnedCalls, returned)
+	}
 	counter := &executionCounter{Value: initial}
 	calls := 0
 	spec := &ucContract{ID: "execution.pure", Path: "design/execution.uc", Line: 1, Column: 1, Symbols: []ucSymbol{{"counter", "Counter"}}, Types: map[string]ucType{"Counter": {Form: "object", Fields: []ucField{{"value", "Value", "int"}}}}, Operations: map[string]ucOperation{}, Call: runtimeExpr(t, "touch(counter)"), Ensures: []*ucExpr{runtimeExpr(t, "true")}}

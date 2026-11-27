@@ -1817,7 +1817,10 @@ func (env *ucEnvironment) captureCall(op ucOperation, values []reflect.Value, ex
 		}
 	}
 	if env.failure == nil && len(values) > 0 {
-		env.result = ucDetach(ucResultValue(values[0], op.Result, env.spec.Types))
+		env.result = ucResultValue(values[0], op.Result, env.spec.Types)
+		if op.Pure {
+			env.result = ucDetach(env.result)
+		}
 	}
 }
 func ucExecute(s *ucContract, inputs map[string]reflect.Value, explore bool) (out ucOutcome) {
