@@ -36,6 +36,14 @@ type Sample record "独立给出用例和覆盖集合，包含声明、反例、
   field required: list<string>
 }
 
+type AttachmentSample record "当前图、真实报告及独立标记的有效输入和业务反例；包含旧摘要、环境错误和同输入别名" {
+  field graph: graph.Graph
+  field reports: list<lang.RunReport>
+  field freshCount: int
+  field currentCases: list<string>
+  field failedChecks: list<string>
+}
+
 op reduce(cases: list<lang.CaseResult>, limit: int) -> Reduction pure "保留全部声明与反例，按新增覆盖最多、输入摘要破同分贪心挑选，再删除冗余；超过上限而不能保持保证时给出诊断"
 
 op shrink(initial: lang.CaseResult, runner: lang.CandidateRunner, budget: duration) -> Shrunk "只接受仍失败且不是环境错误的更小模型值；保留前提与类型，预算内缩到候选缩减的固定点；返回最终反例，不混入缩减尝试"
@@ -57,6 +65,17 @@ property reduction-preserves-evidence postcondition "缩减保留声明与反例
   ensure size(result.diagnostics) == 0 implies all(original in sample.cases: original.form == "declared" or original.reason == "counterexample" implies any(retained in result.cases: retained.id == original.id))
   ensure size(result.diagnostics) == 0 implies all(original in sample.cases: all(point in original.coverage: any(retained in result.cases: any(covered in retained.coverage: point == covered))))
   ensure size(result.diagnostics) == 0 implies count(retained in result.cases: retained.form != "declared") <= sample.limit
+}
+
+property attachment-preserves-input-identity postcondition "有效性取自实际执行输入与当前摘要；环境错误不伪装为业务失败，覆盖只连接当前同输入用例" {
+  about attach
+  forall sample: AttachmentSample generated "当前与陈旧报告、重命名的同输入用例、未录制业务反例，以及只有环境错误但曾有有效执行的报告"
+  call attach(sample.graph, sample.reports)
+  ensure size(result.diagnostics) == 0
+  ensure count(node in result.fragment.nodes: node.form == "case" and node.attrs["fresh"][0] == "true") == sample.freshCount
+  ensure count(node in result.fragment.nodes: node.form == "check" and node.attrs["fresh"][0] == "true" and node.attrs["businessFailed"][0] == "true") == size(sample.failedChecks)
+  ensure all(id in sample.failedChecks: any(node in result.fragment.nodes: node.form == "check" and node.attrs["check"][0] == id and node.attrs["fresh"][0] == "true" and node.attrs["businessFailed"][0] == "true"))
+  ensure all(edge in result.fragment.edges: edge.kind == graph.EdgeKind.covers implies edge.from in sample.currentCases)
 }
 
 property recordings-are-replayable invariant "录制前冻结模型值，编码往返保持完整状态；规范文件可重新解析并生成同一输入；失败和损坏不写空结果" {
