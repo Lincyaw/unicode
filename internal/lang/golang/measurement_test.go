@@ -77,12 +77,22 @@ func checkMeasuredExecutionKeepsRealEvidence(t rapid.TB, sample MeasurementSampl
 	if sample.Variant == 3 {
 		found := false
 		for _, d := range report.Diagnostics {
-			if d.Code == "lang.golang.input-codec-failed" && strings.Contains(d.Message, "shared") {
+			if d.Code == "lang.golang.input-codec-failed" {
 				found = true
 			}
 		}
 		if !found {
 			t.Fatalf("a shared mutable input was silently copied: %+v", report)
+		}
+		for _, result := range report.Results {
+			if result.Passed || result.Accepted != 0 {
+				t.Fatalf("a shared mutable input executed after codec rejection: %+v", result)
+			}
+			for _, candidate := range result.Cases {
+				if !candidate.Rejected {
+					t.Fatalf("a shared mutable input produced execution evidence: %+v", candidate)
+				}
+			}
 		}
 		return
 	}
