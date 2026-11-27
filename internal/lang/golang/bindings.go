@@ -18,10 +18,11 @@ import (
 const bindingPrefix = "//uc:"
 
 var bindingKinds = map[string]graph.EdgeKind{
-	"realizes":  graph.EdgeKindRealizes,
-	"checks":    graph.EdgeKindChecks,
-	"generates": graph.EdgeKindGenerates,
-	"observes":  graph.EdgeKindObserves,
+	"realizes":    graph.EdgeKindRealizes,
+	"checks":      graph.EdgeKindChecks,
+	"generates":   graph.EdgeKindGenerates,
+	"observes":    graph.EdgeKindObserves,
+	"substitutes": graph.EdgeKindSubstitutes,
 }
 
 // namePattern is a name of the design: kebab, upper or lower camel
@@ -73,8 +74,8 @@ func (x *extraction) readBinding(at diag.Position, text, fileID string, owner bo
 	kind, known := bindingKinds[verb]
 	switch {
 	case !known:
-		report("lang.golang.unknown-binding-verb", fmt.Sprintf("the binding verb %q is not realizes, checks, generates or observes", verb),
-			"write the binding as //uc:realizes, //uc:checks, //uc:generates or //uc:observes, one space and a design identity")
+		report("lang.golang.unknown-binding-verb", fmt.Sprintf("the binding verb %q is not realizes, checks, generates, observes or substitutes", verb),
+			"write the binding as //uc:realizes, //uc:checks, //uc:generates, //uc:observes or //uc:substitutes, one space and a design identity")
 		return
 	case target == "":
 		report("lang.golang.missing-binding-id", fmt.Sprintf("the binding //uc:%s names no design identity", verb),
@@ -96,7 +97,7 @@ func (x *extraction) readBinding(at diag.Position, text, fileID string, owner bo
 		report("lang.golang.misplaced-binding", fmt.Sprintf("a %s binding is on a type, and only a function can carry one", verb),
 			"move it into the doc comment of the function it binds")
 		return
-	case owner.isMethod && kind == graph.EdgeKindObserves:
+	case owner.isMethod && (kind == graph.EdgeKindObserves || kind == graph.EdgeKindSubstitutes):
 		report("lang.golang.misplaced-binding", "an observes binding is on a method, but an observation adapter must be a free function",
 			"move the observes binding to a free function whose explicit parameters are the observation's inputs")
 		return
