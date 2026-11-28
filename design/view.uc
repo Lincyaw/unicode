@@ -36,10 +36,15 @@ type ViewNode record "视图画出的一个节点，加上卡片上显示的内�
   field details: int
 }
 
-type ViewEdge record "视图画出的一条边；一端是折叠的容器或 C4 元素时，这条边合并了图中的 count 条边，本身不是图中的边，labels 是经过它的调用所实现的操作" {
+type EdgeLabel record "边承载的一个操作：操作的标识 op，以及标签上的写法 text，即设计中的名称，人发起的调用另带步骤的实参" {
+  field op: string
+  field text: string
+}
+
+type ViewEdge record "视图画出的一条边；一端是折叠的容器或 C4 元素时，这条边合并了图中的 count 条边，本身不是图中的边，labels 是它承载的操作，各带标识和写法" {
   extends graph.Edge
   field count: int
-  field labels: list<string>
+  field labels: list<EdgeLabel>
 }
 
 type View record "一个视图的数据：种类、输入节点及其祖先、请求的展开、类视图的层和 C4 视图的层级，按视图规定的次序选取的节点和边，折叠的节点，以及未画出的 utility 容器的个数" {

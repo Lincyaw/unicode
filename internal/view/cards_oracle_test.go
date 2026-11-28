@@ -154,30 +154,31 @@ func (w world) details(id string, drawn map[string]bool) int {
 	return count
 }
 
-// labels are the operations an edge from the node from carries, by design
-// name, given the edges of the graph it stands for: for a depends, those the
-// callees of its calls realize; for a calls edge from a person, each step's
-// call as the flow writes it, name(arguments).
-func (w world) labels(from string, stands []graph.Edge) []string {
+// labels are the operations an edge from the node from carries, each with
+// its identity and its text, given the edges of the graph it stands for: for
+// a depends, those the callees of its calls realize, by design name; for a
+// calls edge from a person, each step's operation, written as the flow
+// writes the call, name(arguments).
+func (w world) labels(from string, stands []graph.Edge) []EdgeLabel {
 	name := func(id string) string {
 		parts := strings.Split(id, ".")
 		return parts[len(parts)-1]
 	}
-	var ops []string
+	var ops []EdgeLabel
 	for _, e := range stands {
-		var label []string
+		var label []EdgeLabel
 		switch {
 		case e.Kind == graph.EdgeKindDepends:
 			for _, call := range e.Attrs["calls"] {
 				callee := call[strings.Index(call, " ")+1:]
 				for _, o := range w.to(callee, graph.EdgeKindRealizes) {
 					if n := w.nodes[o]; n.Kind == graph.NodeKindOp && n.Layer == graph.LayerDesign {
-						label = append(label, name(o))
+						label = append(label, EdgeLabel{Op: o, Text: name(o)})
 					}
 				}
 			}
 		case e.Kind == graph.EdgeKindCalls && w.nodes[from].Kind == graph.NodeKindActor && w.nodes[from].Form == "person":
-			label = append(label, name(e.To)+"("+strings.Join(w.nodes[e.From].Attrs["args"], ", ")+")")
+			label = append(label, EdgeLabel{Op: e.To, Text: name(e.To) + "(" + strings.Join(w.nodes[e.From].Attrs["args"], ", ") + ")"})
 		}
 		for _, l := range label {
 			if !slices.Contains(ops, l) {
@@ -185,6 +186,11 @@ func (w world) labels(from string, stands []graph.Edge) []string {
 			}
 		}
 	}
-	slices.Sort(ops)
+	slices.SortFunc(ops, func(a, b EdgeLabel) int {
+		if a.Text != b.Text {
+			return strings.Compare(a.Text, b.Text)
+		}
+		return strings.Compare(a.Op, b.Op)
+	})
 	return ops
 }

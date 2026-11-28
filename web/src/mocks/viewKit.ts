@@ -1,5 +1,5 @@
 import { ancestorsOf, childrenOf, diagnosticsAbout, evidenceOf, full, membersOf, raw, subjectsOf, withStatus } from './graph';
-import type { C4Level, ClassLayer, RawEdge, View, ViewEdge, ViewKind, ViewNode } from './schemaTypes';
+import type { C4Level, ClassLayer, EdgeLabel, RawEdge, View, ViewEdge, ViewKind, ViewNode } from './schemaTypes';
 
 /* What every view shares: drawing a node or an edge, folding, and putting the answer together. */
 
@@ -72,22 +72,29 @@ export function assembleView(kind: ViewKind, input: string, expand: string[], dr
   };
 }
 
+/** An edge's labels as unicode serve gives them: each operation once, sorted by its text, then by its identity. */
+export function sortedLabels(labels: EdgeLabel[]): EdgeLabel[] {
+  const order = (a: string, b: string) => (a < b ? -1 : Number(a > b));
+  const unique = new Map(labels.map(label => [`${label.text}\u0000${label.op}`, label]));
+  return [...unique.values()].sort((a, b) => order(a.text, b.text) || order(a.op, b.op));
+}
+
 /** Edges that stand for several edges of the graph, one per drawn end and folded container. */
 export class Aggregates {
   private readonly byKey = new Map<string, ViewEdge>();
 
-  add(each: RawEdge, from: string, to: string, labels: string[] = []) {
+  add(each: RawEdge, from: string, to: string, labels: EdgeLabel[] = []) {
     const key = `${each.kind} ${from} ${to}`;
     const existing = this.byKey.get(key);
     if (existing) {
       existing.count = (existing.count ?? 0) + 1;
-      const merged = [...new Set([...(existing.labels ?? []), ...labels])];
+      const merged = sortedLabels([...(existing.labels ?? []), ...labels]);
       if (merged.length > 0) {
         existing.labels = merged;
       }
       return;
     }
-    this.byKey.set(key, { kind: each.kind, from, to, source: 'derived', origin: each.origin, attrs: {}, count: 1, ...(labels.length > 0 ? { labels } : {}) });
+    this.byKey.set(key, { kind: each.kind, from, to, source: 'derived', origin: each.origin, attrs: {}, count: 1, ...(labels.length > 0 ? { labels: sortedLabels(labels) } : {}) });
   }
 
   edges(): ViewEdge[] {

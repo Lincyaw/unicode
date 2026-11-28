@@ -97,10 +97,19 @@ model ViewEdge {
   count?: int32;
 
   /**
-   * The operations the edge carries, by design name: for a depends, those its calls realize; for an edge from a
-   * person, those the person calls in flows.
+   * The operations the edge carries, sorted by their text, then by identity: for a depends, those its calls realize;
+   * for an edge from a person, those the person calls in flows.
    */
-  labels?: string[];
+  labels?: EdgeLabel[];
+}
+
+/** An operation an edge carries, as the edge's label names it. */
+model EdgeLabel {
+  /** The operation's identity */
+  `op`: string;
+
+  /** How the label writes it: its design name; for a call from a person, with the step's arguments, such as submit(cart) */
+  text: string;
 }
 
 /** The data of one view: what it draws, folded and ordered; the layout is the page's. */

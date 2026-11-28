@@ -283,7 +283,10 @@ func (st *state) view(kind view.ViewKind, input string, expand []string, layer v
 		out.Edges = append(out.Edges, ViewEdge{Kind: ed.Kind, From: ed.From, To: ed.To, Source: ed.Source, Origin: ed.Origin, Attrs: ed.Attrs, Status: ed.Status,
 			Count: optional(int32(e.Count))})
 		if len(e.Labels) > 0 {
-			labels := append([]string{}, e.Labels...)
+			labels := make([]EdgeLabel, 0, len(e.Labels))
+			for _, l := range e.Labels {
+				labels = append(labels, EdgeLabel{Op: l.Op, Text: l.Text})
+			}
 			out.Edges[len(out.Edges)-1].Labels = &labels
 		}
 	}

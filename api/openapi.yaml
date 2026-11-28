@@ -1317,6 +1317,19 @@ components:
         - reaches
         - covers
       description: The kind of an edge (docs/model.md §4).
+    EdgeLabel:
+      type: object
+      required:
+        - op
+        - text
+      properties:
+        op:
+          type: string
+          description: The operation's identity
+        text:
+          type: string
+          description: "How the label writes it: its design name; for a call from a person, with the step's arguments, such as submit(cart)"
+      description: An operation an edge carries, as the edge's label names it.
     Entity:
       type: object
       required:
@@ -2324,10 +2337,10 @@ components:
         labels:
           type: array
           items:
-            type: string
+            $ref: '#/components/schemas/EdgeLabel'
           description: |-
-            The operations the edge carries, by design name: for a depends, those its calls realize; for an edge from a
-            person, those the person calls in flows.
+            The operations the edge carries, sorted by their text, then by identity: for a depends, those its calls realize;
+            for an edge from a person, those the person calls in flows.
       description: An edge a view draws.
     ViewKind:
       type: string

@@ -15,6 +15,7 @@ export type StepInfo = Schemas['StepInfo'];
 export type Member = Schemas['Member'];
 export type ViewNode = Schemas['ViewNode'];
 export type ViewEdge = Schemas['ViewEdge'];
+export type EdgeLabel = Schemas['EdgeLabel'];
 export type View = Schemas['View'];
 export type ViewKind = Schemas['ViewKind'];
 export type ViewRequest = Schemas['ViewRequest'];

@@ -1,6 +1,6 @@
 import { boundTo, childrenOf, designContainerOf, findEdge, incoming, outgoing, parentOf, raw, realizersOf, senderOf, SYSTEM_ID, targetOf } from './graph';
-import type { C4Level, ClassLayer, RawEdge, ViewEdge, ViewNode } from './schemaTypes';
-import { Aggregates, DDD_TYPE_LABELS, focusOf, NotApplicable, opsOf, typeCard, typeName, viewEdge, viewNode, type Drawing } from './viewKit';
+import type { C4Level, ClassLayer, EdgeLabel, RawEdge, ViewEdge, ViewNode } from './schemaTypes';
+import { Aggregates, DDD_TYPE_LABELS, focusOf, NotApplicable, opsOf, sortedLabels, typeCard, typeName, viewEdge, viewNode, type Drawing } from './viewKit';
 
 /* The views of the design's structure: architecture, DDD, class and C4 (docs/design.md §7.1–§7.2). */
 
@@ -173,24 +173,29 @@ export function classView(input: string, expand: string[], layer: ClassLayer): D
   return { nodes, edges: [...edges, ...aggregates.edges()], folded: foldedContainers, layer };
 }
 
-/** The operations a depends edge's calls realize, by design name. */
-function realizedOps(each: RawEdge): string[] {
-  const called = (each.attrs.calls ?? []).map(call => call.split(' ')[1] ?? '');
-  return [...new Set(called.map(fn => boundTo(fn)).filter((op): op is string => op !== undefined).map(op => raw(op).title))];
+/** A design node's name: the last segment of its identity. */
+function designName(id: string): string {
+  return id.slice(id.lastIndexOf('.') + 1);
 }
 
-/** What a person calls in the flows, written as the steps write it: `submit(cart)`, by the container that answers. */
-function personCalls(person: string): Map<string, { step: string; labels: string[] }> {
-  const byContainer = new Map<string, { step: string; labels: string[] }>();
+/** The operations a depends edge's calls realize, each written by its design name. */
+function realizedOps(each: RawEdge): EdgeLabel[] {
+  const called = (each.attrs.calls ?? []).map(call => call.split(' ')[1] ?? '');
+  return sortedLabels(called.map(fn => boundTo(fn)).filter((op): op is string => op !== undefined).map(op => ({ op, text: designName(op) })));
+}
+
+/** The operations a person calls in the flows, each written as the step writes it: `submit(cart)`, by the container that answers. */
+function personCalls(person: string): Map<string, { step: string; labels: EdgeLabel[] }> {
+  const byContainer = new Map<string, { step: string; labels: EdgeLabel[] }>();
   for (const step of incoming(person, 'from').map(each => each.from)) {
     const target = targetOf(step);
     const container = target === undefined ? undefined : designContainerOf(target);
     if (target === undefined || container === undefined || senderOf(step) !== person) {
       continue;
     }
-    const label = `${raw(target).title}(${(raw(step).attrs.args ?? []).join(', ')})`;
+    const label = { op: target, text: `${designName(target)}(${(raw(step).attrs.args ?? []).join(', ')})` };
     const entry = byContainer.get(container) ?? { step, labels: [] };
-    entry.labels = [...new Set([...entry.labels, label])];
+    entry.labels = sortedLabels([...entry.labels, label]);
     byContainer.set(container, entry);
   }
   return byContainer;

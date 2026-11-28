@@ -110,7 +110,11 @@ func viewText(v view.View, id string) []byte {
 			edges[i] += fmt.Sprintf(" (stands for %d edges)", e.Count)
 		}
 		if len(e.Labels) > 0 {
-			edges[i] += ": " + strings.Join(e.Labels, ", ")
+			texts := make([]string, len(e.Labels))
+			for j, l := range e.Labels {
+				texts[j] = l.Text
+			}
+			edges[i] += ": " + strings.Join(texts, ", ")
 		}
 	}
 	section(&b, "edges", edges)

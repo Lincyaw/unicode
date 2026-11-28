@@ -707,6 +707,15 @@ type EdgeEntity struct {
 // EdgeKind The kind of an edge (docs/model.md §4).
 type EdgeKind string
 
+// EdgeLabel An operation an edge carries, as the edge's label names it.
+type EdgeLabel struct {
+	// Op The operation's identity
+	Op string `json:"op"`
+
+	// Text How the label writes it: its design name; for a call from a person, with the step's arguments, such as submit(cart)
+	Text string `json:"text"`
+}
+
 // Entity The page of one node: a view's right pane previews it, and the canvas shows it in full as the node's entity page.
 // The common sections come first; then exactly one section for the node's kind, present when the kind has one.
 type Entity struct {
@@ -1292,9 +1301,9 @@ type ViewEdge struct {
 	// Kind The kind of an edge (docs/model.md §4).
 	Kind EdgeKind `json:"kind"`
 
-	// Labels The operations the edge carries, by design name: for a depends, those its calls realize; for an edge from a
-	// person, those the person calls in flows.
-	Labels *[]string `json:"labels,omitempty"`
+	// Labels The operations the edge carries, sorted by their text, then by identity: for a depends, those its calls realize;
+	// for an edge from a person, those the person calls in flows.
+	Labels *[]EdgeLabel `json:"labels,omitempty"`
 
 	// Origin A place in a file (diag.Position). Line and column start at 1; the column counts bytes.
 	Origin Position `json:"origin"`

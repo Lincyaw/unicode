@@ -1,7 +1,7 @@
 import { clsx } from 'clsx';
-import type { CSSProperties, ReactNode } from 'react';
+import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import type { View, ViewEdge, ViewNode } from '../../api/types';
-import { ABOUT, VIEW_NAMES } from '../../terms';
+import { ABOUT, NAME_SEPARATOR, VIEW_NAMES } from '../../terms';
 import { MarkButton } from '../../ui/controls';
 import { InfoHint } from '../../ui/hint';
 import { Canvas, Placed } from '../canvas/Canvas';
@@ -12,6 +12,7 @@ import { KindIcon } from '../marks/icons';
 import { useLinks, useNodeActions, useSelectedBox } from '../marks/links';
 import { Above } from '../marks/Above';
 import { CoverButton } from '../marks/CoverButton';
+import { NodeRef } from '../marks/NodeRef';
 import { StatusDot } from '../marks/StatusDot';
 import { HiddenCount, UndeclaredTag } from './ArchitectureView';
 import { edgeKey, toneOf } from './graphParts';
@@ -88,9 +89,18 @@ function usersLast(rects: Map<string, Rect>, users: ReadonlySet<string>) {
   }
 }
 
-/** The operations an edge carries, as its label reads: `reserve · release`. */
-function labelOf(edge: ViewEdge): string {
-  return (edge.labels ?? []).join(' · ');
+/** The operations an edge carries, as its label reads them (`reserve · release`), each a reference to its operation. */
+function EdgeLabels({ edge }: { edge: ViewEdge }) {
+  return (
+    <span className={styles.edgeLabel}>
+      {(edge.labels ?? []).map((label, index) => (
+        <Fragment key={`${label.op} ${label.text}`}>
+          {index > 0 && <span aria-hidden="true">{NAME_SEPARATOR}</span>}
+          <NodeRef id={label.op}>{label.text}</NodeRef>
+        </Fragment>
+      ))}
+    </span>
+  );
 }
 
 /**
@@ -169,7 +179,7 @@ export function C4View({ view, toolbar }: { view: View; toolbar: ReactNode }) {
         const leans = from !== undefined && to !== undefined && to.x + to.width / 2 < from.x + from.width / 2 - 1 ? 'left' : 'right';
         return (
           <Marker key={edgeKey(edge)} at={path.mid} side={edge.status === 'contradicted' ? 'center' : vertical ? leans : 'above'}>
-            {edge.status === 'contradicted' ? <UndeclaredTag edge={edge} /> : <span className={styles.edgeLabel}>{labelOf(edge)}</span>}
+            {edge.status === 'contradicted' ? <UndeclaredTag edge={edge} /> : <EdgeLabels edge={edge} />}
           </Marker>
         );
       })}

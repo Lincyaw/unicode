@@ -72,15 +72,25 @@ type ViewNode struct {
 	Details  int            `json:"details,omitempty"`
 }
 
+// EdgeLabel is an operation an edge carries: its identity, and how the
+// edge's label writes it.
+//
+//uc:realizes view.EdgeLabel
+type EdgeLabel struct {
+	Op   string `json:"op"`
+	Text string `json:"text"`
+}
+
 // ViewEdge is an edge a view draws. When an end is a folded container or a
 // C4 element that stands for the nodes in it, Count is how many edges of
-// the graph it stands for, and it is not an edge of the graph.
+// the graph it stands for, and it is not an edge of the graph. Labels are
+// the operations it carries.
 //
 //uc:realizes view.ViewEdge
 type ViewEdge struct {
 	graph.Edge
-	Count  int      `json:"count,omitempty"`
-	Labels []string `json:"labels,omitempty"`
+	Count  int         `json:"count,omitempty"`
+	Labels []EdgeLabel `json:"labels,omitempty"`
 }
 
 // View is the data of one view: its input node with the nodes that contain

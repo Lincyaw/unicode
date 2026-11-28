@@ -1,6 +1,7 @@
 package view
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 
@@ -99,13 +100,14 @@ func (ix index) declared(c string) []string {
 	return ids
 }
 
-// labels returns the operations that a drawn edge carries, by design name,
-// sorted (docs/design.md §7.1): for a depends, those that the callees of the
-// calls it stands for realize; for a calls edge from a person, the calls of
-// the steps it stands for as the flow writes them, the name and the
-// arguments, such as submit(cart).
-func (ix index) labels(from string, stands []graph.Edge) []string {
-	var ops []string
+// labels returns the operations that a drawn edge carries (docs/design.md
+// §7.5.1), each with its identity and its text, sorted by text, then by
+// identity: for a depends, those that the callees of the calls it stands
+// for realize, written by design name; for a calls edge from a person, the
+// operations the steps it stands for call, written as the flow writes the
+// call, the name and the arguments, such as submit(cart).
+func (ix index) labels(from string, stands []graph.Edge) []EdgeLabel {
+	var ops []EdgeLabel
 	for _, e := range stands {
 		switch {
 		case e.Kind == graph.EdgeKindDepends:
@@ -113,15 +115,15 @@ func (ix index) labels(from string, stands []graph.Edge) []string {
 				_, callee, _ := strings.Cut(call, " ")
 				for _, o := range ix.targets(callee, graph.EdgeKindRealizes) {
 					if n := ix.nodes[o]; n.Kind == graph.NodeKindOp && n.Layer == graph.LayerDesign {
-						ops = append(ops, designName(o))
+						ops = append(ops, EdgeLabel{Op: o, Text: designName(o)})
 					}
 				}
 			}
 		case e.Kind == graph.EdgeKindCalls && isPerson(ix.nodes[from]):
-			ops = append(ops, designName(e.To)+"("+strings.Join(ix.nodes[e.From].Attrs["args"], ", ")+")")
+			ops = append(ops, EdgeLabel{Op: e.To, Text: designName(e.To) + "(" + strings.Join(ix.nodes[e.From].Attrs["args"], ", ") + ")"})
 		}
 	}
-	slices.Sort(ops)
+	slices.SortFunc(ops, func(a, b EdgeLabel) int { return cmp.Or(cmp.Compare(a.Text, b.Text), cmp.Compare(a.Op, b.Op)) })
 	return slices.Compact(ops)
 }
 
