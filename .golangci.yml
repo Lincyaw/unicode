@@ -142,9 +142,10 @@ linters:
             - github.com/lincyaw/unicode/internal/graph
             - github.com/lincyaw/unicode/internal/lang
             - github.com/lincyaw/unicode/internal/diag
+            - github.com/lincyaw/unicode/internal/repo
           deny:
             - pkg: github.com/lincyaw/unicode/internal
-              desc: "组件 gen 只能依赖 graph、lang、diag（design/gen.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+              desc: "组件 gen 只能依赖 graph、lang、diag、repo（design/gen.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
             - pkg: github.com/lincyaw/unicode/internal/lang/golang
               desc: "组件 gen 不依赖 lang.golang（design/gen.uc 的 uses）；要依赖它，先改设计中的 uses"
             - pkg: github.com/lincyaw/unicode/internal/lang/python

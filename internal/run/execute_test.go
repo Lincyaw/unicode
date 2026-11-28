@@ -2,10 +2,12 @@ package run
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -15,19 +17,43 @@ import (
 	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/lang"
+	"github.com/lincyaw/unicode/internal/repo"
 )
 
-// ExecuteSample supplies configured checks, selected targets and runner reports.
+// ExecuteSample supplies configured checks, selected targets, their
+// collected inputs, runner reports, the checks selected in each language,
+// and the results execute should give.
 //
 //uc:realizes run.ExecuteSample
 type ExecuteSample struct {
-	Graph   *graph.Graph
-	Ids     []string
-	Traffic map[string][]lang.Input
-	Reports map[string]lang.RunReport
+	Graph    *graph.Graph
+	Ids      []string
+	Traffic  map[string][]lang.Input
+	Reports  map[string]lang.RunReport
+	Selected map[string][]string
+	Expected []lang.RunResult
 }
 
-//uc:generates run.execute-follows-language-roots.sample
+// RunReceived is one run input a recording backend was given.
+//
+//uc:realizes run.RunReceived
+type RunReceived struct {
+	Root     string
+	Roots    []string
+	Snapshot []byte
+	Ids      []string
+	Explore  time.Duration
+	Record   bool
+	Traffic  map[string][]lang.Input
+}
+
+//uc:generates run.execute-dispatches-selected-checks.sample
+//uc:generates run.execute-merges-results.sample
+//uc:generates run.execute-rejects-unknown-checks.sample
+//uc:generates run.execute-saves-its-report.sample
+//uc:generates run.execute-rejects-duplicate-backends.sample
+//uc:generates run.execute-rejects-backends-without-runner.sample
+//uc:generates run.execute-rejects-omitted-results.sample
 func genExecuteSample() *rapid.Generator[ExecuteSample] {
 	return rapid.Custom(func(t *rapid.T) ExecuteSample {
 		g := graph.NewGraph()
@@ -78,10 +104,22 @@ func genExecuteSample() *rapid.Generator[ExecuteSample] {
 			reports[name] = report
 		}
 		add(graph.Node{Id: "system", Kind: graph.NodeKindContainer, Form: "system", Layer: graph.LayerDesign, Origin: diag.Position{Path: "design/system.uc", Line: 1, Column: 1}, Attrs: map[string][]string{"roots": roots}})
-		if rapid.IntRange(0, 3).Draw(t, "unknown") == 0 {
-			targets = append(targets, "missing.check")
+		sample := ExecuteSample{Graph: &g, Ids: targets, Traffic: traffic, Reports: reports, Selected: map[string][]string{}, Expected: []lang.RunResult{}}
+		for _, name := range []string{"go", "python"} {
+			sample.Selected[name] = []string{}
+			for _, r := range reports[name].Results {
+				if len(targets) == 0 || slices.Contains(targets, r.Id) {
+					sample.Selected[name] = append(sample.Selected[name], r.Id)
+					sample.Expected = append(sample.Expected, r)
+				}
+			}
+			slices.Sort(sample.Selected[name])
 		}
-		return ExecuteSample{Graph: &g, Ids: targets, Traffic: traffic, Reports: reports}
+		slices.SortFunc(sample.Expected, func(a, b lang.RunResult) int { return strings.Compare(a.Id, b.Id) })
+		if rapid.IntRange(0, 3).Draw(t, "unknown") == 0 {
+			sample.Ids = append(sample.Ids, "missing.check")
+		}
+		return sample
 	})
 }
 
@@ -103,7 +141,7 @@ func (b *executionBackend) Run(p lang.RunPlan) lang.RunReport {
 	b.plans = append(b.plans, p)
 	out := lang.RunReport{Diagnostics: b.report.Diagnostics}
 	if !b.omit {
-		for _, r := range b.report.Results {
+		for _, r := range slices.Backward(b.report.Results) {
 			if slices.Contains(p.Ids, r.Id) {
 				out.Results = append(out.Results, r)
 			}
@@ -122,121 +160,126 @@ func (readOnlyBackend) MapName(lang.NameRole, string) string {
 	panic("execution orchestration must not map names")
 }
 
-//uc:checks run.execute-follows-language-roots
-func checkExecuteFollowsLanguageRoots(t rapid.TB, sample ExecuteSample) {
-	root, err := os.MkdirTemp("", "unicode-run-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.RemoveAll(root) }()
-	backends := []lang.Backend{}
-	byName := map[string]*executionBackend{}
+//uc:generates run.execute-dispatches-selected-checks.explore
+//uc:generates run.execute-merges-results.explore
+//uc:generates run.execute-rejects-unknown-checks.explore
+//uc:generates run.execute-saves-its-report.explore
+//uc:generates run.execute-rejects-duplicate-backends.explore
+//uc:generates run.execute-rejects-backends-without-runner.explore
+//uc:generates run.execute-rejects-omitted-results.explore
+func genExplore() *rapid.Generator[time.Duration] {
+	return rapid.Custom(func(t *rapid.T) time.Duration {
+		return time.Duration(rapid.IntRange(0, 3).Draw(t, "seconds")) * time.Second
+	})
+}
+
+//uc:generates run.execute-dispatches-selected-checks.dir
+//uc:generates run.execute-merges-results.dir
+//uc:generates run.execute-rejects-unknown-checks.dir
+//uc:generates run.execute-saves-its-report.dir
+//uc:generates run.execute-rejects-duplicate-backends.dir
+//uc:generates run.execute-rejects-backends-without-runner.dir
+//uc:generates run.execute-rejects-omitted-results.dir
+func deriveEmptyDir() (string, error) { return repo.Materialize(repo.Tree{}) }
+
+//uc:generates run.execute-dispatches-selected-checks.record
+//uc:generates run.execute-merges-results.record
+//uc:generates run.execute-rejects-unknown-checks.record
+//uc:generates run.execute-saves-its-report.record
+//uc:generates run.execute-rejects-duplicate-backends.record
+//uc:generates run.execute-rejects-backends-without-runner.record
+//uc:generates run.execute-rejects-omitted-results.record
+func genRecord() *rapid.Generator[bool] { return rapid.Bool() }
+
+// derivePlan runs the sample's targets in dir with explore and record and
+// the sample's collected inputs.
+//
+//uc:generates run.execute-dispatches-selected-checks.plan
+//uc:generates run.execute-merges-results.plan
+//uc:generates run.execute-rejects-unknown-checks.plan
+//uc:generates run.execute-saves-its-report.plan
+//uc:generates run.execute-rejects-duplicate-backends.plan
+//uc:generates run.execute-rejects-backends-without-runner.plan
+//uc:generates run.execute-rejects-omitted-results.plan
+func derivePlan(sample ExecuteSample, dir string, explore time.Duration, record bool) lang.RunPlan {
+	return lang.RunPlan{Root: dir, Graph: sample.Graph, Ids: sample.Ids, Explore: explore, Record: record, Traffic: sample.Traffic}
+}
+
+//uc:generates run.execute-dispatches-selected-checks.backends
+//uc:generates run.execute-merges-results.backends
+//uc:generates run.execute-rejects-unknown-checks.backends
+//uc:generates run.execute-saves-its-report.backends
+func deriveRecordingBackends(sample ExecuteSample) []lang.Backend {
+	var out []lang.Backend
 	for _, name := range []string{"go", "python", "unused"} {
-		b := &executionBackend{name: name, report: sample.Reports[name]}
-		byName[name] = b
-		backends = append(backends, b)
+		out = append(out, &executionBackend{name: name, report: sample.Reports[name]})
 	}
-	budget := time.Second
-	plan := lang.RunPlan{Root: root, Graph: sample.Graph, Ids: sample.Ids, Explore: budget, Traffic: sample.Traffic}
-	got := Execute(plan, backends)
-	unknown := slices.Contains(sample.Ids, "missing.check")
-	if unknown {
-		if !slices.ContainsFunc(got.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == "run.unknown-check" }) {
-			t.Fatal("Execute accepted an unknown target")
+	return out
+}
+
+//uc:generates run.execute-rejects-duplicate-backends.backends
+func deriveDuplicateBackends(sample ExecuteSample) []lang.Backend {
+	backends := deriveRecordingBackends(sample)
+	return append(backends, backends[0])
+}
+
+//uc:generates run.execute-rejects-backends-without-runner.backends
+func deriveReadOnlyBackends() []lang.Backend {
+	return []lang.Backend{readOnlyBackend{name: "go"}, readOnlyBackend{name: "python"}}
+}
+
+//uc:generates run.execute-rejects-omitted-results.backends
+func deriveOmittingBackends(sample ExecuteSample) []lang.Backend {
+	var out []lang.Backend
+	for _, name := range []string{"go", "python", "unused"} {
+		out = append(out, &executionBackend{name: name, report: sample.Reports[name], omit: true})
+	}
+	return out
+}
+
+// received reads the run inputs each recording backend was given, the
+// graph as its snapshot.
+func received(backends []lang.Backend) (map[string][]RunReceived, error) {
+	out := map[string][]RunReceived{}
+	for _, b := range backends {
+		recording, ok := b.(*executionBackend)
+		if !ok {
+			return nil, errors.New("a backend of the sample does not record its inputs")
 		}
-		for name, b := range byName {
-			if len(b.plans) != 0 {
-				t.Fatalf("Execute called %s after rejecting a target", name)
-			}
-		}
-	} else {
-		if len(got.Diagnostics) != 0 {
-			t.Fatalf("Execute rejected selected checks: %+v", got.Diagnostics)
-		}
-		want := []lang.RunResult{}
-		for name, b := range byName {
-			var roots, ids []string
-			for _, entry := range sample.Graph.Node("system").Attrs["roots"] {
-				language, dir, _ := strings.Cut(entry, ": ")
-				if language == name {
-					roots = append(roots, dir)
-				}
-			}
-			for _, r := range b.report.Results {
-				if len(sample.Ids) == 0 || slices.Contains(sample.Ids, r.Id) {
-					ids = append(ids, r.Id)
-					r.Cases = []lang.CaseResult{}
-					r.Observations = []string{}
-					r.Differences = []string{}
-					if r.Diagnostics == nil {
-						r.Diagnostics = []diag.Diagnostic{}
-					}
-					want = append(want, r)
-				}
-			}
-			slices.Sort(ids)
-			if len(ids) == 0 {
-				if len(b.plans) != 0 {
-					t.Fatalf("Execute called %s without selected checks", name)
-				}
-				continue
-			}
-			if len(b.plans) != 1 {
-				t.Fatalf("Execute called %s %d times", name, len(b.plans))
-			}
-			p := b.plans[0]
-			if p.Root != root || p.Graph != sample.Graph || p.Explore != budget || !slices.Equal(p.Roots, roots) || !slices.Equal(p.Ids, ids) {
-				t.Fatalf("Execute passed wrong inputs to %s: %+v", name, p)
-			}
-			traffic := map[string][]lang.Input{}
-			for _, id := range ids {
-				if len(sample.Traffic[id]) > 0 {
-					traffic[id] = sample.Traffic[id]
-				}
-			}
-			if !reflect.DeepEqual(p.Traffic, traffic) {
-				t.Fatalf("Execute passed %s the collected inputs %+v; want those of its targets %+v", name, p.Traffic, traffic)
-			}
-		}
-		slices.SortFunc(want, func(a, b lang.RunResult) int { return strings.Compare(a.Id, b.Id) })
-		if !reflect.DeepEqual(got.Results, want) {
-			t.Fatalf("Execute changed runner results: %+v; want %+v", got.Results, want)
+		out[recording.name] = []RunReceived{}
+		for _, p := range recording.plans {
+			out[recording.name] = append(out[recording.name], RunReceived{Root: p.Root, Roots: slices.Clone(p.Roots), Snapshot: p.Graph.Encode(),
+				Ids: slices.Clone(p.Ids), Explore: p.Explore, Record: p.Record, Traffic: maps.Clone(p.Traffic)})
 		}
 	}
-	encoded, err := os.ReadFile(filepath.Join(root, ".unicode", "results.json"))
+	return out, nil
+}
+
+//uc:observes run.execute-dispatches-selected-checks.received
+func observeDispatched(backends []lang.Backend) (map[string][]RunReceived, error) {
+	return received(backends)
+}
+
+//uc:observes run.execute-rejects-unknown-checks.received
+func observeRejectedDispatch(backends []lang.Backend) (map[string][]RunReceived, error) {
+	return received(backends)
+}
+
+// observeStored reads the report in .unicode/results.json under dir, none
+// when there is no such file.
+//
+//uc:observes run.execute-saves-its-report.stored
+func observeStored(dir string) (*lang.RunReport, error) {
+	data, err := os.ReadFile(filepath.Join(dir, ".unicode", "results.json"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
-	wantJSON, err := json.Marshal(got)
-	if err != nil {
-		t.Fatal(err)
+	var report lang.RunReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		return nil, err
 	}
-	if string(encoded) != string(wantJSON)+"\n" {
-		t.Fatalf("Execute did not persist its complete report: %s", encoded)
-	}
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(encoded, &object); err != nil {
-		t.Fatal(err)
-	}
-	if string(object["diagnostics"]) == "null" || string(object["results"]) == "null" {
-		t.Fatal("report arrays encoded as null")
-	}
-	if !unknown {
-		plan.Explore = 0
-		duplicate := Execute(plan, append(backends, backends[0]))
-		if !slices.ContainsFunc(duplicate.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == "run.duplicate-backend" }) {
-			t.Fatal("Execute accepted duplicate backends")
-		}
-		unsupported := Execute(plan, []lang.Backend{readOnlyBackend{name: "go"}, readOnlyBackend{name: "python"}})
-		if !slices.ContainsFunc(unsupported.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == "run.unsupported-language" }) {
-			t.Fatal("Execute accepted backends without execution capability")
-		}
-		for _, b := range byName {
-			b.omit = true
-		}
-		omitted := Execute(plan, backends)
-		if !slices.ContainsFunc(omitted.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == "run.invalid-report" }) {
-			t.Fatal("Execute accepted missing execution results")
-		}
-	}
+	return &report, nil
 }
