@@ -28,7 +28,9 @@
  * at least one page checked. A failure names the page, the rule, the element and the fix; the script then exits 1.
  *
  * A page whose navigation or requests Chromium cuts off with net::ERR_NETWORK_CHANGED, as the host's network changes
- * under other work, is opened again, up to LOAD_ATTEMPTS times. When it still is, or the snapshot, the server or the
+ * under other work, is opened again, up to LOAD_ATTEMPTS times. A page that does not load within LOAD_TIMEOUT while
+ * other pages are open is opened once more after the sweep, alone, and fails renders only when it times out alone too.
+ * When a page is still cut off, or the snapshot, the server or the
  * browser cannot start, that is a defect of view-check itself, not a failure of the viewer: it is reported as such and
  * the script exits 2. `--serve URL` sweeps a unicode serve already running instead, `--only PATTERN` opens only the pages
  * whose name matches (and checks covers for their kinds only), and `--workers N` sets how many pages are open at once.
@@ -38,7 +40,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import { chromium, errors, type Browser, type BrowserContext, type Page } from 'playwright';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const PAGES = join(ROOT, 'internal/serve/ui/dist');
@@ -425,9 +427,10 @@ function inspect({ view, canvas, scheme, names: pairs, self }: Context): Finding
 /**
  * Opens a visit in a page of its own and checks it; undefined when the view does not apply to the visit's input. A page
  * cut off by the host's network changing is opened again, up to LOAD_ATTEMPTS times, and is a Defect of view-check when
- * it still is; any other failure to load counts under renders.
+ * it still is. A page that does not load within LOAD_TIMEOUT gives 'timeout' while `alone` is false, so the sweep can
+ * open it again alone; any other failure to load, and a timeout alone, count under renders.
  */
-async function check(context: BrowserContext, scheme: Context['scheme'], base: string, tree: ApiNode[], visit: Visit): Promise<Finding[] | undefined> {
+async function check(context: BrowserContext, scheme: Context['scheme'], base: string, tree: ApiNode[], visit: Visit, alone: boolean): Promise<Finding[] | undefined | 'timeout'> {
   const response = await fetch(`${base}/api${visit.path.replace(/^\/view\//, '/views/')}`);
   const answer = await response.json() as unknown;
   if (!response.ok) {
@@ -440,6 +443,9 @@ async function check(context: BrowserContext, scheme: Context['scheme'], base: s
       return await checkPage(page, { scheme, base, names: namesOf([...tree, ...nodesIn(answer)]) }, visit, answer);
     } catch (error) {
       const message = error instanceof Error ? error.message.split('\n')[0] ?? '' : String(error);
+      if (error instanceof errors.TimeoutError && !alone) {
+        return 'timeout';
+      }
       if (!message.includes(NETWORK_CHANGED)) {
         return [{ rule: 'renders', element: `the page did not load: ${message}` }];
       }
@@ -545,30 +551,42 @@ async function serve(directory: string): Promise<Server> {
 }
 
 /**
- * Sweeps the pages in the contexts, a page of each visit in each, with `workers` pages open at once. The failures, each
- * naming the page, the rule, the element and the fix; and the pages checked in each kind.
+ * Sweeps the pages in the contexts, a page of each visit in each, with `workers` pages open at once, and then opens each
+ * page that timed out once more, alone. The failures, each naming the page, the rule, the element and the fix; the pages
+ * checked in each kind; and how many pages were opened again alone.
  */
-async function sweep(server: Server, browser: Browser, visitsToCheck: Visit[], workers: number): Promise<{ failures: string[]; checked: Map<string, number>; total: number }> {
+async function sweep(server: Server, browser: Browser, visitsToCheck: Visit[], workers: number): Promise<{ failures: string[]; checked: Map<string, number>; total: number; again: number }> {
   const tree = nodesIn(await (await fetch(`${server.base}/api/tree`)).json() as unknown);
   const contexts = await Promise.all(VIEWPORTS.flatMap(viewport => SCHEMES.map(async colorScheme => ({ context: await browser.newContext({ viewport, colorScheme }), width: viewport.width, scheme: colorScheme }))));
   const queue = visitsToCheck.flatMap(visit => contexts.map(context => ({ visit, ...context })));
   const failures: string[] = [];
   const checked = new Map<string, number>();
+  const timedOut: typeof queue = [];
   let total = 0;
+  const record = (item: (typeof queue)[number], findings: Finding[]) => {
+    total += 1;
+    checked.set(item.visit.kind, (checked.get(item.visit.kind) ?? 0) + 1);
+    for (const finding of findings) {
+      failures.push(`${item.visit.name} at ${item.width} px, ${item.scheme} (${item.visit.path}): ${finding.rule}: ${finding.element}. Fix: ${FIXES[finding.rule]}.`);
+    }
+  };
   await Promise.all(Array.from({ length: workers }, async () => {
     for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
-      const findings = await check(item.context, item.scheme, server.base, tree, item.visit);
-      if (findings === undefined) {
-        continue;
-      }
-      total += 1;
-      checked.set(item.visit.kind, (checked.get(item.visit.kind) ?? 0) + 1);
-      for (const finding of findings) {
-        failures.push(`${item.visit.name} at ${item.width} px, ${item.scheme} (${item.visit.path}): ${finding.rule}: ${finding.element}. Fix: ${FIXES[finding.rule]}.`);
+      const findings = await check(item.context, item.scheme, server.base, tree, item.visit, workers === 1);
+      if (findings === 'timeout') {
+        timedOut.push(item);
+      } else if (findings !== undefined) {
+        record(item, findings);
       }
     }
   }));
-  return { failures, checked, total };
+  for (const item of timedOut) {
+    const findings = await check(item.context, item.scheme, server.base, tree, item.visit, true);
+    if (findings !== undefined && findings !== 'timeout') {
+      record(item, findings);
+    }
+  }
+  return { failures, checked, total, again: timedOut.length };
 }
 
 /** The kinds the run must cover: the view kinds the system's tabs open, and the kinds of the salient nodes. */
@@ -600,7 +618,7 @@ async function main(): Promise<number> {
     const nodes = await (await fetch(`${server.base}/api/search?text=&limit=1000000`)).json() as ApiNode[];
     const only = values.only === undefined ? undefined : new RegExp(values.only);
     const visitsToCheck = visits(nodes).filter(visit => only === undefined || only.test(visit.name));
-    const { failures, checked, total } = await sweep(server, browser, visitsToCheck, workers);
+    const { failures, checked, total, again } = await sweep(server, browser, visitsToCheck, workers);
     const swept = new Set(visitsToCheck.map(visit => visit.kind));
     for (const kind of (await kindsToCover(server, nodes)).filter(item => only === undefined || swept.has(item))) {
       if ((checked.get(kind) ?? 0) === 0) {
@@ -608,6 +626,9 @@ async function main(): Promise<number> {
       }
     }
     const seconds = ((Date.now() - started) / 1000).toFixed(0);
+    if (again > 0) {
+      console.error(`view-check: ${again} pages timed out among ${workers} open at once and were opened again alone`);
+    }
     if (failures.length > 0) {
       console.error([...new Set(failures)].sort().join('\n'));
       console.error(`view-check: ${failures.length} failures on ${total} pages in ${seconds} s`);
