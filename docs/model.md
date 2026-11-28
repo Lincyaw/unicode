@@ -140,7 +140,7 @@
 - `run` 是在一个提交上执行一组性质和流程的一次运行；`result` 是一条性质或一个流程在一次运行中的结论。
 - 运行的**执行场合**是测试或运行时：`unicode test` 的运行是测试；受监控的程序在一个记录周期中的判定（§3.4，[design.md](design.md) §6.6）是运行时。
 - 黑盒契约的结果另记录有效执行数、拒绝的候选输入数（[language.md](language.md) E22、E23）、观察范围，以及失败子句的位置或范围外的差异。观察失败是检查错误（[language.md](language.md) E15），不当作取得了空的观察值，也不算反例。允许变化的范围属于设计，范围外的差异属于证据。
-- 运行时的结论记录判定的调用数、域外调用数及各条不成立的限定或前提的次数、每个子句被判定的次数、检查错误、带 `within` 时耗时的第 95 百分位，流程另记录核对的轨迹数。其中的反例是真实的调用，记下它的输入、不成立的子句和时间；判定通过的调用不留输入。
+- 运行时的结论记录适用的调用数，即输入适用于 p 并得到判定的受监控的调用的个数，以及域外调用数及各条不成立的限定或前提的次数、每个子句被判定的次数、检查错误、带 `within` 时耗时的第 95 百分位，流程另记录核对的轨迹数。其中的反例是真实的调用，记下它的输入、不成立的子句和时间；通过的调用不留输入。
 - 每个用例的结果记下它的执行耗时，以及被测调用和调用序列中每次调用的操作与耗时。设计层操作 o 的**平均耗时**，是测试的当前证据记下的调用中，操作为 o 的那些调用的耗时的平均值；没有这样的调用时，平均耗时不确定。
 - 一条性质或一个流程 p 的**执行范围**包括 p 本身；`unicode test --since` 的影响传播（[design.md](design.md) §6.3）会因其新增、删除或改变而选中 p 的节点和边；以及按 D8 的方式，从 p 的谓词、生成器、派生函数、观察适配器和安装器可达的函数。p 的**执行输入哈希**是执行范围按执行输入哈希的规则（[design.md](design.md) §7.6）编码的 SHA-256，另含模块依赖文件（Go 的 `go.mod` 和 `go.sum`）的内容、语言工具链的版本和 unicode 的版本。运行时的结论的执行输入哈希，是受监控的程序构建所在的提交上 p 的执行输入哈希；程序从有改动的工作区构建，或者没有提交时，结论没有执行输入哈希。
 - 一个用例的**判定**是它执行得出的结论，即通过、反例或被前提拒绝，连同它的耗时；检查错误不是判定。判定按（p 的标识、用例的输入哈希、p 的执行输入哈希）保存和查找：三项都与一个已保存的判定相同时，沿用该判定，不再执行。判定只在测试中沿用。
@@ -204,7 +204,8 @@
 
 - 元素的标签必须属于系统文件 `notation` 声明的记法，并适用于该元素的种类（第 5 条）。
 - 形式为 `event` 的类型就是领域事件，不需要标签。
-- 标签只影响视图，不影响约束。各记法的视图见 [design.md](design.md) §7.1。
+- 记法的标签只影响视图，不影响约束。各记法的视图见 [design.md](design.md) §7.1。
+- 工具链另有一个不属于任何记法的标签 `sensitive`，适用于 type，不需要声明记法：这种类型的值在受监控的程序写出的记录中被脱敏（[design.md](design.md) §6.6）。
 
 ## 6 共有属性
 
@@ -281,7 +282,7 @@
 2. 名称互不相同：同一父节点的各子节点；参与者与顶层容器；同一条性质或同一个流程中的符号、具名观察与用例。
 3. 设计层的 `contains` 构成以 `system` 为根的树。
 4. 跨容器的引用，即字段、参数、返回值、错误、订阅的事件、`extends`、`implements`、符号和观察的类型所引用的类型，以及黑盒契约子句中引用的操作、枚举和错误类型 t，满足 allowed(container(x), container(t))，其中 x 是引用所在的节点。t 属于外部系统时，用该外部系统代替 container(t)。
-5. 元素的每个标签都属于系统文件声明的记法，并适用于该元素的种类（§5）。
+5. 元素的每个标签都属于系统文件声明的记法，或者是不属于任何记法的 `sensitive`，并适用于该元素的种类（§5）。
 6. subscribes(o, E) 时，form(E) = `event`，并且 o 恰有一个参数，其类型为 E。
 
 **流程**
@@ -414,7 +415,7 @@
 | 2 | `design.duplicate-name` | `design.rejects-broken-design` |
 | 3 | `design.missing-system-file`、`design.missing-parent` | `design.rejects-broken-design` |
 | 4 | `design.undeclared-dependency` | `design.rejects-broken-design` |
-| 5 | `design.unknown-label`、`design.undeclared-notation`、`design.label-not-allowed` | `design.rejects-broken-design` |
+| 5 | `design.unknown-label`、`design.undeclared-notation`、`design.label-not-allowed`；`sensitive` 待做：M8 | `design.rejects-broken-design` |
 | 6 | `design.not-an-event`、`design.invalid-subscription` | `design.rejects-broken-design` |
 | 7 | `design.wrong-reference-kind`、`design.nested-person-sender`、`design.undeclared-dependency`、`design.argument-count` | `design.rejects-broken-design` |
 | 8 | `design.sender-not-receiver` | `design.rejects-broken-design` |
