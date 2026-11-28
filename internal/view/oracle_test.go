@@ -128,9 +128,22 @@ func (w world) applicable(kind ViewKind, id string) (string, bool) {
 	if !ok || !n.Salient {
 		return id, false
 	}
+	// A container the property or events view would draw nothing of: it holds no property, or no event and no error.
+	holds := func(test func(graph.Node) bool) bool {
+		for d := range w.below(id) {
+			if test(w.nodes[d]) {
+				return true
+			}
+		}
+		return false
+	}
 	switch kind {
-	case ViewKindArchitecture, ViewKindEvents:
+	case ViewKindArchitecture:
 		return id, w.designContainer(id)
+	case ViewKindEvents:
+		return id, w.designContainer(id) && holds(func(d graph.Node) bool {
+			return d.Kind == graph.NodeKindType && (d.Form == "event" || d.Form == "error")
+		})
 	case ViewKindDdd, ViewKindC4:
 		return id, w.designContainer(id) && slices.Contains(w.nodes[w.system].Attrs["notations"], string(kind))
 	case ViewKindClass:
@@ -140,7 +153,7 @@ func (w world) applicable(kind ViewKind, id string) (string, bool) {
 	case ViewKindCalls:
 		return id, n.Kind == graph.NodeKindOp
 	case ViewKindProperty:
-		return id, n.Kind == graph.NodeKindProperty || w.designContainer(id)
+		return id, n.Kind == graph.NodeKindProperty || w.designContainer(id) && holds(func(d graph.Node) bool { return d.Kind == graph.NodeKindProperty })
 	case ViewKindCode:
 		return id, n.Layer == graph.LayerCode && (n.Kind == graph.NodeKindType || n.Kind == graph.NodeKindContainer && n.Form == "file")
 	}

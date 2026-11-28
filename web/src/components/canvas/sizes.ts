@@ -1,6 +1,6 @@
 import type { Node, ViewNode } from '../../api/types';
 import { ICON_SMALL } from '../../ui/icons';
-import { fieldParts, opLine, relative, scopeOf, typeParts, type TypePart } from '../marks/format';
+import { opLine, relative, scopeOf, typeParts, type TypePart } from '../marks/format';
 import { CODE_SIZE, monoWidth, MONO_SIZE } from './measure';
 
 /*
@@ -38,23 +38,18 @@ function scopeOfType(node: ViewNode): string {
   return scopeOf(node.bindings?.[0]?.node.id ?? node.id);
 }
 
-/** A type's fields or enum values, compared with the code where the view says so. */
+/**
+ * A type's fields and enum values as the design writes them, compared with the code (the view's members). A code type
+ * lists those of the design type it realizes; fields the code has beyond the design are details and are not listed.
+ */
 function memberRows(node: ViewNode): CardRow[] {
   const scope = scopeOfType(node);
-  return node.members
-    ? node.members.map(member => {
-      const warn = member.status === 'contradicted' || member.status === 'missing';
-      return member.kind === 'value'
-        ? { kind: 'value', name: member.name, warn }
-        : { kind: 'field', name: member.name, type: typeParts(member.type ?? member.codeType ?? '', scope, member.refers), warn };
-    })
-    : [
-      ...(node.attrs.fields ?? []).map((field): CardRow => {
-        const { name, type } = fieldParts(field);
-        return { kind: 'field', name, type: typeParts(type, scope, node.refers), warn: false };
-      }),
-      ...(node.attrs.values ?? []).map((name): CardRow => ({ kind: 'value', name, warn: false })),
-    ];
+  return (node.members ?? []).map(member => {
+    const warn = member.status === 'contradicted' || member.status === 'missing';
+    return member.kind === 'value'
+      ? { kind: 'value', name: member.name, warn }
+      : { kind: 'field', name: member.name, type: typeParts(member.type ?? member.codeType ?? '', scope, member.refers), warn };
+  });
 }
 
 /** A type's operations, each with its signature; a method's title carries its type's name, which the card's head already gives. */

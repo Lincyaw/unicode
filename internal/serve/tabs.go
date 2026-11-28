@@ -84,10 +84,8 @@ func (st *state) defaultInput(kind view.ViewKind, id string, places []string) st
 	case view.ViewKindCalls:
 		return st.nearest(places, func(n string) bool { return st.nodes[n].Kind == graph.NodeKindOp && st.nodes[n].Salient && applies(n) })
 	case view.ViewKindProperty:
-		return first(places, func(p string) bool {
-			holds := st.nearest([]string{p}, func(n string) bool { return st.nodes[n].Kind == graph.NodeKindProperty }) != ""
-			return st.nodes[p].Kind == graph.NodeKindContainer && holds && applies(p)
-		})
+		// The view applies to a container only when the container holds a property.
+		return first(places, func(p string) bool { return st.nodes[p].Kind == graph.NodeKindContainer && applies(p) })
 	case view.ViewKindCode:
 		if file := st.codeFile(id); file != "" && applies(file) {
 			return file

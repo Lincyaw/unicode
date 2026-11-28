@@ -60,6 +60,9 @@ export function events(input: string): Drawing {
     throw new NotApplicable(`the events view takes a design container, and ${input} is a ${raw(input).kind}`);
   }
   const scope = new Set(input === SYSTEM_ID ? descendantsOf(SYSTEM_ID) : descendantsOf(input));
+  if (![...scope].some(id => raw(id).kind === 'type' && (raw(id).form === 'event' || raw(id).form === 'error'))) {
+    throw new NotApplicable(`the events view takes a design container that holds an event or an error, and ${input} holds neither`);
+  }
   const drawn: string[] = [];
   const edges: RawEdge[] = [];
   const draw = (id: string) => {
@@ -117,6 +120,9 @@ export function property(input: string): Drawing {
     properties = [input];
   } else if (node.kind === 'container' && node.layer === 'design') {
     properties = descendantsOf(input).filter(id => raw(id).kind === 'property');
+    if (properties.length === 0) {
+      throw new NotApplicable(`the property view takes a property or a design container that holds one, and ${input} holds none`);
+    }
   } else {
     throw new NotApplicable(`the property view takes a property or a design container, and ${input} is a ${node.kind}`);
   }

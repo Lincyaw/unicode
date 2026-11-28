@@ -1,6 +1,8 @@
 package view
 
 import (
+	"slices"
+
 	"github.com/lincyaw/unicode/internal/graph"
 )
 
@@ -85,6 +87,11 @@ func (ix index) descendants(id string) []string {
 		}
 	}
 	return found
+}
+
+// holds tells whether id contains, along a chain of contains edges, a node that passes the test.
+func (ix index) holds(id string, test func(graph.Node) bool) bool {
+	return slices.ContainsFunc(ix.descendants(id), func(d string) bool { return test(ix.nodes[d]) })
 }
 
 // parent returns the container of id along contains, the first by identity

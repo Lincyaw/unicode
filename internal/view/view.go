@@ -235,6 +235,12 @@ func (ix index) request(kind ViewKind, id string, layer ClassLayer, level C4Leve
 		return request{}, na("the view takes " + inputs[kind])
 	case (kind == ViewKindDdd || kind == ViewKindC4) && !slices.Contains(ix.nodes[ix.system].Attrs["notations"], string(kind)):
 		return request{}, na("the system file does not declare the notation " + string(kind))
+	case kind == ViewKindProperty && n.Kind != graph.NodeKindProperty && !ix.holds(input, func(d graph.Node) bool { return d.Kind == graph.NodeKindProperty }):
+		return request{}, na("the container holds no property, and the view would draw nothing")
+	case kind == ViewKindEvents && !ix.holds(input, func(d graph.Node) bool {
+		return d.Kind == graph.NodeKindType && (d.Form == "event" || d.Form == "error")
+	}):
+		return request{}, na("the container holds no event and no error, and the view would draw nothing")
 	}
 	return request{kind: kind, input: input, layer: layer, level: level}, nil
 }
@@ -248,9 +254,9 @@ var inputs = map[ViewKind]string{
 	ViewKindClass:        "a design container or a design type",
 	ViewKindSequence:     "a flow",
 	ViewKindActivity:     "a flow",
-	ViewKindEvents:       "a design container",
+	ViewKindEvents:       "a design container that holds an event or an error",
 	ViewKindCalls:        "an operation or a function",
-	ViewKindProperty:     "a property or a design container",
+	ViewKindProperty:     "a property or a design container that holds one",
 	ViewKindCode:         "a code file or a code type",
 	ViewKindDdd:          "a design container",
 	ViewKindC4:           "a design container",
