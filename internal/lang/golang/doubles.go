@@ -149,12 +149,12 @@ func (c *contractCompiler) configureDoubles(unit *contractUnit) bool {
 	// their formal preconditions, so their expression dependencies count too.
 	seeds := map[string]bool{}
 	external := map[string]string{}
-	for _, e := range c.plan.Graph.Edges() {
+	for _, e := range c.graphEdges() {
 		if e.Kind == graph.EdgeKindRealizes && c.nodes[c.parents[e.To]].Form == "external" {
 			external[e.From] = e.To
 		}
 		if e.From == unit.node.Id && c.nodes[e.To].Kind == graph.NodeKindOp && (e.Kind == graph.EdgeKindRefers || unit.predicate == nil && e.Kind == graph.EdgeKindAbout) {
-			for _, r := range c.plan.Graph.Edges() {
+			for _, r := range c.graphEdges() {
 				if r.Kind == graph.EdgeKindRealizes && r.To == e.To {
 					seeds[r.From] = true
 				}
@@ -171,7 +171,7 @@ func (c *contractCompiler) configureDoubles(unit *contractUnit) bool {
 		if _, ok := unit.spec.Operations[id]; !ok && callee.Kind == "field" {
 			id = env.typeOf(callee.Children[0], nil) + "." + callee.Text
 		}
-		for _, e := range c.plan.Graph.Edges() {
+		for _, e := range c.graphEdges() {
 			if e.Kind == graph.EdgeKindRealizes && e.To == id {
 				seeds[e.From] = true
 			}
@@ -185,7 +185,7 @@ func (c *contractCompiler) configureDoubles(unit *contractUnit) bool {
 		if target := external[id]; target != "" {
 			required[target] = true
 		}
-		for _, e := range c.plan.Graph.Edges() {
+		for _, e := range c.graphEdges() {
 			if (e.Kind == graph.EdgeKindCalls || e.Kind == graph.EdgeKindReaches) && e.From == id && !seeds[e.To] {
 				seeds[e.To] = true
 				queue = append(queue, e.To)
@@ -226,19 +226,19 @@ func (c *contractCompiler) substituteOwnersMatch(target string) bool {
 	clientFile := "file:" + clientPath
 	installerFile := "file:" + installerPath
 	owners := map[string]bool{}
-	for _, e := range c.plan.Graph.Edges() {
+	for _, e := range c.graphEdges() {
 		if e.Kind == graph.EdgeKindOwns && e.To == clientFile {
 			owners[e.From] = true
 		}
 	}
-	for _, e := range c.plan.Graph.Edges() {
+	for _, e := range c.graphEdges() {
 		if e.Kind != graph.EdgeKindOwns || e.To != installerFile || !owners[e.From] {
 			continue
 		}
 		seen := map[string]bool{}
 		for owner := e.From; owner != "" && !seen[owner]; owner = c.parents[owner] {
 			seen[owner] = true
-			for _, use := range c.plan.Graph.Edges() {
+			for _, use := range c.graphEdges() {
 				if use.Kind == graph.EdgeKindUses && use.From == owner && use.To == c.parents[target] {
 					return true
 				}

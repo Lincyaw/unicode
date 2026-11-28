@@ -15,12 +15,12 @@ func (c *contractCompiler) measuredFlow(unit *contractUnit) bool {
 		if step.Kind != graph.NodeKindStep || !strings.HasPrefix(step.Id, unit.node.Id+"#") || step.Form != "emit" {
 			continue
 		}
-		for _, emission := range c.plan.Graph.Edges() {
+		for _, emission := range c.graphEdges() {
 			if emission.Kind != graph.EdgeKindEmits || emission.From != step.Id {
 				continue
 			}
 			found := false
-			for _, publisher := range c.plan.Graph.Edges() {
+			for _, publisher := range c.graphEdges() {
 				if publisher.Kind == graph.EdgeKindPublishes && publisher.To == emission.To {
 					found = true
 					break

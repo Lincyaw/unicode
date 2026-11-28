@@ -105,8 +105,8 @@ func checkDoubleExpressionDependencies(t rapid.TB, sample DoubleSample) {
 			t.Fatal(err)
 		}
 	}
-	c.plan.Graph = &otherGraph
-	c.diagnostics = nil
+	// A compiler compiles one plan, so the other graph gets a compiler of its own.
+	c = contractCompiler{plan: lang.GenPlan{Graph: &otherGraph}, nodes: c.nodes, parents: c.parents, bindings: c.bindings, declarations: c.declarations}
 	if c.configureDoubles(unit) {
 		t.Fatal("an installer owned by a different permitted component was accepted for generation")
 	}

@@ -74,7 +74,7 @@ func (c *contractCompiler) configureCodecs(unit *contractUnit) {
 	for _, observer := range unit.spec.Observers {
 		visitType(observer.Type)
 	}
-	for _, edge := range c.plan.Graph.Edges() {
+	for _, edge := range c.graphEdges() {
 		if edge.From != unit.node.Id && !strings.HasPrefix(edge.From, unit.node.Id+"#") {
 			continue
 		}

@@ -285,30 +285,36 @@ func (c *contractCompiler) recordLiteral(value *syntax.BraceValue, t string, nam
 	return "func() " + t + " {" + body.String() + "return value}()", nil
 }
 
+// modelParents are the types id extends, in the order the design declares
+// them, from an index of all extends edges built once per compiler: schemas
+// ask for the parents of every type in every contract.
 func (c *contractCompiler) modelParents(id string) []string {
-	var edges []graph.Edge
-	for _, edge := range c.plan.Graph.Edges() {
-		if edge.Kind == graph.EdgeKindExtends && edge.From == id {
-			edges = append(edges, edge)
+	edges := c.graphEdges()
+	if c.extends == nil {
+		c.extends = map[string][]string{}
+		var extends []graph.Edge
+		for _, edge := range edges {
+			if edge.Kind == graph.EdgeKindExtends {
+				extends = append(extends, edge)
+			}
+		}
+		slices.SortStableFunc(extends, func(a, b graph.Edge) int {
+			if a.Origin.Path != b.Origin.Path {
+				return strings.Compare(a.Origin.Path, b.Origin.Path)
+			}
+			if a.Origin.Line != b.Origin.Line {
+				return a.Origin.Line - b.Origin.Line
+			}
+			if a.Origin.Column != b.Origin.Column {
+				return a.Origin.Column - b.Origin.Column
+			}
+			return strings.Compare(a.To, b.To)
+		})
+		for _, edge := range extends {
+			c.extends[edge.From] = append(c.extends[edge.From], edge.To)
 		}
 	}
-	slices.SortStableFunc(edges, func(a, b graph.Edge) int {
-		if a.Origin.Path != b.Origin.Path {
-			return strings.Compare(a.Origin.Path, b.Origin.Path)
-		}
-		if a.Origin.Line != b.Origin.Line {
-			return a.Origin.Line - b.Origin.Line
-		}
-		if a.Origin.Column != b.Origin.Column {
-			return a.Origin.Column - b.Origin.Column
-		}
-		return strings.Compare(a.To, b.To)
-	})
-	var parents []string
-	for _, edge := range edges {
-		parents = append(parents, edge.To)
-	}
-	return parents
+	return slices.Clone(c.extends[id])
 }
 func (c *contractCompiler) visibleOperationIDs(id string) []string {
 	var out []string

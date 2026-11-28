@@ -67,6 +67,8 @@ type contractCompiler struct {
 	foreignNames    map[string]string
 	foreignOriginal map[string]string
 	carrierModels   map[string]string
+	edges           []graph.Edge        // the plan graph's edges (graphEdges)
+	extends         map[string][]string // a type's model parents (modelParents)
 }
 type contractUnit struct {
 	node          graph.Node
@@ -180,6 +182,20 @@ func (b *Backend) Generate(plan lang.GenPlan) lang.Generation {
 		}
 	}
 	return generation
+}
+
+// graphEdges are the plan graph's edges, listed once per compiler: the
+// graph sorts a fresh copy of every edge on each Edges call, and the compiler
+// asks for them in loops over contracts and reachable operations. A compiler
+// compiles one plan; it only reads the edges.
+func (c *contractCompiler) graphEdges() []graph.Edge {
+	if c.edges == nil {
+		c.edges = c.plan.Graph.Edges()
+		if c.edges == nil {
+			c.edges = []graph.Edge{}
+		}
+	}
+	return c.edges
 }
 func (c *contractCompiler) diagnostic(n graph.Node, code, message, fix string) {
 	c.diagnostics = append(c.diagnostics, diag.Diagnostic{Code: code, Subject: n.Id, Position: n.Origin, Message: message, Fix: fix})
