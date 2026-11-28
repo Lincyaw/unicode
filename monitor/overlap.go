@@ -3,15 +3,16 @@ package monitor
 import (
 	"reflect"
 	"sync"
-	"time"
 )
 
 // Overlap is decided per receiver (docs/design.md §6.6): only monitored calls
 // on the same receiver object overlap. A judgment reads the receiver only
 // while no monitored real call on it is in progress, and a monitored call on
 // that receiver starts its real call only once the reading is done, so the
-// reads never race the writes of monitored calls. Calls without a receiver,
-// such as entries, have nothing to wait for.
+// reads never race the writes of monitored calls. The wait has no bound:
+// while a judgment reads, the only code of the program it runs on a live
+// object is a codec's encoder, so no monitored call it makes waits on it.
+// Calls without a receiver, such as entries, have nothing to wait for.
 
 // gate is the monitored activity on one receiver.
 type gate struct {
@@ -41,11 +42,6 @@ type window struct {
 	start  uint64
 	reader bool
 }
-
-// longestWait bounds how long a call waits for judgments reading its
-// receiver: a judgment that reaches the same receiver through a monitored
-// call of its own must not deadlock the program.
-const longestWait = 50 * time.Millisecond
 
 // open gives the window of a call on receiver.
 func (g *gates) open(receiver any) *window {
@@ -90,16 +86,15 @@ func (w *window) done() {
 }
 
 // begin marks the call's real call as started, once no judgment reads the
-// receiver or after longestWait.
+// receiver.
 func (w *window) begin() {
 	if w.gates == nil {
 		return
 	}
-	deadline := time.Now().Add(longestWait)
 	w.gates.mu.Lock()
 	defer w.gates.mu.Unlock()
-	for w.gates.of(w.key).reading > 0 && time.Now().Before(deadline) {
-		waitFor(w.gates.ready, deadline)
+	for w.gates.of(w.key).reading > 0 {
+		w.gates.ready.Wait()
 	}
 	g := w.gates.of(w.key)
 	g.calls++
@@ -141,14 +136,6 @@ func (g *gates) release(key any, idle *gate) {
 	if idle.calls == 0 && idle.reading == 0 {
 		delete(g.byKey, key)
 	}
-}
-
-// waitFor waits on cond until it is signalled or the deadline passes; the
-// cond's lock is held.
-func waitFor(cond *sync.Cond, deadline time.Time) {
-	timer := time.AfterFunc(time.Until(deadline), cond.Broadcast)
-	defer timer.Stop()
-	cond.Wait()
 }
 
 // identity is the key that tells whether two calls share a receiver: its

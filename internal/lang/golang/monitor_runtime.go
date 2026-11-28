@@ -83,6 +83,7 @@ type ucJudging struct {
 	unit       *ucMonitorUnit
 	spec       *ucContract
 	schema     monitor.Schema
+	live       map[string]reflect.Value
 	judgment   monitor.Judgment
 	env        *ucEnvironment
 	models     map[string]string
@@ -110,12 +111,9 @@ func ucMonitorJudge(u *ucMonitorUnit, observed monitor.Observed) monitor.Finish 
 	for _, o := range s.Observers {
 		j.unreadable[o.Name] = true
 	}
-	natives := j.natives(observed)
-	for name, value := range natives {
-		j.env.values[name] = ucLazyValue(value, j.models[name], s.Types)
-	}
+	j.live = j.natives(observed)
 	judged, finish := true, monitor.Finish(nil)
-	if problem := ucMonitorGuard(func() { judged, finish = j.before(natives, observed.Reads) }); problem != "" {
+	if problem := ucMonitorGuard(func() { judged, finish = j.before(observed.Reads) }); problem != "" {
 		j.judgment.Verdict, j.judgment.Message = monitor.VerdictCheckError, "the judgment cannot be made before the call: "+problem
 		return j.settled()
 	}
@@ -151,16 +149,18 @@ func (j *ucJudging) natives(observed monitor.Observed) map[string]reflect.Value 
 }
 
 // before is the first half of E26: it freezes and redacts the input before
-// the call can change it, checks the domain and the preconditions, and does
-// beforeCall. It reports false when the property does not judge the call,
-// and a Finish that settles the judgment when the call is outside the domain.
-func (j *ucJudging) before(natives map[string]reflect.Value, reads monitor.Reads) (bool, monitor.Finish) {
+// the call can change it, takes the values it reads as detached model values,
+// checks the domain and the preconditions, and does beforeCall. It reports
+// false when the property does not judge the call, and a Finish that settles
+// the judgment when the call is outside the domain.
+func (j *ucJudging) before(reads monitor.Reads) (bool, monitor.Finish) {
 	s := j.spec
 	j.input = map[string]monitor.Value{}
-	for name, native := range natives {
+	for name, native := range j.live {
 		frozen := ucWireCanonical(ucFreezeValue(native, j.models[name], s, map[uintptr]bool{}, 0))
 		j.input[name] = monitor.Conceal(ucWireToMonitor(frozen), j.models[name], j.schema)
 	}
+	j.read()
 	j.judgment.InputHash = monitor.InputHash(j.input)
 	clause, readable := ucDomain(s, j.env.values)
 	if !readable {
@@ -205,7 +205,9 @@ func (j *ucJudging) after(results []any, failure error, panicked any, reads moni
 	raised := ""
 	var out ucOutcome
 	if problem := ucMonitorGuard(func() {
+		j.read()
 		j.env.captureCall(op, j.values(results, failure, op), j.spec.Call, &out)
+		j.env.result = ucDetach(j.env.result)
 		raised = j.raised(failure)
 	}); problem != "" {
 		j.judgment.Verdict, j.judgment.Message = monitor.VerdictCheckError, "the call's result is no model value: "+problem
@@ -244,6 +246,19 @@ func (j *ucJudging) after(results []any, failure error, panicked any, reads moni
 	}
 	j.judgment.Verdict = monitor.VerdictPassed
 	return j.judgment, true
+}
+
+// read binds each value the judgment may read to its model value, detached
+// from the program's objects: an operation an expression calls then runs on a
+// copy rebuilt from it, so that, while the judgment reads its receiver, the
+// only code of the program that runs on a live object is a codec's encoder
+// (docs/design.md §6.6).
+func (j *ucJudging) read() {
+	for name, native := range j.live {
+		if !j.unreadable[name] {
+			j.env.values[name] = ucDetach(ucLazyValue(native, j.models[name], j.spec.Types))
+		}
+	}
 }
 
 // values are the call's results as captureCall takes them: the results, each

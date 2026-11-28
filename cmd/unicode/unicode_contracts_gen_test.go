@@ -96,7 +96,7 @@ type unicodeGeneratedContract struct {
 	Derived []string
 	// Limits are the property's limits, as the graph writes them; a replayed
 	// collected call and a monitored call are checked against them.
-	Limits []string `json:",omitempty"`
+	Limits []string `json:"limits,omitempty"`
 }
 type unicodeGeneratedDiagnostic struct {
 	Code, Subject string

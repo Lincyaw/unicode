@@ -80,7 +80,7 @@ type unicodeMonitorContract struct {
 	Derived []string
 	// Limits are the property's limits, as the graph writes them; a replayed
 	// collected call and a monitored call are checked against them.
-	Limits []string `json:",omitempty"`
+	Limits []string `json:"limits,omitempty"`
 }
 type unicodeMonitorDiagnostic struct {
 	Code, Subject string
@@ -2010,6 +2010,7 @@ type unicodeMonitorJudging struct {
 	unit       *unicodeMonitorUnit
 	spec       *unicodeMonitorContract
 	schema     monitor.Schema
+	live       map[string]reflect.Value
 	judgment   monitor.Judgment
 	env        *unicodeMonitorEnvironment
 	models     map[string]string
@@ -2029,12 +2030,9 @@ func unicodeMonitorJudge(u *unicodeMonitorUnit, observed monitor.Observed) monit
 	for _, o := range s.Observers {
 		j.unreadable[o.Name] = true
 	}
-	natives := j.natives(observed)
-	for name, value := range natives {
-		j.env.values[name] = unicodeMonitorLazyValue(value, j.models[name], s.Types)
-	}
+	j.live = j.natives(observed)
 	judged, finish := true, monitor.Finish(nil)
-	if problem := unicodeMonitorGuard(func() { judged, finish = j.before(natives, observed.Reads) }); problem != "" {
+	if problem := unicodeMonitorGuard(func() { judged, finish = j.before(observed.Reads) }); problem != "" {
 		j.judgment.Verdict, j.judgment.Message = monitor.VerdictCheckError, "the judgment cannot be made before the call: "+problem
 		return j.settled()
 	}
@@ -2065,13 +2063,14 @@ func (j *unicodeMonitorJudging) natives(observed monitor.Observed) map[string]re
 	}
 	return out
 }
-func (j *unicodeMonitorJudging) before(natives map[string]reflect.Value, reads monitor.Reads) (bool, monitor.Finish) {
+func (j *unicodeMonitorJudging) before(reads monitor.Reads) (bool, monitor.Finish) {
 	s := j.spec
 	j.input = map[string]monitor.Value{}
-	for name, native := range natives {
+	for name, native := range j.live {
 		frozen := unicodeMonitorWireCanonical(unicodeMonitorFreezeValue(native, j.models[name], s, map[uintptr]bool{}, 0))
 		j.input[name] = monitor.Conceal(unicodeMonitorWireToMonitor(frozen), j.models[name], j.schema)
 	}
+	j.read()
 	j.judgment.InputHash = monitor.InputHash(j.input)
 	clause, readable := unicodeMonitorDomain(s, j.env.values)
 	if !readable {
@@ -2113,7 +2112,9 @@ func (j *unicodeMonitorJudging) after(results []any, failure error, panicked any
 	raised := ""
 	var out unicodeMonitorOutcome
 	if problem := unicodeMonitorGuard(func() {
+		j.read()
 		j.env.captureCall(op, j.values(results, failure, op), j.spec.Call, &out)
+		j.env.result = unicodeMonitorDetach(j.env.result)
 		raised = j.raised(failure)
 	}); problem != "" {
 		j.judgment.Verdict, j.judgment.Message = monitor.VerdictCheckError, "the call's result is no model value: "+problem
@@ -2152,6 +2153,13 @@ func (j *unicodeMonitorJudging) after(results []any, failure error, panicked any
 	}
 	j.judgment.Verdict = monitor.VerdictPassed
 	return j.judgment, true
+}
+func (j *unicodeMonitorJudging) read() {
+	for name, native := range j.live {
+		if !j.unreadable[name] {
+			j.env.values[name] = unicodeMonitorDetach(unicodeMonitorLazyValue(native, j.models[name], j.spec.Types))
+		}
+	}
 }
 func (j *unicodeMonitorJudging) values(results []any, failure error, op unicodeMonitorOperation) []reflect.Value {
 	values := make([]reflect.Value, 0, len(results)+1)
@@ -2872,7 +2880,7 @@ func unicodeMonitorSpec0() *unicodeMonitorContract {
 	return &s
 }
 
-var unicodeMonitorUnitOf0 = unicodeMonitorUnit{Spec: unicodeMonitorSpec0, Op: "check.conform", Receiver: "", Args: []string{"snapshot"}, ArgTypes: []reflect.Type{reflect.TypeFor[*ucpkg17.Graph]()}, Results: []reflect.Type{reflect.TypeFor[Checked]()}, Deep: false, Sensitive: []string{}}
+var unicodeMonitorUnitOf0 = unicodeMonitorUnit{Spec: unicodeMonitorSpec0, Op: "check.conform", Receiver: "", Args: []string{"snapshot"}, ArgTypes: []reflect.Type{reflect.TypeFor[*ucpkg17.Graph]()}, Results: []reflect.Type{reflect.TypeFor[Checked]()}, Deep: true, Sensitive: []string{}}
 
 // judgeReportsEffectsInPureOps judges check.reports-effects-in-pure-ops on a monitored call (docs/language.md E26).
 func judgeReportsEffectsInPureOps(observed monitor.Observed) monitor.Finish {
@@ -2886,6 +2894,8 @@ func monitoredConform(p0 *ucpkg17.Graph) Checked {
 	return r0
 }
 func init() {
-	monitor.RegisterFunction(monitor.Operation{Op: "check.conform", Judges: []monitor.Judge{{Check: "check.reports-effects-in-pure-ops", Before: judgeReportsEffectsInPureOps}}})
+	monitor.RegisterFunction(monitor.Operation{Op: "check.conform", Judges: []monitor.Judge{{Check: "check.reports-effects-in-pure-ops", Before: judgeReportsEffectsInPureOps}}, Collect: func(receiver any, args []any) (monitor.Collected, error) {
+		return unicodeMonitorCollect(&unicodeMonitorUnitOf0, receiver, args)
+	}})
 	monitor.RegisterEntry(Conform, monitoredConform)
 }

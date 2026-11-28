@@ -78,20 +78,21 @@ func (c *contractCompiler) monitorFiles(units map[string]*contractUnit) map[stri
 	wrapped := map[string]bool{}
 	excluded := c.monitorClosure()
 	monitored := lang.MonitoredCalls(c.plan.Graph)
+	effects := c.plan.Graph.Effects()
 	for _, id := range slices.Sorted(maps.Keys(monitored)) {
 		call, unit := monitored[id], units[id]
 		// A derived input is not given by the call (docs/model.md §3.4).
 		if unit == nil || unit.predicate != nil || len(unit.spec.Derived) > 0 || !c.monitorable(unit) {
 			continue
 		}
-		op, ok := c.nodes[call.Op]
-		if !ok {
+		if _, known := c.nodes[call.Op]; !known {
 			continue
 		}
-		judge := &monitorJudge{unit: unit, call: call, deep: first(op.Attrs["pure"]) == "true"}
+		judge := &monitorJudge{unit: unit, call: call, deep: judgedDeep(effects, call.Op)}
 		judge.collect = judge.deep && !c.reachesInterface(unit, call)
 		owner := c.parents[call.Op]
 		var d nativeDeclaration
+		var ok bool
 		if call.Receiver != "" {
 			if d, ok = c.bound(graph.EdgeKindRealizes, owner); !ok {
 				continue
@@ -137,6 +138,14 @@ func (c *contractCompiler) monitorFiles(units map[string]*contractUnit) map[stri
 		}
 	}
 	return files
+}
+
+// judgedDeep tells whether calls of the design operation op are judged deep
+// (docs/design.md §6.6): its effects (docs/model.md §9 D8) are none or only
+// time. An operation whose effects are not known is judged shallow.
+func judgedDeep(effects map[string]graph.OperationEffects, op string) bool {
+	e, ok := effects[op]
+	return ok && !slices.ContainsFunc(e.Effects, func(kind graph.Effect) bool { return kind != graph.EffectTime })
 }
 
 // monitorClosure is the monitor package and every package it imports, at
