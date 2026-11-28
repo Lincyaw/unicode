@@ -52,6 +52,7 @@ var _ = ucCandidateWorker
 var _ = ucProcessRunAll
 var _ = ucProcesses
 var _ = ucProcessShards
+var _ = ucDeclaredElsewhere
 var _ = ucEncodedLiteral
 
 var _ lang.Generator = (*Backend)(nil)
@@ -952,7 +953,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 			}
 			fmt.Fprintf(&body, "){ ucCheck(t,%s(),map[string]reflect.Value{%s}) }\n", specName, strings.Join(values, ","))
 		}
-		fmt.Fprintf(&body, "func ucInvoke%s(tb rapid.TB, s *ucContract, values map[string]reflect.Value){", id)
+		fmt.Fprintf(&body, "func ucInvoke%s(tb rapid.TB, s *ucContract, values map[string]reflect.Value){if ucDeclaredElsewhere(tb){return};", id)
 		if unit.predicate != nil {
 			body.WriteString("ucManual(tb,s,values,func(){pre:=*s;pre.SkipInstall=true;pre.Call=nil;pre.Ensures=nil;pre.Sequence=\"\";ucCheck(tb,&pre,values); started:=time.Now();defer func(){if ucCurrent!=nil&&s.Within>0 {ucCurrent.durations=append(ucCurrent.durations,time.Since(started))}}();")
 		}

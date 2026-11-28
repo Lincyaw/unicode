@@ -3,6 +3,7 @@
 package evidence
 
 import (
+	ucbytes "bytes"
 	"context"
 	uccrand "crypto/rand"
 	"crypto/sha256"
@@ -14,6 +15,7 @@ import (
 	ucflag "flag"
 	"fmt"
 	ucpkg0 "github.com/lincyaw/unicode/internal/graph"
+	ucfs "io/fs"
 	"math"
 	"math/big"
 	"os"
@@ -29,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	ucsync "sync"
+	ucsyscall "syscall"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -3460,11 +3463,17 @@ func unicodeGeneratedCheckInputAliases(s *unicodeGeneratedContract, inputs map[s
 // binary (docs/design.md §6.3): processes share no package-level state, so
 // properties run at the same time, and a property's random cases are split
 // among ucProcessShards children that each draw their share from a seed of
-// their own. The number of cases stays rapid's configured count. Every
-// child gets a temporary directory of its own (TMPDIR, and
-// UNICODE_CONTRACT_TEMP to tell it so), removed when it ends however it
-// ends; results are reported once all children have ended, sorted by
-// property and child.
+// their own. The number of cases stays rapid's configured count.
+//
+// A child holds a token of a pool shared by every test binary of the user
+// on this machine, so at most UNICODE_TEST_JOBS (by default GOMAXPROCS)
+// children run at once. Each child has a temporary directory of its own
+// (TMPDIR, and UNICODE_CONTRACT_TEMP to tell it so) and a process group of
+// its own; once it ends, however it ends, its group is killed and its
+// directory removed. The children of one run share a content cache made for
+// the run (UNICODE_CACHE), removed with it, unless UNICODE_CACHE is set.
+// Results are reported once every child has ended, sorted by property and
+// child.
 
 // ucProcessShards is how many children split one property's random cases.
 const unicodeGeneratedProcessShards = 8
@@ -3486,51 +3495,58 @@ type unicodeGeneratedProcessShard struct {
 
 // ucProcesses tells whether this test binary runs its properties in child
 // processes: not when it is such a child, measures coverage or a profile,
-// or replays a rapid seed or fail file, which run in this process as before.
+// or replays a rapid seed or fail file, given on the command line or by
+// rapid's environment variables, which run in this process as before.
 func unicodeGeneratedProcesses() bool {
 	if os.Getenv("UNICODE_CONTRACT_CHILD") != "" || testing.CoverMode() != "" {
 		return false
 	}
-	inProcess := false
-	ucflag.Visit(func(f *ucflag.Flag) {
-		switch f.Name {
-		case "rapid.seed", "rapid.failfile", "test.cpuprofile", "test.memprofile", "test.blockprofile", "test.mutexprofile", "test.trace":
-			inProcess = true
+	// rapid takes the defaults of its flags from RAPID_SEED and the like, so
+	// the values decide, not whether a flag was given.
+	for _, name := range []string{"rapid.seed", "rapid.failfile", "test.cpuprofile", "test.memprofile", "test.blockprofile", "test.mutexprofile", "test.trace"} {
+		if f := ucflag.Lookup(name); f != nil && f.Value.String() != "" && f.Value.String() != "0" {
+			return false
 		}
-	})
-	return !inProcess
+	}
+	return true
 }
 
-// ucProcessJobs is how many children run at once: GOMAXPROCS, or fewer when
-// UNICODE_TEST_JOBS asks for fewer.
-func unicodeGeneratedProcessJobs() int {
-	jobs := max(1, ucruntime.GOMAXPROCS(0))
-	if n, err := strconv.Atoi(os.Getenv("UNICODE_TEST_JOBS")); err == nil && n >= 1 {
-		jobs = min(jobs, n)
+// ucDeclaredElsewhere tells whether a declared case reaching tb is replayed
+// by another process: the first child of a property replays its declared
+// cases, the others only draw random ones.
+func unicodeGeneratedDeclaredElsewhere(tb rapid.TB) bool {
+	if _, declared := tb.(*testing.T); !declared {
+		return false
 	}
-	return jobs
+	shard := os.Getenv("UNICODE_CONTRACT_SHARD")
+	return shard != "" && shard != "0"
 }
 
 // ucProcessPlan is what every child of this run shares.
 type unicodeGeneratedProcessPlan struct {
-	checks, effective int // rapid's count, and what it runs (a fifth under -short)
-	short             bool
-	forwarded         []string
-	logged            bool // whether go test keeps a test log of this process
-	slots             chan struct{}
-	ctx               context.Context
+	effective int // the cases rapid runs: its count, or a fifth of it under -short
+	short     bool
+	forwarded []string
+	logged    bool // whether go test keeps a test log of this process
+	cache     string
+	pool      unicodeGeneratedProcessPool
+	ctx       context.Context
+	deadline  time.Time
 }
 
-func unicodeGeneratedNewProcessPlan(t *testing.T) (*unicodeGeneratedProcessPlan, context.CancelFunc) {
-	p := &unicodeGeneratedProcessPlan{checks: 100, short: testing.Short(), slots: make(chan struct{}, unicodeGeneratedProcessJobs())}
-	if f := ucflag.Lookup("rapid.checks"); f != nil {
-		if n, err := strconv.Atoi(f.Value.String()); err == nil {
-			p.checks = n
-		}
+func unicodeGeneratedNewProcessPlan(t *testing.T) (*unicodeGeneratedProcessPlan, func()) {
+	p := &unicodeGeneratedProcessPlan{short: testing.Short(), pool: unicodeGeneratedNewProcessPool()}
+	f := ucflag.Lookup("rapid.checks")
+	if f == nil {
+		t.Fatal("rapid registers no -rapid.checks flag")
 	}
-	p.effective = p.checks
+	checks, err := strconv.Atoi(f.Value.String())
+	if err != nil {
+		t.Fatalf("-rapid.checks is not a count: %v", err)
+	}
+	p.effective = checks
 	if p.short {
-		p.effective = p.checks / 5
+		p.effective = checks / 5
 	}
 	ucflag.Visit(func(f *ucflag.Flag) {
 		if strings.HasPrefix(f.Name, "rapid.") && f.Name != "rapid.checks" {
@@ -3546,31 +3562,45 @@ func unicodeGeneratedNewProcessPlan(t *testing.T) (*unicodeGeneratedProcessPlan,
 	if f := ucflag.Lookup("test.testlogfile"); f != nil && f.Value.String() != "" {
 		p.logged = true
 	}
+	cleanups := []func(){}
+	if os.Getenv("UNICODE_CACHE") == "" {
+		if p.cache, err = os.MkdirTemp("", "unicode-cache-run-"); err != nil {
+			t.Fatal(err)
+		}
+		cleanups = append(cleanups, func() { _ = os.RemoveAll(p.cache) })
+	}
 	// Children are stopped before go test's own deadline, so that this
 	// process still removes their directories and reports them.
-	ctx, cancel := context.Background(), context.CancelFunc(func() {})
+	p.ctx = context.Background()
 	if deadline, ok := t.Deadline(); ok {
-		margin := min(10*time.Second, time.Until(deadline)/10)
-		ctx, cancel = context.WithDeadline(ctx, deadline.Add(-margin))
-		p.forwarded = append(p.forwarded, "-test.timeout="+time.Until(deadline.Add(-margin)).String())
+		p.deadline = deadline.Add(-min(10*time.Second, time.Until(deadline)/10))
+		var cancel context.CancelFunc
+		p.ctx, cancel = context.WithDeadline(p.ctx, p.deadline)
+		cleanups = append(cleanups, cancel)
 	}
-	p.ctx = ctx
-	return p, cancel
+	return p, func() {
+		for i := len(cleanups) - 1; i >= 0; i-- {
+			cleanups[i]()
+		}
+	}
 }
 
-// ucProcessRunAll runs every selected property in children at once, then
-// reports each property in a subtest of its own, in the order of their
-// identities. A property the -run pattern selects but the early guess
-// (ucProcessMayRun) did not is run when its subtest comes.
+// ucProcessRunAll runs every selected property in children, then reports
+// each property in a subtest of its own, in the order of their identities.
+// A property whose selection by -run and -skip ucProcessMayRun can read
+// starts with the others; any other starts when go test reaches its subtest.
 func unicodeGeneratedProcessRunAll(t *testing.T, selected []string, units []unicodeGeneratedProcessUnit) {
-	plan, cancel := unicodeGeneratedNewProcessPlan(t)
-	defer cancel()
+	plan, done := unicodeGeneratedNewProcessPlan(t)
+	defer done()
 	units = slices.Clone(units)
 	slices.SortFunc(units, func(a, b unicodeGeneratedProcessUnit) int { return strings.Compare(a.ID, b.ID) })
 	var wait ucsync.WaitGroup
 	results := map[string][]unicodeGeneratedProcessShard{}
 	for _, u := range units {
-		if (len(selected) == 0 || slices.Contains(selected, u.ID)) && unicodeGeneratedProcessMayRun(u.ID) {
+		if len(selected) > 0 && !slices.Contains(selected, u.ID) {
+			continue
+		}
+		if known, runs := unicodeGeneratedProcessMayRun(u.ID); known && runs {
 			results[u.ID] = plan.start(&wait, u)
 		}
 	}
@@ -3608,20 +3638,26 @@ func (p *unicodeGeneratedProcessPlan) start(wait *ucsync.WaitGroup, u unicodeGen
 			continue
 		}
 		wait.Add(1)
-		go func() {
+		go func(index int) {
 			defer wait.Done()
-			p.slots <- struct{}{}
-			defer func() { <-p.slots }()
-			s.output, s.err = p.run(u.ID, string(ids), s)
-		}()
+			release, err := p.pool.acquire(p.ctx)
+			if err != nil {
+				s.err = fmt.Errorf("no process token before the deadline: %w", err)
+				return
+			}
+			defer release()
+			s.output, s.err = p.run(u.ID, string(ids), index, s)
+		}(i)
 	}
 	return shards
 }
 
-// run runs one child with a temporary directory of its own and removes the
-// directory once the child has ended, killed or not; the child's test log is
-// replayed here first.
-func (p *unicodeGeneratedProcessPlan) run(id, ids string, s *unicodeGeneratedProcessShard) ([]byte, error) {
+// run runs one child in a temporary directory and a process group of its
+// own. When the run's deadline comes first, the group gets SIGQUIT, so that
+// the child prints its goroutines, and is killed ten seconds later; once
+// the child has ended the group is killed and the directory removed. The
+// child's test log is replayed here first.
+func (p *unicodeGeneratedProcessPlan) run(id, ids string, index int, s *unicodeGeneratedProcessShard) ([]byte, error) {
 	dir, err := os.MkdirTemp("", "unicode-process-")
 	if err != nil {
 		return nil, err
@@ -3636,14 +3672,30 @@ func (p *unicodeGeneratedProcessPlan) run(id, ids string, s *unicodeGeneratedPro
 		requested = s.count * 5
 	}
 	args := append([]string{"-test.run=^TestUnicodeContracts$/^" + ucregexp.QuoteMeta(id) + "$", "-test.count=1", "-rapid.checks=" + strconv.Itoa(requested), "-rapid.seed=" + strconv.FormatUint(s.seed, 10)}, p.forwarded...)
+	if !p.deadline.IsZero() {
+		// The child's own timeout comes first and prints its goroutines.
+		left := time.Until(p.deadline)
+		args = append(args, "-test.timeout="+(left-min(5*time.Second, left/20)).String())
+	}
 	log := ucfilepath.Join(dir, "test.log")
 	if p.logged {
 		args = append(args, "-test.testlogfile="+log)
 	}
 	cmd := ucexec.CommandContext(p.ctx, os.Args[0], args...)
-	cmd.Env = append(os.Environ(), "UNICODE_CONTRACT_CHILD=1", "UNICODE_CONTRACT_IDS="+ids, "UNICODE_CONTRACT_TEMP="+temp, "TMPDIR="+temp, "TMP="+temp, "TEMP="+temp)
+	cmd.Env = append(os.Environ(), "UNICODE_CONTRACT_CHILD=1", "UNICODE_CONTRACT_IDS="+ids, "UNICODE_CONTRACT_SHARD="+strconv.Itoa(index),
+		"UNICODE_CONTRACT_TEMP="+temp, "TMPDIR="+temp, "TMP="+temp, "TEMP="+temp)
+	if p.cache != "" {
+		cmd.Env = append(cmd.Env, "UNICODE_CACHE="+p.cache)
+	}
+	grouped := unicodeGeneratedOwnProcessGroup(cmd)
+	cmd.Cancel = func() error { return unicodeGeneratedSignalGroup(cmd.Process, grouped, ucsyscall.SIGQUIT) }
 	cmd.WaitDelay = 10 * time.Second
-	output, err := cmd.CombinedOutput()
+	var output ucbytes.Buffer
+	cmd.Stdout, cmd.Stderr = &output, &output
+	err = cmd.Run()
+	if cmd.Process != nil {
+		_ = unicodeGeneratedSignalGroup(cmd.Process, grouped, os.Kill)
+	}
 	if p.logged {
 		data, readErr := os.ReadFile(log)
 		if readErr != nil && err == nil {
@@ -3651,7 +3703,7 @@ func (p *unicodeGeneratedProcessPlan) run(id, ids string, s *unicodeGeneratedPro
 		}
 		defer unicodeGeneratedReplayTestLog(string(data))
 	}
-	return output, err
+	return output.Bytes(), err
 }
 
 // report fails t with every child that failed, in their order, each named
@@ -3666,34 +3718,165 @@ func (p *unicodeGeneratedProcessPlan) report(t *testing.T, id string, shards []u
 	}
 }
 
-// ucProcessMayRun guesses whether -test.run and -test.skip let the subtest
-// id run, so that its children start with the others. It reads a pattern only
-// when it has no brackets, parentheses, alternatives or escaped slashes, which
-// change how go test splits it into levels, and answers yes when it cannot
-// tell: go test still selects the subtest itself.
-func unicodeGeneratedProcessMayRun(id string) bool {
-	levels := func(name string) []*ucregexp.Regexp {
+// ucOwnProcessGroup asks for cmd to start in a process group of its own,
+// where the platform has them, and tells whether it did.
+func unicodeGeneratedOwnProcessGroup(cmd *ucexec.Cmd) bool {
+	attr := &ucsyscall.SysProcAttr{}
+	field := reflect.ValueOf(attr).Elem().FieldByName("Setpgid")
+	if !field.IsValid() || field.Kind() != reflect.Bool {
+		return false
+	}
+	field.SetBool(true)
+	cmd.SysProcAttr = attr
+	return true
+}
+
+// ucSignalGroup sends sig to the process group a child leads, or to the
+// child alone where it has no group of its own.
+func unicodeGeneratedSignalGroup(child *os.Process, grouped bool, sig os.Signal) error {
+	if grouped {
+		if group, err := os.FindProcess(-child.Pid); err == nil {
+			if err := group.Signal(sig); err == nil {
+				return nil
+			}
+		}
+	}
+	if err := child.Signal(sig); err != nil && sig != os.Kill {
+		return child.Kill()
+	}
+	return nil
+}
+
+// ucProcessPool is a pool of tokens shared by every test binary of the user
+// on this machine: a token is a file slot-<i> created exclusively in dir,
+// holding its owner's process identifier, and removed on release. A slot
+// whose owner no longer runs is taken back. Within one process at most size
+// goroutines look for a token, and a goroutine that finds none waits a
+// little longer each time, up to a fifth of a second.
+type unicodeGeneratedProcessPool struct {
+	dir   string
+	size  int
+	local chan struct{}
+}
+
+func unicodeGeneratedNewProcessPool() unicodeGeneratedProcessPool {
+	size := max(1, ucruntime.GOMAXPROCS(0))
+	if n, err := strconv.Atoi(os.Getenv("UNICODE_TEST_JOBS")); err == nil && n >= 1 {
+		size = n
+	}
+	return unicodeGeneratedProcessPool{dir: ucfilepath.Join(os.TempDir(), "unicode-test-slots-"+strconv.Itoa(os.Getuid())), size: size, local: make(chan struct{}, size)}
+}
+
+// acquire waits for a free token until ctx ends, and returns its release.
+func (pool unicodeGeneratedProcessPool) acquire(ctx context.Context) (func(), error) {
+	select {
+	case pool.local <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	release, err := pool.acquireSlot(ctx)
+	if err != nil {
+		<-pool.local
+		return nil, err
+	}
+	return func() { release(); <-pool.local }, nil
+}
+
+func (pool unicodeGeneratedProcessPool) acquireSlot(ctx context.Context) (func(), error) {
+	if err := os.MkdirAll(pool.dir, 0o700); err != nil {
+		return nil, err
+	}
+	wait, lastCheck := 5*time.Millisecond, time.Time{}
+	for {
+		reclaim := time.Since(lastCheck) > time.Second
+		if reclaim {
+			lastCheck = time.Now()
+		}
+		for i := 0; i < pool.size; i++ {
+			name := ucfilepath.Join(pool.dir, "slot-"+strconv.Itoa(i))
+			f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+			if err == nil {
+				_, writeErr := fmt.Fprintf(f, "%d\n", os.Getpid())
+				if closeErr := f.Close(); writeErr != nil || closeErr != nil {
+					_ = os.Remove(name)
+					return nil, errors.Join(writeErr, closeErr)
+				}
+				return func() { _ = os.Remove(name) }, nil
+			}
+			if !errors.Is(err, ucfs.ErrExist) {
+				return nil, err
+			}
+			if reclaim && unicodeGeneratedSlotAbandoned(name) {
+				_ = os.Remove(name)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+		wait = min(2*wait, 200*time.Millisecond)
+	}
+}
+
+// ucSlotAbandoned tells whether the process that holds the slot has ended.
+func unicodeGeneratedSlotAbandoned(name string) bool {
+	data, err := os.ReadFile(name)
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		// A slot being written has no identifier yet.
+		info, statErr := os.Stat(name)
+		return statErr == nil && time.Since(info.ModTime()) > time.Minute
+	}
+	owner, err := os.FindProcess(pid)
+	if err != nil {
+		return true
+	}
+	if ucruntime.GOOS == "windows" {
+		return false
+	}
+	err = owner.Signal(ucsyscall.Signal(0))
+	return err != nil && !errors.Is(err, ucsyscall.EPERM)
+}
+
+// ucProcessMayRun tells whether -test.run and -test.skip let the subtest id
+// run, when it can read them: patterns without brackets, parentheses,
+// alternatives or escaped slashes split into levels at every slash, as go
+// test splits them. known is false for any other pattern.
+func unicodeGeneratedProcessMayRun(id string) (known, runs bool) {
+	levels := func(name string) ([]*ucregexp.Regexp, bool) {
 		f := ucflag.Lookup(name)
-		if f == nil || f.Value.String() == "" || strings.ContainsAny(f.Value.String(), "[(|") || strings.Contains(f.Value.String(), "\\/") {
-			return nil
+		if f == nil || f.Value.String() == "" {
+			return nil, true
+		}
+		if strings.ContainsAny(f.Value.String(), "[(|") || strings.Contains(f.Value.String(), "\\/") {
+			return nil, false
 		}
 		var out []*ucregexp.Regexp
 		for _, part := range strings.Split(f.Value.String(), "/") {
 			re, err := ucregexp.Compile(part)
 			if err != nil {
-				return nil
+				return nil, false
 			}
 			out = append(out, re)
 		}
-		return out
+		return out, true
 	}
-	if run := levels("test.run"); len(run) >= 2 && !run[1].MatchString(id) {
-		return false
+	run, runKnown := levels("test.run")
+	skip, skipKnown := levels("test.skip")
+	if !runKnown || !skipKnown {
+		return false, false
 	}
-	if skip := levels("test.skip"); len(skip) == 2 && skip[0].MatchString("TestUnicodeContracts") && skip[1].MatchString(id) {
-		return false
+	if len(run) >= 2 && !run[1].MatchString(id) {
+		return true, false
 	}
-	return true
+	if len(skip) == 2 && skip[0].MatchString("TestUnicodeContracts") && skip[1].MatchString(id) {
+		return true, false
+	}
+	return true, true
 }
 
 // ucReplayTestLog repeats in this process the reads a child's test log
@@ -3768,6 +3951,9 @@ func unicodeGeneratedPredicate0_(t rapid.TB, value0 AttachmentSample) {
 	unicodeGeneratedCheck(t, unicodeGeneratedSpec0(), map[string]reflect.Value{"sample": reflect.ValueOf(&value0).Elem()})
 }
 func unicodeGeneratedInvoke0(tb rapid.TB, s *unicodeGeneratedContract, values map[string]reflect.Value) {
+	if unicodeGeneratedDeclaredElsewhere(tb) {
+		return
+	}
 	checkAttachmentPreservesInputIdentity(tb, values["sample"].Interface().(AttachmentSample))
 }
 func unicodeGeneratedInputs0(rt *rapid.T, s *unicodeGeneratedContract) map[string]reflect.Value {
@@ -3819,6 +4005,9 @@ func unicodeGeneratedSpec1() *unicodeGeneratedContract {
 	return &s
 }
 func unicodeGeneratedInvoke1(tb rapid.TB, s *unicodeGeneratedContract, values map[string]reflect.Value) {
+	if unicodeGeneratedDeclaredElsewhere(tb) {
+		return
+	}
 	unicodeGeneratedManual(tb, s, values, func() {
 		pre := *s
 		pre.SkipInstall = true
@@ -3896,6 +4085,9 @@ func unicodeGeneratedPredicate2_(t rapid.TB, value0 Sample) {
 	unicodeGeneratedCheck(t, unicodeGeneratedSpec2(), map[string]reflect.Value{"sample": reflect.ValueOf(&value0).Elem()})
 }
 func unicodeGeneratedInvoke2(tb rapid.TB, s *unicodeGeneratedContract, values map[string]reflect.Value) {
+	if unicodeGeneratedDeclaredElsewhere(tb) {
+		return
+	}
 	checkReductionPreservesEvidence(tb, values["sample"].Interface().(Sample))
 }
 func unicodeGeneratedInputs2(rt *rapid.T, s *unicodeGeneratedContract) map[string]reflect.Value {

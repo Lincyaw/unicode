@@ -19,8 +19,9 @@ import (
 
 // The split properties run the generated driver of a one-property module:
 // domain.sign calls classify(n) for a generated int n and ensures its sign.
-// With UNICODE_SPLIT_FIXTURE_FAIL set, classify answers 2 for every n, so
-// every case fails and rapid shrinks to n = 0.
+// With UNICODE_SPLIT_FIXTURE_FAIL set, classify answers 2 for every odd n,
+// so about half the cases fail and rapid shrinks each failure to n = 1 or
+// n = -1; a replay from a wrong seed draws other inputs.
 
 const (
 	splitProperty = "domain.sign"
@@ -44,7 +45,7 @@ func checkSplitRunsCoverTheSameCases(t rapid.TB, checks int) {
 		t.Fatalf("the split run of %d passing cases failed: %v\n%s", checks, err, split)
 	}
 	processes := splitProcessLine.FindAllStringSubmatch(split, -1)
-	want := min(8, checks)
+	want := min(ucProcessShards, checks)
 	if len(processes) != want {
 		t.Fatalf("%d cases ran in %d processes, not %d:\n%s", checks, len(processes), want, split)
 	}
@@ -73,44 +74,102 @@ func checkSplitRunsCoverTheSameCases(t rapid.TB, checks int) {
 	}
 }
 
-//uc:checks lang.golang.split-runs-report-failures-alike
-func checkSplitRunsReportFailuresAlike(t rapid.TB, checks int) {
+//uc:checks lang.golang.split-runs-shrink-alike
+func checkSplitRunsShrinkAlike(t rapid.TB, checks int) {
+	binary, remove := splitFixture(t)
+	defer remove()
+	for _, whole := range []bool{false, true} {
+		output, err := runSplitFixture(binary, checks, true, whole)
+		if err == nil {
+			t.Fatalf("a run of %d cases, about half of them failing, passed (unsplit: %t):\n%s", checks, whole, output)
+		}
+		shrunk := shrunkInputs(output)
+		if len(shrunk) == 0 || slices.ContainsFunc(shrunk, func(n string) bool { return n != "1" && n != "-1" }) {
+			t.Fatalf("the run (unsplit: %t) did not shrink every failure to n = 1 or n = -1: %v\n%s", whole, shrunk, output)
+		}
+		if failed := failedProcesses(output); !whole && len(failed) != len(shrunk) {
+			t.Fatalf("the split run reported %d failed processes and %d shrunk failures:\n%s", len(failed), len(shrunk), output)
+		}
+	}
+}
+
+//uc:checks lang.golang.split-failures-name-their-process
+func checkSplitFailuresNameTheirProcess(t rapid.TB, checks int) {
 	binary, remove := splitFixture(t)
 	defer remove()
 	split, err := runSplitFixture(binary, checks, true, false)
-	if err == nil {
-		t.Fatalf("the split run of %d failing cases passed:\n%s", checks, split)
+	failed := failedProcesses(split)
+	if err == nil || len(failed) == 0 {
+		t.Fatalf("a split run of %d cases, about half of them failing, reported no failed process naming %s, its place and its seed (error %v):\n%s", checks, splitProperty, err, split)
 	}
-	failed := splitFailedLine.FindAllStringSubmatch(split, -1)
-	want := min(8, checks)
-	if len(failed) != want {
-		t.Fatalf("%d of %d processes reported a failure naming %s, its place and its seed:\n%s", len(failed), want, splitProperty, split)
-	}
-	for i, f := range failed {
-		if f[1] != strconv.Itoa(i+1) || f[2] != strconv.Itoa(want) {
-			t.Fatalf("failed process %s of %s is reported as the %d-th of %d:\n%s", f[1], f[2], i+1, want, split)
+	want, places := strconv.Itoa(min(ucProcessShards, checks)), map[string]bool{}
+	for _, f := range failed {
+		if f.of != want || places[f.place] {
+			t.Fatalf("failed process %s of %s is not one of %s distinct places:\n%s", f.place, f.of, want, split)
+		}
+		places[f.place] = true
+		shrunk := shrunkInputs(f.text)
+		if len(shrunk) != 1 {
+			t.Fatalf("failed process %s reports %d shrunk failures:\n%s", f.place, len(shrunk), f.text)
+		}
+		replayed, err := replaySplitFixture(binary, f.seed, f.count)
+		if err == nil || !slices.Equal(shrunkInputs(replayed), shrunk) {
+			t.Fatalf("running %d cases from the seed %s of process %s did not fail with n = %s (error %v):\n%s", f.count, f.seed, f.place, shrunk[0], err, replayed)
 		}
 	}
-	if shrunk := shrunkInputs(split); len(shrunk) != want || slices.ContainsFunc(shrunk, func(n string) bool { return n != "0" }) {
-		t.Fatalf("the split run did not report n = 0 once per process: %v\n%s", shrunk, split)
+}
+
+//uc:checks lang.golang.split-failures-replay-by-seed
+func checkSplitFailuresReplayBySeed(t rapid.TB, checks int) {
+	binary, remove := splitFixture(t)
+	defer remove()
+	split, err := runSplitFixture(binary, checks, true, false)
+	failed := failedProcesses(split)
+	if err == nil || len(failed) == 0 {
+		t.Fatalf("a split run of %d cases, about half of them failing, reported no failed process (error %v):\n%s", checks, err, split)
 	}
-	whole, err := runSplitFixture(binary, checks, true, true)
-	if err == nil {
-		t.Fatalf("the unsplit run of %d failing cases passed:\n%s", checks, whole)
+	for _, f := range failed {
+		repro := splitReproLine.FindStringSubmatch(f.text)
+		shrunk := shrunkInputs(f.text)
+		if repro == nil || len(shrunk) != 1 {
+			t.Fatalf("failed process %s gives no seed to reproduce its one failure with:\n%s", f.place, f.text)
+		}
+		replayed, err := replaySplitFixture(binary, repro[1], 1)
+		if err == nil || splitProcessLine.MatchString(replayed) || !slices.Equal(shrunkInputs(replayed), shrunk) {
+			t.Fatalf("replaying -rapid.seed=%s for one case did not fail in one process with n = %s (error %v):\n%s", repro[1], shrunk[0], err, replayed)
+		}
 	}
-	if shrunk := shrunkInputs(whole); !slices.Equal(shrunk, []string{"0"}) {
-		t.Fatalf("the unsplit run did not report the counterexample n = 0: %v\n%s", shrunk, whole)
+}
+
+// failedProcess is one failed child as the split run reports it, with its
+// output up to the next report.
+type failedProcess struct {
+	place, of, seed string
+	count           int
+	text            string
+}
+
+func failedProcesses(output string) []failedProcess {
+	var out []failedProcess
+	matches := splitFailedLine.FindAllStringSubmatchIndex(output, -1)
+	for i, m := range matches {
+		end := len(output)
+		if i+1 < len(matches) {
+			end = matches[i+1][0]
+		}
+		count, _ := strconv.Atoi(output[m[6]:m[7]])
+		out = append(out, failedProcess{place: output[m[2]:m[3]], of: output[m[4]:m[5]], count: count, seed: output[m[8]:m[9]], text: output[m[0]:end]})
 	}
-	repro := splitReproLine.FindStringSubmatch(split)
-	if repro == nil {
-		t.Fatalf("the split run gave no seed to reproduce the failure with:\n%s", split)
-	}
-	cmd := exec.Command(binary, "-test.run=^TestUnicodeContracts$/^"+regexp.QuoteMeta(splitProperty)+"$", "-test.count=1", "-rapid.nofailfile", "-rapid.seed="+repro[1])
+	return out
+}
+
+// replaySplitFixture runs the failing property in one process from seed for
+// count cases.
+func replaySplitFixture(binary, seed string, count int) (string, error) {
+	cmd := exec.Command(binary, "-test.run=^TestUnicodeContracts$/^"+regexp.QuoteMeta(splitProperty)+"$", "-test.count=1", "-rapid.nofailfile", "-rapid.seed="+seed, "-rapid.checks="+strconv.Itoa(count))
 	cmd.Env = splitFixtureEnv(true, false)
-	replayed, err := cmd.CombinedOutput()
-	if err == nil || splitProcessLine.Match(replayed) || !slices.Equal(shrunkInputs(string(replayed)), []string{"0"}) {
-		t.Fatalf("replaying -rapid.seed=%s did not fail in one process with n = 0 (error %v):\n%s", repro[1], err, replayed)
-	}
+	output, err := cmd.CombinedOutput()
+	return string(output), err
 }
 
 func passedCases(output string) int {
@@ -204,7 +263,7 @@ func buildSplitFixture(root string) (string, error) {
 		"go.sum":           string(sum),
 		"design/domain.uc": "component domain \"Split fixture\" {\n  paths \"src/**\"\n}\n",
 		"src/domain.go": "package split\n\nimport \"os\"\n\n//uc:realizes domain.classify\nfunc Classify(n int) int {\n" +
-			"\tif os.Getenv(\"" + splitFailEnv + "\") != \"\" {\n\t\treturn 2\n\t}\n" +
+			"\tif os.Getenv(\"" + splitFailEnv + "\") != \"\" && n%2 != 0 {\n\t\treturn 2\n\t}\n" +
 			"\tif n < 0 {\n\t\treturn -1\n\t}\n\tif n == 0 {\n\t\treturn 0\n\t}\n\treturn 1\n}\n",
 	}
 	for name, content := range files {

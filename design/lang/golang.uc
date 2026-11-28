@@ -164,9 +164,23 @@ property split-runs-cover-the-same-cases invariant "普通 go test 下，生成�
   manual "需要生成并编译一个 Go 模块的驱动，再拆分和不拆分各运行一次它的测试二进制并读取输出，表达式不能运行程序"
 }
 
-property split-runs-report-failures-alike invariant "性质的每个用例都失败时，拆分到子进程的执行和在一个进程中的执行都失败并报出同一个缩小后的反例，每个子进程的失败报告写明性质、它是第几个子进程和它的种子，按其中 rapid 给出的种子在一个进程中重放得到同一个反例" {
+property split-runs-shrink-alike invariant "一条性质在奇数输入上失败时，30 至 40 个随机用例拆分到子进程执行和在一个进程中执行都失败，每个失败都缩小成 n = 1 或 n = -1" {
   about Backend
   forall checks: int
-  where checks in 1..40
-  manual "需要生成并编译一个 Go 模块的驱动，再拆分、不拆分和按种子各运行一次它的测试二进制并读取输出，表达式不能运行程序"
+  where checks in 30..40
+  manual "需要生成并编译一个 Go 模块的驱动，再拆分和不拆分各运行一次它的测试二进制并读取输出，表达式不能运行程序"
+}
+
+property split-failures-name-their-process invariant "一条性质在奇数输入上失败时，拆分执行中每个失败的子进程的报告写明性质、它是 8 与用例数中较小的那个数中的第几个、它的用例数和种子，在一个进程中从这个种子执行同样多的用例得到同一个缩小后的反例" {
+  about Backend
+  forall checks: int
+  where checks in 30..40
+  manual "需要生成并编译一个 Go 模块的驱动，再拆分执行并按报告中的种子重放它的测试二进制，读取输出，表达式不能运行程序"
+}
+
+property split-failures-replay-by-seed invariant "一条性质在奇数输入上失败时，拆分执行中每个失败的子进程报出 rapid 给出的重放种子，在一个进程中从这个种子只执行一个用例就得到同一个缩小后的反例" {
+  about Backend
+  forall checks: int
+  where checks in 30..40
+  manual "需要生成并编译一个 Go 模块的驱动，再拆分执行并按 rapid 给出的种子重放它的测试二进制，读取输出，表达式不能运行程序"
 }
