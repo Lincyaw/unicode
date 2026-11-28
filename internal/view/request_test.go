@@ -486,7 +486,6 @@ func genExpand(t *rapid.T, f graph.Fragment, kind ViewKind, input string, layer 
 //
 //uc:generates view.view-is-folded-subgraph.request
 //uc:generates view.view-names-input-ancestors.request
-//uc:generates view.view-cards-show-contents.request
 func genRequest() *rapid.Generator[Request] {
 	return rapid.Custom(func(t *rapid.T) Request {
 		f := genGraph(t, 0)
@@ -506,6 +505,60 @@ func genRequest() *rapid.Generator[Request] {
 		layer, level := genLayers(t)
 		return Request{Fragment: f, Kind: kind, Id: id, Expand: genExpand(t, f, kind, id, layer, level), Layer: layer, Level: level}
 	})
+}
+
+// genCardsRequest draws a request as genRequest does, or, in about half the
+// samples, plants in the graph what the sides of a calls view turn on and
+// asks for that calls view (plantCalls).
+//
+//uc:generates view.view-cards-show-contents.request
+func genCardsRequest() *rapid.Generator[Request] {
+	return rapid.Custom(func(t *rapid.T) Request {
+		if !rapid.Bool().Draw(t, "plantCalls") {
+			return genRequest().Draw(t, "request")
+		}
+		f, root := plantCalls(genGraph(t, 0))
+		layer, level := genLayers(t)
+		return Request{Fragment: f, Kind: ViewKindCalls, Id: root, Expand: genExpand(t, f, ViewKindCalls, root, layer, level), Layer: layer, Level: level}
+	})
+}
+
+// plantCalls adds to a graph a core component pc and two support components
+// ps and pt, each owning a file of salient functions: in pc, the root, a
+// function it calls and one that calls it; in ps, a function the root calls
+// and one that calls the root; in pt, one that calls the root. In the calls
+// view of the root, ps folds standing for a callee and a caller, and pt
+// folds standing for a caller only. It returns the root.
+func plantCalls(f graph.Fragment) (graph.Fragment, string) {
+	b := &builder{frag: f, at: map[string]int{}, keys: map[edgeKey]bool{}}
+	for i, n := range f.Nodes {
+		b.at[n.Id] = i
+	}
+	for _, e := range f.Edges {
+		b.keys[edgeKey{e.Kind, e.From, e.To}] = true
+	}
+	b.node("go:pp", graph.NodeKindContainer, "package", graph.LayerCode, true, nil)
+	file := map[string]string{}
+	for _, planted := range [][2]string{{"pc", "core"}, {"ps", "support"}, {"pt", "support"}} {
+		component, focus := planted[0], planted[1]
+		b.node(component, graph.NodeKindContainer, "component", graph.LayerDesign, true, map[string][]string{"focus": {focus}})
+		b.edge(graph.EdgeKindContains, "sys", component)
+		file[component] = b.node("file:pp/"+component+".go", graph.NodeKindContainer, "file", graph.LayerCode, true, nil)
+		b.edge(graph.EdgeKindContains, "go:pp", file[component])
+		b.edge(graph.EdgeKindOwns, component, file[component])
+	}
+	function := func(component, name string) string {
+		id := b.node(file[component]+"."+name, graph.NodeKindOp, "func", graph.LayerCode, true, nil)
+		b.edge(graph.EdgeKindContains, file[component], id)
+		return id
+	}
+	root := function("pc", "root")
+	b.edge(graph.EdgeKindCalls, root, function("pc", "callee"))
+	b.edge(graph.EdgeKindCalls, root, function("ps", "callee"))
+	for _, caller := range []string{function("pc", "caller"), function("ps", "caller"), function("pt", "caller")} {
+		b.edge(graph.EdgeKindCalls, caller, root)
+	}
+	return b.frag, root
 }
 
 // genFlowRequest draws a graph with at least one flow of nested steps and a

@@ -4656,7 +4656,7 @@ func unicodeGeneratedInvoke2(tb rapid.TB, s *unicodeGeneratedContract, values ma
 }
 func unicodeGeneratedInputs2(rt *rapid.T, s *unicodeGeneratedContract) map[string]reflect.Value {
 	values := map[string]reflect.Value{}
-	values["request"] = reflect.ValueOf(genRequest().Draw(rt, "request"))
+	values["request"] = reflect.ValueOf(genCardsRequest().Draw(rt, "request"))
 	return values
 }
 func unicodeGeneratedDerive2(s *unicodeGeneratedContract, values map[string]reflect.Value) map[string]reflect.Value {
