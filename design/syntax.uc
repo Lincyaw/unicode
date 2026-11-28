@@ -103,6 +103,18 @@ property format-is-stable relation "合法的文本 s 解析后打印得到 t：
   about parse, File.print
   forall sample: Sample generated "一个合法的文件：约三分之一是 expression-format-is-stable 的含随机表达式的组件文件，其余是随机种类、带随机注释的随机语法树，写成文本时随意取缩进、记号间和行尾的空格、空行、零至两个结尾换行、空的可选块是否写花括号、值是否在项之间换行和带结尾逗号，数的写法可带多余的前导零、小数末尾的零或写成 -0"
   manual "需要比较忽略位置的两棵语法树，表达式不能构造或比较语法树"
+  case container-named-in {
+    sample = {
+      kind: component,
+      text: "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure raised(in.A)\n}\n",
+    }
+  }
+  case container-named-in-call {
+    sample = {
+      kind: component,
+      text: "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure size(in.items) == 1\n}\n",
+    }
+  }
 }
 
 property rejects-broken-text postcondition "合法的文件做一处违反某条规则的改动之后，解析在改动所在的行和列给出这条规则的诊断，并且不给出语法树" {

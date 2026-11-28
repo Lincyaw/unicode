@@ -188,16 +188,20 @@ func spacingProblem(text []byte) string {
 	if err != nil {
 		return "the printed text does not lex: " + err.Error()
 	}
-	var before, prev lexer.Token
-	line := 1
+	var tokens []lexer.Token
 	for {
 		tok, err := lex.Next()
 		if err != nil || tok.EOF() {
-			return ""
+			break
 		}
+		if tok.Type != symbols["Whitespace"] {
+			tokens = append(tokens, tok)
+		}
+	}
+	var before, prev lexer.Token
+	line := 1
+	for i, tok := range tokens {
 		switch tok.Type {
-		case symbols["Whitespace"]:
-			continue
 		case symbols["NL"], symbols["Comment"]:
 			before, prev = lexer.Token{}, lexer.Token{}
 			line = tok.Pos.Line + strings.Count(tok.Value, "\n")
@@ -206,7 +210,11 @@ func spacingProblem(text []byte) string {
 		if prev.Value != "" {
 			want := wantGap(prev, tok)
 			if line <= len(lines) && expressionLine(lines[line-1]) {
-				want = expressionGap(before, prev, tok)
+				var after lexer.Token
+				if i+1 < len(tokens) {
+					after = tokens[i+1]
+				}
+				want = expressionGap(before, prev, tok, after)
 			}
 			if gap := tok.Pos.Offset - prev.Pos.Offset - len(prev.Value); gap != want {
 				return fmt.Sprintf("line %d: %d spaces between %s and %s instead of %d", line, gap, prev.Value, tok.Value, want)
@@ -214,6 +222,7 @@ func spacingProblem(text []byte) string {
 		}
 		before, prev = prev, tok
 	}
+	return ""
 }
 
 // expressionLine tells whether the line is a clause written with
@@ -232,12 +241,12 @@ func expressionLine(line string) bool {
 
 // expressionGap is the gap between the tokens a and b on a line of
 // expressions, where before is the token ahead of a, empty when a starts the
-// line. A word is a keyword or an operator by its place, not by its spelling
-// (L7): the clause keyword starts the line, a word after a dot is a field or
-// an operation, and the words of the type reference that raised and failure
-// take are names. Anywhere else ensure, requires and call are names, and a
+// line, and after the token behind b. A word is a keyword or an operator by
+// its place, not by its spelling (L7): the clause keyword starts the line, a
+// word after a dot is a field or an operation, and a word before a dot is a
+// container's name. Anywhere else ensure, requires and call are names, and a
 // name takes its arguments without a space.
-func expressionGap(before, a, b lexer.Token) int {
+func expressionGap(before, a, b, after lexer.Token) int {
 	if a.Value == "," || a.Value == ":" {
 		return 1
 	}
@@ -248,9 +257,8 @@ func expressionGap(before, a, b lexer.Token) int {
 		return 0
 	}
 	named := before.Value == "."
-	typeRef := a.Value == "(" && (before.Value == "raised" || before.Value == "failure")
 	operators := []string{"==", "!=", "<", "<=", ">", ">=", "+", "-", "*", "/", "and", "or", "implies", "in"}
-	if !named && slices.Contains(operators, a.Value) || !typeRef && slices.Contains(operators, b.Value) {
+	if !named && slices.Contains(operators, a.Value) || after.Value != "." && slices.Contains(operators, b.Value) {
 		return 1
 	}
 	clause := before.Value == "" && slices.Contains([]string{"ensure", "requires", "call"}, a.Value)
