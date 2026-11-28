@@ -147,7 +147,7 @@ type Runner interface {
   操作只有一个返回值；要返回几个结果时，写成一个记录。在 Go 中，`raises` 对应最后一个返回值 `error`，这是多返回值唯一的用法；在 Python 中，错误不出现在签名里。Python 中实现设计节点的函数和谓词，每个参数和返回值都必须有类型标注。
 - **生成器的签名**：带 `generates` 绑定的函数，参数是在该符号之前声明的符号中它用到的那些（按声明的次序，可以没有），返回该符号类型的生成器：Go 为 `func genX() *rapid.Generator[T]`，Python 为返回 Hypothesis strategy 的函数。派生函数（[language.md](language.md) §6）的参数相同，直接返回该符号类型的值：Go 为 `func deriveX(…) T` 或 `func deriveX(…) (T, error)`，Python 为返回该值的函数。
 - **观察适配器的签名**：参数是观察的 `from` 按次序列出的输入符号，类型一致，返回观察类型的值；Go 允许末尾另有 `error`，Python 的异常也按观察失败处理。它不接收测试句柄，不使用谓词的名称映射。一个适配器恰绑定一项观察，文件属于性质所在容器。
-- **可选能力**：`lang.Backend` 只要求抽取与名称映射；后端还可以实现接口 `lang.Generator`，即**生成能力**，和接口 `lang.Runner`，即**运行能力**，两者都有 `language`。`generate` 接收生成输入 `GenPlan`，返回 `Generation`，称为**生成计划**：要写的文件和诊断，它不直接写仓库；`run` 接收运行输入 `RunPlan`，返回逐条性质和流程的结论 `RunReport`。各字段以 `design/lang.uc` 为准。`gen.plan` 为每种已配置的语言调用有生成能力的后端，合并成一份生成计划；`gen.write` 先检查全部路径、重复目标、符号链接和生成标记（§6.2），再逐个文件原子写入，多个文件之间不保证同时成功。`run.execute` 按目标标识调用各语言有运行能力的后端，并原子写出 `.unicode/results.json`。
+- **可选能力**：`lang.Backend` 只要求抽取与名称映射；后端还可以实现接口 `lang.Generator`，即**生成能力**，和接口 `lang.Runner`，即**运行能力**，两者都有 `language`。`generate` 接收生成输入 `GenPlan`，返回 `Generation`，称为**生成计划**：要写的文件和诊断，它不直接写仓库；`run` 接收运行输入 `RunPlan`，返回逐条性质和流程的结论 `RunReport`。各字段以 `design/lang.uc` 为准。`lang.languageRoots` 从系统节点读出每种已配置的语言和它的源码根目录；`gen.plan` 为每种已配置的语言调用有生成能力的后端，用纯操作 `gen.merge` 合并成一份与后端次序无关的生成计划；`gen.write` 先检查全部路径、重复目标、符号链接和生成标记（§6.2），再逐个文件原子写入，多个文件之间不保证同时成功。`run.execute` 按目标标识调用各语言有运行能力的后端，并原子写出 `.unicode/results.json`。
 
 ## 5 建图
 
@@ -202,7 +202,7 @@ type Runner interface {
 
 `body` 和 `declaration` 让内容哈希含有实际的代码。Go 按语法树编码，依次记录节点类型与字段，位置只记有无，忽略注释；SHA-256 写成小写十六进制。声明头不含函数体，接口抽象操作没有原生声明头。
 
-`calls` 边的属性 `sites` 列出每个调用位置，写作 `路径:行:列`；`generates` 边的属性 `symbols` 列出符号的名称。Go 签名的写法：指针 `*T` 写作 `optional<T>`，`check` 比较时把设计中 `object` 类型的 `optional<X>` 与 `X` 视为相同；末尾的 `error` 写作 ` raises error`，与设计中非空的 `raises` 相符；谓词的第一个参数（`rapid.TB`）保留在签名中，比较符号时跳过。绑定边的终点是设计层的标识。`Graph.AddFragment` 先暂存终点不在图中的绑定边和方法的候选边；推导时加入能解析的，绑定边中终点仍不存在的报为 `graph.unresolved-binding`，即 [model.md](model.md) §10 第 15 条中"目标存在"的一半；其余端点缺失的边仍是 `DanglingEdge`。
+`calls` 边的属性 `sites` 列出每个调用位置，写作 `路径:行:列`；`generates` 边的属性 `symbols` 列出符号的名称；推导出的 `exercises` 边的属性 `path` 是 [model.md](model.md) §9 D5 的来历。Go 签名的写法：指针 `*T` 写作 `optional<T>`，`check` 比较时把设计中 `object` 类型的 `optional<X>` 与 `X` 视为相同；末尾的 `error` 写作 ` raises error`，与设计中非空的 `raises` 相符；谓词的第一个参数（`rapid.TB`）保留在签名中，比较符号时跳过。绑定边的终点是设计层的标识。`Graph.AddFragment` 先暂存终点不在图中的绑定边和方法的候选边；推导时加入能解析的，绑定边中终点仍不存在的报为 `graph.unresolved-binding`，即 [model.md](model.md) §10 第 15 条中"目标存在"的一半；其余端点缺失的边仍是 `DanglingEdge`。
 
 `alt` 中的步骤属于哪个分支，写在从 `alt` 到该步骤的 `contains` 边的属性 `branch` 上。空的列表不写出。
 
@@ -818,7 +818,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
   7. 生成器产生的每个值，都通过与声明的用例相同的类型和限定检查。
   8. 回放录制文件，得到的覆盖与录制时相同；缩减之后的覆盖等于缩减之前的。
   9. `diff(a, a)` 为空；`diff(a, b)` 与 `diff(b, a)` 互为相反。
-  10. 推导出的 `depends`、`traces`、`reaches` 与按 [model.md](model.md) §9 的定义直接计算的结果相同；输入是随机生成的小图。
+  10. 推导出的边和显著性逐条合乎 [model.md](model.md) §9 的定义：每条规则写成推导之后的图上的局部条件，D5 和 D8 借来历逐条边核对传递闭包，只有 `reaches` 的 `via` 恰是细节函数调用链上的全部函数一条仍是手写的谓词；输入是随机生成的小图，生成时就定下模式匹配、容器深度、各代码元素所在的文件和各级容器。
 - M4 之前，这些性质的驱动手写，用 `pgregory.net/rapid` 和 Go 原生的 fuzz；M4 起改为生成，手写的驱动随之删除。
 - **两个阶段**：开发时只跑 `make check`，随机检查用缺省的次数，几分钟之内结束，通过就提交。深度验证 `make deep` 只在用户同意之后运行：一部分开发完成后，主会话向用户汇报并提议运行，用户同意了才由单独的 agent 在自己的工作区中跑，或者手动触发 CI；随机检查用大的次数，每个 fuzz 目标跑一段时间，再用 gremlins 做变异测试。它不阻塞开发；存活的变异和找到的失败，都成为之后的修复任务。gremlins 的结果要这样读：它只跑被变异的包自己的测试，用缺省的随机检查次数，所以存活的变异要用大的次数再确认一次；编译不过的变异被它算作杀死，要另外剔除；`switch` 的 `case` 表达式没有覆盖的块，其中的变异它不会运行。M6 起，`unicode test --explore` 接替其中的随机检查和 fuzz。
 

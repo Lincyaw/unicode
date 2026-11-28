@@ -73,6 +73,44 @@ func parseCorpusFile(path string, data []byte) (string, *syntax.File, *diag.Diag
 	return check, parsed.File, nil
 }
 
+// InvalidCorpus is the error of RecordedInputs for content that is not a
+// canonical recording file, or whose cases restore no input of the design.
+//
+//uc:realizes evidence.InvalidCorpus
+type InvalidCorpus struct {
+	Path  string
+	Cause error
+}
+
+func (e InvalidCorpus) Error() string {
+	return fmt.Sprintf("the recording file %s: %v", e.Path, e.Cause)
+}
+
+func (e InvalidCorpus) Unwrap() error { return e.Cause }
+
+// RecordedInputs reads the recording file content at path: each recorded
+// case's name and the canonical input it restores for the symbols of its
+// target in g.
+//
+//uc:realizes evidence.recordedInputs
+func RecordedInputs(g *graph.Graph, path string, content []byte) (map[string]lang.Input, error) {
+	check, file, problem := parseCorpusFile(path, content)
+	if problem != nil {
+		return nil, InvalidCorpus{Path: path, Cause: errors.New(problem.Message)}
+	}
+	out := map[string]lang.Input{}
+	for _, declaration := range file.Decls {
+		if candidate, ok := declaration.(*syntax.RecordedCase); ok {
+			input, err := inputFromAssignments(g, check, candidate.Lines)
+			if err != nil {
+				return nil, InvalidCorpus{Path: path, Cause: fmt.Errorf("the case %s: %w", candidate.Name, err)}
+			}
+			out[string(candidate.Name)] = input
+		}
+	}
+	return out, nil
+}
+
 func corpusFiles(root string, g *graph.Graph) (map[string]corpusFile, []string, []diag.Diagnostic) {
 	files := map[string]corpusFile{}
 	removals := []string{}

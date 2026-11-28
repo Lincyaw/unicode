@@ -1,12 +1,11 @@
 package evidence
 
 import (
-	"bytes"
 	"encoding/base64"
-	"io/fs"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strconv"
 	"time"
@@ -16,317 +15,417 @@ import (
 	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/lang"
-	"github.com/lincyaw/unicode/internal/syntax"
+	"github.com/lincyaw/unicode/internal/repo"
 )
 
-// The predicate observes actual filesystem bytes and a stateful execution
-// boundary. Pure selection and attachment relations are generated from ensure.
+// CorpusSample is a graph, the results of cases of its check domain.rule,
+// whether every input can be written to a recording file, a repository
+// tree, and the state of its corpus.
 //
-//uc:checks evidence.recordings-are-replayable
-func checkRecordingsAreReplayable(t rapid.TB, sample Sample) {
-	root, err := os.MkdirTemp("", "unicode-evidence-")
+//uc:realizes evidence.CorpusSample
+type CorpusSample struct {
+	Graph     *graph.Graph
+	Cases     []lang.CaseResult
+	Printable bool
+	Tree      repo.Tree
+	Corpus    string
+}
+
+// StoreSample is the reports saved before, the report to save, and how the
+// store is damaged.
+//
+//uc:realizes evidence.StoreSample
+type StoreSample struct {
+	Earlier []lang.RunReport
+	Report  lang.RunReport
+	Damage  string
+}
+
+// ShrinkSample is a threshold, the counterexample to shrink, the mode of the
+// candidate runner, the budget, and the smallest failing input value.
+//
+//uc:realizes evidence.ShrinkSample
+type ShrinkSample struct {
+	Threshold int
+	Initial   lang.CaseResult
+	Mode      string
+	Budget    time.Duration
+	Minimal   lang.Value
+}
+
+// RunnerLog is how often the candidate runner ran and rejected a candidate.
+//
+//uc:realizes evidence.RunnerLog
+type RunnerLog struct {
+	Evaluations int
+	Rejected    int
+}
+
+// The shapes of sampleValue whose inputs a recording file cannot hold:
+// encoded records and maps with non-UTF-8 strings, bytes with control bytes.
+var unprintableShapes = []int{4, 5, 8}
+
+// drawCases draws one to eight results of domain.rule with inputs of one shape.
+func drawCases(t *rapid.T, shape int) []lang.CaseResult {
+	var out []lang.CaseResult
+	for index := range rapid.IntRange(1, 8).Draw(t, "cases") {
+		input, err := NormalizeInput(lang.Input{Values: map[string]lang.Value{"payload": sampleValue(shape, rapid.IntRange(-100, 100).Draw(t, "value"))}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result := lang.CaseResult{Check: "domain.rule", Form: "recorded", Reason: "coverage", Input: input, InputHash: hash(input.Values), Passed: true,
+			Coverage: []lang.Coverage{}, Trace: []lang.TraceEvent{}, Observations: []string{}, Differences: []string{}, Diagnostics: []diag.Diagnostic{}}
+		result.Id = result.Check + ".r-" + result.InputHash[:8]
+		if rapid.Bool().Draw(t, "declared") {
+			result.Form, result.Reason, result.Id = "declared", "", fmt.Sprintf("domain.rule.declared%d", index)
+		} else if rapid.Bool().Draw(t, "counterexample") {
+			result.Passed, result.Reason = false, "counterexample"
+		}
+		out = append(out, result)
+	}
+	return out
+}
+
+// printableValue replaces a non-UTF-8 string by its Base64 text as a string,
+// and bytes by the bytes of their Base64 text, which a recording file holds.
+func printableValue(value lang.Value) lang.Value {
+	switch value.Kind {
+	case "stringBytes":
+		return lang.Value{Kind: "string", Text: value.Text}
+	case "bytes":
+		return lang.Value{Kind: "bytes", Text: base64.StdEncoding.EncodeToString([]byte(value.Text))}
+	}
+	value.Items = slices.Clone(value.Items)
+	for i := range value.Items {
+		value.Items[i] = printableValue(value.Items[i])
+	}
+	value.Entries = slices.Clone(value.Entries)
+	for i := range value.Entries {
+		value.Entries[i] = lang.ValueEntry{Key: printableValue(value.Entries[i].Key), Value: printableValue(value.Entries[i].Value)}
+	}
+	return value
+}
+
+// printableCase is the case with printable values, its hash and recorded
+// name following them.
+func printableCase(t *rapid.T, c lang.CaseResult) lang.CaseResult {
+	input := lang.Input{Values: map[string]lang.Value{}}
+	for name, value := range c.Input.Values {
+		input.Values[name] = printableValue(value)
+	}
+	normalized, err := NormalizeInput(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		if err := os.RemoveAll(root); err != nil {
-			t.Fatal(err)
-		}
-	}()
-	g := recordingGraph(t, sample)
-	sentinel := []byte("designer-owned " + strconv.Itoa(sample.Limit))
-	writeFixture(t, root, "design/domain.uc", sentinel)
-	before := fileTree(t, root)
-	cases := sample.Cases
-	unsupported := []string{}
-	unsupportedCases := []int{}
-	var printable func(lang.Value, string) lang.Value
-	printable = func(value lang.Value, path string) lang.Value {
-		switch value.Kind {
-		case "stringBytes":
-			unsupported = append(unsupported, path)
-			return lang.Value{Kind: "string", Text: value.Text}
-		case "bytes":
-			raw, err := base64.StdEncoding.DecodeString(value.Text)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, b := range raw {
-				if b < 32 && b != '\n' && b != '\t' || b >= 127 {
-					unsupported = append(unsupported, path)
-					return lang.Value{Kind: "bytes", Text: base64.StdEncoding.EncodeToString([]byte(value.Text))}
-				}
-			}
-		}
-		value.Items = slices.Clone(value.Items)
-		for i := range value.Items {
-			value.Items[i] = printable(value.Items[i], path+".item")
-		}
-		value.Entries = slices.Clone(value.Entries)
-		for i := range value.Entries {
-			value.Entries[i].Key = printable(value.Entries[i].Key, path+".key")
-			value.Entries[i].Value = printable(value.Entries[i].Value, path+".value")
-		}
-		return value
+	c.Input, c.InputHash = normalized, hash(normalized.Values)
+	if c.Form != "declared" {
+		c.Id = c.Check + ".r-" + c.InputHash[:8]
 	}
-	companions := slices.Clone(cases)
-	for i, source := range cases {
-		beforeUnsupported := len(unsupported)
-		input, err := NormalizeInput(source.Input)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for name, value := range input.Values {
-			input.Values[name] = printable(value, name)
-		}
-		if len(unsupported) > beforeUnsupported {
-			unsupportedCases = append(unsupportedCases, i)
-		}
-		companions[i].Input, err = NormalizeInput(input)
-		if err != nil {
-			t.Fatal(err)
-		}
-		companions[i].InputHash = hash(companions[i].Input.Values)
-		if companions[i].Form != "declared" {
-			companions[i].Id = companions[i].Check + ".r-" + companions[i].InputHash[:8]
-		}
-	}
-	plan := Recordings(root, g, cases)
-	if len(unsupportedCases) > 0 {
-		// Declared and redundant coverage cases need not be written. Make one
-		// raw input a mandatory counterexample independently of selection, so
-		// the encoding boundary is exercised even when the original is omitted.
-		required := cases[unsupportedCases[0]]
-		required.Form, required.Reason, required.Passed = "recorded", "counterexample", false
-		required.Id = required.Check + ".r-" + required.InputHash[:8]
-		mandatory := Recordings(root, g, []lang.CaseResult{required})
-		requireProblems(t, mandatory.Diagnostics)
-		for _, rejected := range []Recording{mandatory, plan} {
-			if len(rejected.Diagnostics) == 0 {
-				continue
-			}
-			if len(rejected.Edits) != 0 || len(rejected.Removals) != 0 {
-				t.Fatal("unrepresentable bytes produced a writable plan")
-			}
-			for _, problem := range rejected.Diagnostics {
-				if problem.Code != "evidence.unreplayable-input" {
-					t.Fatalf("unexpected recording classification: %+v", problem)
-				}
-			}
-		}
-		if !reflect.DeepEqual(before, fileTree(t, root)) {
-			t.Fatal("unrepresentable input changed files")
-		}
-		if len(plan.Diagnostics) > 0 {
-			cases = companions
-			plan = Recordings(root, g, cases)
-		}
-	}
-	if len(plan.Diagnostics) != 0 {
-		t.Fatalf("recording rejected complete model inputs: %+v", plan.Diagnostics)
-	}
-	if after := fileTree(t, root); !reflect.DeepEqual(after, before) {
-		t.Fatalf("planning changed files: before=%v after=%v", before, after)
-	}
-	// Each written case must recover one complete original input, including raw
-	// non-UTF8 string bytes and user-defined codec representations.
-	original := map[string][]byte{}
-	for _, source := range cases {
-		original[source.InputHash] = canonical(source.Input.Values)
-	}
-	for _, edit := range plan.Edits {
-		parsed := syntax.Parse(edit.Path, syntax.FileKindCorpus, edit.Content)
-		if len(parsed.Diagnostics) != 0 {
-			t.Fatal(parsed.Diagnostics)
-		}
-		for _, declaration := range parsed.File.Decls {
-			candidate, ok := declaration.(*syntax.RecordedCase)
-			if !ok {
-				continue
-			}
-			recovered, err := inputFromAssignments(g, "domain.rule", candidate.Lines)
-			if err != nil {
-				t.Fatal(err)
-			}
-			expected, found := original[hash(recovered.Values)]
-			if !found || !bytes.Equal(expected, canonical(recovered.Values)) {
-				t.Fatalf("corpus lost input state: %s", canonical(recovered.Values))
-			}
-		}
-	}
-	if problems := ApplyRecordings(root, plan); len(problems) != 0 {
-		t.Fatal(problems)
-	}
-	applied := fileTree(t, root)
-	again := Recordings(root, g, cases)
-	if len(again.Diagnostics) != 0 || len(again.Edits) != 0 || len(again.Removals) != 0 {
-		t.Fatalf("recording is not idempotent: %+v", again)
-	}
-	if data := readFixture(t, root, "design/domain.uc"); !bytes.Equal(data, sentinel) {
-		t.Fatal("recording changed designer-owned bytes")
-	}
-	// An invalid later action must prevent publication of an earlier valid edit.
-	bad := Recording{Edits: []lang.Edit{{Path: "corpus/a.uc", Content: []byte("corpus a\n")}, {Path: "../outside.uc", Content: []byte("corpus outside\n")}}}
-	requireProblems(t, ApplyRecordings(root, bad))
-	if after := fileTree(t, root); !reflect.DeepEqual(after, applied) {
-		t.Fatal("invalid plan partially changed the filesystem")
-	}
-	// Valid orphan namespaces are removed; malformed ownership never is.
-	writeFixture(t, root, "corpus/removed.uc", []byte("corpus removed\n"))
-	orphan := Recordings(root, g, cases)
-	if len(orphan.Diagnostics) != 0 || !slices.Contains(orphan.Removals, "corpus/removed.uc") {
-		t.Fatalf("orphan not planned: %+v", orphan)
-	}
-	if problems := ApplyRecordings(root, orphan); len(problems) != 0 {
-		t.Fatal(problems)
-	}
-	if _, err := os.Lstat(filepath.Join(root, "corpus/removed.uc")); !os.IsNotExist(err) {
-		t.Fatalf("orphan remained: %v", err)
-	}
-	// A former check can remain in the graph as another kind or layer. Its
-	// canonical namespace is still orphaned; ownership checks remain strict.
-	obsolete := graph.Node{Id: "removed", Kind: graph.NodeKindOp, Layer: graph.LayerDesign}
-	switch sample.Limit % 3 {
-	case 1:
-		obsolete.Kind = graph.NodeKindType
-	case 2:
-		obsolete.Kind, obsolete.Layer = graph.NodeKindProperty, graph.LayerCode
-	}
-	if err := g.AddNode(obsolete); err != nil {
-		t.Fatal(err)
-	}
-	writeFixture(t, root, "corpus/removed.uc", []byte("corpus removed\n"))
-	retyped := Recordings(root, g, cases)
-	if len(retyped.Diagnostics) != 0 || !slices.Contains(retyped.Removals, "corpus/removed.uc") {
-		t.Fatalf("former check namespace not removed: %+v", retyped)
-	}
-	if problems := ApplyRecordings(root, retyped); len(problems) != 0 {
-		t.Fatal(problems)
-	}
-	if _, err := os.Lstat(filepath.Join(root, "corpus/removed.uc")); !os.IsNotExist(err) {
-		t.Fatalf("former check namespace remained: %v", err)
-	}
-	writeFixture(t, root, "corpus/broken.uc", []byte("corpus other\n"))
-	invalidBefore := fileTree(t, root)
-	invalid := Recordings(root, g, cases)
-	requireProblems(t, invalid.Diagnostics)
-	if len(invalid.Edits) != 0 || len(invalid.Removals) != 0 {
-		t.Fatal("invalid namespace produced a writable plan")
-	}
-	requireProblems(t, ApplyRecordings(root, Recording{Removals: []string{"corpus/broken.uc"}}))
-	if !reflect.DeepEqual(invalidBefore, fileTree(t, root)) {
-		t.Fatal("invalid ownership changed bytes")
-	}
-	removeFixture(t, root, "corpus/broken.uc")
-	// Symlink destinations are never followed by either the planner or publisher.
-	link := filepath.Join(root, "corpus/link.uc")
-	if err := os.Symlink(filepath.Join(root, "design/domain.uc"), link); err != nil {
-		t.Fatal(err)
-	}
-	requireProblems(t, Recordings(root, g, cases).Diagnostics)
-	requireProblems(t, ApplyRecordings(root, Recording{Removals: []string{"corpus/link.uc"}}))
-	if data := readFixture(t, root, "design/domain.uc"); !bytes.Equal(data, sentinel) {
-		t.Fatal("symlink target changed")
-	}
-	removeFixture(t, root, "corpus/link.uc")
+	return c
+}
 
-	// Compare the full persisted report against the frozen source, not a success
-	// Boolean. Repeat-save must preserve immutable history and latest bytes.
-	result := lang.RunResult{Id: "domain.rule", Passed: true, Cases: sample.Cases}
-	for _, candidate := range sample.Cases {
-		if candidate.Rejected {
+func treeFile(content string) repo.Entry {
+	return repo.Entry{Kind: repo.EntryKindFile, Content: []byte(content), Mode: 0o644}
+}
+
+func treeDir() repo.Entry { return repo.Entry{Kind: repo.EntryKindDir, Mode: 0o755} }
+
+//uc:generates evidence.recordings-roundtrip-inputs.sample
+//uc:generates evidence.recordings-refuse-unreplayable-inputs.sample
+//uc:generates evidence.recordings-retire-orphans.sample
+//uc:generates evidence.recordings-refuse-foreign-corpus.sample
+//uc:generates evidence.recordings-diagnostics-are-described.sample
+//uc:generates evidence.recordings-are-idempotent.sample
+//uc:generates evidence.apply-writes-the-plan.sample
+//uc:generates evidence.apply-keeps-other-entries.sample
+//uc:generates evidence.apply-is-all-or-nothing.sample
+//uc:generates evidence.apply-refuses-foreign-removals.sample
+func genCorpusSample() *rapid.Generator[CorpusSample] {
+	return rapid.Custom(func(t *rapid.T) CorpusSample {
+		shape := rapid.IntRange(0, 13).Draw(t, "shape")
+		sample := CorpusSample{Cases: drawCases(t, shape), Printable: !slices.Contains(unprintableShapes, shape)}
+		if !sample.Printable && rapid.Bool().Draw(t, "companions") {
+			for i := range sample.Cases {
+				sample.Cases[i] = printableCase(t, sample.Cases[i])
+			}
+			sample.Printable = true
+		}
+		if !sample.Printable {
+			first := &sample.Cases[0]
+			first.Form, first.Reason, first.Passed = "recorded", "counterexample", false
+			first.Id = first.Check + ".r-" + first.InputHash[:8]
+		}
+		sample.Graph = corpusGraph(t, sample.Cases)
+		sample.Tree = repo.Tree{Entries: map[string]repo.Entry{"design": treeDir(), "design/domain.uc": treeFile("designer-owned\n")}}
+		sample.Corpus = rapid.SampledFrom([]string{"none", "orphan", "foreign", "link"}).Draw(t, "corpus")
+		switch sample.Corpus {
+		case "orphan":
+			sample.Tree.Entries["corpus"] = treeDir()
+			sample.Tree.Entries["corpus/removed.uc"] = treeFile("corpus removed\n")
+			former := graph.Node{Id: "removed", Kind: graph.NodeKindOp, Layer: graph.LayerDesign}
+			switch rapid.IntRange(0, 3).Draw(t, "former") {
+			case 1:
+				former.Kind = graph.NodeKindType
+			case 2:
+				former.Kind, former.Layer = graph.NodeKindProperty, graph.LayerCode
+			case 3:
+				former.Id = ""
+			}
+			if former.Id != "" {
+				if err := sample.Graph.AddNode(former); err != nil {
+					t.Fatal(err)
+				}
+			}
+		case "foreign":
+			sample.Tree.Entries["corpus"] = treeDir()
+			sample.Tree.Entries["corpus/broken.uc"] = treeFile("corpus other\n")
+		case "link":
+			sample.Tree.Entries["corpus"] = treeDir()
+			sample.Tree.Entries["corpus/link.uc"] = repo.Entry{Kind: repo.EntryKindLink, Target: "../design/domain.uc"}
+		}
+		return sample
+	})
+}
+
+// corpusGraph is a graph whose property domain.rule has the symbol payload
+// of the type of the cases' input.
+func corpusGraph(t rapid.TB, cases []lang.CaseResult) *graph.Graph {
+	g := attachmentGraph(t, 0, 3)
+	nodes := slices.DeleteFunc(g.Nodes(), func(n graph.Node) bool { return n.Id == "domain.rule" })
+	edges := slices.DeleteFunc(g.Edges(), func(e graph.Edge) bool { return e.From == "domain.rule" || e.To == "domain.rule" })
+	g = fixtureBuild(t, nodes, edges)
+	counter := 0
+	typ := fixtureType(t, g, cases[0].Input.Values["payload"], &counter)
+	if err := g.AddNode(graph.Node{Id: "domain.rule", Kind: graph.NodeKindProperty, Form: "postcondition", Layer: graph.LayerDesign, Attrs: map[string][]string{"symbols": {"payload: " + typ}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.AddEdge(graph.Edge{Kind: graph.EdgeKindContains, From: "domain", To: "domain.rule"}); err != nil {
+		t.Fatal(err)
+	}
+	return g
+}
+
+//uc:generates evidence.recordings-roundtrip-inputs.dir
+//uc:generates evidence.recordings-refuse-unreplayable-inputs.dir
+//uc:generates evidence.recordings-retire-orphans.dir
+//uc:generates evidence.recordings-refuse-foreign-corpus.dir
+//uc:generates evidence.recordings-diagnostics-are-described.dir
+//uc:generates evidence.apply-writes-the-plan.dir
+//uc:generates evidence.apply-keeps-other-entries.dir
+//uc:generates evidence.apply-is-all-or-nothing.dir
+//uc:generates evidence.apply-refuses-foreign-removals.dir
+func deriveCorpusDir(sample CorpusSample) (string, error) { return repo.Materialize(sample.Tree) }
+
+//uc:generates evidence.apply-writes-the-plan.plan
+//uc:generates evidence.apply-keeps-other-entries.plan
+func derivePlan(sample CorpusSample, dir string) Recording {
+	return Recordings(dir, sample.Graph, sample.Cases)
+}
+
+// deriveWritten writes the sample's tree, then the plan for it.
+//
+//uc:generates evidence.recordings-are-idempotent.written
+func deriveWritten(sample CorpusSample) (string, error) {
+	dir, err := repo.Materialize(sample.Tree)
+	if err != nil {
+		return "", err
+	}
+	ApplyRecordings(dir, Recordings(dir, sample.Graph, sample.Cases))
+	return dir, nil
+}
+
+// deriveBad is the plan without its diagnostics and with one unsafe action after it.
+//
+//uc:generates evidence.apply-is-all-or-nothing.bad
+func deriveBad(sample CorpusSample, action int, dir string) Recording {
+	plan := Recordings(dir, sample.Graph, sample.Cases)
+	plan.Diagnostics = []diag.Diagnostic{}
+	switch {
+	case action == 1:
+		plan.Removals = append(plan.Removals, "design/domain.uc")
+	case action == 2:
+		plan.Edits = append(plan.Edits, lang.Edit{Path: "corpus/x.uc", Content: []byte("not a recording file")})
+	case action == 3 && len(plan.Edits) > 0:
+		plan.Edits = append(plan.Edits, plan.Edits[0])
+	default:
+		plan.Edits = append(plan.Edits, lang.Edit{Path: "../outside.uc", Content: []byte("corpus outside\n")})
+	}
+	return plan
+}
+
+//uc:generates evidence.apply-refuses-foreign-removals.removal
+func deriveForeignRemoval() Recording {
+	return Recording{Edits: []lang.Edit{}, Removals: []string{"corpus/broken.uc", "corpus/link.uc"}, Diagnostics: []diag.Diagnostic{}}
+}
+
+// The observation adapters read the tree under dir, each for one named
+// observation (docs/model.md §10 rule 15).
+
+//uc:observes evidence.recordings-roundtrip-inputs.files
+func observeRoundtripTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes evidence.recordings-refuse-unreplayable-inputs.files
+func observeUnreplayableTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes evidence.recordings-retire-orphans.files
+func observeOrphanTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes evidence.recordings-refuse-foreign-corpus.files
+func observeForeignTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes evidence.apply-writes-the-plan.files
+func observeAppliedTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes evidence.apply-keeps-other-entries.files
+func observeKeptTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes evidence.apply-is-all-or-nothing.files
+func observeRefusedTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes evidence.apply-refuses-foreign-removals.files
+func observeRemovalTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes evidence.save-is-idempotent.files
+func observeResavedTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes evidence.save-refuses-damaged-store.files
+func observeDamagedSaveTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes evidence.read-reports-damaged-store.files
+func observeDamagedReadTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes evidence.save-keeps-history.stored
+func observeStored(dir string) (Loaded, error) { return Read(dir), nil }
+
+// drawReport draws a report of domain.rule whose result follows its cases.
+func drawReport(t *rapid.T, second int) lang.RunReport {
+	cases := drawCases(t, rapid.IntRange(0, 13).Draw(t, "reportShape"))
+	result := lang.RunResult{Id: "domain.rule", Passed: true, Cases: cases, Observations: []string{}, Differences: []string{}, Diagnostics: []diag.Diagnostic{}}
+	for _, c := range cases {
+		if c.Rejected {
 			result.Rejected++
 		} else {
 			result.Accepted++
 		}
-		if !candidate.Passed {
-			result.Passed = false
-		}
+		result.Passed = result.Passed && c.Passed
 	}
-	report := lang.RunReport{Version: 1, Snapshot: graph.InputDigest(g), At: time.Unix(int64(1000+sample.Limit), 0).UTC().Format(time.RFC3339Nano), Mode: "explore", Results: []lang.RunResult{result}}
-	expected, err := normalizeReport(report, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if problems := Save(root, report); len(problems) != 0 {
-		t.Fatal(problems)
-	}
-	storedBefore := fileTree(t, root)
-	if problems := Save(root, report); len(problems) != 0 {
-		t.Fatal(problems)
-	}
-	if !reflect.DeepEqual(storedBefore, fileTree(t, root)) {
-		t.Fatal("repeat save changed report bytes or modes")
-	}
-	loaded := Read(root)
-	if len(loaded.Diagnostics) != 0 || len(loaded.Reports) != 1 || !bytes.Equal(canonical(loaded.Reports[0]), canonical(expected)) {
-		t.Fatalf("stored report differs from actual inputs: %+v", loaded)
-	}
-	second := report
-	second.At = time.Unix(int64(1001+sample.Limit), 0).UTC().Format(time.RFC3339Nano)
-	if problems := Save(root, second); len(problems) != 0 {
-		t.Fatal(problems)
-	}
-	loaded = Read(root)
-	if len(loaded.Diagnostics) != 0 || len(loaded.Reports) != 2 {
-		t.Fatalf("save lost immutable history: %+v", loaded)
-	}
-	writeFixture(t, root, ".unicode/runs/broken.json", []byte("{\"version\":1,\"version\":1}"))
-	corrupted := fileTree(t, root)
-	requireProblems(t, Read(root).Diagnostics)
-	requireProblems(t, Save(root, report))
-	if !reflect.DeepEqual(corrupted, fileTree(t, root)) {
-		t.Fatal("corrupt history was overwritten")
-	}
-	removeFixture(t, root, ".unicode/runs/broken.json")
-	removeFixture(t, root, ".unicode/results.json")
-	if err := os.Symlink(filepath.Join(root, "design/domain.uc"), filepath.Join(root, ".unicode/results.json")); err != nil {
-		t.Fatal(err)
-	}
-	requireProblems(t, Read(root).Diagnostics)
-	requireProblems(t, Save(root, report))
-	if !bytes.Equal(readFixture(t, root, "design/domain.uc"), sentinel) {
-		t.Fatal("run storage followed a symlink")
-	}
-
-	// A real execution boundary computes its outcome from a generated integer.
-	// Rejected values and environment failures cannot replace the known failure.
-	threshold := 1 + sample.Limit%5
-	start := threshold + len(sample.Cases) + len(sample.Required)
-	input := lang.Input{Values: map[string]lang.Value{"n": intValue(start)}}
-	frozen, err := NormalizeInput(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	initial := lang.CaseResult{Check: "domain.rule", Form: "recorded", Reason: "counterexample", Input: frozen, InputHash: hash(frozen.Values), Passed: false}
-	initial.Id = initial.Check + ".r-" + initial.InputHash[:8]
-	runner := &thresholdRunner{threshold: threshold}
-	shrunk := Shrink(initial, runner, time.Second)
-	if len(shrunk.Diagnostics) != 0 {
-		t.Fatal(shrunk.Diagnostics)
-	}
-	if got := shrunk.Result.Input.Values["n"]; got.Kind != "int" || got.Text != strconv.Itoa(threshold) || shrunk.Result.Passed || shrunk.Result.Rejected {
-		t.Fatalf("minimized input no longer reproduces boundary failure: %+v", shrunk)
-	}
-	if runner.evaluations == 0 || runner.rejected == 0 {
-		t.Fatal("shrinker did not exercise the execution boundary")
-	}
-	if !bytes.Equal(canonical(initial.Input), canonical(frozen)) {
-		t.Fatal("candidate execution mutated the original input")
-	}
-	for _, mode := range []string{"exhausted", "environment"} {
-		runner := &thresholdRunner{threshold: threshold, mode: mode}
-		stopped := Shrink(initial, runner, time.Second)
-		if !bytes.Equal(canonical(stopped.Result.Input), canonical(initial.Input)) {
-			t.Fatal("execution interruption replaced known failure")
-		}
-		if mode == "environment" {
-			requireProblems(t, stopped.Diagnostics)
-		} else if len(stopped.Diagnostics) != 0 {
-			t.Fatal(stopped.Diagnostics)
-		}
-	}
+	return lang.RunReport{Version: 1, Snapshot: rapid.StringMatching(`[0-9a-f]{64}`).Draw(t, "snapshot"),
+		At: time.Date(2026, 11, 28, 0, 0, second, 0, time.UTC).Format(time.RFC3339Nano), Mode: "explore",
+		Results: []lang.RunResult{result}, Diagnostics: []diag.Diagnostic{}}
 }
+
+func drawStoreSample(t *rapid.T, damages []string) StoreSample {
+	seconds := rapid.SliceOfNDistinct(rapid.IntRange(0, 86399), 3, 3, rapid.ID[int]).Draw(t, "seconds")
+	sample := StoreSample{Damage: rapid.SampledFrom(damages).Draw(t, "damage")}
+	for i := range rapid.IntRange(0, 2).Draw(t, "earlier") {
+		sample.Earlier = append(sample.Earlier, drawReport(t, seconds[i]))
+	}
+	sample.Report = drawReport(t, seconds[2])
+	if len(sample.Earlier) > 0 && rapid.IntRange(0, 2).Draw(t, "again") == 0 {
+		sample.Report = rapid.SampledFrom(sample.Earlier).Draw(t, "repeated")
+	}
+	return sample
+}
+
+//uc:generates evidence.save-keeps-history.sample
+//uc:generates evidence.save-is-idempotent.sample
+func genIntactStore() *rapid.Generator[StoreSample] {
+	return rapid.Custom(func(t *rapid.T) StoreSample { return drawStoreSample(t, []string{"none"}) })
+}
+
+//uc:generates evidence.save-refuses-damaged-store.sample
+//uc:generates evidence.read-reports-damaged-store.sample
+func genDamagedStore() *rapid.Generator[StoreSample] {
+	return rapid.Custom(func(t *rapid.T) StoreSample { return drawStoreSample(t, []string{"record", "link"}) })
+}
+
+// savedDir writes a repository with only design/domain.uc and saves the
+// reports into it in order.
+func savedDir(reports []lang.RunReport) (string, error) {
+	dir, err := repo.Materialize(repo.Tree{Entries: map[string]repo.Entry{"design": treeDir(), "design/domain.uc": treeFile("designer-owned\n")}})
+	if err != nil {
+		return "", err
+	}
+	for _, report := range reports {
+		if problems := Save(dir, report); len(problems) > 0 {
+			return "", fmt.Errorf("cannot save an earlier report: %+v", problems)
+		}
+	}
+	return dir, nil
+}
+
+//uc:generates evidence.save-keeps-history.dir
+func deriveEarlierStore(sample StoreSample) (string, error) { return savedDir(sample.Earlier) }
+
+//uc:generates evidence.save-is-idempotent.dir
+func deriveSavedStore(sample StoreSample) (string, error) {
+	return savedDir(append(slices.Clone(sample.Earlier), sample.Report))
+}
+
+// deriveDamagedStore saves the earlier reports, then adds a run record with
+// a repeated key, or turns results.json into a link to design/domain.uc.
+//
+//uc:generates evidence.save-refuses-damaged-store.dir
+//uc:generates evidence.read-reports-damaged-store.dir
+func deriveDamagedStore(sample StoreSample) (string, error) {
+	dir, err := savedDir(sample.Earlier)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".unicode", "runs"), 0o755); err != nil {
+		return "", err
+	}
+	if sample.Damage == "record" {
+		return dir, os.WriteFile(filepath.Join(dir, ".unicode", "runs", "broken.json"), []byte(`{"version":1,"version":1}`), 0o644)
+	}
+	latest := filepath.Join(dir, ".unicode", "results.json")
+	if err := os.Remove(latest); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	return dir, os.Symlink(filepath.Join("..", "design", "domain.uc"), latest)
+}
+
+func drawShrinkSample(t *rapid.T, modes []string) ShrinkSample {
+	threshold := rapid.IntRange(1, 5).Draw(t, "threshold")
+	start := threshold + rapid.IntRange(0, 10).Draw(t, "above")
+	input, err := NormalizeInput(lang.Input{Values: map[string]lang.Value{"n": intValue(start)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := lang.CaseResult{Check: "domain.rule", Form: "recorded", Reason: "counterexample", Input: input, InputHash: hash(input.Values), Passed: false}
+	initial.Id = initial.Check + ".r-" + initial.InputHash[:8]
+	return ShrinkSample{Threshold: threshold, Initial: initial, Mode: rapid.SampledFrom(modes).Draw(t, "mode"), Budget: time.Second, Minimal: intValue(threshold)}
+}
+
+//uc:generates evidence.shrink-finds-the-smallest-failure.sample
+func genNormalShrink() *rapid.Generator[ShrinkSample] {
+	return rapid.Custom(func(t *rapid.T) ShrinkSample { return drawShrinkSample(t, []string{"normal"}) })
+}
+
+//uc:generates evidence.shrink-keeps-the-failure-when-interrupted.sample
+func genStoppedShrink() *rapid.Generator[ShrinkSample] {
+	return rapid.Custom(func(t *rapid.T) ShrinkSample { return drawShrinkSample(t, []string{"exhausted", "environment"}) })
+}
+
+//uc:generates evidence.shrink-finds-the-smallest-failure.runner
+//uc:generates evidence.shrink-keeps-the-failure-when-interrupted.runner
+func deriveRunner(sample ShrinkSample) lang.CandidateRunner {
+	return &thresholdRunner{threshold: sample.Threshold, mode: sample.Mode}
+}
+
+func runnerLog(runner lang.CandidateRunner) (RunnerLog, error) {
+	r, ok := runner.(*thresholdRunner)
+	if !ok {
+		return RunnerLog{}, errors.New("the runner of the sample does not count its candidates")
+	}
+	return RunnerLog{Evaluations: r.evaluations, Rejected: r.rejected}, nil
+}
+
+//uc:observes evidence.shrink-finds-the-smallest-failure.log
+func observeShrinkLog(runner lang.CandidateRunner) (RunnerLog, error) { return runnerLog(runner) }
+
+//uc:observes evidence.shrink-keeps-the-failure-when-interrupted.log
+func observeStoppedLog(runner lang.CandidateRunner) (RunnerLog, error) { return runnerLog(runner) }
 
 type thresholdRunner struct {
 	threshold             int
@@ -361,75 +460,4 @@ func (r *thresholdRunner) Evaluate(input lang.Input) lang.CandidateEvaluation {
 	result.Input, _ = NormalizeInput(input)
 	input.Values["n"] = intValue(-r.threshold)
 	return lang.CandidateEvaluation{Result: &result}
-}
-
-type fixtureFile struct {
-	Data string
-	Mode fs.FileMode
-	Link string
-}
-
-func fileTree(t rapid.TB, root string) map[string]fixtureFile {
-	out := map[string]fixtureFile{}
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if path == root {
-			return nil
-		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		item := fixtureFile{Mode: info.Mode()}
-		if info.Mode()&os.ModeSymlink != 0 {
-			item.Link, err = os.Readlink(path)
-		} else if !entry.IsDir() {
-			var data []byte
-			data, err = os.ReadFile(path)
-			item.Data = string(data)
-		}
-		out[filepath.ToSlash(relative)] = item
-		return err
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return out
-}
-func writeFixture(t rapid.TB, root, path string, data []byte) {
-	absolute := filepath.Join(root, filepath.FromSlash(path))
-	if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(absolute, data, 0o640); err != nil {
-		t.Fatal(err)
-	}
-}
-func readFixture(t rapid.TB, root, path string) []byte {
-	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
-}
-func removeFixture(t rapid.TB, root, path string) {
-	if err := os.Remove(filepath.Join(root, filepath.FromSlash(path))); err != nil {
-		t.Fatal(err)
-	}
-}
-func requireProblems(t rapid.TB, problems []diag.Diagnostic) {
-	if len(problems) == 0 {
-		t.Fatal("unsafe boundary unexpectedly succeeded")
-	}
-	for _, problem := range problems {
-		if problem.Code == "" || problem.Position.Path == "" || problem.Position.Line < 1 || problem.Position.Column < 1 || problem.Message == "" || problem.Fix == "" {
-			t.Fatalf("incomplete diagnostic: %+v", problem)
-		}
-	}
 }

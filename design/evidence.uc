@@ -1,7 +1,7 @@
 component evidence "按覆盖挑选和缩减用例，缩小反例，录制用例，并把运行结果作为证据并入图" {
   focus core
   paths "internal/evidence/**"
-  uses graph, lang, syntax, diag, monitor
+  uses graph, lang, syntax, diag, monitor, repo
 }
 
 type Reduction record "reduce 的结果：缩减后留下的用例，它们保持原有覆盖的并集、全部声明的用例和反例，以及诊断" {
@@ -30,7 +30,7 @@ type Recording record "recordings 的结果：要写的录制文件、要删除�
   field diagnostics: list<diag.Diagnostic>
 }
 
-type Sample record "reduction-preserves-evidence 和 recordings-are-replayable 的输入：一组用例的结果及其覆盖、录制用例的上限，以及必须保持的覆盖点" {
+type Sample record "reduction-preserves-evidence 的输入：一组用例的结果及其覆盖、录制用例的上限，以及必须保持的覆盖点" {
   field cases: list<lang.CaseResult>
   field limit: int
   field required: list<string>
@@ -68,6 +68,37 @@ type DurationSample record "mean-durations-follow-current-evidence 的输入：�
   field expected: map<string, int>
 }
 
+type InvalidInput error "输入不是合乎模型的值：符号名为空或不是 UTF-8，或者某个值的写法不合它的种类"
+
+type InvalidCorpus error "录制文件不是规范的录制文件，或者其中的用例还原不出合乎设计的输入"
+
+type CorpusSample record "recordings 和 applyRecordings 各性质的输入：一张图，一组用例的结果，它们是否都能写成录制文件，一棵仓库目录树，以及树中 corpus 的情形" {
+  field graph: graph.Graph
+  field cases: list<lang.CaseResult>
+  field printable: bool
+  field tree: repo.Tree
+  field corpus: string
+}
+
+type StoreSample record "save 和 read 各性质的输入：依次先保存的报告、要保存的报告，以及存储的损坏方式" {
+  field earlier: list<lang.RunReport>
+  field report: lang.RunReport
+  field damage: string
+}
+
+type ShrinkSample record "shrink 各性质的输入：阈值、起始的反例、候选运行器的模式、预算，以及按构造定下的最小反例的输入值" {
+  field threshold: int
+  field initial: lang.CaseResult
+  field mode: string
+  field budget: duration
+  field minimal: monitor.Value
+}
+
+type RunnerLog record "缩小时候选运行器记下的执行次数和拒绝次数" {
+  field evaluations: int
+  field rejected: int
+}
+
 op reduce(cases: list<lang.CaseResult>, limit: int) -> Reduction pure "保留全部声明的用例和反例，其余按新增覆盖最多、同分时按输入哈希的次序贪心挑选，再删去冗余的用例；录制用例超过 limit 而不能保持覆盖时给出诊断"
 
 op shrink(initial: lang.CaseResult, runner: lang.CandidateRunner, budget: duration) -> Shrunk "在 budget 内反复把 initial 缩小成仍合乎类型和前提、仍以反例而不是检查错误失败的更小输入，直到不能再缩小，返回最后的反例，不含中途的尝试"
@@ -89,6 +120,10 @@ op decodeCollected(data: bytes) -> monitor.Collected pure raises InvalidTraffic 
 op readTraffic(root: string, g: graph.Graph) -> Traffic "读取 root 下 .unicode/traffic/<操作的标识>/<输入哈希>.json 中采集的调用，按路径排序；目录不存在时没有采集的调用，文件不合规范编码、指向 g 中不存在的操作、实参与该操作的参数不符或是符号链接时给出 evidence.invalid-traffic"
 
 op trafficInputs(g: graph.Graph, collected: list<monitor.Collected>) -> map<string, list<monitor.Input>> pure "按 language.md E29 把采集的调用对应成 g 中在运行时判定的单次调用契约（lang.monitoredCalls）的输入：每个采集的调用对其操作上的每条契约给出一个输入，接收者的值给出接收者的符号，调用值的各实参给出同一位置的实参的符号"
+
+op normalizeInput(input: monitor.Input) -> monitor.Input pure raises InvalidInput "输入的规范形式：冻结每个值，无序容器排好序，保留字符串的原始字节"
+
+op recordedInputs(g: graph.Graph, path: string, content: bytes) -> map<string, monitor.Input> pure raises InvalidCorpus "path 处的录制文件 content 中每个录制用例的名称，对应按 g 中目标的符号还原出的规范输入"
 
 property reduction-preserves-evidence postcondition "reduce 没有诊断时，留下的用例含全部声明的用例和反例，覆盖原有的全部覆盖点，录制用例不超过 limit" {
   about reduce
@@ -118,10 +153,174 @@ property mean-durations-follow-current-evidence postcondition "在 sample.graph 
   ensure result == sample.expected
 }
 
-property recordings-are-replayable invariant "录制文件重新解析后给出录制时的同一输入，再次录制不改动文件，不能写成录制文件的输入、越界路径、损坏的录制文件和符号链接给出诊断而不改动文件，孤立的录制文件被删除，运行记录保存后读出不变且不改写历史，缩小把反例缩到最小的失败输入，缩小中断时保留原反例" {
-  about recordings, applyRecordings, shrink, save, read, attach
-  forall sample: Sample generated "一至八个用例，同一样本的输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者都不能直接写成录制文件；用例约一半是声明的，约四分之一是反例，上限 0 至 9"
-  manual "需要在临时目录中写出并读回录制文件和运行记录，表达式不能读写文件"
+property recordings-roundtrip-inputs postcondition "用例都能写成录制文件、corpus 中没有异常时，recordings 没有诊断，计划中每个录制文件还原出的每个输入都是某个用例的输入的规范形式，不改动仓库" {
+  about recordings, recordedInputs, normalizeInput
+  forall sample: CorpusSample generated "一张图中组件 domain 下的性质 domain.rule 带一个 payload 符号，一至八个用例的结果，输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者约一半换成可打印的对应值（非 UTF-8 的字符串换成它的 Base64 文本，字节串换成它的 Base64 文本的字节）而能写成录制文件，其余不能写成录制文件（printable 为假），这时第一个用例是录制的反例，其余用例约一半是声明的，约四分之一是反例；仓库中有设计者的 design/domain.uc，corpus 等概率是 none（没有 corpus 目录）、orphan（corpus/removed.uc 是指向 removed 的录制文件，图中的 removed 等概率不存在或是设计层的操作、设计层的类型或代码层的性质）、foreign（corpus/broken.uc 的头是 corpus other）或 link（corpus/link.uc 是指向 ../design/domain.uc 的符号链接）"
+  forall dir: string generated "materialize 把 sample.tree 写成的新目录"
+  observe files: repo.Tree from dir
+  changes none
+  call recordings(dir, sample.graph, sample.cases)
+  ensure sample.printable and (sample.corpus == "none" or sample.corpus == "orphan") implies size(result.diagnostics) == 0 and all(e in result.edits: all(name in recordedInputs(sample.graph, e.path, e.content): any(c in sample.cases: normalizeInput(c.input) == recordedInputs(sample.graph, e.path, e.content)[name])))
+}
+
+property recordings-refuse-unreplayable-inputs postcondition "有用例不能写成录制文件、corpus 中没有异常时，recordings 只给出 evidence.unreplayable-input 诊断，没有要写和要删的文件，不改动仓库" {
+  about recordings
+  forall sample: CorpusSample generated "一张图中组件 domain 下的性质 domain.rule 带一个 payload 符号，一至八个用例的结果，输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者约一半换成可打印的对应值（非 UTF-8 的字符串换成它的 Base64 文本，字节串换成它的 Base64 文本的字节）而能写成录制文件，其余不能写成录制文件（printable 为假），这时第一个用例是录制的反例，其余用例约一半是声明的，约四分之一是反例；仓库中有设计者的 design/domain.uc，corpus 等概率是 none（没有 corpus 目录）、orphan（corpus/removed.uc 是指向 removed 的录制文件，图中的 removed 等概率不存在或是设计层的操作、设计层的类型或代码层的性质）、foreign（corpus/broken.uc 的头是 corpus other）或 link（corpus/link.uc 是指向 ../design/domain.uc 的符号链接）"
+  forall dir: string generated "materialize 把 sample.tree 写成的新目录"
+  observe files: repo.Tree from dir
+  changes none
+  call recordings(dir, sample.graph, sample.cases)
+  ensure not sample.printable and (sample.corpus == "none" or sample.corpus == "orphan") implies size(result.diagnostics) > 0 and all(d in result.diagnostics: d.code == "evidence.unreplayable-input") and size(result.edits) == 0 and size(result.removals) == 0
+}
+
+property recordings-retire-orphans postcondition "corpus 中有指向不是性质或流程的标识的录制文件时，recordings 的计划删除它，没有这样的文件时不删除文件，不改动仓库" {
+  about recordings
+  forall sample: CorpusSample generated "一张图中组件 domain 下的性质 domain.rule 带一个 payload 符号，一至八个用例的结果，输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者约一半换成可打印的对应值（非 UTF-8 的字符串换成它的 Base64 文本，字节串换成它的 Base64 文本的字节）而能写成录制文件，其余不能写成录制文件（printable 为假），这时第一个用例是录制的反例，其余用例约一半是声明的，约四分之一是反例；仓库中有设计者的 design/domain.uc，corpus 等概率是 none（没有 corpus 目录）、orphan（corpus/removed.uc 是指向 removed 的录制文件，图中的 removed 等概率不存在或是设计层的操作、设计层的类型或代码层的性质）、foreign（corpus/broken.uc 的头是 corpus other）或 link（corpus/link.uc 是指向 ../design/domain.uc 的符号链接）"
+  forall dir: string generated "materialize 把 sample.tree 写成的新目录"
+  observe files: repo.Tree from dir
+  changes none
+  call recordings(dir, sample.graph, sample.cases)
+  ensure sample.printable and sample.corpus == "orphan" implies "corpus/removed.uc" in result.removals
+  ensure sample.corpus == "none" implies size(result.removals) == 0
+}
+
+property recordings-refuse-foreign-corpus postcondition "corpus 中有头与路径不符的录制文件或符号链接时，recordings 给出诊断，没有要写和要删的文件，不改动仓库" {
+  about recordings
+  forall sample: CorpusSample generated "一张图中组件 domain 下的性质 domain.rule 带一个 payload 符号，一至八个用例的结果，输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者约一半换成可打印的对应值（非 UTF-8 的字符串换成它的 Base64 文本，字节串换成它的 Base64 文本的字节）而能写成录制文件，其余不能写成录制文件（printable 为假），这时第一个用例是录制的反例，其余用例约一半是声明的，约四分之一是反例；仓库中有设计者的 design/domain.uc，corpus 等概率是 none（没有 corpus 目录）、orphan（corpus/removed.uc 是指向 removed 的录制文件，图中的 removed 等概率不存在或是设计层的操作、设计层的类型或代码层的性质）、foreign（corpus/broken.uc 的头是 corpus other）或 link（corpus/link.uc 是指向 ../design/domain.uc 的符号链接）"
+  forall dir: string generated "materialize 把 sample.tree 写成的新目录"
+  observe files: repo.Tree from dir
+  changes none
+  call recordings(dir, sample.graph, sample.cases)
+  ensure sample.corpus == "foreign" or sample.corpus == "link" implies size(result.diagnostics) > 0 and size(result.edits) == 0 and size(result.removals) == 0
+}
+
+property recordings-diagnostics-are-described postcondition "recordings 给出的每条诊断都有位置的路径、从 1 起的行和列、原因和修正" {
+  about recordings
+  forall sample: CorpusSample generated "一张图中组件 domain 下的性质 domain.rule 带一个 payload 符号，一至八个用例的结果，输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者约一半换成可打印的对应值（非 UTF-8 的字符串换成它的 Base64 文本，字节串换成它的 Base64 文本的字节）而能写成录制文件，其余不能写成录制文件（printable 为假），这时第一个用例是录制的反例，其余用例约一半是声明的，约四分之一是反例；仓库中有设计者的 design/domain.uc，corpus 等概率是 none（没有 corpus 目录）、orphan（corpus/removed.uc 是指向 removed 的录制文件，图中的 removed 等概率不存在或是设计层的操作、设计层的类型或代码层的性质）、foreign（corpus/broken.uc 的头是 corpus other）或 link（corpus/link.uc 是指向 ../design/domain.uc 的符号链接）"
+  forall dir: string generated "materialize 把 sample.tree 写成的新目录"
+  call recordings(dir, sample.graph, sample.cases)
+  ensure all(d in result.diagnostics: size(d.position.path) > 0 and d.position.line >= 1 and d.position.column >= 1 and size(d.message) > 0 and size(d.fix) > 0)
+}
+
+property recordings-are-idempotent postcondition "用 applyRecordings 写入 recordings 的计划之后再规划，用例都能写成录制文件、corpus 中没有异常时计划为空，没有诊断" {
+  about recordings, applyRecordings
+  forall sample: CorpusSample generated "一张图中组件 domain 下的性质 domain.rule 带一个 payload 符号，一至八个用例的结果，输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者约一半换成可打印的对应值（非 UTF-8 的字符串换成它的 Base64 文本，字节串换成它的 Base64 文本的字节）而能写成录制文件，其余不能写成录制文件（printable 为假），这时第一个用例是录制的反例，其余用例约一半是声明的，约四分之一是反例；仓库中有设计者的 design/domain.uc，corpus 等概率是 none（没有 corpus 目录）、orphan（corpus/removed.uc 是指向 removed 的录制文件，图中的 removed 等概率不存在或是设计层的操作、设计层的类型或代码层的性质）、foreign（corpus/broken.uc 的头是 corpus other）或 link（corpus/link.uc 是指向 ../design/domain.uc 的符号链接）"
+  forall written: string generated "materialize 把 sample.tree 写成的新目录，再用 applyRecordings 写入 recordings 对它、sample.graph 和 sample.cases 给出的计划"
+  call recordings(written, sample.graph, sample.cases)
+  ensure sample.printable and (sample.corpus == "none" or sample.corpus == "orphan") implies size(result.diagnostics) == 0 and size(result.edits) == 0 and size(result.removals) == 0
+}
+
+property apply-writes-the-plan postcondition "计划没有诊断时，applyRecordings 没有诊断，计划中的每个文件写成计划中的内容，要删的文件都不在了" {
+  about applyRecordings
+  forall sample: CorpusSample generated "一张图中组件 domain 下的性质 domain.rule 带一个 payload 符号，一至八个用例的结果，输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者约一半换成可打印的对应值（非 UTF-8 的字符串换成它的 Base64 文本，字节串换成它的 Base64 文本的字节）而能写成录制文件，其余不能写成录制文件（printable 为假），这时第一个用例是录制的反例，其余用例约一半是声明的，约四分之一是反例；仓库中有设计者的 design/domain.uc，corpus 等概率是 none（没有 corpus 目录）、orphan（corpus/removed.uc 是指向 removed 的录制文件，图中的 removed 等概率不存在或是设计层的操作、设计层的类型或代码层的性质）、foreign（corpus/broken.uc 的头是 corpus other）或 link（corpus/link.uc 是指向 ../design/domain.uc 的符号链接）"
+  forall dir: string generated "materialize 把 sample.tree 写成的新目录"
+  forall plan: Recording generated "recordings 对 dir、sample.graph 和 sample.cases 给出的计划"
+  observe files: repo.Tree from dir
+  changes files
+  call applyRecordings(dir, plan)
+  ensure size(plan.diagnostics) == 0 implies size(result) == 0 and all(e in plan.edits: e.path in files.entries and files.entries[e.path].content == e.content) and all(r in plan.removals: not r in files.entries)
+}
+
+property apply-keeps-other-entries postcondition "applyRecordings 之后，计划中要写和要删的文件之外原有的条目都不变，新出现的条目只有计划中的文件和目录" {
+  about applyRecordings
+  forall sample: CorpusSample generated "一张图中组件 domain 下的性质 domain.rule 带一个 payload 符号，一至八个用例的结果，输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者约一半换成可打印的对应值（非 UTF-8 的字符串换成它的 Base64 文本，字节串换成它的 Base64 文本的字节）而能写成录制文件，其余不能写成录制文件（printable 为假），这时第一个用例是录制的反例，其余用例约一半是声明的，约四分之一是反例；仓库中有设计者的 design/domain.uc，corpus 等概率是 none（没有 corpus 目录）、orphan（corpus/removed.uc 是指向 removed 的录制文件，图中的 removed 等概率不存在或是设计层的操作、设计层的类型或代码层的性质）、foreign（corpus/broken.uc 的头是 corpus other）或 link（corpus/link.uc 是指向 ../design/domain.uc 的符号链接）"
+  forall dir: string generated "materialize 把 sample.tree 写成的新目录"
+  forall plan: Recording generated "recordings 对 dir、sample.graph 和 sample.cases 给出的计划"
+  observe files: repo.Tree from dir
+  changes files
+  call applyRecordings(dir, plan)
+  ensure all(p in old(files).entries: not any(e in plan.edits: e.path == p) and not p in plan.removals implies p in files.entries and files.entries[p] == old(files).entries[p])
+  ensure all(p in files.entries: p in old(files).entries or any(e in plan.edits: e.path == p) or files.entries[p].kind == repo.EntryKind.dir)
+}
+
+property apply-is-all-or-nothing postcondition "计划中有一个不安全的动作时，applyRecordings 给出诊断，不改动仓库，在它之前的动作也不写" {
+  about applyRecordings
+  forall sample: CorpusSample generated "一张图中组件 domain 下的性质 domain.rule 带一个 payload 符号，一至八个用例的结果，输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者约一半换成可打印的对应值（非 UTF-8 的字符串换成它的 Base64 文本，字节串换成它的 Base64 文本的字节）而能写成录制文件，其余不能写成录制文件（printable 为假），这时第一个用例是录制的反例，其余用例约一半是声明的，约四分之一是反例；仓库中有设计者的 design/domain.uc，corpus 等概率是 none（没有 corpus 目录）、orphan（corpus/removed.uc 是指向 removed 的录制文件，图中的 removed 等概率不存在或是设计层的操作、设计层的类型或代码层的性质）、foreign（corpus/broken.uc 的头是 corpus other）或 link（corpus/link.uc 是指向 ../design/domain.uc 的符号链接）"
+  forall action: int
+  forall dir: string generated "materialize 把 sample.tree 写成的新目录"
+  forall bad: Recording generated "recordings 对 dir、sample.graph 和 sample.cases 给出的计划去掉诊断，再按 action 加一个不安全的动作：0 写到 ../outside.uc，1 删除 design/domain.uc，2 写一个内容不是规范录制文件的 corpus/x.uc，3 计划有文件时再写一次第一个文件，否则写到 ../outside.uc"
+  where action in 0..3
+  observe files: repo.Tree from dir
+  changes none
+  call applyRecordings(dir, bad)
+  ensure size(result) > 0
+}
+
+property apply-refuses-foreign-removals postcondition "corpus 中有头与路径不符的录制文件或符号链接时，applyRecordings 删除它的计划给出诊断，不改动仓库" {
+  about applyRecordings
+  forall sample: CorpusSample generated "一张图中组件 domain 下的性质 domain.rule 带一个 payload 符号，一至八个用例的结果，输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者约一半换成可打印的对应值（非 UTF-8 的字符串换成它的 Base64 文本，字节串换成它的 Base64 文本的字节）而能写成录制文件，其余不能写成录制文件（printable 为假），这时第一个用例是录制的反例，其余用例约一半是声明的，约四分之一是反例；仓库中有设计者的 design/domain.uc，corpus 等概率是 none（没有 corpus 目录）、orphan（corpus/removed.uc 是指向 removed 的录制文件，图中的 removed 等概率不存在或是设计层的操作、设计层的类型或代码层的性质）、foreign（corpus/broken.uc 的头是 corpus other）或 link（corpus/link.uc 是指向 ../design/domain.uc 的符号链接）"
+  forall dir: string generated "materialize 把 sample.tree 写成的新目录"
+  forall removal: Recording generated "删除 corpus/broken.uc 和 corpus/link.uc 的计划"
+  observe files: repo.Tree from dir
+  changes none
+  call applyRecordings(dir, removal)
+  ensure sample.corpus == "foreign" or sample.corpus == "link" implies size(result) > 0
+}
+
+property save-keeps-history postcondition "save 没有诊断，之后 read 读出的报告中有 sample.report，原有的报告都还在，报告原来没有时多一份，原来有时份数不变" {
+  about save, read
+  forall sample: StoreSample generated "零至两份先保存的报告和一份要保存的报告：版本 1，执行输入哈希是 64 位十六进制，时间是 2026-11-28 中各不相同的秒，方式 explore，各带 domain.rule 的一条结论，它的用例是一至八个用例的结果（输入取十四种模型值中的同一种，约一半是声明的，约四分之一是反例），按用例算出通过与否和有效执行数、拒绝数，约三分之一要保存的报告就是先保存的一份；damage 是 none"
+  forall dir: string generated "materialize 写出只有 design/domain.uc 的新目录，再依次用 save 保存 sample.earlier 中的报告"
+  observe stored: Loaded from dir
+  changes stored
+  call save(dir, sample.report)
+  ensure size(result) == 0 and size(stored.diagnostics) == 0
+  ensure any(r in stored.reports: r == sample.report) and all(r in old(stored).reports: r in stored.reports)
+  ensure any(r in old(stored).reports: r == sample.report) == (size(stored.reports) == size(old(stored).reports)) and size(stored.reports) <= size(old(stored).reports) + 1
+}
+
+property save-is-idempotent postcondition "再保存已经保存过的最新报告，save 没有诊断，不改动仓库" {
+  about save
+  forall sample: StoreSample generated "零至两份先保存的报告和一份要保存的报告：版本 1，执行输入哈希是 64 位十六进制，时间是 2026-11-28 中各不相同的秒，方式 explore，各带 domain.rule 的一条结论，它的用例是一至八个用例的结果（输入取十四种模型值中的同一种，约一半是声明的，约四分之一是反例），按用例算出通过与否和有效执行数、拒绝数，约三分之一要保存的报告就是先保存的一份；damage 是 none"
+  forall dir: string generated "materialize 写出只有 design/domain.uc 的新目录，再依次用 save 保存 sample.earlier 中的报告和 sample.report"
+  observe files: repo.Tree from dir
+  changes none
+  call save(dir, sample.report)
+  ensure size(result) == 0
+}
+
+property save-refuses-damaged-store postcondition "运行记录损坏或 results.json 是符号链接时，save 给出带位置、原因和修正的诊断，不改动仓库" {
+  about save
+  forall sample: StoreSample generated "与 save-keeps-history 的 sample 相同的报告，damage 等概率是 record（.unicode/runs 中多一个有重复键的 broken.json）或 link（.unicode/results.json 换成指向 ../design/domain.uc 的符号链接）"
+  forall dir: string generated "materialize 写出只有 design/domain.uc 的新目录，依次用 save 保存 sample.earlier 中的报告，再按 sample.damage 损坏存储"
+  observe files: repo.Tree from dir
+  changes none
+  call save(dir, sample.report)
+  ensure size(result) > 0 and all(d in result: size(d.position.path) > 0 and d.position.line >= 1 and d.position.column >= 1 and size(d.message) > 0 and size(d.fix) > 0)
+}
+
+property read-reports-damaged-store postcondition "运行记录损坏或 results.json 是符号链接时，read 给出诊断，不改动仓库" {
+  about read
+  forall sample: StoreSample generated "与 save-keeps-history 的 sample 相同的报告，damage 等概率是 record（.unicode/runs 中多一个有重复键的 broken.json）或 link（.unicode/results.json 换成指向 ../design/domain.uc 的符号链接）"
+  forall dir: string generated "materialize 写出只有 design/domain.uc 的新目录，依次用 save 保存 sample.earlier 中的报告，再按 sample.damage 损坏存储"
+  observe files: repo.Tree from dir
+  changes none
+  call read(dir)
+  ensure size(result.diagnostics) > 0
+}
+
+property shrink-finds-the-smallest-failure postcondition "shrink 把反例缩小到仍失败、没有被拒绝的阈值，没有诊断，其间执行过候选、拒绝过候选，不改动原来的反例" {
+  about shrink
+  forall sample: ShrinkSample generated "阈值 1 至 5，起始的整数比阈值大零至十，起始的反例是 domain.rule 的录制反例，输入只有整数 n，模式 normal，预算一秒，minimal 是阈值这个整数"
+  forall runner: lang.CandidateRunner generated "按 sample.threshold 和 sample.mode 判定的候选运行器，记下执行和拒绝的次数：normal 时整数输入不小于阈值时失败、小于时通过，不是整数的输入拒绝；exhausted 时只报预算耗尽，environment 时只报一条环境错误"
+  observe log: RunnerLog from runner
+  observe sample
+  changes log
+  call shrink(sample.initial, runner, sample.budget)
+  ensure size(result.diagnostics) == 0 and result.result.input.values["n"] == sample.minimal and not result.result.passed and not result.result.rejected
+  ensure log.evaluations > 0 and log.rejected > 0
+}
+
+property shrink-keeps-the-failure-when-interrupted postcondition "候选运行器只报预算耗尽或环境错误时，shrink 保留原来的反例的输入，环境错误时给出诊断，预算耗尽时没有诊断，不改动原来的反例" {
+  about shrink
+  forall sample: ShrinkSample generated "与 shrink-finds-the-smallest-failure 的 sample 相同，模式等概率是 exhausted 或 environment"
+  forall runner: lang.CandidateRunner generated "按 sample.threshold 和 sample.mode 判定的候选运行器，记下执行和拒绝的次数：normal 时整数输入不小于阈值时失败、小于时通过，不是整数的输入拒绝；exhausted 时只报预算耗尽，environment 时只报一条环境错误"
+  observe log: RunnerLog from runner
+  observe sample
+  changes log
+  call shrink(sample.initial, runner, sample.budget)
+  ensure result.result.input == sample.initial.input
+  ensure (sample.mode == "environment") == (size(result.diagnostics) > 0)
 }
 
 property collected-calls-round-trip invariant "decodeCollected 读回 monitor.encodeCollected 写出的采集的调用，得到原来的 collected" {

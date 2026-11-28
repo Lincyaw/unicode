@@ -175,9 +175,10 @@ linters:
             - github.com/lincyaw/unicode/internal/lang
             - github.com/lincyaw/unicode/internal/syntax
             - github.com/lincyaw/unicode/internal/diag
+            - github.com/lincyaw/unicode/internal/repo
           deny:
             - pkg: github.com/lincyaw/unicode/internal
-              desc: "组件 evidence 只能依赖 graph、lang、syntax、diag（design/evidence.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+              desc: "组件 evidence 只能依赖 graph、lang、syntax、diag、repo（design/evidence.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
         review:
           list-mode: lax
           files: ["**/internal/review/**"]

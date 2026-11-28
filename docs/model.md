@@ -264,7 +264,7 @@
 - **D2 方法的 `realizes`**：若 realizes(t′, t)，t 的操作为 o，t′ 中有名为 map(o) 的方法 m（名称映射见 [design.md](design.md) §4），则 realizes(m, o)。接口中声明的方法也是 `op` 节点，形式为 `abstract`；经由接口的调用，其 `calls` 边指向它。
 - **D3 `depends`**：对设计层容器 A ≠ B，depends(A, B) 当且仅当 A 拥有的某个文件导入了 B 拥有其文件的包，或 A 拥有的某个函数调用了 B 拥有的某个函数。对外部系统 X，depends(A, X) 当且仅当 A 拥有的某个函数调用了实现 X 的某个操作的客户端。边的属性列出这些导入和调用。
 - **D4 `traces`**：若步骤 s 的形式为 `call` 或 `send`，calls(s, o)，且 realizes(f, o)，则 traces(s, f)。
-- **D5 `exercises`**：若 checks(p, x)，函数 g 从 p 沿 `calls` 可达，则 exercises(p, g)。
+- **D5 `exercises`**：若 checks(p, x)，函数 g 从 p 沿 `calls` 可达，则 exercises(p, g)。边的属性 `path` 是它的**来历**：从 p 到 g 的一条最短调用路径上 p 与 g 之间的函数，按路径的次序；同样短的路径中，g 的前一个函数取标识最小的那个，再沿它的来历向前。path 为空时 p 直接调用 g；否则 path 的最后一个函数 h 调用 g，exercises(p, h) 的 path 比它少一项，所以可达性可以逐条边核对，与 D8 的来历一样。
 - **D6 显著性**：
   1. 设计层的节点都是显著的。
   2. 代码层的类型和函数是显著的，当且仅当它实现设计节点（包括按 D2 实现操作的方法），或带 `checks`、`generates`、`observes`、`substitutes`、`publishes` 绑定；但 `gen` 产生的生成文件中的元素都是细节。
@@ -399,17 +399,17 @@
 
 ## 附录 B 规则与诊断码
 
-每条推导规则和约束一行，列出违反它时报出的诊断码，以及生成器违反它的性质或流程（`design/*.uc` 中的标识）。推导规则没有诊断码，由性质把推导的结果与 §9 的定义逐条比较。不属于任何规则的诊断码列在 [design.md](design.md) §8。`make rule-check`（`scripts/rulecodes.py`）检查本表与代码中的诊断码一致。
+每条推导规则和约束一行，列出违反它时报出的诊断码，以及生成器违反它的性质或流程（`design/*.uc` 中的标识）。推导规则没有诊断码，由性质把推导的结果与 §9 的定义逐条比较：每条规则写成推导之后的图上的局部条件，传递闭包借来历（D5、D8）逐条边核对。不属于任何规则的诊断码列在 [design.md](design.md) §8。`make rule-check`（`scripts/rulecodes.py`）检查本表与代码中的诊断码一致。
 
 | 规则 | 诊断码 | 验证的性质 |
 | --- | --- | --- |
-| D1 | 由性质验证 | `graph.derive-matches-definition` |
-| D2 | 由性质验证 | `graph.derive-matches-definition`、`lang.golang.extracts-generated-module` |
-| D3 | 由性质验证 | `graph.derive-matches-definition` |
-| D4 | 由性质验证 | `graph.derive-matches-definition` |
-| D5 | 由性质验证 | `graph.derive-matches-definition` |
-| D6 | 由性质验证 | `graph.derive-matches-definition`、`lang.golang.extracts-generated-module` |
-| D7 | 由性质验证 | `graph.derive-matches-definition` |
+| D1 | 由性质验证 | `graph.owns-follows-deepest-pattern` |
+| D2 | 由性质验证 | `graph.method-realizes-follows-candidates`、`lang.golang.extracts-generated-module` |
+| D3 | 由性质验证 | `graph.depends-lists-calls`、`graph.depends-lists-imports`、`graph.depends-attrs-are-distinct-usages`、`graph.depends-values-are-usages` |
+| D4 | 由性质验证 | `graph.traces-follow-realizations` |
+| D5 | 由性质验证 | `graph.exercises-close-over-calls`、`graph.exercises-paths-lead-to-predicates` |
+| D6 | 由性质验证 | `graph.design-nodes-are-salient`、`graph.code-salience-follows-bindings`、`graph.container-salience-follows-elements`、`lang.golang.extracts-generated-module` |
+| D7 | 由性质验证 | `graph.reaches-joins-salient-functions`、`graph.reaches-covers-detail-chains` |
 | D8 | 由性质验证 | `graph.effects-follow-calls`、`graph.effects-read-the-graph`、`graph.dispatch-finds-implementations` |
 | 1 | `design.unresolved-reference`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
 | 2 | `design.duplicate-name` | `design.rejects-broken-design` |
@@ -422,10 +422,10 @@
 | 9 | `design.wrong-reference-kind`、`design.not-an-event`、`design.argument-count` | `design.rejects-broken-design` |
 | 10 | `syntax.on-without-call`、`design.unraised-error` | `syntax.rejects-broken-text`、`design.rejects-broken-design` |
 | 11 | `design.async-without-trigger`、`design.sender-not-receiver` | `design.rejects-broken-design` |
-| 12 | `graph.bad-path-pattern`、`check.unowned-file`、`check.overlapping-paths` | `graph.derive-matches-definition`、`check.rejects-broken-graph` |
+| 12 | `graph.bad-path-pattern`、`check.unowned-file`、`check.overlapping-paths` | `graph.derive-reports-invalid-patterns`、`check.rejects-broken-graph` |
 | 13 | `design.undeclared-dependency`、`check.undeclared-dependency` | `design.rejects-broken-design`、`check.rejects-broken-graph` |
 | 14 | `check.undeclared-dependency` | `check.rejects-broken-graph` |
-| 15 | `lang.golang.missing-binding-id`、`lang.golang.invalid-binding-id`、`lang.golang.misplaced-binding`、`lang.golang.duplicate-binding`、`graph.unresolved-binding`、`check.wrong-binding-kind`、`check.multiple-checks`、`check.multiple-observes`、`check.multiple-substitutes`、`check.substitute-signature`、`check.substitute-outside-container`、`check.not-generated-symbol`、`check.method-binding`、`check.multiple-publications`、`check.publisher-signature`、`check.publisher-outside-container` | `lang.golang.extracts-generated-module`、`graph.derive-matches-definition`、`check.rejects-broken-graph` |
+| 15 | `lang.golang.missing-binding-id`、`lang.golang.invalid-binding-id`、`lang.golang.misplaced-binding`、`lang.golang.duplicate-binding`、`graph.unresolved-binding`、`check.wrong-binding-kind`、`check.multiple-checks`、`check.multiple-observes`、`check.multiple-substitutes`、`check.substitute-signature`、`check.substitute-outside-container`、`check.not-generated-symbol`、`check.method-binding`、`check.multiple-publications`、`check.publisher-signature`、`check.publisher-outside-container` | `lang.golang.extracts-generated-module`、`graph.derive-reports-unresolved-bindings`、`check.rejects-broken-graph` |
 | 16 | `check.unrealized`、`check.multiple-realizations`；按语言分别计数待做：实现差分 | `check.rejects-broken-graph` |
 | 17 | `check.realization-outside-container` | `check.rejects-broken-graph` |
 | 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value`；Go 签名略去第一个参数 `context.Context`（[design.md](design.md) §4） | `check.rejects-broken-graph`、`lang.golang.extracts-generated-module` |
@@ -438,7 +438,7 @@
 | 25 | `design.invalid-limit-path`、`design.invalid-limit` | `design.rejects-broken-design` |
 | 26 | `design.unknown-symbol`、`design.duplicate-value`、`design.missing-value`、`design.value-type-mismatch`、`design.value-out-of-limit`；载入时允许生成的符号没有值待做：派生输入 | `design.rejects-broken-design` |
 | 27 | `design.recorded-case-name` | `design.rejects-broken-design` |
-| 28 | `gen.stale-file`、`lang.golang.stale-contracts` | `gen.check-files-are-current`、`lang.golang.executes-contracts` |
+| 28 | `gen.stale-file`、`lang.golang.stale-contracts` | `gen.check-files-reports-stale-targets`、`lang.golang.executes-contracts` |
 | 29 | `design.unresolved-reference`、`design.wrong-reference-kind`、`cli.not-canonical` | `design.rejects-broken-design`、`cli.check-design` |
 | 30 | `design.name-collision`、`design.irreversible-name`；Python 的名称映射待做：M5；自定义生成器按绑定命名，骨架默认命名与撞名检查见 [design.md](design.md) §6.1 | `design.rejects-broken-design` |
 | 31 | `design.expression-type` | `design.rejects-broken-design` |
@@ -447,8 +447,8 @@
 | 34 | `check.missing-observer`、`check.multiple-observers`、`check.observer-signature`、`check.observer-outside-container` | `check.rejects-broken-graph` |
 | 35 | `design.invalid-observation`、`design.invalid-change-path`、`lang.golang.expression-failed`、`lang.golang.frame-violation`、`lang.golang.observation-failed` | `design.rejects-broken-design`、`lang.golang.executes-contracts` |
 | 36 | 由性质验证：评审指纹决定观察适配器变化后的待审状态 | `review.evaluation-follows-content` |
-| 37 | `check.runtime-counterexample`、`check.runtime-purity-violation` | `evidence.attachment-preserves-input-identity`、`evidence.recordings-are-replayable`、`evidence.runtime-evidence-keeps-its-venue` |
-| 38 | `design.invalid-codec`、`design.value-type-mismatch`、`lang.golang.input-codec-failed` | `design.codecs-are-typed`、`evidence.recordings-are-replayable` |
+| 37 | `check.runtime-counterexample`、`check.runtime-purity-violation` | `evidence.attachment-preserves-input-identity`、`evidence.runtime-evidence-keeps-its-venue` |
+| 38 | `design.invalid-codec`、`design.value-type-mismatch`、`lang.golang.input-codec-failed` | `design.codecs-are-typed`、`evidence.recordings-roundtrip-inputs` |
 | 39 | `check.effect-in-pure-op` | `check.rejects-broken-graph`、`check.reports-effects-in-pure-ops` |
 | 40 | 待做：派生输入和效果推导之后由 `check` 报 check.derived-input-value、check.missing-generated-value 和 check.nondeterministic-derivation | — |
 | 41 | 待做：Go 驱动换次序再调用，不同时报 lang.golang.order-dependence | — |

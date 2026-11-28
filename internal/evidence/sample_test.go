@@ -24,7 +24,6 @@ type Sample struct {
 }
 
 //uc:generates evidence.reduction-preserves-evidence.sample
-//uc:generates evidence.recordings-are-replayable.sample
 func genSample() *rapid.Generator[Sample] {
 	return rapid.Custom(func(t *rapid.T) Sample {
 		shape := rapid.IntRange(0, 13).Draw(t, "shape")
@@ -326,21 +325,4 @@ func fixtureType(t rapid.TB, g *graph.Graph, value lang.Value, counter *int) str
 	}
 	t.Fatalf("unknown fixture value kind %s", value.Kind)
 	return ""
-}
-
-func recordingGraph(t rapid.TB, sample Sample) *graph.Graph {
-	g := attachmentGraph(t, 0, 3)
-	nodes := g.Nodes()
-	nodes = slices.DeleteFunc(nodes, func(n graph.Node) bool { return n.Id == "domain.rule" })
-	edges := slices.DeleteFunc(g.Edges(), func(e graph.Edge) bool { return e.From == "domain.rule" || e.To == "domain.rule" })
-	g = fixtureBuild(t, nodes, edges)
-	counter := 0
-	typ := fixtureType(t, g, sample.Cases[0].Input.Values["payload"], &counter)
-	if err := g.AddNode(graph.Node{Id: "domain.rule", Kind: graph.NodeKindProperty, Form: "postcondition", Layer: graph.LayerDesign, Attrs: map[string][]string{"symbols": {"payload: " + typ}}}); err != nil {
-		t.Fatal(err)
-	}
-	if err := g.AddEdge(graph.Edge{Kind: graph.EdgeKindContains, From: "domain", To: "domain.rule"}); err != nil {
-		t.Fatal(err)
-	}
-	return g
 }

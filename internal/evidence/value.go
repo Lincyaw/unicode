@@ -40,17 +40,29 @@ func rawHash(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// InvalidInput is the error of NormalizeInput for an input that is not a
+// model value.
+//
+//uc:realizes evidence.InvalidInput
+type InvalidInput struct{ Cause error }
+
+func (e InvalidInput) Error() string { return "the input is not a model value: " + e.Cause.Error() }
+
+func (e InvalidInput) Unwrap() error { return e.Cause }
+
 // NormalizeInput freezes values, canonicalizes unordered containers and preserves
 // arbitrary Go string bytes without JSON's UTF-8 replacement.
+//
+//uc:realizes evidence.normalizeInput
 func NormalizeInput(input lang.Input) (lang.Input, error) {
 	out := lang.Input{Values: map[string]lang.Value{}}
 	for name, value := range input.Values {
 		if name == "" || !utf8.ValidString(name) {
-			return out, fmt.Errorf("the symbol name is empty or not UTF-8")
+			return out, InvalidInput{Cause: fmt.Errorf("the symbol name is empty or not UTF-8")}
 		}
 		normalized, err := normalizeValue(value, 0)
 		if err != nil {
-			return out, fmt.Errorf("symbol %s: %w", name, err)
+			return out, InvalidInput{Cause: fmt.Errorf("symbol %s: %w", name, err)}
 		}
 		out.Values[name] = normalized
 	}
