@@ -27,36 +27,44 @@ func writeRecord(dir string, record Record) error {
 
 // writeTraffic writes a collected call under dir/traffic/<op>/<hash>.json,
 // the hash being that of its receiver and call value, so that an input is
-// kept once; it keeps at most maxCollected for one operation, counting those
-// already on disk the first time it writes for the operation.
-func writeTraffic(dir string, collected Collected, counts map[string]int) error {
+// kept once. It keeps at most maxCollected for one operation, counting the
+// collected calls already on disk, but no temporary file left by an
+// interrupted write, the first time it writes for the operation; it reports
+// whether the operation is full.
+func writeTraffic(dir string, collected Collected, counts map[string]int) (bool, error) {
 	if strings.ContainsAny(collected.Op, `/\`) || collected.Op == "" || strings.HasPrefix(collected.Op, ".") {
-		return errors.New("the operation identity is not a directory name")
+		return false, errors.New("the operation identity is not a directory name")
 	}
 	directory := filepath.Join(dir, "traffic", collected.Op)
 	count, known := counts[collected.Op]
 	if !known {
 		listed, err := os.ReadDir(directory)
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
+			return false, err
 		}
-		count = len(listed)
+		for _, entry := range listed {
+			if strings.HasSuffix(entry.Name(), ".json") && !strings.HasPrefix(entry.Name(), pendingPrefix) {
+				count++
+			}
+		}
+		counts[collected.Op] = count
 	}
 	if count >= maxCollected {
-		counts[collected.Op] = count
-		return nil
+		return true, nil
 	}
-	name := collectedHash(collected) + ".json"
+	name := CollectedHash(collected) + ".json"
 	if _, err := os.Lstat(filepath.Join(directory, name)); err == nil {
-		counts[collected.Op] = count
-		return nil
+		return false, nil
 	}
 	if err := publish(directory, name, EncodeCollected(collected)); err != nil {
-		return err
+		return false, err
 	}
 	counts[collected.Op] = count + 1
-	return nil
+	return count+1 >= maxCollected, nil
 }
+
+// pendingPrefix names the temporary file of a write in progress.
+const pendingPrefix = ".pending-"
 
 // publish writes data to directory/name through a temporary file renamed into
 // place; a file already there is left as it is, its name being its content.
@@ -68,13 +76,15 @@ func publish(directory, name string, data []byte) error {
 	if _, err := os.Lstat(target); err == nil {
 		return nil
 	}
-	temp, err := os.CreateTemp(directory, ".pending-")
+	temp, err := os.CreateTemp(directory, pendingPrefix)
 	if err != nil {
 		return err
 	}
 	_, writeErr := temp.Write(data)
 	modeErr := temp.Chmod(0o644)
 	closeErr := temp.Close()
+	// A pending file that cannot be removed after a failed write is left
+	// behind: readers and the collection count skip pending files.
 	if err := errors.Join(writeErr, modeErr, closeErr); err != nil {
 		_ = os.Remove(temp.Name())
 		return err

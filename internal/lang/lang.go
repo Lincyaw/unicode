@@ -6,6 +6,7 @@ import (
 
 	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
+	"github.com/lincyaw/unicode/monitor"
 )
 
 // NameRole is what a name of the design stands for when a backend maps it to
@@ -111,31 +112,14 @@ type RunPlan struct {
 // Exploring tells whether the plan explores generated inputs.
 func (p RunPlan) Exploring() bool { return p.Explore > 0 || p.Explorations > 0 }
 
-// Value is a finite replayable model value. Encoded values hold their declared
-// representation as their single item.
-//
-//uc:realizes lang.Value
-type Value struct {
-	Kind    string       `json:"kind"`
-	Text    string       `json:"text"`
-	Items   []Value      `json:"items"`
-	Entries []ValueEntry `json:"entries"`
-}
-
-// ValueEntry is one record, map, call or response-script entry.
-//
-//uc:realizes lang.ValueEntry
-type ValueEntry struct {
-	Key   Value `json:"key"`
-	Value Value `json:"value"`
-}
-
-// Input freezes all symbols before a business call changes their native values.
-//
-//uc:realizes lang.Input
-type Input struct {
-	Values map[string]Value `json:"values"`
-}
+// Value, ValueEntry and Input are the model values of docs/design.md §6.4,
+// which the monitor package owns: a monitored program writes them, and the
+// toolchain reads them with the same types.
+type (
+	Value      = monitor.Value
+	ValueEntry = monitor.ValueEntry
+	Input      = monitor.Input
+)
 
 // Coverage is a measured source block or design step, branch or declared error.
 //
@@ -214,22 +198,12 @@ type CandidateRunner interface {
 	Evaluate(input Input) CandidateEvaluation
 }
 
-// ClauseCalls is a limit or precondition that did not hold, and on how many
-// calls.
-//
-//uc:realizes lang.ClauseCalls
-type ClauseCalls struct {
-	Clause string `json:"clause"`
-	Calls  int    `json:"calls"`
-}
-
-// ClauseJudged is a clause, and how many times it was judged.
-//
-//uc:realizes lang.ClauseJudged
-type ClauseJudged struct {
-	Clause string `json:"clause"`
-	Judged int    `json:"judged"`
-}
+// ClauseCalls and ClauseJudged are a runtime conclusion's counts, which the
+// monitor package owns.
+type (
+	ClauseCalls  = monitor.ClauseCalls
+	ClauseJudged = monitor.ClauseJudged
+)
 
 // RunResult records one check's effective inputs, observations and failures.
 // A runtime result counts its applicable calls as accepted and adds the calls

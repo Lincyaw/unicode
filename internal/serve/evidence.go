@@ -110,12 +110,18 @@ func (st *state) evidenceOf(id string) *Evidence {
 				continue
 			}
 			run := st.parent(candidate)
-			mode := DriverMode(st.attr(candidate, "mode"))
+			result := outcome(st.attr(candidate, "passed") == "true")
+			var entry RunResult
+			// From… only marshals a struct of strings and times, which cannot fail.
 			if st.venue(candidate) == lang.VenueRuntime {
-				mode = DriverModeReplay
+				_ = entry.FromRuntimeRunResult(RuntimeRunResult{Venue: RuntimeRunResultVenueRuntime, Commit: st.attr(run, "commit"), At: at, Outcome: result})
+			} else {
+				_ = entry.FromTestRunResult(TestRunResult{Venue: TestRunResultVenueTest, Commit: st.attr(run, "commit"), At: at, Mode: DriverMode(st.attr(candidate, "mode")), Outcome: result})
 			}
-			history = append(history, RunResult{At: at, Commit: st.attr(run, "commit"), Mode: mode, Outcome: outcome(st.attr(candidate, "passed") == "true"), Venue: Venue(st.venue(candidate))})
-			if out.Outcome == nil && st.attr(candidate, "caseFresh") == "true" {
+			history = append(history, entry)
+			// The case's outcome is its current test evidence; a runtime result
+			// joins only its history (docs/model.md §3.5).
+			if out.Outcome == nil && st.venue(candidate) == lang.VenueTest && st.attr(candidate, "caseFresh") == "true" {
 				value := outcome(st.attr(candidate, "passed") == "true")
 				out.Outcome = &value
 			}
@@ -221,6 +227,7 @@ func (st *state) runtimeEvidence(id string) *RuntimeEvidence {
 	if errFrom != nil || errTo != nil {
 		return nil
 	}
+	// attach writes these counts with strconv.Itoa, so they always read back.
 	count := func(text string) int64 { n, _ := strconv.ParseInt(text, 10, 64); return n }
 	out := &RuntimeEvidence{Commit: st.attr(run, "commit"), From: from, To: to, Applicable: int32(count(st.attr(summary, "accepted"))),
 		OutsideDomain: []ClauseCalls{}, Clauses: []ClauseJudged{}, Counterexamples: []RuntimeCounterexample{}}
@@ -247,11 +254,10 @@ func (st *state) runtimeEvidence(id string) *RuntimeEvidence {
 		if st.nodes[candidate].Form != "case" || st.attr(candidate, "check") != id {
 			continue
 		}
-		at, err := time.Parse(time.RFC3339Nano, st.attr(candidate, "at"))
+		// load checked every runtime case's time and values (runtimeCases).
+		at, _ := time.Parse(time.RFC3339Nano, st.attr(candidate, "at"))
 		var input lang.Input
-		if err != nil || json.Unmarshal([]byte(st.attr(candidate, "values")), &input) != nil {
-			continue
-		}
+		_ = json.Unmarshal([]byte(st.attr(candidate, "values")), &input)
 		values := map[string]ModelValue{}
 		for name, value := range input.Values {
 			values[name] = modelValue(value)
@@ -282,4 +288,23 @@ func modelValue(v lang.Value) ModelValue {
 		out.Entries = &entries
 	}
 	return out
+}
+
+// runtimeCases checks that every runtime counterexample the snapshot holds
+// has the time and the values unicode build writes, so that the runtime
+// evidence is never shown with a counterexample left out.
+func runtimeCases(st *state) error {
+	for id, n := range st.nodes {
+		if n.Layer != graph.LayerEvidence || n.Kind != graph.NodeKindResult || n.Form != "case" || st.attr(id, "venue") != lang.VenueRuntime {
+			continue
+		}
+		var input lang.Input
+		if _, err := time.Parse(time.RFC3339Nano, st.attr(id, "at")); err != nil {
+			return fmt.Errorf("the runtime counterexample %s has no time: %w", id, err)
+		}
+		if err := json.Unmarshal([]byte(st.attr(id, "values")), &input); err != nil {
+			return fmt.Errorf("the runtime counterexample %s has no values: %w", id, err)
+		}
+	}
+	return nil
 }

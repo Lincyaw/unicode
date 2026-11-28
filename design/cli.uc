@@ -140,9 +140,8 @@ property stores-reach-viewer-through-build postcondition "往评审存储或运�
 property commit-graphs-have-one-system postcondition "CommitGraphs.build 建出的图恰有一个形式为 system 的节点，或者抛出 serve.Unbuildable" {
   about CommitGraphs.build
   forall graphs: CommitGraphs
-  forall root: string generated "以 absent- 开头、其后一至十二个小写字母的相对路径，在测试的工作目录中不存在"
-  forall commit: string
-  where commit size 1..64
+  forall root: string generated "约一半是一个只有系统文件、提交过一次的 git 仓库的目录（每个测试进程建一次），其余是以 absent- 开头、其后一至十二个小写字母、在测试的工作目录中不存在的相对路径"
+  forall commit: string generated "约一半是 HEAD，其余是以 missing- 开头、其后一至十二个小写字母、不是任何提交的名称"
   call graphs.build(root, commit)
   ensure raised(serve.Unbuildable) or count(n in result.nodes(): n.form == "system") == 1
 }

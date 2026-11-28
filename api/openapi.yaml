@@ -2096,29 +2096,10 @@ components:
           format: date-time
       description: A commit of the repository.
     RunResult:
-      type: object
-      required:
-        - commit
-        - at
-        - mode
-        - outcome
-        - venue
-      properties:
-        commit:
-          type: string
-          description: The commit the run checked
-        at:
-          type: string
-          format: date-time
-        mode:
-          $ref: '#/components/schemas/DriverMode'
-        outcome:
-          $ref: '#/components/schemas/Outcome'
-        venue:
-          allOf:
-            - $ref: '#/components/schemas/Venue'
-          description: 'M8: where it ran'
-      description: 'M6: one result of a case in one run.'
+      oneOf:
+        - $ref: '#/components/schemas/TestRunResult'
+        - $ref: '#/components/schemas/RuntimeRunResult'
+      description: 'One result of a case in its history, as the variant of its venue: only a test result has a driver mode.'
     RuntimeCounterexample:
       type: object
       required:
@@ -2191,6 +2172,30 @@ components:
           format: int32
           description: '核对的轨迹: only of a flow'
       description: 'M8: the current runtime evidence of a property or flow: one record period of a monitored program.'
+    RuntimeRunResult:
+      type: object
+      required:
+        - venue
+        - commit
+        - at
+        - outcome
+      properties:
+        venue:
+          type: string
+          enum:
+            - runtime
+          description: Where it ran
+        commit:
+          type: string
+          description: The commit the monitored program was built from
+        at:
+          type: string
+          format: date-time
+          description: When the call began
+        outcome:
+          $ref: '#/components/schemas/Outcome'
+      description: "M8: one result of a case on a real call of a monitored program: a counterexample whose input is the case's."
+      additionalProperties: false
     Slice:
       type: object
       required:
@@ -2338,6 +2343,32 @@ components:
             type: string
           description: The identities of its direct sub-steps, in their order
       description: 'Where a step stands in its flow: what a one-line step such as `OrderService → payment.Payments.charge(orderId, amount)` names.'
+    TestRunResult:
+      type: object
+      required:
+        - venue
+        - commit
+        - at
+        - mode
+        - outcome
+      properties:
+        venue:
+          type: string
+          enum:
+            - test
+          description: 'M8: where it ran'
+        commit:
+          type: string
+          description: The commit the run checked
+        at:
+          type: string
+          format: date-time
+        mode:
+          $ref: '#/components/schemas/DriverMode'
+        outcome:
+          $ref: '#/components/schemas/Outcome'
+      description: 'M6: one result of a case in one test run.'
+      additionalProperties: false
     TreeNode:
       type: object
       required:

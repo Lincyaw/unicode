@@ -46,7 +46,7 @@ type Traffic record "readTraffic 的结果：.unicode/traffic 中采集的调用
 type TrafficSample record "traffic-gives-inputs 的输入：一张图、一组采集的调用，以及按 language.md E29 直接算出的每条在运行时判定的单次调用契约的输入" {
   field graph: graph.Graph
   field collected: list<monitor.Collected>
-  field expected: map<string, list<lang.Input>>
+  field expected: map<string, list<monitor.Input>>
 }
 
 type VenueSample record "runtime-evidence-keeps-its-venue 的输入：一张图，以及一组执行场合为测试或运行时的运行报告" {
@@ -88,7 +88,7 @@ op decodeCollected(data: bytes) -> monitor.Collected pure raises InvalidTraffic 
 
 op readTraffic(root: string, g: graph.Graph) -> Traffic "读取 root 下 .unicode/traffic/<操作的标识>/<输入哈希>.json 中采集的调用，按路径排序；目录不存在时没有采集的调用，文件不合规范编码、指向 g 中不存在的操作、实参与该操作的参数不符或是符号链接时给出 evidence.invalid-traffic"
 
-op trafficInputs(g: graph.Graph, collected: list<monitor.Collected>) -> map<string, list<lang.Input>> pure "按 language.md E29 把采集的调用对应成 g 中在运行时判定的单次调用契约（lang.monitoredCalls）的输入：每个采集的调用对其操作上的每条契约给出一个输入，接收者的值给出接收者的符号，调用值的各实参给出同一位置的实参的符号"
+op trafficInputs(g: graph.Graph, collected: list<monitor.Collected>) -> map<string, list<monitor.Input>> pure "按 language.md E29 把采集的调用对应成 g 中在运行时判定的单次调用契约（lang.monitoredCalls）的输入：每个采集的调用对其操作上的每条契约给出一个输入，接收者的值给出接收者的符号，调用值的各实参给出同一位置的实参的符号"
 
 property reduction-preserves-evidence postcondition "reduce 没有诊断时，留下的用例含全部声明的用例和反例，覆盖原有的全部覆盖点，录制用例不超过 limit" {
   about reduce
@@ -137,13 +137,16 @@ property traffic-gives-inputs postcondition "trafficInputs 给出的输入与 sa
   ensure result == sample.expected
 }
 
-property runtime-evidence-keeps-its-venue postcondition "attach 给每个运行节点和结论节点记下恰一个执行场合，取自报告的 venue，没有时为 test，运行时的结论节点另列出报告中不成立的每条限定或前提和判定过的每个子句，执行场合为运行时的结论节点是当前证据当且仅当它的执行输入哈希与图的相同且它的性质或流程在图中" {
+property runtime-evidence-keeps-its-venue postcondition "attach 给每个运行节点和结论节点记下恰一个执行场合，运行节点、性质或流程的结论节点和用例的结论节点的执行场合都取自报告的 venue（没有时为 test），运行时的结论节点另列出报告中不成立的每条限定或前提和判定过的每个子句，运行时的用例结论从不是声明或录制的用例的当前证据，执行场合为运行时的结论节点是当前证据当且仅当它的执行输入哈希与图的相同且它的性质或流程在图中" {
   about attach
-  forall sample: VenueSample generated "attachment-preserves-input-identity 那样的图，以及一至三份报告，执行场合为 test、runtime 或缺省，约一半的执行输入哈希与图的相同，运行时的结论带一至两条不成立的限定或前提、一至两个子句的判定次数、0 至 1 秒的第 95 百分位耗时和零至一个反例"
+  forall sample: VenueSample generated "attachment-preserves-input-identity 那样的图，以及一至三份时间各不相同的报告，执行场合为 test、runtime 或缺省，约一半的执行输入哈希与图的相同，运行时的结论带一至两条不成立的限定或前提、一至两个子句的判定次数、0 至 1 秒的第 95 百分位耗时，约一半另带一个反例，其输入有时与图中声明的用例相同"
   call attach(sample.graph, sample.reports)
   ensure all(n in result.fragment.nodes: n.kind == graph.NodeKind.run or n.kind == graph.NodeKind.result implies size(n.attrs["venue"]) == 1 and ("test" in n.attrs["venue"] or "runtime" in n.attrs["venue"]))
+  ensure all(r in sample.reports: any(n in result.fragment.nodes: n.kind == graph.NodeKind.run and r.at in n.attrs["at"] and (r.venue == "runtime") == ("runtime" in n.attrs["venue"])))
   ensure all(r in sample.reports: all(x in r.results: any(n in result.fragment.nodes: n.form == "check" and x.id in n.attrs["check"] and (r.venue == "runtime") == ("runtime" in n.attrs["venue"]))))
+  ensure all(r in sample.reports: all(x in r.results: all(k in x.cases: any(n in result.fragment.nodes: n.form == "case" and k.inputHash in n.attrs["inputHash"] and (r.venue == "runtime") == ("runtime" in n.attrs["venue"])))))
   ensure all(r in sample.reports: r.venue == "runtime" implies all(x in r.results: all(o in x.outsideDomain: any(n in result.fragment.nodes: n.form == "check" and x.id in n.attrs["check"] and "runtime" in n.attrs["venue"] and o.clause in n.attrs["outsideDomain"]))))
   ensure all(r in sample.reports: r.venue == "runtime" implies all(x in r.results: all(c in x.clauses: any(n in result.fragment.nodes: n.form == "check" and x.id in n.attrs["check"] and "runtime" in n.attrs["venue"] and c.clause in n.attrs["clauses"]))))
+  ensure all(n in result.fragment.nodes: n.form == "case" and "runtime" in n.attrs["venue"] implies not "true" in n.attrs["caseFresh"])
   ensure all(n in result.fragment.nodes: n.form == "check" and "runtime" in n.attrs["venue"] implies ("true" in n.attrs["fresh"]) == (graph.inputDigest(sample.graph) in n.attrs["snapshot"] and any(m in sample.graph.nodes(): m.id in n.attrs["check"] and (m.kind == graph.NodeKind.property or m.kind == graph.NodeKind.flow))))
 }

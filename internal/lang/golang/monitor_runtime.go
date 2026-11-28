@@ -1,7 +1,10 @@
 package golang
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strconv"
@@ -13,14 +16,20 @@ import (
 
 // This file is the part of the contract runtime that only monitor files use.
 // unicode gen embeds it, with the parts of the contract runtime it reaches,
-// into each monitor file (docs/design.md §6.6), so that a judgment evaluates
-// a property's statement exactly as the test predicate does.
+// into each monitor file (docs/design.md §6.6). A judgment runs the same two
+// halves of the check as the test predicate, beforeCall and afterCall, around
+// the program's own call.
+//
+// Nothing a judgment writes holds the program's text: an error or a panic is
+// named by its Go type, a declared error by its redacted model value, and a
+// failure inside the judgment by its diagnostic code or its type, since any
+// of their messages may carry a sensitive value.
 
 // ucMonitorUnit is what a monitor file knows of a property it judges at
 // runtime: how to build its contract, the design operation the call clause
 // calls, the symbols of the receiver and of the arguments, the Go types of
 // the arguments and of the results without the trailing error, whether the
-// judgment is deep, and the types labelled sensitive.
+// judgment is deep, and the types whose values are sensitive.
 type ucMonitorUnit struct {
 	Spec      func() *ucContract
 	Op        string
@@ -69,54 +78,63 @@ func ucMonitorSchema(s *ucContract, sensitive []string) monitor.Schema {
 	return out
 }
 
-// ucMonitorReads tells whether an expression reads a value in unreadable.
-func ucMonitorReads(e *ucExpr, unreadable map[string]bool) bool {
-	reads := false
-	ucWalk(e, func(x *ucExpr) { reads = reads || x.Kind == "name" && unreadable[x.Text] })
-	return reads
-}
-
-// ucMonitorGuard runs part of a judgment, turning a failure of the judging
-// code into the cause of a check error.
-func ucMonitorGuard(part func()) (problem string) {
-	defer func() {
-		if p := recover(); p != nil {
-			if issue, ok := p.(ucIssue); ok {
-				problem = issue.message
-			} else {
-				problem = fmt.Sprint(p)
-			}
-		}
-	}()
-	part()
-	return ""
+// ucJudging is one judgment of a monitored call in progress.
+type ucJudging struct {
+	unit       *ucMonitorUnit
+	spec       *ucContract
+	schema     monitor.Schema
+	judgment   monitor.Judgment
+	env        *ucEnvironment
+	models     map[string]string
+	unreadable map[string]bool
+	input      map[string]monitor.Value
+	prepared   ucPrepared
 }
 
 // ucMonitorJudge does, for one monitored call, the part of docs/language.md
 // E26 that precedes the call and returns the Finish that does the rest; it
 // returns nil when the property does not judge the call, since a limit or a
 // precondition reads a value it may not read. A shallow judgment reads the
-// arguments before and after the call and its result or error; a deep one
-// reads the receiver too, when no other monitored call on it overlaps, and
-// checks the frame when none overlaps at all. Named observations are not
-// read: whether their adapters are cheap needs the effects of the code.
+// arguments and the call's result or error; a deep one reads the receiver
+// too, only while no other monitored call on it overlaps, and checks the
+// frame then. Named observations are not read: whether their adapters are
+// cheap needs the effects of the code.
 func ucMonitorJudge(u *ucMonitorUnit, observed monitor.Observed) monitor.Finish {
 	s, schema := u.contract()
-	judgment := monitor.Judgment{Check: s.ID, Within: s.Within, Path: s.Path, Line: s.Line, Column: s.Column, Judged: []string{}}
-	models := map[string]string{}
+	j := &ucJudging{unit: u, spec: s, schema: schema, models: map[string]string{}, unreadable: map[string]bool{},
+		judgment: monitor.Judgment{Check: s.ID, Within: s.Within, Path: s.Path, Line: s.Line, Column: s.Column, Judged: []string{}},
+		env:      &ucEnvironment{spec: s, values: map[string]ucValue{}, old: map[string]ucValue{}, failures: map[string]ucValue{}, once: true}}
 	for _, symbol := range s.Symbols {
-		models[symbol.Name] = symbol.Type
+		j.models[symbol.Name] = symbol.Type
 	}
-	unreadable := map[string]bool{}
 	for _, o := range s.Observers {
-		unreadable[o.Name] = true
+		j.unreadable[o.Name] = true
 	}
-	natives := map[string]reflect.Value{}
+	natives := j.natives(observed)
+	for name, value := range natives {
+		j.env.values[name] = ucLazyValue(value, j.models[name], s.Types)
+	}
+	judged, finish := true, monitor.Finish(nil)
+	if problem := ucMonitorGuard(func() { judged, finish = j.before(natives, observed.Reads) }); problem != "" {
+		j.judgment.Verdict, j.judgment.Message = monitor.VerdictCheckError, "the judgment cannot be made before the call: "+problem
+		return j.settled()
+	}
+	if !judged {
+		return nil
+	}
+	return finish
+}
+
+// natives are the values the judgment reads: the arguments, and the
+// receiver when the judgment is deep and the receiver may be read now.
+func (j *ucJudging) natives(observed monitor.Observed) map[string]reflect.Value {
+	u := j.unit
+	out := map[string]reflect.Value{}
 	if u.Receiver != "" {
 		if u.Deep && observed.Reads.Receiver {
-			natives[u.Receiver] = reflect.ValueOf(observed.Receiver)
+			out[u.Receiver] = reflect.ValueOf(observed.Receiver)
 		} else {
-			unreadable[u.Receiver] = true
+			j.unreadable[u.Receiver] = true
 		}
 	}
 	for i, name := range u.Args {
@@ -127,208 +145,194 @@ func ucMonitorJudge(u *ucMonitorUnit, observed monitor.Observed) monitor.Finish 
 		if !value.IsValid() && i < len(u.ArgTypes) {
 			value = reflect.Zero(u.ArgTypes[i])
 		}
-		natives[name] = value
+		out[name] = value
 	}
-	env := &ucEnvironment{spec: s, values: map[string]ucValue{}, old: map[string]ucValue{}, failures: map[string]ucValue{}, once: true}
-	for name, value := range natives {
-		env.values[name] = ucLazyValue(value, models[name], s.Types)
-	}
-	settled := func(j monitor.Judgment) monitor.Finish {
-		j = ucMonitorInput(s, schema, natives, models, j)
-		return func([]any, error, any, monitor.Reads) (monitor.Judgment, bool) { return j, true }
-	}
-	var finish monitor.Finish
-	judged := true
-	type root struct {
-		name    string
-		path    []ucSegment
-		value   ucValue
-		allowed [][]ucSegment
-	}
-	var roots []root
-	ensures := map[int]bool{}
-	failedOld := map[int]string{}
-	problem := ucMonitorGuard(func() {
-		clause, readable := ucDomain(s, env.values)
-		if !readable {
-			judged = false
-			return
-		}
-		if clause != "" {
-			judgment.Verdict, judgment.Clause = monitor.VerdictOutsideDomain, clause
-			finish = settled(judgment)
-			return
-		}
-		for i, e := range s.Requires {
-			if ucMonitorReads(e, unreadable) {
-				judged = false
-				return
-			}
-			if !ucTruth(env.eval(e), e) {
-				judgment.Verdict, judgment.Clause = monitor.VerdictOutsideDomain, "requires#"+strconv.Itoa(i+1)
-				finish = settled(judgment)
-				return
-			}
-		}
-		for i, e := range s.Ensures {
-			if ucMonitorReads(e, unreadable) {
-				continue
-			}
-			ensures[i] = true
-			ucWalk(e, func(x *ucExpr) {
-				if x.Kind != "old" {
-					return
-				}
-				if problem := ucMonitorGuard(func() { env.old[ucExprKey(x)] = ucDetach(env.eval(x.Children[0])) }); problem != "" && failedOld[i] == "" {
-					failedOld[i] = problem
-				}
-			})
-		}
-		if !u.Deep || !observed.Reads.State || len(s.Observers) > 0 {
-			return
-		}
-		for _, name := range s.Observe {
-			parts := strings.Split(name, ".")
-			if name == "none" || unreadable[parts[0]] {
-				continue
-			}
-			var path []ucSegment
-			for _, p := range parts[1:] {
-				path = append(path, ucSegment{Field: p})
-			}
-			roots = append(roots, root{name: parts[0], path: path, value: ucMaterialize(ucGetPath(env.values[parts[0]], path, false))})
-		}
-		for _, e := range s.Changes {
-			name, path := env.path(e)
-			for i := range roots {
-				if roots[i].name == name && ucPrefix(roots[i].path, path) {
-					roots[i].allowed = append(roots[i].allowed, path[len(roots[i].path):])
-				}
-			}
-		}
-	})
-	switch {
-	case problem != "":
-		judgment.Verdict, judgment.Message = monitor.VerdictCheckError, problem
-		return settled(judgment)
-	case !judged:
-		return nil
-	case finish != nil:
-		return finish
-	}
-	return func(results []any, failure error, panicked any, reads monitor.Reads) (monitor.Judgment, bool) {
-		j := judgment
-		counterexample := func(clause, message string) {
-			if j.Clause == "" {
-				j.Clause, j.Message = clause, message
-			}
-		}
-		if panicked != nil {
-			counterexample("call", fmt.Sprint(panicked))
-			j.Verdict = monitor.VerdictCounterexample
-			return ucMonitorInput(s, schema, natives, models, j), true
-		}
-		if u.Receiver != "" && !unreadable[u.Receiver] && !reads.Receiver {
-			// Another monitored call on the receiver overlapped this one: what
-			// reads the receiver after the call is not judged.
-			unreadable[u.Receiver] = true
-			for i := range ensures {
-				ensures[i] = !ucMonitorReads(s.Ensures[i], unreadable)
-			}
-			roots = slices.DeleteFunc(roots, func(r root) bool { return r.name == u.Receiver })
-		}
-		op := s.Operations[u.Op]
-		values := make([]reflect.Value, 0, len(results)+1)
-		for i, result := range results {
-			value := reflect.ValueOf(result)
-			if !value.IsValid() && i < len(u.Results) {
-				value = reflect.Zero(u.Results[i])
-			}
-			values = append(values, value)
-		}
-		if len(op.Raises) > 0 || failure != nil {
-			value := reflect.New(reflect.TypeFor[error]()).Elem()
-			if failure != nil {
-				value.Set(reflect.ValueOf(failure))
-			}
-			values = append(values, value)
-		}
-		var out ucOutcome
-		if problem := ucMonitorGuard(func() { env.captureCall(op, values, s.Call, &out) }); problem != "" {
-			j.Verdict, j.Message = monitor.VerdictCheckError, "the call's result is no model value: "+problem
-			return ucMonitorInput(s, schema, natives, models, j), true
-		}
-		if len(out.Diagnostics) > 0 {
-			counterexample("raises", out.Diagnostics[0].Message)
-		}
-		for i, e := range s.Ensures {
-			if !ensures[i] {
-				continue
-			}
-			clause := "ensure#" + strconv.Itoa(i+1)
-			j.Judged = append(j.Judged, clause)
-			if failedOld[i] != "" {
-				counterexample(clause, failedOld[i])
-				continue
-			}
-			holds := false
-			if problem := ucMonitorGuard(func() { holds = ucTruth(env.eval(e), e) }); problem != "" {
-				counterexample(clause, problem)
-			} else if !holds {
-				counterexample(clause, "")
-			}
-		}
-		if len(roots) > 0 && reads.State {
-			j.Judged = append(j.Judged, "changes")
-			var differences []string
-			if problem := ucMonitorGuard(func() {
-				for _, r := range roots {
-					after := ucMaterialize(ucGetPath(env.values[r.name], r.path, false))
-					ucDiff(r.value, after, nil, r.name+ucPathLabel(r.path), r.allowed, &differences)
-				}
-			}); problem != "" {
-				j.Verdict, j.Message = monitor.VerdictCheckError, "the frame cannot be read after the call: "+problem
-				return ucMonitorInput(s, schema, natives, models, j), true
-			}
-			if len(differences) > 0 {
-				slices.Sort(differences)
-				counterexample("changes", strings.Join(differences, "; "))
-			}
-		}
-		j.Verdict = monitor.VerdictPassed
-		if j.Clause != "" {
-			j.Verdict = monitor.VerdictCounterexample
-			j = ucMonitorInput(s, schema, natives, models, j)
-		}
-		return j, true
-	}
+	return out
 }
 
-// ucMonitorInput freezes the readable inputs of a judgment that is not a
-// pass, redacts them, and gives the judgment their hash, and their values
-// when it is a counterexample. A value that is no model value makes the
-// judgment a check error (docs/language.md E26).
-func ucMonitorInput(s *ucContract, schema monitor.Schema, natives map[string]reflect.Value, models map[string]string, j monitor.Judgment) monitor.Judgment {
-	values := map[string]monitor.Value{}
-	problem := ucMonitorGuard(func() {
-		for name, native := range natives {
-			frozen := ucWireCanonical(ucFreezeValue(native, models[name], s, map[uintptr]bool{}, 0))
-			values[name] = monitor.Conceal(ucWireToMonitor(frozen), models[name], schema)
+// before is the first half of E26: it freezes and redacts the input before
+// the call can change it, checks the domain and the preconditions, and does
+// beforeCall. It reports false when the property does not judge the call,
+// and a Finish that settles the judgment when the call is outside the domain.
+func (j *ucJudging) before(natives map[string]reflect.Value, reads monitor.Reads) (bool, monitor.Finish) {
+	s := j.spec
+	j.input = map[string]monitor.Value{}
+	for name, native := range natives {
+		frozen := ucWireCanonical(ucFreezeValue(native, j.models[name], s, map[uintptr]bool{}, 0))
+		j.input[name] = monitor.Conceal(ucWireToMonitor(frozen), j.models[name], j.schema)
+	}
+	j.judgment.InputHash = monitor.InputHash(j.input)
+	clause, readable := ucDomain(s, j.env.values)
+	if !readable {
+		return false, nil
+	}
+	if clause != "" {
+		j.judgment.Verdict, j.judgment.Clause = monitor.VerdictOutsideDomain, clause
+		return true, j.settled()
+	}
+	for i, e := range s.Requires {
+		if ucMonitorReads(e, j.unreadable) {
+			return false, nil
 		}
-	})
-	if problem != "" && j.Verdict != monitor.VerdictCheckError {
-		j.Verdict, j.Clause, j.Message = monitor.VerdictCheckError, "", "an input is no model value: "+problem
+		if !ucTruth(j.env.eval(e), e) {
+			j.judgment.Verdict, j.judgment.Clause = monitor.VerdictOutsideDomain, "requires#"+strconv.Itoa(i+1)
+			return true, j.settled()
+		}
 	}
-	j.InputHash = monitor.InputHash(values)
-	if j.Verdict == monitor.VerdictCounterexample {
-		j.Input = values
+	frame := j.unit.Deep && reads.State && len(s.Observers) == 0
+	j.prepared = j.env.beforeCall(func(e *ucExpr) bool { return !ucMonitorReads(e, j.unreadable) }, frame)
+	return true, j.after
+}
+
+// after is the second half of E26, once the program's call returned or
+// panicked: it binds the result or the error, then does afterCall.
+func (j *ucJudging) after(results []any, failure error, panicked any, reads monitor.Reads) (monitor.Judgment, bool) {
+	if panicked != nil {
+		return j.counterexample("call", fmt.Sprintf("the call panicked with a value of type %T", panicked)), true
 	}
-	return j
+	if j.unit.Receiver != "" && !j.unreadable[j.unit.Receiver] && !reads.Receiver {
+		// Another monitored call on the receiver overlapped this one: nothing
+		// that reads the receiver after the call is judged.
+		j.unreadable[j.unit.Receiver] = true
+		delete(j.env.values, j.unit.Receiver)
+		j.prepared.judged = slices.DeleteFunc(j.prepared.judged, func(i int) bool { return ucMonitorReads(j.spec.Ensures[i], j.unreadable) })
+		j.prepared.roots = nil
+	}
+	if !reads.State {
+		j.prepared.roots = nil
+	}
+	op := j.spec.Operations[j.unit.Op]
+	raised := ""
+	var out ucOutcome
+	if problem := ucMonitorGuard(func() {
+		j.env.captureCall(op, j.values(results, failure, op), j.spec.Call, &out)
+		raised = j.raised(failure)
+	}); problem != "" {
+		j.judgment.Verdict, j.judgment.Message = monitor.VerdictCheckError, "the call's result is no model value: "+problem
+		return j.judgment, true
+	}
+	if len(out.Diagnostics) > 0 {
+		return j.counterexample("raises", fmt.Sprintf("the call returned an undeclared error of type %T", failure)), true
+	}
+	var ensures []ucEnsure
+	var differences []string
+	if problem := ucMonitorGuard(func() { ensures, differences = j.env.afterCall(j.prepared) }); problem != "" {
+		j.judgment.Verdict, j.judgment.Message = monitor.VerdictCheckError, "the frame cannot be read after the call: "+problem
+		return j.judgment, true
+	}
+	clause, message := "", ""
+	for _, r := range ensures {
+		name := "ensure#" + strconv.Itoa(r.Index+1)
+		j.judgment.Judged = append(j.judgment.Judged, name)
+		if clause != "" || r.Problem == nil && r.Holds {
+			continue
+		}
+		clause, message = name, "the "+name+" expression is false on a real call"+raised
+		if r.Problem != nil {
+			message = name + " cannot be evaluated on a real call: " + ucProblemText(r.Problem)
+		}
+	}
+	if len(j.prepared.roots) > 0 {
+		j.judgment.Judged = append(j.judgment.Judged, "changes")
+		if clause == "" && len(differences) > 0 {
+			// The differences name model paths of the frame, never values.
+			clause, message = "changes", fmt.Sprintf("a real call changed %d observed values outside its changes", len(differences))
+		}
+	}
+	if clause != "" {
+		return j.counterexample(clause, message), true
+	}
+	j.judgment.Verdict = monitor.VerdictPassed
+	return j.judgment, true
+}
+
+// values are the call's results as captureCall takes them: the results, each
+// of its Go type even when nil, and the error when the operation declares
+// errors or one was returned.
+func (j *ucJudging) values(results []any, failure error, op ucOperation) []reflect.Value {
+	values := make([]reflect.Value, 0, len(results)+1)
+	for i, result := range results {
+		value := reflect.ValueOf(result)
+		if !value.IsValid() && i < len(j.unit.Results) {
+			value = reflect.Zero(j.unit.Results[i])
+		}
+		values = append(values, value)
+	}
+	if len(op.Raises) > 0 || failure != nil {
+		value := reflect.New(reflect.TypeFor[error]()).Elem()
+		if failure != nil {
+			value.Set(reflect.ValueOf(failure))
+		}
+		values = append(values, value)
+	}
+	return values
+}
+
+// raised describes a declared error the call raised, as the error's
+// identity and its redacted model value, or gives "".
+func (j *ucJudging) raised(failure error) string {
+	if failure == nil {
+		return ""
+	}
+	for _, id := range slices.Sorted(maps.Keys(j.spec.ErrorTypes)) {
+		target := reflect.New(j.spec.ErrorTypes[id])
+		if !errors.As(failure, target.Interface()) {
+			continue
+		}
+		frozen := ucWireCanonical(ucFreezeValue(target.Elem(), id, j.spec, map[uintptr]bool{}, 0))
+		value := monitor.Conceal(ucWireToMonitor(frozen), id, j.schema)
+		data, err := json.Marshal(value)
+		if err != nil {
+			return ", which raised " + id
+		}
+		return ", which raised " + id + " " + string(data)
+	}
+	return ""
+}
+
+// counterexample settles the judgment as a counterexample of clause, with
+// the input frozen before the call.
+func (j *ucJudging) counterexample(clause, message string) monitor.Judgment {
+	j.judgment.Verdict, j.judgment.Clause, j.judgment.Message, j.judgment.Input = monitor.VerdictCounterexample, clause, message, j.input
+	return j.judgment
+}
+
+// settled is the Finish of a judgment already made before the call.
+func (j *ucJudging) settled() monitor.Finish {
+	judgment := j.judgment
+	return func([]any, error, any, monitor.Reads) (monitor.Judgment, bool) { return judgment, true }
+}
+
+// ucMonitorReads tells whether an expression reads a value in unreadable.
+func ucMonitorReads(e *ucExpr, unreadable map[string]bool) bool {
+	reads := false
+	ucWalk(e, func(x *ucExpr) { reads = reads || x.Kind == "name" && unreadable[x.Text] })
+	return reads
+}
+
+// ucMonitorGuard runs part of a judgment and names what stopped it, if
+// anything, without the program's text.
+func ucMonitorGuard(part func()) string {
+	if problem := ucRecovered(part); problem != nil {
+		return ucProblemText(problem)
+	}
+	return ""
+}
+
+// ucProblemText names a problem by its diagnostic code, or by its Go type
+// when it is a panic of the program's code: neither carries the program's
+// data.
+func ucProblemText(problem any) string {
+	if issue, ok := problem.(ucIssue); ok {
+		return issue.code
+	}
+	return fmt.Sprintf("a panic with a value of type %T", problem)
 }
 
 // ucMonitorCollect collects a sampled call of the unit's operation: the
 // receiver's model value and the call value operation(parameter: value, …),
-// redacted (docs/design.md §6.6).
+// redacted (docs/design.md §6.6). The monitor calls it only while the
+// receiver may be read.
 func ucMonitorCollect(u *ucMonitorUnit, receiver any, args []any) (monitor.Collected, error) {
 	s, schema := u.contract()
 	out := monitor.Collected{}
@@ -358,13 +362,14 @@ func ucMonitorCollect(u *ucMonitorUnit, receiver any, args []any) (monitor.Colle
 		out.Call = monitor.Conceal(call, "call<"+u.Op+">", schema)
 	})
 	if problem != "" {
-		return out, fmt.Errorf("the call's input is no model value: %s", problem)
+		return out, errors.New("the call's input is no model value: " + problem)
 	}
 	return out, nil
 }
 
-// ucWireToMonitor converts a frozen value to the monitor's model value; their
-// JSON is the same.
+// ucWireToMonitor converts a frozen value to the monitor's model value; the
+// frozen value's type is the runtime's own, since test drivers do not import
+// the monitor package.
 func ucWireToMonitor(w ucWireValue) monitor.Value {
 	out := monitor.Value{Kind: w.Kind, Text: w.Text}
 	if w.Items != nil {

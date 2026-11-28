@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/lang"
+	"github.com/lincyaw/unicode/monitor"
 )
 
 // Loaded retains all recorded runs, including stale and legacy history.
@@ -252,6 +254,17 @@ func diagnosticFields(value any) error {
 	return nil
 }
 
+// jsonKeys are the JSON keys of a struct type's fields: the runtime record's
+// keys are those of the monitor's Record, which writes it.
+func jsonKeys(t reflect.Type) []string {
+	var keys []string
+	for field := range t.Fields() {
+		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+		keys = append(keys, name)
+	}
+	return keys
+}
+
 func decodeReport(data []byte, legacy bool) (lang.RunReport, error) {
 	var report lang.RunReport
 	if !utf8.Valid(data) {
@@ -278,7 +291,7 @@ func decodeReport(data []byte, legacy bool) (lang.RunReport, error) {
 		case lang.VenueTest:
 			keys = append(keys, "venue")
 		case lang.VenueRuntime:
-			keys = []string{"results", "diagnostics", "version", "commit", "dirty", "at", "venue", "from"}
+			keys = jsonKeys(reflect.TypeFor[monitor.Record]())
 		}
 		if len(fields) != len(keys) {
 			return report, fmt.Errorf("the version 1 report has missing fields")

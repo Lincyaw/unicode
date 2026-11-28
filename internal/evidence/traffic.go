@@ -70,11 +70,11 @@ func DecodeCollected(data []byte) (monitor.Collected, error) {
 		values = append(values, out.Receiver)
 	}
 	for _, value := range values {
-		normalized, err := normalizeValue(langValue(*value), 0)
+		normalized, err := normalizeValue(*value, 0)
 		if err != nil {
 			return out, InvalidTraffic{err.Error()}
 		}
-		*value = monitorValue(normalized)
+		*value = normalized
 	}
 	out.At = out.At.UTC()
 	return out, nil
@@ -128,7 +128,7 @@ func ReadTraffic(root string, g *graph.Graph) Traffic {
 			switch {
 			case err != nil:
 				invalid(path, err.Error(), "restore the collected call a monitored program wrote, or remove it")
-			case collected.Op != op.Name() || collectedHash(collected)+".json" != file.Name():
+			case collected.Op != op.Name() || monitor.CollectedHash(collected)+".json" != file.Name():
 				invalid(path, "the file is not named by its operation and the hash of its receiver and call value", "restore the file's name, or remove it")
 			case !known:
 				invalid(path, "the collected call names "+collected.Op+", which is no operation of the design", "remove the collected calls of an operation the design no longer has")
@@ -162,19 +162,19 @@ func TrafficInputs(g *graph.Graph, collected []monitor.Collected) map[string][]l
 			if c.Op != call.Op || (call.Receiver != "") != (c.Receiver != nil) {
 				continue
 			}
-			arguments := map[string]monitor.Value{}
+			arguments := map[string]lang.Value{}
 			for _, entry := range c.Call.Entries {
 				arguments[entry.Key.Text] = entry.Value
 			}
 			input := lang.Input{Values: map[string]lang.Value{}}
 			if call.Receiver != "" {
-				input.Values[call.Receiver] = langValue(*c.Receiver)
+				input.Values[call.Receiver] = *c.Receiver
 			}
 			complete := len(arguments) == len(params)
 			for i, param := range params {
 				value, ok := arguments[param]
 				complete = complete && ok
-				input.Values[call.Args[i]] = langValue(value)
+				input.Values[call.Args[i]] = value
 			}
 			if complete {
 				out[id] = append(out[id], input)
@@ -184,49 +184,13 @@ func TrafficInputs(g *graph.Graph, collected []monitor.Collected) map[string][]l
 	return out
 }
 
-// collectedHash is the hash a collected call is stored under: that of its
-// receiver and its call value.
-func collectedHash(c monitor.Collected) string {
-	values := map[string]monitor.Value{"call": c.Call}
-	if c.Receiver != nil {
-		values["receiver"] = *c.Receiver
-	}
-	return monitor.InputHash(values)
-}
-
-// parameters are the parameter names of the design operation op, in order,
-// read from its signature (name: type, …): types hold no parentheses, and
-// their commas are inside angle brackets.
+// parameters are the parameter names of the design operation op, in order.
 func parameters(g *graph.Graph, op string) ([]string, bool) {
-	n := g.Node(op)
-	if n == nil || n.Layer != graph.LayerDesign || n.Kind != graph.NodeKindOp || len(n.Attrs["signature"]) == 0 {
+	if n := g.Node(op); n == nil || n.Layer != graph.LayerDesign {
 		return nil, false
 	}
-	signature := n.Attrs["signature"][0]
-	open, closing := strings.IndexByte(signature, '('), strings.IndexByte(signature, ')')
-	if open < 0 || closing < open {
-		return nil, false
-	}
-	params := []string{}
-	depth, start, inner := 0, 0, signature[open+1:closing]
-	for i := 0; i <= len(inner); i++ {
-		if i < len(inner) {
-			switch inner[i] {
-			case '<':
-				depth++
-			case '>':
-				depth--
-			}
-			if inner[i] != ',' || depth > 0 {
-				continue
-			}
-		}
-		if name, _, ok := strings.Cut(inner[start:i], ":"); ok {
-			params = append(params, strings.TrimSpace(name))
-		}
-		start = i + 1
-	}
-	return params, true
+	parsed, err := opOf(g, op)
+	return parsed.names, err == nil
 }
 
 // sameParameters tells whether a call value has exactly the parameters
@@ -241,40 +205,4 @@ func sameParameters(call monitor.Value, params []string) bool {
 		}
 	}
 	return true
-}
-
-// langValue and monitorValue convert between the two Go types of a model
-// value; their JSON is the same.
-func langValue(v monitor.Value) lang.Value {
-	out := lang.Value{Kind: v.Kind, Text: v.Text}
-	if v.Items != nil {
-		out.Items = []lang.Value{}
-		for _, item := range v.Items {
-			out.Items = append(out.Items, langValue(item))
-		}
-	}
-	if v.Entries != nil {
-		out.Entries = []lang.ValueEntry{}
-		for _, entry := range v.Entries {
-			out.Entries = append(out.Entries, lang.ValueEntry{Key: langValue(entry.Key), Value: langValue(entry.Value)})
-		}
-	}
-	return out
-}
-
-func monitorValue(v lang.Value) monitor.Value {
-	out := monitor.Value{Kind: v.Kind, Text: v.Text}
-	if v.Items != nil {
-		out.Items = []monitor.Value{}
-		for _, item := range v.Items {
-			out.Items = append(out.Items, monitorValue(item))
-		}
-	}
-	if v.Entries != nil {
-		out.Entries = []monitor.ValueEntry{}
-		for _, entry := range v.Entries {
-			out.Entries = append(out.Entries, monitor.ValueEntry{Key: monitorValue(entry.Key), Value: monitorValue(entry.Value)})
-		}
-	}
-	return out
 }

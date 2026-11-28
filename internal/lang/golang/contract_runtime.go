@@ -1364,7 +1364,7 @@ func ucFits(op, model string, types map[string]ucType) bool {
 	case "subset":
 		return types[model].Form == "enum"
 	}
-	return model == "int" || model == "float"
+	return model == "int" || model == "float" || model == "duration"
 }
 
 // ucBound tells whether a value of the model type is within the bound of a
@@ -1383,7 +1383,7 @@ func ucBound(v ucValue, model, op, bound string) bool {
 	lo, okLow := new(big.Rat).SetString(low)
 	hi, okHigh := new(big.Rat).SetString(high)
 	if !okLow || !okHigh {
-		return true
+		ucFail("lang.golang.unsupported-contract", "a limit's bound "+bound+" is not a range of numbers", nil)
 	}
 	var n *big.Rat
 	switch data := v.Data.(type) {
@@ -1392,6 +1392,9 @@ func ucBound(v ucValue, model, op, bound string) bool {
 	case float64:
 		n = new(big.Rat)
 		n.SetFloat64(data)
+	case time.Duration:
+		// A duration's range is in nanoseconds, as its generator draws it.
+		n = big.NewRat(int64(data), 1)
 	case string:
 		size := utf8.RuneCountInString(data)
 		if model == "bytes" {
@@ -1403,7 +1406,7 @@ func ucBound(v ucValue, model, op, bound string) bool {
 	case ucMap:
 		n = big.NewRat(int64(len(data)), 1)
 	default:
-		return true
+		ucFail("lang.golang.unsupported-contract", "a limit applies to a value of the model type "+model+" that it cannot bound", nil)
 	}
 	return n.Cmp(lo) >= 0 && n.Cmp(hi) <= 0
 }
@@ -1592,7 +1595,7 @@ func ucExecuteSingle(s *ucContract, inputs map[string]reflect.Value, explore boo
 	defer func() {
 		if p := recover(); p != nil {
 			if issue, ok := p.(ucIssue); ok {
-				out.Infrastructure = phase == "input" || phase == "observer" || phase == "requires" || issue.code == "lang.golang.observation-failed" || issue.code == "lang.golang.unsupported-contract" || issue.code == "lang.golang.input-outside-domain"
+				out.Infrastructure = phase == "input" || phase == "observer" || phase == "requires" || ucInfrastructural(issue.code)
 				out.Diagnostics = append(out.Diagnostics, ucDiagnosticOf(s, issue))
 			} else {
 				out.Infrastructure = phase != "call" && phase != "assertion"
@@ -1630,44 +1633,7 @@ func ucExecuteSingle(s *ucContract, inputs map[string]reflect.Value, explore boo
 	}
 	out.Executed = true
 	phase = "assertion"
-	type root struct {
-		Name    string
-		Path    []ucSegment
-		Value   ucValue
-		Allowed [][]ucSegment
-	}
-	var roots []root
-	for _, name := range s.Observe {
-		if name == "none" {
-			continue
-		}
-		parts := strings.Split(name, ".")
-		var path []ucSegment
-		for _, p := range parts[1:] {
-			path = append(path, ucSegment{Field: p})
-		}
-		value := ucMaterialize(ucGetPath(env.values[parts[0]], path, false))
-		roots = append(roots, root{Name: parts[0], Path: path, Value: value})
-	}
-	for _, o := range s.Observers {
-		roots = append(roots, root{Name: o.Name, Value: env.values[o.Name]})
-	}
-	for _, e := range s.Changes {
-		name, path := env.path(e)
-		ucGetPath(env.values[name], path, true)
-		for i := range roots {
-			if roots[i].Name == name && ucPrefix(roots[i].Path, path) {
-				roots[i].Allowed = append(roots[i].Allowed, path[len(roots[i].Path):])
-			}
-		}
-	}
-	for _, e := range s.Ensures {
-		ucWalk(e, func(e *ucExpr) {
-			if e.Kind == "old" {
-				env.old[ucExprKey(e)] = ucDetach(env.eval(e.Children[0]))
-			}
-		})
-	}
+	prepared := env.beforeCall(func(*ucExpr) bool { return true }, true)
 	if s.Call != nil {
 		op, fn, args := env.prepare(s.Call)
 		var before, afterFirst []ucValue
@@ -1728,22 +1694,137 @@ func ucExecuteSingle(s *ucContract, inputs map[string]reflect.Value, explore boo
 		env.readObservers()
 		phase = "assertion"
 	}
-	for _, e := range s.Ensures {
-		if !ucTruth(env.eval(e), e) {
-			out.Differences = append(out.Differences, fmt.Sprintf("%s:%d:%d: ensure is false", s.Path, e.Line, e.Column))
-			out.Diagnostics = append(out.Diagnostics, ucDiagnosticOf(s, ucIssue{"lang.golang.ensure-failed", "the ensure expression is false", e}))
+	ensures, differences := env.afterCall(prepared)
+	for _, r := range ensures {
+		e := s.Ensures[r.Index]
+		switch problem := r.Problem.(type) {
+		case nil:
+			if !r.Holds {
+				out.Differences = append(out.Differences, fmt.Sprintf("%s:%d:%d: ensure is false", s.Path, e.Line, e.Column))
+				out.Diagnostics = append(out.Diagnostics, ucDiagnosticOf(s, ucIssue{"lang.golang.ensure-failed", "the ensure expression is false", e}))
+			}
+		case ucIssue:
+			out.Infrastructure = out.Infrastructure || ucInfrastructural(problem.code)
+			out.Diagnostics = append(out.Diagnostics, ucDiagnosticOf(s, problem))
+		default:
+			out.Diagnostics = append(out.Diagnostics, ucDiagnosticOf(s, ucIssue{"lang.golang.call-panicked", fmt.Sprintf("the call or adapter panicked: %v", problem), nil}))
 		}
 	}
-	for _, r := range roots {
-		after := ucMaterialize(ucGetPath(env.values[r.Name], r.Path, false))
-		ucDiff(r.Value, after, nil, r.Name+ucPathLabel(r.Path), r.Allowed, &out.Differences)
-	}
+	out.Differences = append(out.Differences, differences...)
 	if len(out.Differences) > 0 && len(out.Diagnostics) == 0 {
 		out.Diagnostics = append(out.Diagnostics, ucDiagnosticOf(s, ucIssue{"lang.golang.frame-violation", strings.Join(out.Differences, "; "), nil}))
 	}
 	slices.Sort(out.Differences)
 	return out
 }
+
+// ucInfrastructural tells whether an issue that stops a check is a check
+// error rather than a counterexample (docs/language.md E15).
+func ucInfrastructural(code string) bool {
+	return code == "lang.golang.observation-failed" || code == "lang.golang.unsupported-contract" || code == "lang.golang.input-outside-domain"
+}
+
+// ucRoot is a root of a single-call contract's frame: the value observed
+// before the call, and the paths under it that may change.
+type ucRoot struct {
+	Name    string
+	Path    []ucSegment
+	Value   ucValue
+	Allowed [][]ucSegment
+}
+
+// ucPrepared is what the part of a single-call check before the call leaves
+// to the part after it: the frame's roots, the ensures judged, and those
+// whose old(e) could not be taken, with the problem.
+type ucPrepared struct {
+	roots       []ucRoot
+	judged      []int
+	oldProblems map[int]any
+}
+
+// beforeCall is the part of docs/language.md E12 between the precondition
+// and the call, which a test predicate and a monitored judgment (E26) share:
+// it fixes the frame when frame is set, and takes old(e) for each ensure
+// judged selects. An ensure whose old(e) cannot be taken keeps the problem
+// and fails after the call, without stopping the others.
+func (env *ucEnvironment) beforeCall(judged func(*ucExpr) bool, frame bool) ucPrepared {
+	s := env.spec
+	p := ucPrepared{oldProblems: map[int]any{}}
+	if frame {
+		for _, name := range s.Observe {
+			if name == "none" {
+				continue
+			}
+			parts := strings.Split(name, ".")
+			var path []ucSegment
+			for _, part := range parts[1:] {
+				path = append(path, ucSegment{Field: part})
+			}
+			p.roots = append(p.roots, ucRoot{Name: parts[0], Path: path, Value: ucMaterialize(ucGetPath(env.values[parts[0]], path, false))})
+		}
+		for _, o := range s.Observers {
+			p.roots = append(p.roots, ucRoot{Name: o.Name, Value: env.values[o.Name]})
+		}
+		for _, e := range s.Changes {
+			name, path := env.path(e)
+			ucGetPath(env.values[name], path, true)
+			for i := range p.roots {
+				if p.roots[i].Name == name && ucPrefix(p.roots[i].Path, path) {
+					p.roots[i].Allowed = append(p.roots[i].Allowed, path[len(p.roots[i].Path):])
+				}
+			}
+		}
+	}
+	for i, e := range s.Ensures {
+		if !judged(e) {
+			continue
+		}
+		p.judged = append(p.judged, i)
+		ucWalk(e, func(x *ucExpr) {
+			if x.Kind == "old" && p.oldProblems[i] == nil {
+				if problem := ucRecovered(func() { env.old[ucExprKey(x)] = ucDetach(env.eval(x.Children[0])) }); problem != nil {
+					p.oldProblems[i] = problem
+				}
+			}
+		})
+	}
+	return p
+}
+
+// ucEnsure is one judged ensure after the call: whether it holds, or the
+// problem that kept it from being evaluated.
+type ucEnsure struct {
+	Index   int
+	Holds   bool
+	Problem any
+}
+
+// afterCall is the part of E12 after the call's results are bound, shared
+// like beforeCall: it evaluates each judged ensure on its own, so that a
+// problem in one hides none of the others, and compares the frame.
+func (env *ucEnvironment) afterCall(p ucPrepared) (ensures []ucEnsure, differences []string) {
+	for _, i := range p.judged {
+		e := env.spec.Ensures[i]
+		r := ucEnsure{Index: i, Problem: p.oldProblems[i]}
+		if r.Problem == nil {
+			r.Problem = ucRecovered(func() { r.Holds = ucTruth(env.eval(e), e) })
+		}
+		ensures = append(ensures, r)
+	}
+	for _, r := range p.roots {
+		after := ucMaterialize(ucGetPath(env.values[r.Name], r.Path, false))
+		ucDiff(r.Value, after, nil, r.Name+ucPathLabel(r.Path), r.Allowed, &differences)
+	}
+	return ensures, differences
+}
+
+// ucRecovered runs part and gives the value it panicked with, or nil.
+func ucRecovered(part func()) (problem any) {
+	defer func() { problem = recover() }()
+	part()
+	return nil
+}
+
 func ucPathLabel(path []ucSegment) string {
 	var out string
 	for _, s := range path {

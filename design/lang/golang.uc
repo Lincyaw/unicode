@@ -93,11 +93,16 @@ type EffectModule record "extracts-direct-effects 的输入：一个 Go 模块�
   field expected: map<string, list<string>>
 }
 
-type MonitoredRun record "monitored-judgments-match-replay 和 monitoring-keeps-calls 的输入：受监控的模块的一个副本的目录，它以 unicode_monitor 构建的程序对每个值经入口包装和直接各调用一次 demo.score 之后写出的运行时的运行记录（没有判定时为空的报告），以及每次调用经入口包装和直接调用各自得到的结果" {
+type MonitoredRun record "受监控的模块的输入：模块的一个副本的目录，以 unicode_monitor 和竞态检测构建的程序以抽样比例 1、打开采集运行之后写出的运行时的运行记录（没有判定时为空的报告），对 levels 中每个值经入口包装和直接调用 demo.score 各自得到的结果，程序写出的运行记录、采集的调用和导出的 span 中的全部单词，monitor.Wrap 是否给 demo.Counter 包装而对没有登记的接口和函数原样返回，包装传给实现的 context 是否带着这次调用的 span 且以调用方的 span 为父，以及竞态检测是否报出竞态" {
   field root: string
   field record: lang.RunReport
   field wrapped: list<string>
   field direct: list<string>
+  field words: list<string>
+  field wraps: bool
+  field keepsUnregistered: bool
+  field contextLinked: bool
+  field raced: bool
 }
 
 op newBackend() -> Backend "创建 Go 后端"
@@ -276,26 +281,59 @@ property records-call-durations postcondition "Go 后端回放一条性质时，
   ensure DerivedOutcome.passes in outcomes implies any(r in result.results: any(c in r.cases: c.passed))
 }
 
-property monitored-judgments-match-replay postcondition "回放 run.root 中采集的调用时，demo.bounded 的以反例失败的回放用例的输入哈希恰是 run.record 中反例的输入哈希，回放中不成立的限定或前提恰是 run.record 中域外调用的子句" {
+property monitored-judgments-match-replay postcondition "回放 run.root 中采集的调用时，demo.bounded 的以反例失败的回放用例的输入哈希恰是 run.record 中 demo.bounded 的反例的输入哈希，回放中不成立的限定或前提恰是 run.record 中 demo.bounded 的域外调用的子句" {
   about Backend.run
   forall backend: Backend
   forall levels: list<int>
-  forall run: MonitoredRun generated "把受监控的模块复制到新目录：纯操作 demo.score 在 3 上返回 2、在 4 上 panic，其余返回 level + 1，纯操作 demo.ratio 在 -3 上 panic，性质 demo.bounded 限定 level in -5..5、前提 level != 0、ensure result >= level 和 ratio(level) == level；再以抽样比例 1、打开采集运行以 unicode_monitor 构建的程序，对 levels 中的每个值经 monitor.Entry 和直接各调用一次 score，得到的目录、运行记录和两种调用的结果"
+  forall secrets: list<string> generated "一至三个口令，各是 zq 之后八个小写字母"
+  forall run: MonitoredRun generated "把受监控的模块复制到新目录再运行得到的目录、运行记录和结果：模块中纯操作 demo.score 在 3 上返回 2、在 4 上 panic、其余返回 level + 1，纯操作 demo.ratio 在 -3 上 panic，性质 demo.bounded 限定 level in -5..5、前提 level != 0、ensure result >= level 和 ratio(level) == level，纯操作 demo.unlock 接收带 sensitive 标签的 Token 和经 extends 继承它的 Badge、按口令前缀 panic-、undeclared-、denied- 分别 panic、返回未声明的错误或返回声明的错误 Denied（说明里都带着口令），接口 demo.Counter 的方法以 context.Context 为第一个参数、由 demo.Tally 实现，性质 demo.totals 在 total 上读接收者；程序以 unicode_monitor 和竞态检测构建，以抽样比例 1、打开采集运行，对 levels 中每个值经 monitor.Entry 和直接各调用一次 score，对 secrets 中每个口令以四种前缀经 monitor.Entry 调用 unlock，经 monitor.Wrap 包装一个 Tally、以带 span 的 context 调用它，再以八个 goroutine 并发调用它的 add 和 total"
   forall plan: lang.RunPlan generated "以 run.root 的设计和代码建出的图回放 demo.bounded 的运行输入，traffic 是按 language.md E29 把 run.root 中采集的调用对应成的 demo.bounded 的输入"
   where levels size 1..4
   where levels in -8..8
   call backend.run(plan)
   ensure all(r in result.results: all(c in r.cases: c.form == "traffic" and not c.passed and not c.rejected implies any(x in run.record.results: any(k in x.cases: k.inputHash == c.inputHash))))
-  ensure all(x in run.record.results: all(k in x.cases: any(r in result.results: any(c in r.cases: c.form == "traffic" and not c.passed and not c.rejected and c.inputHash == k.inputHash))))
-  ensure all(x in run.record.results: all(o in x.outsideDomain: any(r in result.results: any(p in r.outsideDomain: p.clause == o.clause))))
+  ensure all(x in run.record.results: x.id == "demo.bounded" implies all(k in x.cases: any(r in result.results: any(c in r.cases: c.form == "traffic" and not c.passed and not c.rejected and c.inputHash == k.inputHash))))
+  ensure all(x in run.record.results: x.id == "demo.bounded" implies all(o in x.outsideDomain: any(r in result.results: any(p in r.outsideDomain: p.clause == o.clause))))
   ensure all(r in result.results: all(p in r.outsideDomain: any(x in run.record.results: any(o in x.outsideDomain: o.clause == p.clause))))
 }
 
 property monitoring-keeps-calls invariant "受监控的程序经入口包装对 levels 中的每个值调用 demo.score 得到的结果与直接调用的相同，即返回值相同、判定中 demo.ratio 的 panic 不改变调用的结果、score 的 panic 以同一个值继续，并且每个值都调用了一次" {
   about Backend
   forall levels: list<int>
+  forall secrets: list<string> generated "一至三个口令，各是 zq 之后八个小写字母"
   forall run: MonitoredRun generated "与 monitored-judgments-match-replay 的 run 相同"
   where levels size 1..4
   where levels in -8..8
   ensure size(run.wrapped) == size(levels) and run.wrapped == run.direct
+}
+
+property monitoring-hides-sensitive-values invariant "受监控的程序写出的运行记录、采集的调用和导出的 span 中没有一个单词是 secrets 中的口令，尽管口令出现在敏感类型和继承它的类型的值、未声明的错误、声明的错误和 panic 的说明中" {
+  about Backend
+  forall levels: list<int>
+  forall secrets: list<string> generated "一至三个口令，各是 zq 之后八个小写字母"
+  forall run: MonitoredRun generated "与 monitored-judgments-match-replay 的 run 相同"
+  where levels size 1..4
+  where levels in -8..8
+  ensure all(s in secrets: not s in run.words)
+}
+
+property monitoring-wraps-and-links-contexts invariant "受监控的程序中 monitor.Wrap 给登记了包装的接口 demo.Counter 一个包装，对没有登记的接口和函数原样返回，包装传给实现的 context 带着这次调用的 span，它的父 span 是调用方的" {
+  about Backend
+  forall levels: list<int>
+  forall secrets: list<string> generated "一至三个口令，各是 zq 之后八个小写字母"
+  forall run: MonitoredRun generated "与 monitored-judgments-match-replay 的 run 相同"
+  where levels size 1..4
+  where levels in -8..8
+  ensure run.wraps and run.keepsUnregistered and run.contextLinked
+}
+
+property monitoring-reads-receivers-without-races invariant "八个 goroutine 并发调用同一个 demo.Tally 的受监控的 add 和 total 时，竞态检测没有报出竞态，demo.totals 有判定过的调用而没有反例" {
+  about Backend
+  forall levels: list<int>
+  forall secrets: list<string> generated "一至三个口令，各是 zq 之后八个小写字母"
+  forall run: MonitoredRun generated "与 monitored-judgments-match-replay 的 run 相同"
+  where levels size 1..4
+  where levels in -8..8
+  ensure not run.raced
+  ensure any(x in run.record.results: x.id == "demo.totals" and x.accepted > 0 and size(x.cases) == 0)
 }

@@ -24,6 +24,8 @@ import (
 //go:embed monitor_runtime.go
 var contractMonitorRuntime string
 
+// The monitor runtime's entry points are called only from the monitor files
+// that embed it, never from this package.
 var _ = ucMonitorJudge
 var _ = ucMonitorCollect
 
@@ -63,8 +65,8 @@ type monitorFile struct {
 // (lang.MonitoredCalls): a judge in the package of the operation's
 // realization, an entry wrapper beside a realizing function, and an interface
 // wrapper for each design interface the operation's type implements with an
-// operation of that name. The monitor package itself is never monitored: its
-// monitor file would import it.
+// operation of that name. The monitor package and the packages it imports
+// are never monitored: their monitor files would import it.
 func (c *contractCompiler) monitorFiles(units map[string]*contractUnit) map[string]*monitorFile {
 	files := map[string]*monitorFile{}
 	fileOf := func(pkg *packages.Package, anchor graph.Node) *monitorFile {
@@ -74,6 +76,7 @@ func (c *contractCompiler) monitorFiles(units map[string]*contractUnit) map[stri
 		return files[pkg.PkgPath]
 	}
 	wrapped := map[string]bool{}
+	excluded := c.monitorClosure()
 	monitored := lang.MonitoredCalls(c.plan.Graph)
 	for _, id := range slices.Sorted(maps.Keys(monitored)) {
 		call, unit := monitored[id], units[id]
@@ -105,7 +108,7 @@ func (c *contractCompiler) monitorFiles(units map[string]*contractUnit) map[stri
 				continue
 			}
 		}
-		if d.pkg.PkgPath == monitorPackage {
+		if excluded[d.pkg.PkgPath] {
 			continue
 		}
 		judge.target = d.obj
@@ -123,7 +126,7 @@ func (c *contractCompiler) monitorFiles(units map[string]*contractUnit) map[stri
 				continue
 			}
 			native, ok := c.bound(graph.EdgeKindRealizes, edge.To)
-			if !ok || native.pkg.PkgPath == monitorPackage {
+			if !ok || excluded[native.pkg.PkgPath] {
 				continue
 			}
 			if name, isType := native.obj.(*types.TypeName); isType && types.IsInterface(name.Type()) {
@@ -134,6 +137,30 @@ func (c *contractCompiler) monitorFiles(units map[string]*contractUnit) map[stri
 		}
 	}
 	return files
+}
+
+// monitorClosure is the monitor package and every package it imports, at
+// any depth: none of them can have a monitor file, which would import the
+// monitor package and close an import cycle.
+func (c *contractCompiler) monitorClosure() map[string]bool {
+	out := map[string]bool{monitorPackage: true}
+	var pending []*types.Package
+	for _, p := range c.loaded.packages {
+		if p.PkgPath == monitorPackage && p.Types != nil {
+			pending = append(pending, p.Types)
+		}
+	}
+	for len(pending) > 0 {
+		p := pending[0]
+		pending = pending[1:]
+		for _, imported := range p.Imports() {
+			if !out[imported.Path()] {
+				out[imported.Path()] = true
+				pending = append(pending, imported)
+			}
+		}
+	}
+	return out
 }
 
 // monitorable tells whether a property's symbols are real values a monitored
@@ -202,10 +229,37 @@ func (c *contractCompiler) renderMonitor(m *monitorFile) []byte {
 	c.foreignNames, c.foreignOriginal = map[string]string{}, map[string]string{}
 	file.imports[monitorPackage] = "monitor"
 	file.imports["reflect"] = "reflect"
-	var body strings.Builder
-	var registrations []string
 	owned := map[string]bool{}
-	// The judges of one operation are registered together, as one operation.
+	// Only judges need the runtime; a file of wrappers alone calls the
+	// monitor. The runtime's imports come first, so that the body names a
+	// package the runtime imports as the runtime does.
+	runtime := ""
+	if len(m.judges) > 0 {
+		source, imports, runtimeOwned, err := monitorRuntime()
+		if err != nil {
+			c.diagnostic(m.anchor, "lang.golang.generate-failed", err.Error(), "correct the monitor runtime before generation")
+			return nil
+		}
+		maps.Copy(file.imports, imports)
+		maps.Copy(owned, runtimeOwned)
+		runtime = source
+	}
+	var body strings.Builder
+	registrations, ok := c.renderJudges(&body, m, owned)
+	if !ok {
+		return nil
+	}
+	registrations = append(registrations, c.renderEntries(&body, m)...)
+	registrations = append(registrations, c.renderWrappers(&body, m)...)
+	fmt.Fprintf(&body, "func init() {\n%s\n}\n", strings.Join(registrations, "\n"))
+	return c.assembleMonitor(m, runtime+body.String(), owned)
+}
+
+// renderJudges writes each judged property's contract, unit and judge, and
+// gives the registrations of their operations: the judges of one operation
+// are registered together, as one operation.
+func (c *contractCompiler) renderJudges(body *strings.Builder, m *monitorFile, owned map[string]bool) ([]string, bool) {
+	file := m.file
 	type registered struct {
 		judge      *monitorJudge
 		judges     []string
@@ -213,22 +267,18 @@ func (c *contractCompiler) renderMonitor(m *monitorFile) []byte {
 	}
 	var targets []*registered
 	byTarget := map[types.Object]*registered{}
+	sensitive := c.sensitiveTypes()
 	for index, judge := range m.judges {
 		id := strconv.Itoa(index)
 		spec, unit := "ucMonitorSpec"+id, "ucMonitorUnitOf"+id
 		owned[spec], owned[unit] = true, true
-		c.renderSpec(&body, file, judge.unit, spec, true)
-		var argTypes, resultTypes []string
-		var signature *types.Signature
-		if fn, ok := judge.target.(*types.Func); ok {
-			signature = fn.Signature()
-		} else if method := c.monitoredMethod(judge.target.(*types.TypeName), judge.unit.spec.Operations[judge.call.Op].GoName); method != nil {
-			signature = method.Signature()
-		}
+		c.renderMonitorSpec(body, file, judge.unit, spec)
+		signature := c.judgedSignature(judge)
 		if signature == nil {
 			c.diagnostic(judge.unit.node, "lang.golang.unsupported-contract", "the Go type realizing "+judge.call.Op+" has no method for it", "realize the operation with a method of the type")
-			return nil
+			return nil, false
 		}
+		var argTypes, resultTypes, args []string
 		params, results := nativeParams(signature)
 		for _, p := range params {
 			argTypes = append(argTypes, "reflect.TypeFor["+c.nativeType(p.Type(), file.pkg, file.imports)+"]()")
@@ -236,20 +286,13 @@ func (c *contractCompiler) renderMonitor(m *monitorFile) []byte {
 		for _, r := range results {
 			resultTypes = append(resultTypes, "reflect.TypeFor["+c.nativeType(r.Type(), file.pkg, file.imports)+"]()")
 		}
-		var sensitive []string
-		for _, n := range c.plan.Graph.Nodes() {
-			if n.Layer == graph.LayerDesign && n.Kind == graph.NodeKindType && slices.Contains(n.Attrs["labels"], "sensitive") {
-				sensitive = append(sensitive, strconv.Quote(n.Id))
-			}
-		}
-		var args []string
 		for _, a := range judge.call.Args {
 			args = append(args, strconv.Quote(a))
 		}
-		fmt.Fprintf(&body, "var %s = ucMonitorUnit{Spec: %s, Op: %s, Receiver: %s, Args: []string{%s}, ArgTypes: []reflect.Type{%s}, Results: []reflect.Type{%s}, Deep: %t, Sensitive: []string{%s}}\n",
-			unit, spec, strconv.Quote(judge.call.Op), strconv.Quote(judge.call.Receiver), strings.Join(args, ", "), strings.Join(argTypes, ", "), strings.Join(resultTypes, ", "), judge.deep, strings.Join(sensitive, ", "))
+		fmt.Fprintf(body, "var %s = ucMonitorUnit{Spec: %s, Op: %s, Receiver: %s, Args: []string{%s}, ArgTypes: []reflect.Type{%s}, Results: []reflect.Type{%s}, Deep: %t, Sensitive: []string{%s}}\n",
+			unit, spec, strconv.Quote(judge.call.Op), strconv.Quote(judge.call.Receiver), strings.Join(args, ", "), strings.Join(argTypes, ", "), strings.Join(resultTypes, ", "), judge.deep, sensitive)
 		name := judgeName(judge.unit.node)
-		fmt.Fprintf(&body, "// %s judges %s on a monitored call (docs/language.md E26).\nfunc %s(observed monitor.Observed) monitor.Finish { return ucMonitorJudge(&%s, observed) }\n", name, judge.unit.node.Id, name, unit)
+		fmt.Fprintf(body, "// %s judges %s on a monitored call (docs/language.md E26).\nfunc %s(observed monitor.Observed) monitor.Finish { return ucMonitorJudge(&%s, observed) }\n", name, judge.unit.node.Id, name, unit)
 		r := byTarget[judge.target]
 		if r == nil {
 			r = &registered{judge: judge}
@@ -261,26 +304,54 @@ func (c *contractCompiler) renderMonitor(m *monitorFile) []byte {
 			r.collection = fmt.Sprintf(", Collect: func(receiver any, args []any) (monitor.Collected, error) { return ucMonitorCollect(&%s, receiver, args) }", unit)
 		}
 	}
+	var registrations []string
 	for _, r := range targets {
 		operation := fmt.Sprintf("monitor.Operation{Op: %s, Judges: []monitor.Judge{%s}%s}", strconv.Quote(r.judge.call.Op), strings.Join(r.judges, ", "), r.collection)
-		if r.judge.method != "" {
-			typeName := c.qualify(r.judge.target, file.pkg, file.imports)
-			for _, receiver := range []string{typeName, "*" + typeName} {
-				registrations = append(registrations, fmt.Sprintf("monitor.RegisterMethod(reflect.TypeFor[%s](), %s, %s)", receiver, strconv.Quote(r.judge.method), operation))
-			}
-		} else {
+		if r.judge.method == "" {
 			registrations = append(registrations, fmt.Sprintf("monitor.RegisterFunction(%s)", operation))
+			continue
+		}
+		typeName := c.qualify(r.judge.target, file.pkg, file.imports)
+		for _, receiver := range []string{typeName, "*" + typeName} {
+			registrations = append(registrations, fmt.Sprintf("monitor.RegisterMethod(reflect.TypeFor[%s](), %s, %s)", receiver, strconv.Quote(r.judge.method), operation))
 		}
 	}
+	return registrations, true
+}
+
+// judgedSignature is the Go signature of a judged operation's realization:
+// the function, or the method of the type.
+func (c *contractCompiler) judgedSignature(judge *monitorJudge) *types.Signature {
+	if fn, ok := judge.target.(*types.Func); ok {
+		return fn.Signature()
+	}
+	if method := c.monitoredMethod(judge.target.(*types.TypeName), judge.unit.spec.Operations[judge.call.Op].GoName); method != nil {
+		return method.Signature()
+	}
+	return nil
+}
+
+// renderEntries writes the entry wrapper of each realizing function and
+// gives their registrations.
+func (c *contractCompiler) renderEntries(body *strings.Builder, m *monitorFile) []string {
+	var registrations []string
 	for _, entry := range m.entries {
 		fn := entry.target.(*types.Func)
 		name := "monitored" + upperFirst(fn.Name())
-		c.renderForward(&body, file, "func "+name, fn.Signature(), entry.call.Op, "nil", fn.Name())
+		c.renderForward(body, m.file, "func "+name, fn.Signature(), entry.call.Op, "nil", fn.Name())
 		registrations = append(registrations, fmt.Sprintf("monitor.RegisterEntry(%s, %s)", fn.Name(), name))
 	}
+	return registrations
+}
+
+// renderWrappers writes the interface wrapper of each wrapped Go interface,
+// every method forwarding and those of design operations monitored, and
+// gives their registrations.
+func (c *contractCompiler) renderWrappers(body *strings.Builder, m *monitorFile) []string {
+	var registrations []string
 	for _, iface := range m.wrappers {
 		name := "monitored" + iface.Name()
-		fmt.Fprintf(&body, "// %s wraps an implementation of %s: each call of an operation of the design is monitored.\ntype %s struct{ next %s }\n", name, iface.Name(), name, iface.Name())
+		fmt.Fprintf(body, "// %s wraps an implementation of %s: each call of an operation of the design is monitored.\ntype %s struct{ next %s }\n", name, iface.Name(), name, iface.Name())
 		design := c.designOf(iface)
 		methods := types.NewMethodSet(iface.Type())
 		for i := range methods.Len() {
@@ -289,29 +360,56 @@ func (c *contractCompiler) renderMonitor(m *monitorFile) []byte {
 			if c.nodes[op].Kind != graph.NodeKindOp || c.parents[op] != design {
 				op = ""
 			}
-			c.renderForward(&body, file, "func (w "+name+") "+method.Name(), method.Signature(), op, "w.next", "w.next."+method.Name())
+			c.renderForward(body, m.file, "func (w "+name+") "+method.Name(), method.Signature(), op, "w.next", "w.next."+method.Name())
 		}
 		registrations = append(registrations, fmt.Sprintf("monitor.RegisterWrapper(reflect.TypeFor[%s](), func(next any) any { return %s{next: next.(%s)} })", iface.Name(), name, iface.Name()))
 	}
-	fmt.Fprintf(&body, "func init() {\n%s\n}\n", strings.Join(registrations, "\n"))
-	// Only judges need the runtime; a file of wrappers alone calls the monitor.
-	runtime := ""
-	if len(m.judges) > 0 {
-		source, imports, runtimeOwned, err := monitorRuntime()
-		if err != nil {
-			c.diagnostic(m.anchor, "lang.golang.generate-failed", err.Error(), "correct the monitor runtime before generation")
-			return nil
-		}
-		for path, alias := range imports {
-			if _, ok := file.imports[path]; !ok {
-				file.imports[path] = alias
-			}
-		}
-		for name := range runtimeOwned {
-			owned[name] = true
-		}
-		runtime = source
+	return registrations
+}
+
+// sensitiveTypes lists, as Go string literals, the design types whose values
+// are sensitive (docs/model.md §5): those labelled sensitive and those that
+// extend one, at any depth. It is computed once for a plan.
+func (c *contractCompiler) sensitiveTypes() string {
+	if c.sensitive != nil {
+		return *c.sensitive
 	}
+	labelled := map[string]bool{}
+	var ids []string
+	for _, n := range c.plan.Graph.Nodes() {
+		if n.Layer == graph.LayerDesign && n.Kind == graph.NodeKindType {
+			ids = append(ids, n.Id)
+			labelled[n.Id] = slices.Contains(n.Attrs["labels"], "sensitive")
+		}
+	}
+	var sensitive func(id string, seen map[string]bool) bool
+	sensitive = func(id string, seen map[string]bool) bool {
+		if labelled[id] {
+			return true
+		}
+		if seen[id] {
+			return false
+		}
+		seen[id] = true
+		return slices.ContainsFunc(c.modelParents(id), func(parent string) bool { return sensitive(parent, seen) })
+	}
+	var quoted []string
+	for _, id := range ids {
+		if sensitive(id, map[string]bool{}) {
+			quoted = append(quoted, strconv.Quote(id))
+		}
+	}
+	list := strings.Join(quoted, ", ")
+	c.sensitive = &list
+	return list
+}
+
+// assembleMonitor puts a monitor file together: the marker, the build
+// constraint, the imports, and body (the runtime the judges reach, then the
+// judges and wrappers), its owned names renamed, and checks that no name
+// collides with the package's.
+func (c *contractCompiler) assembleMonitor(m *monitorFile, body string, owned map[string]bool) []byte {
+	file := m.file
 	var out bytes.Buffer
 	fmt.Fprintf(&out, "%s\n\n//go:build %s\n\npackage %s\n\nimport (\n", unicodeGeneratedHeader, monitorBuildTag, file.pkg.Name)
 	for _, path := range slices.Sorted(maps.Keys(file.imports)) {
@@ -322,8 +420,7 @@ func (c *contractCompiler) renderMonitor(m *monitorFile) []byte {
 		fmt.Fprintf(&out, "%s %s\n", alias, strconv.Quote(path))
 	}
 	out.WriteString(")\n")
-	out.WriteString(runtime)
-	out.WriteString(body.String())
+	out.WriteString(body)
 	fset := token.NewFileSet()
 	tree, err := parser.ParseFile(fset, monitorFileName, out.Bytes(), parser.ParseComments)
 	if err != nil {

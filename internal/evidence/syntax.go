@@ -212,6 +212,7 @@ func lastSegment(id string) (string, string) {
 
 type operation struct {
 	params map[string]string
+	names  []string // the parameters' names, in order
 	result string
 	raises []string
 }
@@ -226,7 +227,12 @@ func opOf(g *graph.Graph, id string) (operation, error) {
 	if !strings.HasPrefix(signature, "(") || end < 0 {
 		return operation{}, fmt.Errorf("invalid operation signature")
 	}
-	op := operation{params: members(splitTop(signature[1:end]))}
+	parameters := splitTop(signature[1:end])
+	op := operation{params: members(parameters)}
+	for _, parameter := range parameters {
+		name, _, _ := strings.Cut(parameter, ":")
+		op.names = append(op.names, strings.TrimSpace(name))
+	}
 	rest := strings.TrimSpace(signature[end+1:])
 	result, raises, found := strings.Cut(rest, " raises ")
 	if strings.HasPrefix(rest, "raises ") {

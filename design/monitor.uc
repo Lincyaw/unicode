@@ -1,6 +1,7 @@
-component monitor "运行时包：组合根经 Wrap 和 Entry 接入监控文件，受监控的调用按比例采样，判定的结论汇总成运行时的运行记录并经 OpenTelemetry 报告，抽中的调用经脱敏后采集（design.md §6.6）；随工具链发布，编进使用者的程序，只依赖标准库和 OpenTelemetry 的 API" {
+component monitor "运行时包：组合根经 Wrap 和 Entry 接入监控文件，受监控的调用按比例采样，判定的结论汇总成运行时的运行记录并经 OpenTelemetry 报告，抽中的调用经脱敏后采集（design.md §6.6）；随工具链发布，编进使用者的程序，只依赖标准库、诊断的线上形式 diag.Flat 和 OpenTelemetry 的 API" {
   focus support
   paths "monitor/**"
+  uses diag
 }
 
 type Value record "monitor 写出的模型值，即 design.md §6.4 的规范编码：kind 决定取 text、items 还是 entries，脱敏的值的 kind 为 redacted" {
@@ -78,13 +79,6 @@ type ClauseJudged record "运行时的结论中一个子句，以及它被判定
   field judged: int
 }
 
-type Diagnostic record "运行记录中的一条诊断，JSON 与 diag.Diagnostic 相同：诊断码、对象、原因和修正" {
-  field code: string
-  field subject: string
-  field message: string
-  field fix: string
-}
-
 type Case record "运行时的一个反例，JSON 与 lang.CaseResult 相同：所属的性质或流程、冻结并脱敏的输入及其输入哈希、不成立的子句和调用开始的时间" {
   field id: string
   field check: string
@@ -103,7 +97,7 @@ type Result record "一条性质或流程在一个记录周期中的运行时的
   field cases: list<Case>
   field p95: duration
   field traces: int
-  field diagnostics: list<Diagnostic>
+  field diagnostics: list<diag.Flat>
 }
 
 type Record record "一个记录周期的运行时的运行记录，JSON 与 lang.RunReport 相同：版本、程序构建所在的提交和工作区是否有改动、周期的起止时间、执行场合 runtime、各条结论，以及不属于任何一条结论的检查错误" {
@@ -114,7 +108,7 @@ type Record record "一个记录周期的运行时的运行记录，JSON 与 lan
   field at: time
   field venue: string
   field results: list<Result>
-  field diagnostics: list<Diagnostic>
+  field diagnostics: list<diag.Flat>
 }
 
 type Collected record "一个采集的调用（design.md §6.6）：被调用的操作的标识、接收者的模型值（类型的操作才有）、调用值、程序构建所在的提交和采集的时间，值都已脱敏" {

@@ -64,12 +64,25 @@ func readDesign(root string) ([]syntax.Source, []diag.Diagnostic, error) {
 // fragment and derives. The diagnostics are those of reading the files,
 // loading the design, extracting the code and deriving, unsorted.
 func buildGraph(root string) (graph.Graph, []diag.Diagnostic, error) {
+	return attachedGraph(root, false)
+}
+
+// buildSnapshotGraph is buildGraph for unicode build, which alone gives the
+// runtime run records the execution-input digests of their commits, so that
+// their conclusions can be current evidence (docs/design.md §6.6).
+func buildSnapshotGraph(root string) (graph.Graph, []diag.Diagnostic, error) {
+	return attachedGraph(root, true)
+}
+
+func attachedGraph(root string, digests bool) (graph.Graph, []diag.Diagnostic, error) {
 	g, diagnostics, err := buildInputGraph(root)
 	if err != nil {
 		return g, diagnostics, err
 	}
 	runs := evidence.Read(root)
-	runtimeDigests(root, &g, runs.Reports)
+	if digests {
+		diagnostics = append(diagnostics, runtimeDigests(root, &g, runs.Reports)...)
+	}
 	reviews := review.Read(root)
 	diagnostics = append(diagnostics, runs.Diagnostics...)
 	diagnostics = append(diagnostics, reviews.Diagnostics...)

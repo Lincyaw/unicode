@@ -16,9 +16,7 @@ import (
 
 // testCommand is `unicode test [id...] [--since REV] [--traffic] [--explore DURATION] [--record]`.
 func testCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
-	var explore time.Duration
-	var since string
-	var record, traffic bool
+	var options testOptions
 	c := &cobra.Command{
 		Use:   "test [id...]",
 		Short: "Replay the declared and recorded cases of properties and flows",
@@ -32,31 +30,44 @@ func testCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
 			"too; a collected call outside a property's domain is counted with the limit or precondition it breaks.\n" +
 			"The viewer shows the results once unicode build compiles them into the snapshot.",
 		RunE: func(c *cobra.Command, ids []string) error {
-			if c.Flags().Changed("since") && since == "" {
+			options.ids = ids
+			if c.Flags().Changed("since") && options.since == "" {
 				return usageError("--since must name a revision")
 			}
-			if c.Flags().Changed("explore") && explore <= 0 {
+			if c.Flags().Changed("explore") && options.explore <= 0 {
 				return usageError("--explore must be a positive duration")
 			}
-			if record && explore <= 0 {
+			if options.record && options.explore <= 0 {
 				return usageError("--record requires a positive --explore duration")
 			}
 			root, err := findRoot(g.root)
 			if err != nil {
 				return err
 			}
-			return runTest(root, g.format, ids, explore, since, record, traffic, stdout, stderr)
+			return runTest(root, g.format, options, stdout, stderr)
 		},
 	}
-	c.Flags().StringVar(&since, "since", "", "run only checks affected by changes since this commit")
-	c.Flags().DurationVar(&explore, "explore", 0, "generate candidate inputs within this time budget instead of only replaying cases")
-	c.Flags().BoolVar(&record, "record", false, "save selected replayable inputs and refresh generated drivers (requires --explore)")
-	c.Flags().BoolVar(&traffic, "traffic", false, "also replay the calls a monitored program collected under .unicode/traffic")
+	c.Flags().StringVar(&options.since, "since", "", "run only checks affected by changes since this commit")
+	c.Flags().DurationVar(&options.explore, "explore", 0, "generate candidate inputs within this time budget instead of only replaying cases")
+	c.Flags().BoolVar(&options.record, "record", false, "save selected replayable inputs and refresh generated drivers (requires --explore)")
+	c.Flags().BoolVar(&options.traffic, "traffic", false, "also replay the calls a monitored program collected under .unicode/traffic")
 	return c
 }
 
+// testOptions are unicode test's arguments: the selected identities, the
+// exploration budget, the base of --since, and whether to record and to
+// replay collected calls.
+type testOptions struct {
+	ids     []string
+	explore time.Duration
+	since   string
+	record  bool
+	traffic bool
+}
+
 // runTest keeps predicate failures separate from toolchain diagnostics.
-func runTest(root, format string, ids []string, explore time.Duration, since string, record, traffic bool, stdout, stderr io.Writer) error {
+func runTest(root, format string, options testOptions, stdout, stderr io.Writer) error {
+	ids, explore, since, record, traffic := options.ids, options.explore, options.since, options.record, options.traffic
 	builder := buildInputGraph
 	if explore > 0 {
 		builder = buildGraphForExploration
@@ -85,7 +96,7 @@ func runTest(root, format string, ids []string, explore time.Duration, since str
 	}
 	report := lang.RunReport{Results: []lang.RunResult{}, Diagnostics: []diag.Diagnostic{}}
 	if len(diags) == 0 && (since == "" || len(selected) > 0) {
-		report = run.Execute(root, &g, availableBackends(), selected, explore, record, inputs)
+		report = run.Execute(lang.RunPlan{Root: root, Graph: &g, Ids: selected, Explore: explore, Record: record, Traffic: inputs}, availableBackends())
 		if record && len(report.Diagnostics) == 0 {
 			var cases []lang.CaseResult
 			for _, result := range report.Results {

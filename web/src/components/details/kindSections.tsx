@@ -310,7 +310,7 @@ function historyWords(history: RunResult[]): string[] {
       failedBefore = true;
       return word;
     }
-    if (result.mode === 'replay' && !failedBefore) {
+    if (result.venue === 'test' && result.mode === 'replay' && !failedBefore) {
       return HISTORY.replayPassed;
     }
     const word = failedBefore ? HISTORY.fixed : HISTORY.passed;
@@ -334,7 +334,7 @@ export function CaseSections({ entity }: { entity: Entity }) {
       {history.length > 0 && (
         <Section title={SECTIONS.history} about={ABOUT.history}>
           {history.map((result, index) => {
-            const replay = result.mode === 'replay' && index === history.length - 1;
+            const replay = result.venue === 'test' && result.mode === 'replay' && index === history.length - 1;
             const glyph = result.outcome === 'failed' ? X : replay ? Play : Check;
             return (
               <div key={`${result.commit}${result.at}`} className={styles.row} data-tone={result.outcome === 'failed' ? 'warning' : replay ? undefined : 'success'}>

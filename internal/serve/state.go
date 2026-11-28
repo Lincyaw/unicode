@@ -78,6 +78,9 @@ func load(root, path string, builtAt time.Time) (*state, error) {
 	if st.system == "" {
 		return nil, Unreadable{Path: path, Cause: errors.New("the snapshot has no system container, so unicode build did not write it")}
 	}
+	if err := runtimeCases(st); err != nil {
+		return nil, Unreadable{Path: path, Cause: err}
+	}
 	st.path, st.builtAt = path, builtAt.UTC()
 	if st.head, err = readHead(root, filepath.Dir(path)); err != nil {
 		return nil, Unreadable{Path: path, Cause: err}

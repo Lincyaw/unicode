@@ -53,14 +53,18 @@ func genCollected() *rapid.Generator[monitor.Collected] {
 			out.Receiver = &receiver
 		}
 		out.Call = monitor.Value{Kind: "call", Text: trafficName.Draw(t, "name"), Entries: []monitor.ValueEntry{}}
-		for _, param := range rapid.SliceOfNDistinct(trafficName, 0, 3, func(s string) string { return s }).Draw(t, "params") {
+		params := rapid.SliceOfNDistinct(trafficName, 0, 3, func(s string) string { return s }).Draw(t, "params")
+		slices.Sort(params)
+		for _, param := range params {
 			out.Call.Entries = append(out.Call.Entries, monitor.ValueEntry{Key: monitor.Value{Kind: "string", Text: param}, Value: drawModelValue(t, 1)})
 		}
-		return canonicalCollected(out)
+		return out
 	})
 }
 
-// drawModelValue draws a model value of at most three levels.
+// drawModelValue draws a model value of at most three levels, in its
+// canonical encoding: a set's items sorted by their JSON and distinct, a
+// map's or record's entries sorted by their keys' JSON with distinct keys.
 func drawModelValue(t *rapid.T, depth int) monitor.Value {
 	kinds := []string{"int", "string", "bytes", "bool", "none", "redacted"}
 	if depth < 2 {
@@ -82,7 +86,14 @@ func drawModelValue(t *rapid.T, depth int) monitor.Value {
 	case "list", "set":
 		out := monitor.Value{Kind: kind, Items: []monitor.Value{}}
 		for range rapid.IntRange(0, 3).Draw(t, "items") {
-			out.Items = append(out.Items, drawModelValue(t, depth+1))
+			item := drawModelValue(t, depth+1)
+			if kind == "set" && slices.ContainsFunc(out.Items, func(v monitor.Value) bool { return string(canonical(v)) == string(canonical(item)) }) {
+				continue
+			}
+			out.Items = append(out.Items, item)
+		}
+		if kind == "set" {
+			slices.SortFunc(out.Items, func(a, b monitor.Value) int { return strings.Compare(string(canonical(a)), string(canonical(b))) })
 		}
 		return out
 	default:
@@ -92,47 +103,16 @@ func drawModelValue(t *rapid.T, depth int) monitor.Value {
 			if kind == "map" {
 				key = drawModelValue(t, 2)
 			}
+			if slices.ContainsFunc(out.Entries, func(e monitor.ValueEntry) bool { return string(canonical(e.Key)) == string(canonical(key)) }) {
+				continue
+			}
 			out.Entries = append(out.Entries, monitor.ValueEntry{Key: key, Value: drawModelValue(t, depth+1)})
 		}
+		slices.SortFunc(out.Entries, func(a, b monitor.ValueEntry) int {
+			return strings.Compare(string(canonical(a.Key)), string(canonical(b.Key)))
+		})
 		return out
 	}
-}
-
-// canonicalCollected writes a collected call's values in their canonical
-// encoding, as a monitored program writes them.
-func canonicalCollected(c monitor.Collected) monitor.Collected {
-	normalize := func(v monitor.Value) monitor.Value {
-		out, err := normalizeValue(dedupeEntries(langValue(v)), 0)
-		if err != nil {
-			panic(err)
-		}
-		return monitorValue(out)
-	}
-	c.Call = normalize(c.Call)
-	if c.Receiver != nil {
-		receiver := normalize(*c.Receiver)
-		c.Receiver = &receiver
-	}
-	return c
-}
-
-// dedupeEntries keeps the first entry of each key, which canonical maps and
-// records have once.
-func dedupeEntries(v lang.Value) lang.Value {
-	for i := range v.Items {
-		v.Items[i] = dedupeEntries(v.Items[i])
-	}
-	if v.Entries != nil {
-		var kept []lang.ValueEntry
-		for _, entry := range v.Entries {
-			if !slices.ContainsFunc(kept, func(k lang.ValueEntry) bool { return string(canonical(k.Key)) == string(canonical(entry.Key)) }) {
-				entry.Value = dedupeEntries(entry.Value)
-				kept = append(kept, entry)
-			}
-		}
-		v.Entries = append([]lang.ValueEntry{}, kept...)
-	}
-	return v
 }
 
 // genTrafficSample draws a graph of the type domain.Box with put(key: string,
@@ -227,11 +207,11 @@ func genTrafficSample() *rapid.Generator[TrafficSample] {
 				}
 				input := lang.Input{Values: map[string]lang.Value{}}
 				if k.receiver != "" {
-					input.Values[k.receiver] = langValue(*c.Receiver)
-					input.Values[k.args[0]] = langValue(c.Call.Entries[1].Value)
-					input.Values[k.args[1]] = langValue(c.Call.Entries[0].Value)
+					input.Values[k.receiver] = (*c.Receiver)
+					input.Values[k.args[0]] = (c.Call.Entries[1].Value)
+					input.Values[k.args[1]] = (c.Call.Entries[0].Value)
 				} else {
-					input.Values[k.args[0]] = langValue(c.Call.Entries[0].Value)
+					input.Values[k.args[0]] = (c.Call.Entries[0].Value)
 				}
 				out.Expected[k.id] = append(out.Expected[k.id], input)
 			}
@@ -241,15 +221,17 @@ func genTrafficSample() *rapid.Generator[TrafficSample] {
 }
 
 // genVenueSample draws the graph of attachment-preserves-input-identity and
-// one to three reports of the venues test, runtime or none, about half with
-// the graph's execution-input digest, a runtime conclusion with one or two
-// limits or preconditions that failed, one or two judged clauses, a 95th
-// percentile of 0 to 1 second and zero or one counterexample.
+// one to three reports at distinct times of the venues test, runtime or
+// none, about half with the graph's execution-input digest, a runtime
+// conclusion with one or two limits or preconditions that failed, one or two
+// judged clauses, a 95th percentile of 0 to 1 second and, about half the
+// time, a counterexample whose input is sometimes the declared case's.
 //
 //uc:generates evidence.runtime-evidence-keeps-its-venue.sample
 func genVenueSample() *rapid.Generator[VenueSample] {
 	return rapid.Custom(func(t *rapid.T) VenueSample {
-		g := attachmentGraph(t, rapid.IntRange(-50, 50).Draw(t, "value"), 0)
+		value := rapid.IntRange(-50, 50).Draw(t, "value")
+		g := attachmentGraph(t, value, 0)
 		out := VenueSample{Graph: g}
 		for i := range rapid.IntRange(1, 3).Draw(t, "reports") {
 			at := time.Unix(int64(2000+i*100), 0).UTC()
@@ -270,7 +252,11 @@ func genVenueSample() *rapid.Generator[VenueSample] {
 				}
 				result.P95 = rapid.IntRange(0, int(time.Second)).Draw(t, "p95")
 				if rapid.Bool().Draw(t, "counterexample") {
-					input, _ := NormalizeInput(lang.Input{Values: map[string]lang.Value{"payload": intValue(rapid.IntRange(-50, 50).Draw(t, "payload"))}})
+					payload := rapid.IntRange(-50, 50).Draw(t, "payload")
+					if rapid.Bool().Draw(t, "declared input") {
+						payload = value
+					}
+					input, _ := NormalizeInput(lang.Input{Values: map[string]lang.Value{"payload": intValue(payload)}})
 					result.Passed = false
 					result.Cases = []lang.CaseResult{{Id: "domain.rule.rt-1", Check: "domain.rule", Form: "runtime", Reason: "counterexample", Input: input, InputHash: hash(input.Values),
 						Coverage: []lang.Coverage{}, Trace: []lang.TraceEvent{}, Observations: []string{}, Differences: []string{}, Diagnostics: []diag.Diagnostic{sampleDiagnostic("monitor.ensure-failed")},

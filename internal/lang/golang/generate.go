@@ -87,6 +87,7 @@ type contractCompiler struct {
 	carrierModels   map[string]string
 	edges           []graph.Edge        // the plan graph's edges (graphEdges)
 	extends         map[string][]string // a type's model parents (modelParents)
+	sensitive       *string             // the sensitive design types, quoted (sensitiveTypes)
 }
 type contractUnit struct {
 	node          graph.Node
@@ -833,12 +834,32 @@ func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packa
 	return "", fmt.Errorf("the case value has an unsupported form")
 }
 
-// renderSpec writes the function specName that builds a unit's contract: its
-// JSON, and the Go functions, error types, codecs and, for a test driver, the
-// observation adapters, call carriers and doubles the JSON cannot hold. A
-// monitor file's contract has no adapters, carriers or doubles: a monitored
-// call reads no named observation, and its inputs are real values.
-func (c *contractCompiler) renderSpec(body *strings.Builder, file *contractFile, unit *contractUnit, specName string, monitored bool) {
+// renderSpec writes the function specName that builds a unit's contract for
+// a test driver: what renderSpecBody writes, and the observation adapters,
+// call carriers and doubles the JSON cannot hold.
+func (c *contractCompiler) renderSpec(body *strings.Builder, file *contractFile, unit *contractUnit, specName string) {
+	c.renderSpecBody(body, file, unit, specName)
+	for i, o := range unit.spec.Observers {
+		d, _ := c.bound(graph.EdgeKindObserves, unit.node.Id+"."+o.Name)
+		fmt.Fprintf(body, "s.Observers[%d].Read=reflect.ValueOf(%s);", i, c.qualify(d.obj, file.pkg, file.imports))
+	}
+	c.renderCallSpec(body, file, unit)
+	c.renderDoubleSpec(body, file, unit)
+	body.WriteString("return &s }\n")
+}
+
+// renderMonitorSpec writes the function specName that builds a unit's
+// contract for a monitor file: a monitored call reads no named observation,
+// and its inputs are real values, so it needs no adapters, carriers or doubles.
+func (c *contractCompiler) renderMonitorSpec(body *strings.Builder, file *contractFile, unit *contractUnit, specName string) {
+	c.renderSpecBody(body, file, unit, specName)
+	body.WriteString("return &s }\n")
+}
+
+// renderSpecBody writes the start of the function specName that builds a
+// unit's contract: its JSON, and the Go functions, error types and codecs it
+// cannot hold.
+func (c *contractCompiler) renderSpecBody(body *strings.Builder, file *contractFile, unit *contractUnit, specName string) {
 	raw, _ := json.Marshal(unit.spec)
 	fmt.Fprintf(body, "func %s() *ucContract { var s ucContract; if err := json.Unmarshal([]byte(%s), &s); err != nil { panic(err) }; ", specName, strconv.Quote(string(raw)))
 	usedOps := map[string]bool{}
@@ -939,15 +960,6 @@ func (c *contractCompiler) renderSpec(body *strings.Builder, file *contractFile,
 		fmt.Fprintf(body, "s.ErrorTypes[%s]=reflect.TypeFor[%s]();", strconv.Quote(key), selector)
 	}
 	c.renderCodecs(body, file, unit)
-	if !monitored {
-		for i, o := range unit.spec.Observers {
-			d, _ := c.bound(graph.EdgeKindObserves, unit.node.Id+"."+o.Name)
-			fmt.Fprintf(body, "s.Observers[%d].Read=reflect.ValueOf(%s);", i, c.qualify(d.obj, file.pkg, file.imports))
-		}
-		c.renderCallSpec(body, file, unit)
-		c.renderDoubleSpec(body, file, unit)
-	}
-	body.WriteString("return &s }\n")
 }
 
 func (c *contractCompiler) render(file *contractFile) []byte {
@@ -960,7 +972,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 	for index, unit := range file.units {
 		id := strconv.Itoa(index)
 		specName := "ucSpec" + id
-		c.renderSpec(&body, file, unit, specName, false)
+		c.renderSpec(&body, file, unit, specName)
 		predicate := ""
 		if unit.predicate != nil {
 			predicate = c.qualify(unit.predicate, file.pkg, file.imports)

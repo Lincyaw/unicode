@@ -407,6 +407,21 @@ func (e ReviewState) Valid() bool {
 	}
 }
 
+// Defines values for RuntimeRunResultVenue.
+const (
+	RuntimeRunResultVenueRuntime RuntimeRunResultVenue = "runtime"
+)
+
+// Valid indicates whether the value is a known member of the RuntimeRunResultVenue enum.
+func (e RuntimeRunResultVenue) Valid() bool {
+	switch e {
+	case RuntimeRunResultVenueRuntime:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Source.
 const (
 	SourceDeclared  Source = "declared"
@@ -455,18 +470,15 @@ func (e Status) Valid() bool {
 	}
 }
 
-// Defines values for Venue.
+// Defines values for TestRunResultVenue.
 const (
-	VenueRuntime Venue = "runtime"
-	VenueTest    Venue = "test"
+	TestRunResultVenueTest TestRunResultVenue = "test"
 )
 
-// Valid indicates whether the value is a known member of the Venue enum.
-func (e Venue) Valid() bool {
+// Valid indicates whether the value is a known member of the TestRunResultVenue enum.
+func (e TestRunResultVenue) Valid() bool {
 	switch e {
-	case VenueRuntime:
-		return true
-	case VenueTest:
+	case TestRunResultVenueTest:
 		return true
 	default:
 		return false
@@ -1239,21 +1251,9 @@ type Revision struct {
 	Time    time.Time `json:"time"`
 }
 
-// RunResult M6: one result of a case in one run.
+// RunResult One result of a case in its history, as the variant of its venue: only a test result has a driver mode.
 type RunResult struct {
-	At time.Time `json:"at"`
-
-	// Commit The commit the run checked
-	Commit string `json:"commit"`
-
-	// Mode How a check ran: replaying cases, exploring with generators, or fuzzing (docs/design.md §6.2–§6.3).
-	Mode DriverMode `json:"mode"`
-
-	// Outcome The result of a check on an input.
-	Outcome Outcome `json:"outcome"`
-
-	// Venue M8: where it ran
-	Venue Venue `json:"venue"`
+	union json.RawMessage
 }
 
 // RuntimeCounterexample M8: a real call that contradicts a property or flow.
@@ -1296,6 +1296,24 @@ type RuntimeEvidence struct {
 	// Traces 核对的轨迹: only of a flow
 	Traces *int32 `json:"traces,omitempty"`
 }
+
+// RuntimeRunResult M8: one result of a case on a real call of a monitored program: a counterexample whose input is the case's.
+type RuntimeRunResult struct {
+	// At When the call began
+	At time.Time `json:"at"`
+
+	// Commit The commit the monitored program was built from
+	Commit string `json:"commit"`
+
+	// Outcome The result of a check on an input.
+	Outcome Outcome `json:"outcome"`
+
+	// Venue Where it ran
+	Venue RuntimeRunResultVenue `json:"venue"`
+}
+
+// RuntimeRunResultVenue Where it ran
+type RuntimeRunResultVenue string
 
 // Slice The slice of a set of nodes, the least context that answers a question about them (docs/design.md §7.3,
 // query.Context), with the source of its code elements when asked for.
@@ -1376,6 +1394,26 @@ type StepInfo struct {
 	Target *Node `json:"target,omitempty"`
 }
 
+// TestRunResult M6: one result of a case in one test run.
+type TestRunResult struct {
+	At time.Time `json:"at"`
+
+	// Commit The commit the run checked
+	Commit string `json:"commit"`
+
+	// Mode How a check ran: replaying cases, exploring with generators, or fuzzing (docs/design.md §6.2–§6.3).
+	Mode DriverMode `json:"mode"`
+
+	// Outcome The result of a check on an input.
+	Outcome Outcome `json:"outcome"`
+
+	// Venue M8: where it ran
+	Venue TestRunResultVenue `json:"venue"`
+}
+
+// TestRunResultVenue M8: where it ran
+type TestRunResultVenue string
+
 // TreeNode A node of the design tree, with the nodes it contains.
 type TreeNode struct {
 	Children []TreeNode `json:"children"`
@@ -1416,9 +1454,6 @@ type TypeDetail struct {
 	// Supertypes The types it extends or implements, with the edge
 	Supertypes []Neighbor `json:"supertypes"`
 }
-
-// Venue M8: where a check ran (docs/model.md §3.5): in a test, or in a monitored program on real calls.
-type Venue string
 
 // View The data of one view: what it draws, folded and ordered; the layout is the page's.
 type View struct {
@@ -1695,6 +1730,68 @@ type GetViewParams struct {
 
 	// Level The C4 view only; container when not given
 	Level *C4Level `form:"level,omitempty" json:"level,omitempty"`
+}
+
+// AsTestRunResult returns the union data inside the RunResult as a TestRunResult
+func (t RunResult) AsTestRunResult() (TestRunResult, error) {
+	var body TestRunResult
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTestRunResult overwrites any union data inside the RunResult as the provided TestRunResult
+func (t *RunResult) FromTestRunResult(v TestRunResult) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTestRunResult performs a merge with any union data inside the RunResult, using the provided TestRunResult
+func (t *RunResult) MergeTestRunResult(v TestRunResult) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsRuntimeRunResult returns the union data inside the RunResult as a RuntimeRunResult
+func (t RunResult) AsRuntimeRunResult() (RuntimeRunResult, error) {
+	var body RuntimeRunResult
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromRuntimeRunResult overwrites any union data inside the RunResult as the provided RuntimeRunResult
+func (t *RunResult) FromRuntimeRunResult(v RuntimeRunResult) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeRuntimeRunResult performs a merge with any union data inside the RunResult, using the provided RuntimeRunResult
+func (t *RunResult) MergeRuntimeRunResult(v RuntimeRunResult) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t RunResult) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *RunResult) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
 }
 
 // ServerInterface represents all server handlers.

@@ -56,7 +56,7 @@ func runBuild(root, out, format string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return repoError(err)
 	}
-	g, diags, err := buildGraph(root)
+	g, diags, err := buildSnapshotGraph(root)
 	if err != nil {
 		return err
 	}

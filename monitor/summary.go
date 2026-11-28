@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/lincyaw/unicode/internal/diag"
 )
 
 // Verdict is the conclusion of a property or flow on one monitored call
@@ -82,41 +84,27 @@ type ClauseJudged struct {
 	Judged int    `json:"judged"`
 }
 
-// Diagnostic is a diagnostic of a run record, with the JSON of
-// diag.Diagnostic.
-//
-//uc:realizes monitor.Diagnostic
-type Diagnostic struct {
-	Code    string `json:"code"`
-	Subject string `json:"subject"`
-	Path    string `json:"path"`
-	Line    int    `json:"line"`
-	Column  int    `json:"column"`
-	Message string `json:"message"`
-	Fix     string `json:"fix"`
-}
-
 // Case is a counterexample of a runtime record, with the JSON of
 // lang.CaseResult: its check, its frozen and redacted input and that input's
 // hash, the clause that does not hold and when the call began.
 //
 //uc:realizes monitor.Case
 type Case struct {
-	Id           string       `json:"id"`
-	Check        string       `json:"check"`
-	Form         string       `json:"form"`
-	Reason       string       `json:"reason"`
-	Input        Input        `json:"input"`
-	InputHash    string       `json:"inputHash"`
-	Passed       bool         `json:"passed"`
-	Rejected     bool         `json:"rejected"`
-	Coverage     []struct{}   `json:"coverage"`
-	Trace        []struct{}   `json:"trace"`
-	Observations []string     `json:"observations"`
-	Differences  []string     `json:"differences"`
-	Diagnostics  []Diagnostic `json:"diagnostics"`
-	Clause       string       `json:"clause"`
-	At           time.Time    `json:"at"`
+	Id           string      `json:"id"`
+	Check        string      `json:"check"`
+	Form         string      `json:"form"`
+	Reason       string      `json:"reason"`
+	Input        Input       `json:"input"`
+	InputHash    string      `json:"inputHash"`
+	Passed       bool        `json:"passed"`
+	Rejected     bool        `json:"rejected"`
+	Coverage     []struct{}  `json:"coverage"`
+	Trace        []struct{}  `json:"trace"`
+	Observations []string    `json:"observations"`
+	Differences  []string    `json:"differences"`
+	Diagnostics  []diag.Flat `json:"diagnostics"`
+	Clause       string      `json:"clause"`
+	At           time.Time   `json:"at"`
 }
 
 // Result is the runtime conclusion of one property or flow over a record
@@ -134,7 +122,7 @@ type Result struct {
 	Rejected      int            `json:"rejected"`
 	Observations  []string       `json:"observations"`
 	Differences   []string       `json:"differences"`
-	Diagnostics   []Diagnostic   `json:"diagnostics"`
+	Diagnostics   []diag.Flat    `json:"diagnostics"`
 	Cases         []Case         `json:"cases"`
 	OutsideDomain []ClauseCalls  `json:"outsideDomain"`
 	Clauses       []ClauseJudged `json:"clauses"`
@@ -148,14 +136,14 @@ type Result struct {
 //
 //uc:realizes monitor.Record
 type Record struct {
-	Results     []Result     `json:"results"`
-	Diagnostics []Diagnostic `json:"diagnostics"`
-	Version     int          `json:"version"`
-	Commit      string       `json:"commit"`
-	Dirty       bool         `json:"dirty"`
-	At          time.Time    `json:"at"`
-	Venue       string       `json:"venue"`
-	From        time.Time    `json:"from"`
+	Results     []Result    `json:"results"`
+	Diagnostics []diag.Flat `json:"diagnostics"`
+	Version     int         `json:"version"`
+	Commit      string      `json:"commit"`
+	Dirty       bool        `json:"dirty"`
+	At          time.Time   `json:"at"`
+	Venue       string      `json:"venue"`
+	From        time.Time   `json:"from"`
 }
 
 // The clause names of a counterexample that is not a false ensure.
@@ -175,7 +163,7 @@ const (
 //
 //uc:realizes monitor.summarize
 func Summarize(calls []JudgedCall, build Build, from, to time.Time) Record {
-	record := Record{Results: []Result{}, Diagnostics: []Diagnostic{}, Version: 1, Commit: build.Commit, Dirty: build.Dirty, At: to.UTC(), Venue: venueRuntime, From: from.UTC()}
+	record := Record{Results: []Result{}, Diagnostics: []diag.Flat{}, Version: 1, Commit: build.Commit, Dirty: build.Dirty, At: to.UTC(), Venue: venueRuntime, From: from.UTC()}
 	type tally struct {
 		result    Result
 		within    time.Duration
@@ -189,7 +177,7 @@ func Summarize(calls []JudgedCall, build Build, from, to time.Time) Record {
 			t := tallies[j.Check]
 			if t == nil {
 				t = &tally{outside: map[string]int{}, judged: map[string]int{}}
-				t.result = Result{Id: j.Check, Observations: []string{}, Differences: []string{}, Diagnostics: []Diagnostic{}, Cases: []Case{}}
+				t.result = Result{Id: j.Check, Observations: []string{}, Differences: []string{}, Diagnostics: []diag.Flat{}, Cases: []Case{}}
 				tallies[j.Check] = t
 			}
 			t.within = max(t.within, j.Within)
@@ -272,33 +260,32 @@ func counterexample(j Judgment, at time.Time) Case {
 		id += j.InputHash[:8]
 	}
 	return Case{Id: id, Check: j.Check, Form: formRuntime, Reason: reasonExample, Input: Input{Values: values}, InputHash: j.InputHash,
-		Coverage: []struct{}{}, Trace: []struct{}{}, Observations: []string{}, Differences: []string{}, Diagnostics: []Diagnostic{failure(j)},
+		Coverage: []struct{}{}, Trace: []struct{}{}, Observations: []string{}, Differences: []string{}, Diagnostics: []diag.Flat{failure(j)},
 		Clause: j.Clause, At: at.UTC()}
 }
 
-// failure is the diagnostic of a counterexample, by what does not hold.
-func failure(j Judgment) Diagnostic {
+// failure is the diagnostic of a counterexample, by what does not hold. Its
+// message is the judgment's, which names types, identities and redacted
+// values only, never the program's text.
+func failure(j Judgment) diag.Flat {
+	code, fix := "monitor.ensure-failed", "correct the operation, or the property if the real call shows that it states too much"
 	switch j.Clause {
 	case clauseFrame:
-		return diagnostic(j, "monitor.frame-violation", "a real call changed observed state outside its changes",
-			"correct the operation, or declare the change in the property's changes")
+		code, fix = "monitor.frame-violation", "correct the operation, or declare the change in the property's changes"
 	case clauseRaises:
-		return diagnostic(j, "monitor.undeclared-error", "a real call raised an error its operation does not declare: "+j.Message,
-			"declare the error in the operation's raises, or stop raising it")
+		code, fix = "monitor.undeclared-error", "declare the error in the operation's raises, or stop raising it"
 	case clausePanic:
-		return diagnostic(j, "monitor.call-panicked", "a real call panicked: "+j.Message,
-			"correct the operation so that it returns or raises a declared error")
+		code, fix = "monitor.call-panicked", "correct the operation so that it returns or raises a declared error"
 	}
-	message := "the " + j.Clause + " expression is false on a real call"
-	if j.Message != "" {
-		message = j.Clause + " cannot be evaluated on a real call: " + j.Message
+	message := j.Message
+	if message == "" {
+		message = "the " + j.Clause + " expression is false on a real call"
 	}
-	return diagnostic(j, "monitor.ensure-failed", message,
-		"correct the operation, or the property if the real call shows that it states too much")
+	return diagnostic(j, code, message, fix)
 }
 
-func diagnostic(j Judgment, code, message, fix string) Diagnostic {
-	d := Diagnostic{Code: code, Subject: j.Check, Path: j.Path, Line: j.Line, Column: j.Column, Message: message, Fix: fix}
+func diagnostic(j Judgment, code, message, fix string) diag.Flat {
+	d := diag.Flat{Code: code, Subject: j.Check, Path: j.Path, Line: j.Line, Column: j.Column, Message: message, Fix: fix}
 	if d.Path == "" {
 		d.Path = "design/system.uc"
 	}

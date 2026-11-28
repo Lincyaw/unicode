@@ -60,11 +60,12 @@ const (
 	cachePlanned    = "go-planned"
 	cacheTool       = "go-tool"
 	cacheEffects    = "go-effects"
+	cacheCommit     = "commit-digest"
 )
 
 // cacheKinds are the subdirectories trim looks after; the cache directory
 // may hold other tools' entries, which it leaves alone.
-var cacheKinds = []string{cacheExtraction, cachePlanned, cacheTool, cacheEffects}
+var cacheKinds = []string{cacheExtraction, cachePlanned, cacheTool, cacheEffects, cacheCommit}
 
 // contentCache is a directory of entries; the empty directory is the cache
 // turned off.
@@ -294,4 +295,38 @@ func (c contentCache) trim(now time.Time) {
 			total -= e.size
 		}
 	}
+}
+
+// CommitDigest gives the execution-input digest of the graph of a commit
+// (docs/design.md §6.6), from the content cache when it holds one for the
+// commit under the running executable's digest, the identity of the
+// extractor that computes it; otherwise compute gives it and it is kept. An
+// entry that cannot be read, or holds no digest, is an error.
+func CommitDigest(commit string, compute func() (string, error)) (string, error) {
+	cache, err := sharedCache()
+	if err != nil {
+		return "", err
+	}
+	exe, ok := executableDigest()
+	if !ok {
+		return compute()
+	}
+	key := cacheCommit + "\x00" + exe + "\x00" + commit
+	data, hit, err := cache.get(cacheCommit, key)
+	if err != nil {
+		return "", err
+	}
+	if hit {
+		digest := string(data)
+		if len(digest) != sha256.Size*2 {
+			return "", cache.corrupt(cache.entryPath(cacheCommit, key), errors.New("the entry holds no SHA-256 digest"))
+		}
+		return digest, nil
+	}
+	digest, err := compute()
+	if err != nil {
+		return "", err
+	}
+	cache.put(cacheCommit, key, []byte(digest))
+	return digest, nil
 }

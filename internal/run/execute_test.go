@@ -23,6 +23,7 @@ import (
 type ExecuteSample struct {
 	Graph   *graph.Graph
 	Ids     []string
+	Traffic map[string][]lang.Input
 	Reports map[string]lang.RunReport
 }
 
@@ -31,6 +32,7 @@ func genExecuteSample() *rapid.Generator[ExecuteSample] {
 	return rapid.Custom(func(t *rapid.T) ExecuteSample {
 		g := graph.NewGraph()
 		reports := map[string]lang.RunReport{}
+		traffic := map[string][]lang.Input{}
 		var roots, targets []string
 		add := func(n graph.Node) {
 			if err := g.AddNode(n); err != nil {
@@ -64,6 +66,11 @@ func genExecuteSample() *rapid.Generator[ExecuteSample] {
 					result.Diagnostics = []diag.Diagnostic{diagnostic("test.failed", id+".uc", "the check failed", "correct the implementation")}
 				}
 				report.Results = append(report.Results, result)
+				if rapid.Bool().Draw(t, "collected") {
+					for range rapid.IntRange(1, 2).Draw(t, "inputs") {
+						traffic[id] = append(traffic[id], lang.Input{Values: map[string]lang.Value{"n": {Kind: "int", Text: fmt.Sprint(rapid.IntRange(-9, 9).Draw(t, "n"))}}})
+					}
+				}
 				if rapid.Bool().Draw(t, "selected") {
 					targets = append(targets, id)
 				}
@@ -74,7 +81,7 @@ func genExecuteSample() *rapid.Generator[ExecuteSample] {
 		if rapid.IntRange(0, 3).Draw(t, "unknown") == 0 {
 			targets = append(targets, "missing.check")
 		}
-		return ExecuteSample{Graph: &g, Ids: targets, Reports: reports}
+		return ExecuteSample{Graph: &g, Ids: targets, Traffic: traffic, Reports: reports}
 	})
 }
 
@@ -130,7 +137,8 @@ func checkExecuteFollowsLanguageRoots(t rapid.TB, sample ExecuteSample) {
 		backends = append(backends, b)
 	}
 	budget := time.Second
-	got := Execute(root, sample.Graph, backends, sample.Ids, budget, false, nil)
+	plan := lang.RunPlan{Root: root, Graph: sample.Graph, Ids: sample.Ids, Explore: budget, Traffic: sample.Traffic}
+	got := Execute(plan, backends)
 	unknown := slices.Contains(sample.Ids, "missing.check")
 	if unknown {
 		if !slices.ContainsFunc(got.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == "run.unknown-check" }) {
@@ -180,6 +188,15 @@ func checkExecuteFollowsLanguageRoots(t rapid.TB, sample ExecuteSample) {
 			if p.Root != root || p.Graph != sample.Graph || p.Explore != budget || !slices.Equal(p.Roots, roots) || !slices.Equal(p.Ids, ids) {
 				t.Fatalf("Execute passed wrong inputs to %s: %+v", name, p)
 			}
+			traffic := map[string][]lang.Input{}
+			for _, id := range ids {
+				if len(sample.Traffic[id]) > 0 {
+					traffic[id] = sample.Traffic[id]
+				}
+			}
+			if !reflect.DeepEqual(p.Traffic, traffic) {
+				t.Fatalf("Execute passed %s the collected inputs %+v; want those of its targets %+v", name, p.Traffic, traffic)
+			}
 		}
 		slices.SortFunc(want, func(a, b lang.RunResult) int { return strings.Compare(a.Id, b.Id) })
 		if !reflect.DeepEqual(got.Results, want) {
@@ -205,18 +222,19 @@ func checkExecuteFollowsLanguageRoots(t rapid.TB, sample ExecuteSample) {
 		t.Fatal("report arrays encoded as null")
 	}
 	if !unknown {
-		duplicate := Execute(root, sample.Graph, append(backends, backends[0]), sample.Ids, 0, false, nil)
+		plan.Explore = 0
+		duplicate := Execute(plan, append(backends, backends[0]))
 		if !slices.ContainsFunc(duplicate.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == "run.duplicate-backend" }) {
 			t.Fatal("Execute accepted duplicate backends")
 		}
-		unsupported := Execute(root, sample.Graph, []lang.Backend{readOnlyBackend{name: "go"}, readOnlyBackend{name: "python"}}, sample.Ids, 0, false, nil)
+		unsupported := Execute(plan, []lang.Backend{readOnlyBackend{name: "go"}, readOnlyBackend{name: "python"}})
 		if !slices.ContainsFunc(unsupported.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == "run.unsupported-language" }) {
 			t.Fatal("Execute accepted backends without execution capability")
 		}
 		for _, b := range byName {
 			b.omit = true
 		}
-		omitted := Execute(root, sample.Graph, backends, sample.Ids, 0, false, nil)
+		omitted := Execute(plan, backends)
 		if !slices.ContainsFunc(omitted.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == "run.invalid-report" }) {
 			t.Fatal("Execute accepted missing execution results")
 		}

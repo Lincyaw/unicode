@@ -32,9 +32,9 @@ func EncodeCollected(collected Collected) []byte {
 	return data
 }
 
-// collectedHash is the input hash a collected call is stored under: that of
-// its receiver and its call value.
-func collectedHash(collected Collected) string {
+// CollectedHash is the input hash a collected call is stored under, its file
+// name in traffic/: the hash of its receiver and its call value.
+func CollectedHash(collected Collected) string {
 	values := map[string]Value{"call": collected.Call}
 	if collected.Receiver != nil {
 		values["receiver"] = *collected.Receiver

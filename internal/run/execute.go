@@ -14,13 +14,15 @@ import (
 	"github.com/lincyaw/unicode/internal/repo"
 )
 
-// Execute dispatches the selected checks to their language runners and saves
-// the complete report, including diagnostics, to .unicode/results.json. The
-// inputs traffic gives a check, taken from collected calls, are replayed
-// with its cases.
+// Execute dispatches the checks plan selects to their language runners and
+// saves the complete report, including diagnostics, to .unicode/results.json.
+// Each runner gets plan's root, graph, exploration budget and recording,
+// its language's source roots, its targets, and the inputs plan.Traffic
+// gives them from collected calls, replayed with their cases.
 //
 //uc:realizes run.execute
-func Execute(root string, g *graph.Graph, backends []lang.Backend, ids []string, explore time.Duration, record bool, traffic map[string][]lang.Input) lang.RunReport {
+func Execute(plan lang.RunPlan, backends []lang.Backend) lang.RunReport {
+	root, g, ids, explore, record, traffic := plan.Root, plan.Graph, plan.Ids, plan.Explore, plan.Record, plan.Traffic
 	out := lang.RunReport{Results: []lang.RunResult{}, Diagnostics: []diag.Diagnostic{}, Version: 1,
 		Snapshot: graph.InputDigest(g), At: time.Now().UTC().Format(time.RFC3339Nano), Mode: "replay", Venue: lang.VenueTest}
 	if explore > 0 {

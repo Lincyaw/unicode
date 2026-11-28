@@ -220,7 +220,10 @@ func Attach(g *graph.Graph, reports []lang.RunReport) Attached {
 			for index, candidate := range result.Cases {
 				caseID := "result:" + id + ":case:" + hash([]any{result.Id, candidate.Id, candidate.InputHash, index})
 				matched := current.byCheck[result.Id][candidate.InputHash]
-				caseFresh := sourceFresh && len(matched) > 0
+				// A declared or recorded case is the current evidence of the test
+				// venue only (docs/model.md §3.5): a runtime counterexample with
+				// the same input joins its history, not its outcome.
+				caseFresh := sourceFresh && len(matched) > 0 && venue == lang.VenueTest
 				detail := textAttrs(map[string]string{"check": candidate.Check, "case": candidate.Id, "inputHash": candidate.InputHash, "snapshot": report.Snapshot, "fresh": strconv.FormatBool(sourceFresh), "caseFresh": strconv.FormatBool(caseFresh), "passed": strconv.FormatBool(candidate.Passed), "rejected": strconv.FormatBool(candidate.Rejected), "reason": candidate.Reason, "at": report.At, "mode": report.Mode})
 				detail["coverage"], detail["trace"] = stringsOf(candidate.Coverage), stringsOf(candidate.Trace)
 				detail["duration"] = []string{strconv.Itoa(candidate.Duration)}

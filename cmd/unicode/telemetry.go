@@ -35,7 +35,8 @@ func init() {
 	closeTelemetry = func() {
 		done, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = tracer.Shutdown(done)
-		_ = meter.Shutdown(done)
+		if err := errors.Join(tracer.Shutdown(done), meter.Shutdown(done)); err != nil {
+			fmt.Fprintf(os.Stderr, "unicode: the monitored build could not export all its telemetry: %v\n", err)
+		}
 	}
 }

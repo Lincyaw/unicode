@@ -1,7 +1,7 @@
 component lang "语言后端的接口和名称映射，以及后端生成和运行的输入、输出类型" {
   focus support
   paths "internal/lang/**"
-  uses graph, diag
+  uses graph, diag, monitor
 }
 
 type NameRole enum "名称映射作用的名称的种类（design.md §4）" {
@@ -51,23 +51,7 @@ type RunPlan record "一种语言的运行输入：仓库根目录、源码根�
   field explore: duration
   field explorations: int
   field record: bool
-  field traffic: map<string, list<Input>>
-}
-
-type Value record "可回放的模型值：kind 决定取 text、items 还是 entries，经 codec 编码的值的 items 恰是它声明的表示" {
-  field kind: string
-  field text: string
-  field items: list<Value>
-  field entries: list<ValueEntry>
-}
-
-type ValueEntry record "记录、映射、调用或应答脚本中的键和值" {
-  field key: Value
-  field value: Value
-}
-
-type Input record "调用前冻结的完整输入；对象的私有状态经声明的 codec 保存，替身保存原始脚本" {
-  field values: map<string, Value>
+  field traffic: map<string, list<monitor.Input>>
 }
 
 type Coverage record "一个覆盖点：代码块在源码中的位置，或者流程中走到的步骤、分支，或者抛出的声明的错误" {
@@ -100,7 +84,7 @@ type CaseResult record "一个输入的最终结果：所属的性质或流程�
   field check: string
   field form: string
   field reason: string
-  field input: Input
+  field input: monitor.Input
   field inputHash: string
   field passed: bool
   field rejected: bool
@@ -122,17 +106,7 @@ type CandidateEvaluation record "一个候选输入的执行结果：预算耗�
 }
 
 type CandidateRunner interface "编译好的驱动，每次重新构造输入，在单独的进程中执行一个候选输入" {
-  op evaluate(input: Input) -> CandidateEvaluation "执行 input 这一个候选输入，返回它自己的覆盖和轨迹，不含此前的候选累计的覆盖"
-}
-
-type ClauseCalls record "一条不成立的限定或前提，以及它不成立的调用数" {
-  field clause: string
-  field calls: int
-}
-
-type ClauseJudged record "一个子句，以及它被判定的次数" {
-  field clause: string
-  field judged: int
+  op evaluate(input: monitor.Input) -> CandidateEvaluation "执行 input 这一个候选输入，返回它自己的覆盖和轨迹，不含此前的候选累计的覆盖"
 }
 
 type RunResult record "一条性质或一个流程的运行结论：是否通过、有效执行数（运行时为适用的调用数）、拒绝的候选输入数、观察范围、范围外的差异、ensure 不成立或有范围外的差异时的诊断、各用例的结果、代码、分支和错误覆盖点的总数，以及运行时的域外调用数、各子句的判定次数、第 95 百分位耗时（纳秒）和核对的轨迹数" {
@@ -147,8 +121,8 @@ type RunResult record "一条性质或一个流程的运行结论：是否通过
   field codeTotal: int
   field branchTotal: int
   field errorTotal: int
-  field outsideDomain: list<ClauseCalls>
-  field clauses: list<ClauseJudged>
+  field outsideDomain: list<monitor.ClauseCalls>
+  field clauses: list<monitor.ClauseJudged>
   field p95: int
   field traces: int
 }

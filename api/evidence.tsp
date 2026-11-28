@@ -1,3 +1,8 @@
+import "@typespec/openapi";
+import "@typespec/openapi3";
+
+using OpenAPI;
+
 namespace Unicode.Viewer;
 
 /** How a check ran: replaying cases, exploring with generators, or fuzzing (docs/design.md §6.2–§6.3). */
@@ -42,17 +47,40 @@ enum Venue {
   runtime,
 }
 
-/** M6: one result of a case in one run. */
-model RunResult {
+/** M6: one result of a case in one test run. */
+@extension("additionalProperties", false)
+model TestRunResult {
+  /** M8: where it ran */
+  venue: Venue.test;
+
   /** The commit the run checked */
   commit: string;
 
   at: utcDateTime;
   mode: DriverMode;
   outcome: Outcome;
+}
 
-  /** M8: where it ran */
-  venue: Venue;
+/** M8: one result of a case on a real call of a monitored program: a counterexample whose input is the case's. */
+@extension("additionalProperties", false)
+model RuntimeRunResult {
+  /** Where it ran */
+  venue: Venue.runtime;
+
+  /** The commit the monitored program was built from */
+  commit: string;
+
+  /** When the call began */
+  at: utcDateTime;
+
+  outcome: Outcome;
+}
+
+/** One result of a case in its history, as the variant of its venue: only a test result has a driver mode. */
+@oneOf
+union RunResult {
+  TestRunResult,
+  RuntimeRunResult,
 }
 
 /** M8: a limit or precondition that real calls broke, such as where#1 or requires#1, and on how many calls. */
