@@ -41,7 +41,7 @@ type measuredProgram struct {
 
 func prepareMeasuredProgram(plan lang.RunPlan, generation lang.Generation, temp string) (*measuredProgram, error) {
 	loader := load
-	if plan.Explore > 0 {
+	if plan.Exploring() {
 		loader = loadForGeneration
 	}
 	loaded, err := loader(plan.Root, plan.Roots)
@@ -229,7 +229,7 @@ func prepareMeasuredProgram(plan lang.RunPlan, generation lang.Generation, temp 
 			replacements[filepath.Join(physicalRoot, filepath.FromSlash(file.rel))] = name
 		}
 	}
-	if plan.Explore > 0 {
+	if plan.Exploring() {
 		for index, edit := range generation.Edits {
 			if edit.CreateOnly {
 				continue

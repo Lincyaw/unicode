@@ -30,7 +30,7 @@ func (b *Backend) Run(plan lang.RunPlan) (report lang.RunReport) {
 			data, err = os.ReadFile(path)
 		}
 		current := err == nil && bytes.Equal(data, edit.Content)
-		if plan.Explore > 0 && !edit.CreateOnly && err == nil {
+		if plan.Exploring() && !edit.CreateOnly && err == nil {
 			parsed, parseErr := parser.ParseFile(token.NewFileSet(), path, data, parser.PackageClauseOnly|parser.ParseComments)
 			current = parseErr == nil && unicodeGenerated(parsed)
 		}

@@ -985,7 +985,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		}
 		fmt.Fprintf(&body, "func ucInvoke%s(tb rapid.TB, s *ucContract, values map[string]reflect.Value){if ucDeclaredElsewhere(tb){return};", id)
 		if unit.predicate != nil {
-			body.WriteString("ucManual(tb,s,values,func(){pre:=*s;pre.SkipInstall=true;pre.Call=nil;pre.Ensures=nil;pre.Sequence=\"\";ucCheck(tb,&pre,values); started:=time.Now();defer func(){if ucCurrent!=nil&&s.Within>0 {ucCurrent.durations=append(ucCurrent.durations,time.Since(started))}}();")
+			body.WriteString("ucManual(tb,s,values,func(){pre:=*s;pre.SkipInstall=true;pre.Call=nil;pre.Ensures=nil;pre.Sequence=\"\";ucCheck(tb,&pre,values); stop:=ucStopwatch();defer func(){if ucCurrent!=nil&&s.Within>0 {used,_:=stop();ucCurrent.durations=append(ucCurrent.durations,used)}}();")
 		}
 		var args []string
 		for _, s := range unit.spec.Symbols {

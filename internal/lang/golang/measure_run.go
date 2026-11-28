@@ -22,6 +22,10 @@ import (
 	"github.com/lincyaw/unicode/internal/lang"
 )
 
+// shrinkWithoutDeadline bounds the shrinking of an exploration bounded by
+// count, which otherwise runs until no smaller candidate fails.
+const shrinkWithoutDeadline = 10 * time.Minute
+
 type measuredRunner struct {
 	program                            *measuredProgram
 	binary, check                      string
@@ -175,20 +179,28 @@ func (r *measuredRunner) runCheck(plan lang.RunPlan, replay []ucReplayCase) lang
 		}
 		evaluate(input, recorded.Form, recorded.Id, recorded.Reason, true)
 	}
-	if plan.Explore > 0 && result.Passed {
-		r.deadline = time.Now().Add(plan.Explore)
-		for time.Now().Before(r.deadline) {
+	if plan.Exploring() && result.Passed {
+		// A duration bounds exploration by wall time, as unicode test
+		// --explore asks; a number of candidates bounds it by count, so the
+		// outcome does not depend on the machine's speed or load.
+		if plan.Explore > 0 {
+			r.deadline = time.Now().Add(plan.Explore)
+		}
+		for drawnCount := 0; (plan.Explore == 0 || time.Now().Before(r.deadline)) && (plan.Explorations == 0 || drawnCount < plan.Explorations); drawnCount++ {
 			seed := make([]byte, 32)
 			if _, err := rand.Read(seed); err != nil {
 				result.Passed = false
 				result.Diagnostics = append(result.Diagnostics, runDiagnostic("lang.golang.run-failed", err.Error(), "make the operating system random source available"))
 				break
 			}
-			ctx, cancel := context.WithDeadline(context.Background(), r.deadline)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			if plan.Explore > 0 {
+				ctx, cancel = context.WithDeadline(context.Background(), r.deadline)
+			}
 			drawn, _, err := r.worker(ctx, ucWorkerRequest{Mode: "draw", Check: r.check, Seed: hex.EncodeToString(seed)}, false)
 			cancel()
 			if err != nil {
-				if !time.Now().Before(r.deadline) {
+				if plan.Explore > 0 && !time.Now().Before(r.deadline) {
 					break
 				}
 				result.Passed = false
@@ -230,7 +242,12 @@ func (r *measuredRunner) runCheck(plan lang.RunPlan, replay []ucReplayCase) lang
 			if !candidate.Passed {
 				trial := *r
 				trial.trial = true
-				shrunk := evidence.Shrink(candidate, &trial, time.Until(r.deadline))
+				// Without a deadline a counterexample shrinks to a fixed point.
+				budget := shrinkWithoutDeadline
+				if plan.Explore > 0 {
+					budget = time.Until(r.deadline)
+				}
+				shrunk := evidence.Shrink(candidate, &trial, budget)
 				result.Diagnostics = append(result.Diagnostics, shrunk.Diagnostics...)
 				smallest := shrunk.Result
 				smallest.Form = "recorded"

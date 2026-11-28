@@ -43,12 +43,13 @@ type GenPlan record "一种语言的生成输入：仓库根目录、源码根�
   field graph: graph.Graph
 }
 
-type RunPlan record "一种语言的运行输入：仓库根目录、源码根目录、图、要运行的性质和流程（ids 为空时全部）、探索时长（explore 为零时只回放），以及是否写回录制文件 record" {
+type RunPlan record "一种语言的运行输入：仓库根目录、源码根目录、图、要运行的性质和流程（ids 为空时全部）、探索时长 explore 和探索的候选输入数 explorations（两者都为零时只回放），以及是否写回录制文件 record" {
   field root: string
   field roots: list<string>
   field graph: graph.Graph
   field ids: list<string>
   field explore: duration
+  field explorations: int
   field record: bool
 }
 

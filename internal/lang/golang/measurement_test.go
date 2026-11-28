@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"pgregory.net/rapid"
 
@@ -67,13 +66,10 @@ func checkMeasuredExecutionKeepsRealEvidence(t rapid.TB, sample MeasurementSampl
 	}
 	before := skeletonTree(t, root)
 	run := lang.RunPlan{Root: root, Roots: plan.Roots, Graph: &g, Ids: []string{"domain.measured"}}
-	switch sample.Variant {
-	case 1, 7:
-		// Variants 1 and 7 need one and two explored candidates; each costs
-		// two worker processes, so the budget leaves room for a loaded machine.
-		run.Explore = 2 * time.Second
-	case 3:
-		run.Explore = 350 * time.Millisecond
+	if sample.Variant == 1 || sample.Variant == 3 || sample.Variant == 7 {
+		// A count of candidates, not seconds: the verdict must not depend on
+		// how loaded the machine is.
+		run.Explorations = 3
 	}
 	report := NewBackend().Run(run)
 	if after := skeletonTree(t, root); !reflect.DeepEqual(before, after) {

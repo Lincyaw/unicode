@@ -90,17 +90,23 @@ type GenPlan struct {
 	Graph *graph.Graph `json:"graph"`
 }
 
-// RunPlan selects checks and an exploration budget for one language.
+// RunPlan selects checks and an exploration budget for one language: a
+// duration, as unicode test --explore gives it, or a number of generated
+// candidates, whose outcome no machine's speed changes.
 //
 //uc:realizes lang.RunPlan
 type RunPlan struct {
-	Root    string        `json:"root"`
-	Roots   []string      `json:"roots"`
-	Graph   *graph.Graph  `json:"graph"`
-	Ids     []string      `json:"ids"`
-	Explore time.Duration `json:"explore"`
-	Record  bool          `json:"record"`
+	Root         string        `json:"root"`
+	Roots        []string      `json:"roots"`
+	Graph        *graph.Graph  `json:"graph"`
+	Ids          []string      `json:"ids"`
+	Explore      time.Duration `json:"explore"`
+	Explorations int           `json:"explorations"`
+	Record       bool          `json:"record"`
 }
+
+// Exploring tells whether the plan explores generated inputs.
+func (p RunPlan) Exploring() bool { return p.Explore > 0 || p.Explorations > 0 }
 
 // Value is a finite replayable model value. Encoded values hold their declared
 // representation as their single item.

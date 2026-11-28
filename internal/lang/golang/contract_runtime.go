@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"os"
 	"reflect"
 	"slices"
 	"sort"
@@ -125,7 +126,7 @@ type ucOutcome struct {
 	Infrastructure bool
 	Diagnostics    []ucDiagnostic
 	Differences    []string
-	Duration       time.Duration
+	Duration       time.Duration // the call's processor time, or its elapsed time where unknown (ucCPUTime)
 	Calls          []ucCallTime
 }
 type ucIssue struct {
@@ -1480,11 +1481,12 @@ func ucExecuteSingle(s *ucContract, inputs map[string]reflect.Value, explore boo
 		if op.Pure {
 			before = env.callInputs(op, args)
 		}
-		start := time.Now()
+		stop := ucStopwatch()
 		phase = "call"
 		values := func() []reflect.Value { finish := ucBusinessTrace(); defer finish(); return fn.Call(args) }()
-		out.Duration = time.Since(start)
-		out.Calls = append(out.Calls, ucCallTime{Op: op.Name, Duration: out.Duration})
+		var elapsed time.Duration
+		out.Duration, elapsed = stop()
+		out.Calls = append(out.Calls, ucCallTime{Op: op.Name, Duration: elapsed})
 		phase = "assertion"
 		env.captureCall(op, values, s.Call, &out)
 		if op.Pure {
@@ -1786,6 +1788,48 @@ func ucParseTime(text string) time.Time {
 	}
 	return value
 }
+
+// ucCPUTime is the processor time all threads of this process have used,
+// read from /proc/self/task/*/schedstat where the system provides it. A
+// call's within budget is checked on it (docs/language.md E16), so that the
+// verdict does not depend on how loaded the machine is; elsewhere the call's
+// elapsed time stands in.
+// ucStopwatch starts measuring a call. The function it returns gives the
+// processor time used since, or the elapsed time where the system does not
+// tell it (ucCPUTime), which within budgets are checked against, and the
+// elapsed time.
+func ucStopwatch() func() (used, elapsed time.Duration) {
+	start := time.Now()
+	cpuStart, cpuKnown := ucCPUTime()
+	return func() (time.Duration, time.Duration) {
+		elapsed := time.Since(start)
+		if cpuEnd, ok := ucCPUTime(); cpuKnown && ok && cpuEnd >= cpuStart {
+			return cpuEnd - cpuStart, elapsed
+		}
+		return elapsed, elapsed
+	}
+}
+func ucCPUTime() (time.Duration, bool) {
+	tasks, err := os.ReadDir("/proc/self/task")
+	if err != nil {
+		return 0, false
+	}
+	var total int64
+	for _, task := range tasks {
+		data, err := os.ReadFile("/proc/self/task/" + task.Name() + "/schedstat")
+		if err != nil {
+			continue // a thread that ended
+		}
+		field, _, _ := strings.Cut(string(data), " ")
+		ns, err := strconv.ParseInt(strings.TrimSpace(field), 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		total += ns
+	}
+	return time.Duration(total), true
+}
+
 func ucParseDuration(text string) time.Duration {
 	value, err := time.ParseDuration(text)
 	if err != nil {
