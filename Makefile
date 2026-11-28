@@ -15,7 +15,7 @@ build:
 	go build -ldflags "-X main.version=$(VERSION)" -o bin/unicode ./cmd/unicode
 
 lint:
-	golangci-lint run
+	golangci-lint run --allow-serial-runners
 
 test:
 	go test -timeout=20m ./...
