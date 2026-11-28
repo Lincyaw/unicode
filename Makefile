@@ -1,7 +1,19 @@
-.PHONY: check build lint test fmt-check gen-check self-check rule-check api api-check serve-gen serve-gen-check web-check deep
+.PHONY: check check-steps build lint test fmt-check gen-check self-check rule-check api api-check serve-gen serve-gen-check web-check deep
 
-# check is what a lane runs before it commits: fast, default rapid settings.
-check: lint fmt-check gen-check self-check rule-check api-check serve-gen-check web-check
+# check is what a lane runs once its work is done: default rapid settings. Full
+# runs on one machine take turns through one lock (CLAUDE.md, Roles and
+# workflow), so overlapping runs neither slow each other nor skew time budgets;
+# where flock is missing, the run goes ahead unlocked.
+CHECK_LOCK ?= /tmp/unicode-make-check-$(shell id -u).lock
+
+check:
+	@if [ -z "$$UNICODE_CHECK_LOCKED" ] && command -v flock >/dev/null 2>&1; then \
+		UNICODE_CHECK_LOCKED=1 flock "$(CHECK_LOCK)" $(MAKE) check-steps; \
+	else \
+		$(MAKE) check-steps; \
+	fi
+
+check-steps: lint fmt-check gen-check self-check rule-check api-check serve-gen-check web-check
 	$(MAKE) test
 
 # build makes bin/unicode with the viewer's pages in it (docs/design.md §8): the
