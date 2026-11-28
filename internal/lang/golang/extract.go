@@ -38,11 +38,11 @@ type extraction struct {
 	sites       map[edgeKey][]diag.Position
 	declared    []declared
 	bindings    map[bindingKey]bool
-	realizes    map[string][]string // a type's identity to the design types it realizes
-	predicates  map[string]bool     // the operations that carry a checks binding
-	values      map[string][]string // a type's identity to its constants' enum values
-	vars        map[string][]initializer
-	varUses     map[string]varUse
+	realizes    map[string][]string      // a type's identity to the design types it realizes
+	predicates  map[string]bool          // the operations that carry a checks binding
+	values      map[string][]string      // a type's identity to its constants' enum values
+	vars        map[string][]initializer // a package-level variable's identity to its values
+	varCalls    map[string]bodyCalls     // a package-level variable's identity to what its values give
 	diagnostics []diag.Diagnostic
 }
 
@@ -75,7 +75,7 @@ func extract(l loaded) lang.Extracted {
 		predicates: map[string]bool{},
 		values:     map[string][]string{},
 		vars:       map[string][]initializer{},
-		varUses:    map[string]varUse{},
+		varCalls:   map[string]bodyCalls{},
 	}
 	for _, p := range l.packages {
 		x.addPackage(p)
@@ -312,34 +312,7 @@ func (x *extraction) addFuncEdges(d declared) {
 		}
 		return true
 	})
-	var use varUse
-	x.bodyUse(&use, d.pkg, d.decl.Body)
-	for _, c := range use.calls {
-		x.addCall(d.id, c)
-	}
-	x.addClosureCalls(d.id, use.vars)
-}
-
-// call is a static call: the function it calls, and where it names it.
-type call struct {
-	callee string
-	site   diag.Position
-}
-
-func (x *extraction) addCall(from string, c call) {
-	key := x.addEdge(graph.EdgeKindCalls, from, c.callee, c.site)
-	x.sites[key] = append(x.sites[key], c.site)
-}
-
-// staticCall is the identity of the package-level function or method that a
-// call statically calls, and the identifier that names it.
-func staticCall(info *types.Info, n *ast.CallExpr) (string, *ast.Ident, bool) {
-	callee, ok := typeutil.Callee(info, n).(*types.Func)
-	name := calleeName(n.Fun)
-	if !ok || name == nil || !packageLevel(callee) {
-		return "", nil, false
-	}
-	return funcID(callee.Origin()), name, true
+	x.addBodyCalls(d.id, d.pkg, d.decl.Body)
 }
 
 // addImplements adds an implements edge from every type that is not an
@@ -638,21 +611,6 @@ func mentioned(t types.Type, visit func(*types.Named)) {
 			mentioned(m.Type(), visit)
 		}
 	}
-}
-
-// calleeName is the identifier that names the function a call calls, or nil.
-func calleeName(fun ast.Expr) *ast.Ident {
-	switch fun := ast.Unparen(fun).(type) {
-	case *ast.Ident:
-		return fun
-	case *ast.SelectorExpr:
-		return fun.Sel
-	case *ast.IndexExpr:
-		return calleeName(fun.X)
-	case *ast.IndexListExpr:
-		return calleeName(fun.X)
-	}
-	return nil
 }
 
 func typeForm(name *types.TypeName) string {
