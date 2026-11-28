@@ -10,7 +10,7 @@ import table from '../../ui/table.module.css';
 import { CaseSections, CheckedSections, CodeSections, ContainerSections, EventSections, StepSections } from '../details/kindSections';
 import { DiagnosticTag, NodeRow, Section, SignaturePanel, SourcePanel, ViaTag } from '../details/sections';
 import { NodeLink } from '../marks/NodeLink';
-import { displayName, opLine, placeOf, relative, scopeOf, statusOf, stepLine } from '../marks/format';
+import { codeFileOf, displayName, opLine, placeOf, relative, scopeOf, statusOf, stepLine } from '../marks/format';
 import { ArrowRight, ArrowUpRight, Code, FileCode, KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
@@ -26,7 +26,7 @@ import styles from './entity.module.css';
 function Head({ entity }: { entity: Entity }) {
   const { node } = entity;
   const realized = entity.realizedBy[0]?.node;
-  const file = entity.code?.file;
+  const file = codeFileOf(entity);
   return (
     <header className={styles.head}>
       <div className={styles.identity}>

@@ -35,6 +35,27 @@ func (e C4Level) Valid() bool {
 	}
 }
 
+// Defines values for CallSide.
+const (
+	CallSideCallee CallSide = "callee"
+	CallSideCaller CallSide = "caller"
+	CallSideRoot   CallSide = "root"
+)
+
+// Valid indicates whether the value is a known member of the CallSide enum.
+func (e CallSide) Valid() bool {
+	switch e {
+	case CallSideCallee:
+		return true
+	case CallSideCaller:
+		return true
+	case CallSideRoot:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ChangeKind.
 const (
 	ChangeKindAdded     ChangeKind = "added"
@@ -514,6 +535,10 @@ type BranchCount struct {
 
 // C4Level The level the C4 view draws: the system with its persons and external systems, or the containers inside it.
 type C4Level string
+
+// CallSide Where a node of the calls view stands: a root (the input or a function realizing it), a callee (a function the roots
+// reach along calls and reaches edges, or a folded container standing for one), or a caller (any other).
+type CallSide string
 
 // CaseDetail The sections of a case's page. Its values are `node.attrs.values`.
 type CaseDetail struct {
@@ -1385,8 +1410,9 @@ type ViewNode struct {
 	// Evidence M6: the latest results and coverage, for a case, a property, a flow, a step or a function
 	Evidence *Evidence `json:"evidence,omitempty"`
 
-	// File A code type or function: the identity of the code file it is declared in
-	File *string `json:"file,omitempty"`
+	// File A code type or function: the code file it is declared in, the file whose path is its origin's; a method's can be
+	// another file than its receiver type's. The same shape as an entity's `code.file`.
+	File *Node `json:"file,omitempty"`
 
 	// Form The form; its values depend on the kind and the layer (docs/model.md §3)
 	Form string `json:"form"`
@@ -1416,6 +1442,9 @@ type ViewNode struct {
 
 	// Salient Salient or detail (docs/model.md §9, D6)
 	Salient bool `json:"salient"`
+
+	// Side The calls view only: where the node stands, left of the roots, a root, or right of them (CallSide)
+	Side *CallSide `json:"side,omitempty"`
 
 	// Source Where a node or an edge comes from (docs/model.md §2).
 	Source Source `json:"source"`

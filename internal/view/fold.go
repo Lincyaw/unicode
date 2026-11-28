@@ -71,8 +71,50 @@ func (ix index) fold(r request, sel selection, expand []string) View {
 	for _, id := range f.order {
 		v.Nodes = append(v.Nodes, ViewNode{Node: ix.nodes[id]})
 	}
+	if kind == ViewKindCalls {
+		f.sides(v.Nodes, input)
+	}
 	v.Edges = f.edges(sel, revealed)
 	return v
+}
+
+// sides gives each node of a calls view on input its side: a root when it
+// is the input or an operation realizing it; a callee when it is, or is the
+// folded container of, a node the roots reach along calls and reaches edges;
+// a caller otherwise.
+func (f *folding) sides(nodes []ViewNode, input string) {
+	roots := map[string]bool{input: true}
+	for _, r := range f.ix.sources(input, graph.EdgeKindRealizes) {
+		if f.ix.nodes[r].Kind == graph.NodeKindOp {
+			roots[r] = true
+		}
+	}
+	reached := map[string]bool{}
+	for queue := slices.Sorted(maps.Keys(roots)); len(queue) > 0; queue = queue[1:] {
+		for _, e := range f.ix.out[queue[0]] {
+			if (e.Kind == graph.EdgeKindCalls || e.Kind == graph.EdgeKindReaches) && !reached[e.To] {
+				reached[e.To] = true
+				queue = append(queue, e.To)
+			}
+		}
+	}
+	callee := map[string]bool{}
+	for id := range reached {
+		if c, placed := f.into[id]; placed && c != "" {
+			callee[c] = true
+		}
+		callee[id] = true
+	}
+	for i := range nodes {
+		side := CallSideCaller
+		switch id := nodes[i].Id; {
+		case roots[id]:
+			side = CallSideRoot
+		case callee[id]:
+			side = CallSideCallee
+		}
+		nodes[i].Side = &side
+	}
 }
 
 // place draws id, or the support container it folds into, or records the

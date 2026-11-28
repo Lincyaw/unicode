@@ -190,6 +190,13 @@ export function fileOf(id: string): string | undefined {
   return current;
 }
 
+const CODE_FILES = new Map(NODES.filter(node => node.layer === 'code' && node.kind === 'container' && node.form === 'file').map(node => [node.origin.path, node.id]));
+
+/** The code file a code element is written in, as unicode serve finds it: the file whose path is the element's origin's. */
+export function codeFileOf(id: string): string | undefined {
+  return CODE_FILES.get(raw(id).origin.path);
+}
+
 /** The design container that owns a code element, through its file (D1); a package's, through its first file. */
 export function ownerOf(id: string): string | undefined {
   const node = raw(id);

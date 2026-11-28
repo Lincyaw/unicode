@@ -297,7 +297,8 @@ func (st *state) view(kind view.ViewKind, input string, expand []string, layer v
 
 // viewNode writes a node of a view with its card, a code type or function
 // with the file it is written in (the file node whose path is its origin's,
-// which for a method can differ from its receiver type's file), and records
+// which for a method can differ from its receiver type's file), a node of
+// the calls view with its side, and records
 // it and the nodes of its contents as drawn.
 func (st *state) viewNode(n view.ViewNode, drawn map[string]bool) ViewNode {
 	drawn[n.Id] = true
@@ -305,8 +306,13 @@ func (st *state) viewNode(n view.ViewNode, drawn map[string]bool) ViewNode {
 	out := ViewNode{Id: d.Id, Kind: d.Kind, Form: d.Form, Layer: d.Layer, Source: d.Source, Origin: d.Origin, Summary: d.Summary,
 		Salient: d.Salient, Digest: d.Digest, Attrs: d.Attrs, Title: d.Title, Status: d.Status, Refers: d.Refers, Bindings: d.Bindings, Step: d.Step,
 		Operation: d.Operation, Details: optional(int32(n.Details)), Evidence: st.evidenceOf(n.Id)}
-	if st.is(n.Id, graph.LayerCode, graph.NodeKindType, graph.NodeKindOp) {
-		out.File = optional(st.codeFiles[n.Origin.Path])
+	if file, ok := st.codeFiles[n.Origin.Path]; ok && st.is(n.Id, graph.LayerCode, graph.NodeKindType, graph.NodeKindOp) {
+		node := st.node(file)
+		out.File = &node
+	}
+	if n.Side != nil {
+		side := CallSide(*n.Side)
+		out.Side = &side
 	}
 	if len(n.Members) > 0 {
 		members := make([]Member, 0, len(n.Members))

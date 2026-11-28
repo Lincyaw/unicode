@@ -154,6 +154,38 @@ func (w world) details(id string, drawn map[string]bool) int {
 	return count
 }
 
+// side is where the drawn node id stands in the calls view on input
+// (docs/design.md §7.5.1): a root when it is the input or an operation
+// realizing it; a callee when it is a node the roots reach along calls and
+// reaches edges, or a folded container a reached node is placed into; a
+// caller otherwise.
+func (w world) side(input, id string, x expectation) CallSide {
+	roots := map[string]bool{input: true}
+	for _, r := range w.from(input, graph.EdgeKindRealizes) {
+		if w.nodes[r].Kind == graph.NodeKindOp {
+			roots[r] = true
+		}
+	}
+	if roots[id] {
+		return CallSideRoot
+	}
+	reached := map[string]bool{}
+	for grown := true; grown; {
+		grown = false
+		for _, e := range w.edges {
+			if (e.Kind == graph.EdgeKindCalls || e.Kind == graph.EdgeKindReaches) && (roots[e.From] || reached[e.From]) && !reached[e.To] {
+				reached[e.To], grown = true, true
+			}
+		}
+	}
+	for r := range reached {
+		if r == id || x.home[r] == id && x.folded[id] {
+			return CallSideCallee
+		}
+	}
+	return CallSideCaller
+}
+
 // labels are the operations an edge from the node from carries, each with
 // its identity and its text, given the edges of the graph it stands for: for
 // a depends, those the callees of its calls realize, by design name; for a

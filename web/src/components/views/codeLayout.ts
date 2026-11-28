@@ -1,4 +1,4 @@
-import type { View, ViewEdge, ViewNode } from '../../api/types';
+import type { Node, View, ViewEdge, ViewNode } from '../../api/types';
 import { ICON_SMALL } from '../../ui/icons';
 import { planChannel, portFor, portRoom, portsAlong, routeChannel, type ChannelLine, type Wall } from '../canvas/channels';
 import type { Rect, Route } from '../canvas/layout';
@@ -35,13 +35,13 @@ export interface Row {
 }
 
 /**
- * A box of the drawing: the input; a file of other functions, headed by a link to the file (`file`, at `path`); or a
+ * A box of the drawing: the input; a file of other functions, headed by a link to the file (`file`); or a
  * folded component, a chip centred in the height its lines need.
  */
 export interface Box {
   key: string;
   input?: ViewNode;
-  file?: { id: string; path: string };
+  file?: Node;
   folded?: ViewNode;
   rows: Row[];
   details?: Rect;
@@ -136,6 +136,7 @@ function select(view: View) {
   const items = childrenOf(inputNode.id).flatMap(node => [{ node, depth: 0 }, ...childrenOf(node.id).map(child => ({ node: child, depth: 1 }))]);
   const inside = new Set(items.map(item => item.node.id));
   const calls = view.edges.filter(edge => edge.kind === 'calls' || edge.kind === 'reaches');
+  const files = new Map<string, Node>();
   const groupOf = (id: string) => {
     if (folded.has(id)) {
       return `folded ${id}`;
@@ -144,7 +145,8 @@ function select(view: View) {
     if (file === undefined) {
       throw new Error(`the code view gives ${id} without the file it is in`);
     }
-    return `file ${file}`;
+    files.set(file.id, file);
+    return `file ${file.id}`;
   };
   const members = new Map<string, ViewNode[]>();
   const called = new Set<string>();
@@ -162,12 +164,12 @@ function select(view: View) {
     }
   }
   const channelOf = (edge: ViewEdge): Channel => ([edge.from, edge.to].some(id => !inside.has(id) && called.has(groupOf(id))) ? 'right' : 'left');
-  return { inputNode, items, calls, members, called, channelOf };
+  return { inputNode, items, calls, members, called, channelOf, files };
 }
 
 /** Lays the code view out. */
 export function layOutCode(view: View): CodeLayout {
-  const { inputNode, items, calls, members, called, channelOf } = select(view);
+  const { inputNode, items, calls, members, called, channelOf, files } = select(view);
   // A row (or a folded component) is as tall as the lines at its busiest wall need.
   const ports = new Map<string, number>();
   for (const edge of calls) {
@@ -188,8 +190,11 @@ export function layOutCode(view: View): CodeLayout {
       const height = heightOf(first.id, CHIP_HEIGHT);
       return { key, folded: first, rows: [{ node: first, depth: 0, rect: { x: 0, y: 0, width, height } }], width, height };
     }
-    const file = { id: key.slice('file '.length), path: first.origin.path };
-    return { ...boxOf(key, shortPath(file.path), bySource(group).map(node => ({ node, depth: 0 })), id => heightOf(id, ROW), 0), file };
+    const file = files.get(key.slice('file '.length));
+    if (file === undefined) {
+      throw new Error(`the code view's group ${key} has no file`);
+    }
+    return { ...boxOf(key, shortPath(file.origin.path), bySource(group).map(node => ({ node, depth: 0 })), id => heightOf(id, ROW), 0), file };
   });
   const left = groups.filter(box => !called.has(box.key));
   const right = groups.filter(box => called.has(box.key));

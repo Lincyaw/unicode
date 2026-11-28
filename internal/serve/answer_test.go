@@ -577,7 +577,7 @@ func sameFiles(nodes []ViewNode, g *graph.Graph) string {
 		}
 		got := ""
 		if n.File != nil {
-			got = *n.File
+			got = n.File.Id
 		}
 		if got != want {
 			return fmt.Sprintf("it gives %q the file %q, not %q, the code file at %s", n.Id, got, want, n.Origin.Path)

@@ -36,7 +36,7 @@ function FileBox({ box, details }: { box: Box; details?: number }) {
           {box.input.form === 'file' ? shortPath(box.input.title) : box.input.title}
         </BoxHead>
       )}
-      {box.file && <BoxHead id={box.file.id}><Icon glyph={FileCode} size="tiny" />{shortPath(box.file.path)}</BoxHead>}
+      {box.file && <BoxHead id={box.file.id}><Icon glyph={FileCode} size="tiny" />{shortPath(box.file.origin.path)}</BoxHead>}
       {box.rows.map(row => {
         const bound = bindingOf(row.node);
         return (

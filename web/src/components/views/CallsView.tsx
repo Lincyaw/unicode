@@ -39,25 +39,18 @@ function toneOf(edge: ViewEdge, details: ReadonlySet<string>): Line['tone'] {
   return details.has(edge.from) || details.has(edge.to) ? 'faint' : 'plain';
 }
 
-/** What the roots reach along the view's calls, the roots left out: the callees. */
-function calleesOf(roots: ReadonlySet<string>, calls: ViewEdge[]): Set<string> {
-  const reached = new Set<string>();
-  const queue = [...roots];
-  for (let at = queue.shift(); at !== undefined; at = queue.shift()) {
-    for (const edge of calls) {
-      if (edge.from === at && !roots.has(edge.to) && !reached.has(edge.to)) {
-        reached.add(edge.to);
-        queue.push(edge.to);
-      }
-    }
+/** Where the view says a node stands (CallSide); the calls view gives every node its side. */
+function sideOf(node: ViewNode | undefined): NonNullable<ViewNode['side']> {
+  if (node?.side === undefined) {
+    throw new Error(`the calls view gives ${node?.id ?? 'a node'} no side`);
   }
-  return reached;
+  return node.side;
 }
 
 /**
  * The calls view (Figma 04): the roots, which are the input and the functions realizing it, in the middle; the functions
- * calling a root on their left; the salient functions the roots call or reach on their right, column by column. A
- * function both called by a root and calling one stands right. A design operation stands over the functions realizing
+ * calling a root on their left; the salient functions the roots call or reach on their right, column by column. Each
+ * node stands on the side the view gives it (`side`); the page derives none. A design operation stands over the functions realizing
  * it, joined to each by its realizes line. A reaches edge, dashed, counts the detail functions it passes; functions of
  * other components merge into their folded component, the line counting the calls it stands for; an expanded function
  * shows the detail functions it calls. The lines run as layered.ts lays them, each on a track of its own, with their
@@ -68,18 +61,18 @@ export function CallsView({ view }: { view: View }) {
   const folded = new Set(view.folded);
   const details = new Set(view.nodes.filter(node => stateOf(node, folded) === 'detail').map(node => node.id));
   const input = view.input.id;
+  const nodes = new Map(view.nodes.map(node => [node.id, node]));
   const bindings = view.edges.filter(edge => edge.kind === 'realizes' && edge.to === input);
   const realizers = bindings.map(edge => edge.from);
-  const roots = new Set([input, ...realizers]);
   const calls = view.edges.filter(edge => edge.kind !== 'realizes');
-  const callees = calleesOf(roots, calls);
+  const callee = (id: string) => sideOf(nodes.get(id)) === 'callee';
   const stacks: Stack[] = realizers.length > 0
     ? [{ id: `stack ${input}`, members: [{ id: input, indent: 0 }, ...realizers.map(id => ({ id, indent: GUTTER_STEP * (realizers.length + 1) }))] }]
     : [];
   // A call from a callee back to a root or to a caller ranks the other way, so that callers stay left and callees right.
   const callLinks: LayeredLink[] = calls.map(edge => {
     const mark = markOf(edge);
-    return { id: edgeKey(edge), from: edge.from, to: edge.to, reversed: callees.has(edge.from) && !callees.has(edge.to), ...(mark ? { mark } : {}) };
+    return { id: edgeKey(edge), from: edge.from, to: edge.to, reversed: callee(edge.from) && !callee(edge.to), ...(mark ? { mark } : {}) };
   });
   const layout = layOut(view.nodes.map(node => ({ id: node.id, width: chipWidth(node.title, stateOf(node, folded) !== 'detail'), height: CHIP_HEIGHT })), callLinks, 'LR', SPACING, { stacks });
   const rectOf = (id: string): Rect => {

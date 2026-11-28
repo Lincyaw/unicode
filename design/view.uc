@@ -27,13 +27,20 @@ type C4Level enum "C4 视图的层级：系统上下文（人、系统、外部�
   value container
 }
 
+type CallSide enum "调用视图中一个节点所在的一侧：根是输入或实现它的函数，被调用方是根沿调用能到达的函数或代表了这样的函数的折叠容器，其余的是调用方" {
+  value caller
+  value root
+  value callee
+}
+
 type NotApplicable error "这种视图不适用于这个节点，或者系统文件没有声明这种记法"
 
-type ViewNode record "视图画出的一个节点，加上卡片上显示的内容：类型的成员比较 members、容器中的内容 contents，以及未画出的细节函数的个数 details" {
+type ViewNode record "视图画出的一个节点，加上卡片上显示的内容：类型的成员比较 members、容器中的内容 contents、未画出的细节函数的个数 details，以及调用视图中它所在的一侧 side" {
   extends graph.Node
   field members: list<check.Member>
   field contents: list<ViewNode>
   field details: int
+  field side: optional<CallSide>
 }
 
 type EdgeLabel record "边承载的一个操作：操作的标识 op，以及标签上的写法 text，即设计中的名称，人发起的调用另带步骤的实参" {
@@ -118,7 +125,7 @@ property view-names-input-ancestors invariant "视图适用时，输入是图中
   manual "需要沿 contains 逐层向上找出输入的全部祖先，表达式没有递归，不能沿边追溯任意多层"
 }
 
-property view-cards-show-contents invariant "视图中卡片附带的成员、容器的内容、未画出的细节函数的个数和边承载的操作（各带标识和写法），与按 design.md §7.5.1 的定义直接算出的相同" {
+property view-cards-show-contents invariant "视图中卡片附带的成员、容器的内容、未画出的细节函数的个数、调用视图中各节点所在的一侧和边承载的操作（各带标识和写法），与按 design.md §7.5.1 的定义直接算出的相同" {
   about select, check.members
   forall request: Request generated "一张随机的图（各种关注度的容器、带字段或枚举值的类型、成员与之有同有缺有异有多的代码类型、显著和细节的函数、带调用的依赖），以及一次任意种类的视图请求：输入约六分之五是该视图适用的节点，其余是任意节点或空串，零至四个展开的标识约四分之三是视图中能展开的项，其余是图中的容器、函数或不存在的名称"
   manual "需要把字段的文本拆成名称和类型再与代码类型的字段逐项比较，表达式不能切分字符串"

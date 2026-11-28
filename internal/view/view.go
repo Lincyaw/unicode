@@ -48,6 +48,19 @@ const (
 	C4LevelContainer C4Level = "container"
 )
 
+// CallSide is where a node of the calls view stands: a root (the input or
+// a function realizing it), a callee (a function the roots reach, or a
+// folded container standing for one) or a caller (any other).
+//
+//uc:realizes view.CallSide
+type CallSide string
+
+const (
+	CallSideCaller CallSide = "caller"
+	CallSideRoot   CallSide = "root"
+	CallSideCallee CallSide = "callee"
+)
+
 // NotApplicable is the error of Select for an input the view does not
 // apply to, or a labelled notation the system file does not declare.
 //
@@ -70,6 +83,7 @@ type ViewNode struct {
 	Members  []check.Member `json:"members,omitempty"`
 	Contents []ViewNode     `json:"contents,omitempty"`
 	Details  int            `json:"details,omitempty"`
+	Side     *CallSide      `json:"side,omitempty"`
 }
 
 // EdgeLabel is an operation an edge carries: its identity, and how the

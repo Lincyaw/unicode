@@ -296,6 +296,14 @@ func checkViewCardsShowContents(t rapid.TB, request Request) {
 		if details := w.details(n.Id, want.nodes); n.Details != details {
 			t.Fatalf("the %s view of %q counts %d detail functions in %q that it does not draw, not %d", request.Kind, request.Id, n.Details, n.Id, details)
 		}
+		switch {
+		case request.Kind != ViewKindCalls && n.Side != nil:
+			t.Fatalf("the %s view of %q gives %q the side %q, which only the calls view gives", request.Kind, request.Id, n.Id, *n.Side)
+		case request.Kind == ViewKindCalls && n.Side == nil:
+			t.Fatalf("the calls view of %q gives %q no side, not %q", request.Id, n.Id, w.side(input, n.Id, want))
+		case request.Kind == ViewKindCalls && *n.Side != w.side(input, n.Id, want):
+			t.Fatalf("the calls view of %q gives %q the side %q, not %q", request.Id, n.Id, *n.Side, w.side(input, n.Id, want))
+		}
 	}
 	for _, e := range got.Edges {
 		stands := want.edges[edgeKey{e.Kind, e.From, e.To}]

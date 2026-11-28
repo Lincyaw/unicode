@@ -66,6 +66,16 @@ model Member {
   status?: Status;
 }
 
+/**
+ * Where a node of the calls view stands: a root (the input or a function realizing it), a callee (a function the roots
+ * reach along calls and reaches edges, or a folded container standing for one), or a caller (any other).
+ */
+enum CallSide {
+  caller,
+  root,
+  callee,
+}
+
 /** A node a view draws, with what its card shows beyond the node. */
 model ViewNode {
   ...Node;
@@ -82,8 +92,14 @@ model ViewNode {
   /** A code file or type: how many detail functions it contains that the view does not draw */
   details?: int32;
 
-  /** A code type or function: the identity of the code file it is declared in */
-  file?: string;
+  /**
+   * A code type or function: the code file it is declared in, the file whose path is its origin's; a method's can be
+   * another file than its receiver type's. The same shape as an entity's `code.file`.
+   */
+  file?: Node;
+
+  /** The calls view only: where the node stands, left of the roots, a root, or right of them (CallSide) */
+  side?: CallSide;
 
   /** M6: the latest results and coverage, for a case, a property, a flow, a step or a function */
   evidence?: Evidence;

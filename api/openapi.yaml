@@ -910,6 +910,15 @@ components:
         - context
         - container
       description: 'The level the C4 view draws: the system with its persons and external systems, or the containers inside it.'
+    CallSide:
+      type: string
+      enum:
+        - caller
+        - root
+        - callee
+      description: |-
+        Where a node of the calls view stands: a root (the input or a function realizing it), a callee (a function the roots
+        reach along calls and reaches edges, or a folded container standing for one), or a caller (any other).
     CaseDetail:
       type: object
       required:
@@ -2486,8 +2495,15 @@ components:
           format: int32
           description: 'A code file or type: how many detail functions it contains that the view does not draw'
         file:
-          type: string
-          description: 'A code type or function: the identity of the code file it is declared in'
+          allOf:
+            - $ref: '#/components/schemas/Node'
+          description: |-
+            A code type or function: the code file it is declared in, the file whose path is its origin's; a method's can be
+            another file than its receiver type's. The same shape as an entity's `code.file`.
+        side:
+          allOf:
+            - $ref: '#/components/schemas/CallSide'
+          description: 'The calls view only: where the node stands, left of the roots, a root, or right of them (CallSide)'
         evidence:
           allOf:
             - $ref: '#/components/schemas/Evidence'

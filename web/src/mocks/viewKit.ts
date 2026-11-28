@@ -1,4 +1,4 @@
-import { ancestorsOf, childrenOf, diagnosticsAbout, evidenceOf, fileOf, full, membersOf, raw, subjectsOf, withStatus } from './graph';
+import { ancestorsOf, childrenOf, codeFileOf, diagnosticsAbout, evidenceOf, full, membersOf, plain, raw, subjectsOf, withStatus } from './graph';
 import type { C4Level, ClassLayer, EdgeLabel, RawEdge, View, ViewEdge, ViewKind, ViewNode } from './schemaTypes';
 
 /* What every view shares: drawing a node or an edge, folding, and putting the answer together. */
@@ -16,8 +16,8 @@ export const DDD_TYPE_LABELS = ['aggregate', 'entity', 'value', 'domain-service'
 export function viewNode(id: string, extras: Partial<ViewNode> = {}): ViewNode {
   const evidence = evidenceOf(id);
   const node = raw(id);
-  const file = node.layer === 'code' && (node.kind === 'type' || node.kind === 'op') ? fileOf(id) : undefined;
-  return { ...full(id), ...(evidence ? { evidence } : {}), ...(file ? { file } : {}), ...extras };
+  const file = node.layer === 'code' && (node.kind === 'type' || node.kind === 'op') ? codeFileOf(id) : undefined;
+  return { ...full(id), ...(evidence ? { evidence } : {}), ...(file ? { file: plain(file) } : {}), ...extras };
 }
 
 export function viewEdge(each: RawEdge, extras: Partial<ViewEdge> = {}): ViewEdge {
