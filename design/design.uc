@@ -44,6 +44,10 @@ op loadForExploration(files: list<syntax.File>) -> Explored "供 unicode test --
 
 op load(files: list<syntax.File>) -> Loaded "把 files 中的语法树载入成设计层：建出节点和边，解析引用，并检查只需设计就能判断的约束"
 
+op loadSources(sources: list<syntax.Source>) -> Loaded pure "解析 sources 中的每个源文件，把没有诊断的语法树交给 load；诊断是各文件的解析诊断和载入诊断，与 sources 的次序无关"
+
+op loadSourcesForExploration(sources: list<syntax.Source>) -> Explored pure "与 loadSources 一样解析 sources 中的每个源文件，再把没有诊断的语法树交给 loadForExploration；诊断是各文件的解析诊断和载入诊断"
+
 property accepts-valid-design invariant "合法的设计载入后没有诊断，图中的节点和边恰是 sample 列出的那些，标识按 model.md §7 写出，sample 列出属性的节点和边也恰有这些属性" {
   about load
   forall sample: Sample generated "一组随机的合法文件：约三分之一是 contract-graph-is-declared 或 returned-value-contract-is-declared 的黑盒契约，其余是系统文件、至多三层的组件文件和录制文件，含各种形式的类型、操作、流程、步骤、性质、限定和用例，名称约四分之一取关键字，满足只需设计就能判断的全部约束"

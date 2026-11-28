@@ -18,6 +18,12 @@ type File object "一个设计文件或录制文件的语法树：路径、种�
   op print() -> bytes "按规范格式打印"
 }
 
+type Source record "一个源文件：仓库中的相对路径、按路径得到的种类和原始字节" {
+  field path: string
+  field kind: FileKind
+  field text: bytes
+}
+
 type Parsed record "解析的结果：没有诊断时有语法树，有诊断时只有诊断" {
   field file: optional<File>
   field diagnostics: list<diag.Diagnostic>

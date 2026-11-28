@@ -84,13 +84,16 @@ func load(files []syntax.File, exploring bool) Explored {
 		}
 	}
 
-	slices.SortFunc(l.diags, func(a, b diag.Diagnostic) int {
-		return cmp.Or(cmp.Compare(a.Position.Path, b.Position.Path), cmp.Compare(a.Position.Line, b.Position.Line),
-			cmp.Compare(a.Position.Column, b.Position.Column), cmp.Compare(a.Code, b.Code), cmp.Compare(a.Message, b.Message))
-	})
+	slices.SortFunc(l.diags, compareDiagnostics)
 	slices.Sort(l.discarded)
 	slices.Sort(l.orphaned)
 	return Explored{Loaded: Loaded{Graph: l.build(), Diagnostics: l.diags}, Discarded: l.discarded, Orphaned: l.orphaned}
+}
+
+// compareDiagnostics orders diagnostics by path, line, column, code and message.
+func compareDiagnostics(a, b diag.Diagnostic) int {
+	return cmp.Or(cmp.Compare(a.Position.Path, b.Position.Path), cmp.Compare(a.Position.Line, b.Position.Line),
+		cmp.Compare(a.Position.Column, b.Position.Column), cmp.Compare(a.Code, b.Code), cmp.Compare(a.Message, b.Message))
 }
 
 // loader holds the nodes and edges declared so far. Declarations are read in
