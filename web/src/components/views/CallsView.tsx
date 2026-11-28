@@ -1,26 +1,28 @@
 import type { View, ViewEdge, ViewNode } from '../../api/types';
-import { ABOUT, MARKS, SECTIONS, VIEW_NAMES } from '../../terms';
-import { Tag } from '../../ui/content';
+import { ABOUT, SECTIONS, VIEW_NAMES } from '../../terms';
 import { ButtonLink } from '../../ui/controls';
-import { InfoHint } from '../../ui/hint';
 import { Icon } from '../../ui/icons';
 import { Canvas, Placed } from '../canvas/Canvas';
-import { CHIP_HEIGHT, chipWidth, countBox } from '../canvas/sizes';
-import { LineMarks, Lines, type Line } from '../canvas/Edges';
-import { BADGE_SIDES } from '../canvas/markers';
-import { arrange, route, routeThrough, type Link as LayoutLink, type Rect, type Route } from '../canvas/layout';
+import { portNear } from '../canvas/channels';
+import { LineMarks, Lines, type Line, type LineMark } from '../canvas/Edges';
+import { layOut, type LayeredLink, type Stack } from '../canvas/layered';
+import { routeThrough, type Rect, type Route } from '../canvas/layout';
+import { CHIP_HEIGHT, chipWidth } from '../canvas/sizes';
 import { statusOf } from '../marks/format';
-import { ViaTag } from '../details/sections';
-import { ChevronUp, Merge } from '../marks/icons';
+import { ChevronUp } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
-import { edgeKey } from './graphParts';
+import { CallMark } from './CallMark';
+import { edgeKey, markOf } from './graphParts';
 import styles from './views.module.css';
 
-const SPACING = { node: 28, rank: 160 };
-const DETAIL_GAP = 72;
-const DETAIL_DROP = 96;
-const BUS_ABOVE = 28;
+const SPACING = { node: 28, rank: 72 };
+
+/** How far apart the lines from the functions realizing a design operation run up to it, in the gutter left of those functions. */
+const GUTTER_STEP = 8;
+
+/** The width of the button that collapses the view's expansions, under the drawing. */
+const COLLAPSE_WIDTH = 120;
 
 /** How a function of the calls view is drawn: salient, a detail shown on request, or a folded component. */
 function stateOf(node: ViewNode, folded: ReadonlySet<string>): 'default' | 'detail' | 'folded' {
@@ -30,105 +32,96 @@ function stateOf(node: ViewNode, folded: ReadonlySet<string>): 'default' | 'deta
   return node.kind === 'op' && !node.salient ? 'detail' : 'default';
 }
 
-function lineOf(edge: ViewEdge, details: ReadonlySet<string>): Line['tone'] {
+function toneOf(edge: ViewEdge, details: ReadonlySet<string>): Line['tone'] {
   if (edge.kind === 'reaches') {
     return 'reach';
   }
   return details.has(edge.from) || details.has(edge.to) ? 'faint' : 'plain';
 }
 
-/**
- * A line to or from a detail function in the row under the drawing: down from a salient function to a bus above the
- * row and into the detail's top, along the row between two details, or up from a detail into a salient function.
- */
-function detailRoute(from: Rect, to: Rect, row: number): Route {
-  const bus = row - BUS_ABOVE;
-  if (from.y < row && to.y >= row) {
-    const x1 = from.x + Math.min(from.width / 3, 48);
-    const x2 = to.x + to.width / 2;
-    return routeThrough([{ x: x1, y: from.y + from.height }, { x: x1, y: bus }, { x: x2, y: bus }, { x: x2, y: to.y }], { x: x2, y: bus });
+/** What the roots reach along the view's calls, the roots left out: the callees. */
+function calleesOf(roots: ReadonlySet<string>, calls: ViewEdge[]): Set<string> {
+  const reached = new Set<string>();
+  const queue = [...roots];
+  for (let at = queue.shift(); at !== undefined; at = queue.shift()) {
+    for (const edge of calls) {
+      if (edge.from === at && !roots.has(edge.to) && !reached.has(edge.to)) {
+        reached.add(edge.to);
+        queue.push(edge.to);
+      }
+    }
   }
-  if (from.y >= row && to.y >= row) {
-    const [x1, x2] = to.x >= from.x ? [from.x + from.width, to.x] : [from.x, to.x + to.width];
-    const y = from.y + from.height / 2;
-    return routeThrough([{ x: x1, y }, { x: x2, y }]);
-  }
-  const x = from.x + from.width / 2;
-  return routeThrough([{ x, y: from.y }, { x, y: to.y + to.height }]);
+  return reached;
 }
 
 /**
- * The calls view (Figma 04): the salient functions an operation's code calls or reaches. A reaches edge, dashed,
- * counts the detail functions it passes; functions of other components merge into their folded component with how
- * many calls go there; an expanded function shows the detail functions it calls.
+ * The calls view (Figma 04): the roots, which are the input and the functions realizing it, in the middle; the functions
+ * calling a root on their left; the salient functions the roots call or reach on their right, column by column. A
+ * function both called by a root and calling one stands right. A design operation stands over the functions realizing
+ * it, joined to each by its realizes line. A reaches edge, dashed, counts the detail functions it passes; functions of
+ * other components merge into their folded component, the line counting the calls it stands for; an expanded function
+ * shows the detail functions it calls. The lines run as layered.ts lays them, each on a track of its own, with their
+ * marks in columns of their own.
  */
 export function CallsView({ view }: { view: View }) {
   const links = useLinks();
   const folded = new Set(view.folded);
   const details = new Set(view.nodes.filter(node => stateOf(node, folded) === 'detail').map(node => node.id));
-  const widthOf = (node: ViewNode) => chipWidth(node.title, stateOf(node, folded) !== 'detail');
-  const salient = view.nodes.filter(node => !details.has(node.id));
-  const edgeLinks: LayoutLink[] = view.edges.filter(edge => !details.has(edge.from) && !details.has(edge.to)).map(edge => ({ id: edgeKey(edge), from: edge.from, to: edge.to }));
-  const arranged = arrange(salient.map(node => ({ id: node.id, width: widthOf(node), height: CHIP_HEIGHT })), edgeLinks, 'LR', SPACING);
-  const rects = new Map(arranged.rects);
-  // The detail functions an expansion shows run in a row under the drawing, in the order the calls reach them.
-  const root = view.nodes.find(node => node.bindings?.some(binding => binding.node.id === view.input.id)) ?? view.nodes[0];
-  let x = (root ? (rects.get(root.id)?.x ?? 0) + widthOf(root) / 2 : 0) + DETAIL_GAP;
-  const row = arranged.height + DETAIL_DROP;
-  const detailStart = x;
-  for (const node of view.nodes.filter(item => details.has(item.id))) {
-    rects.set(node.id, { x, y: row, width: widthOf(node), height: CHIP_HEIGHT });
-    x += widthOf(node) + DETAIL_GAP;
-  }
-  const routes = new Map(view.edges.flatMap(edge => {
-    const from = rects.get(edge.from);
-    const to = rects.get(edge.to);
-    if (!from || !to) {
-      return [];
-    }
-    if (!details.has(edge.from) && !details.has(edge.to)) {
-      return [[edgeKey(edge), route(from, to, 0, 1, 'LR')] as const];
-    }
-    return [[edgeKey(edge), detailRoute(from, to, row)] as const];
-  }));
-  const lines: Line[] = view.edges.flatMap(edge => {
-    const path = routes.get(edgeKey(edge));
-    return path ? [{ id: edgeKey(edge), route: path, tone: lineOf(edge, details), select: edge.kind === 'reaches' ? edgeKey(edge) : undefined }] : [];
+  const input = view.input.id;
+  const bindings = view.edges.filter(edge => edge.kind === 'realizes' && edge.to === input);
+  const realizers = bindings.map(edge => edge.from);
+  const roots = new Set([input, ...realizers]);
+  const calls = view.edges.filter(edge => edge.kind !== 'realizes');
+  const callees = calleesOf(roots, calls);
+  const stacks: Stack[] = realizers.length > 0
+    ? [{ id: `stack ${input}`, members: [{ id: input, indent: 0 }, ...realizers.map(id => ({ id, indent: GUTTER_STEP * (realizers.length + 1) }))] }]
+    : [];
+  // A call from a callee back to a root or to a caller ranks the other way, so that callers stay left and callees right.
+  const callLinks: LayeredLink[] = calls.map(edge => {
+    const mark = markOf(edge);
+    return { id: edgeKey(edge), from: edge.from, to: edge.to, reversed: callees.has(edge.from) && !callees.has(edge.to), ...(mark ? { mark } : {}) };
   });
+  const layout = layOut(view.nodes.map(node => ({ id: node.id, width: chipWidth(node.title, stateOf(node, folded) !== 'detail'), height: CHIP_HEIGHT })), callLinks, 'LR', SPACING, { stacks });
+  const rectOf = (id: string): Rect => {
+    const rect = layout.rects.get(id);
+    if (!rect) {
+      throw new Error(`the calls view placed no box for ${id}`);
+    }
+    return rect;
+  };
+  const routeOf = (edge: ViewEdge): Route => {
+    const route = layout.routes.get(edgeKey(edge));
+    if (!route) {
+      throw new Error(`the calls view laid out no line for ${edgeKey(edge)}`);
+    }
+    return route;
+  };
+  // Each realizing function's line leaves its left side, runs into the gutter on a step of its own and up to the operation.
+  const bindingLines: Line[] = bindings.map((edge, index) => {
+    const op = rectOf(input);
+    const fn = rectOf(edge.from);
+    const x = op.x + GUTTER_STEP * (index + 1);
+    const y = portNear(fn.y + fn.height / 2, 'start');
+    return { id: edgeKey(edge), route: routeThrough([{ x: fn.x, y }, { x, y }, { x, y: op.y + op.height }]), tone: 'plain' };
+  });
+  const lines: Line[] = [
+    ...calls.map(edge => ({ id: edgeKey(edge), route: routeOf(edge), tone: toneOf(edge, details), select: edge.kind === 'reaches' ? edgeKey(edge) : undefined })),
+    ...bindingLines,
+  ];
+  const marks: LineMark[] = calls.filter(edge => markOf(edge) !== undefined).map(edge => ({ id: edgeKey(edge), route: routeOf(edge), sides: ['center'], children: <CallMark edge={edge} /> }));
   const collapse = view.expand.length > 0 ? links.expandHref?.(view.expand[0] ?? '') : undefined;
-  const lowest = Math.max(...[...rects.values()].map(rect => rect.y + rect.height));
-  const width = Math.max(arranged.width, x);
-  const height = lowest;
+  const height = layout.height + (collapse ? 2 * CHIP_HEIGHT : 0);
   return (
-    <Canvas about={ABOUT.callsView} label={VIEW_NAMES.calls} width={width} height={height + (collapse ? 2 * CHIP_HEIGHT : 0)}>
-      <Lines width={width} height={height} lines={lines} selected={links.selected} onSelect={links.select} />
-      {view.nodes.map(node => {
-        const rect = rects.get(node.id);
-        const count = view.edges.find(edge => edge.to === node.id && edge.count !== undefined)?.count;
-        return rect && (
-          <Placed key={node.id} rect={rect} className={styles.chipSlot}>
-            <NodeChip node={node} state={stateOf(node, folded)} status={statusOf(node)} />
-            {count !== undefined && (
-              <span className={styles.count}>
-                <Tag><Icon glyph={Merge} size="tiny" />{count}</Tag>
-                <InfoHint subject={MARKS.merged}>{ABOUT.merged}</InfoHint>
-              </span>
-            )}
-          </Placed>
-        );
-      })}
-      <LineMarks
-        marks={view.edges.filter(edge => edge.kind === 'reaches').flatMap(edge => {
-          const path = routes.get(edgeKey(edge));
-          return path ? [{ id: edgeKey(edge), route: path, sides: BADGE_SIDES, children: <ViaTag count={edge.attrs.via?.length ?? 0} /> }] : [];
-        })}
-        obstacles={[...rects.values(), ...view.nodes.filter(node => folded.has(node.id)).flatMap(node => {
-          const rect = rects.get(node.id);
-          return rect ? [countBox(rect)] : [];
-        })]}
-      />
+    <Canvas about={ABOUT.callsView} label={VIEW_NAMES.calls} width={layout.width} height={height}>
+      <Lines width={layout.width} height={height} lines={lines} selected={links.selected} onSelect={links.select} />
+      {view.nodes.map(node => (
+        <Placed key={node.id} rect={rectOf(node.id)} className={styles.chipSlot}>
+          <NodeChip node={node} state={stateOf(node, folded)} status={statusOf(node)} />
+        </Placed>
+      ))}
+      <LineMarks marks={marks} obstacles={view.nodes.map(node => rectOf(node.id))} />
       {collapse && (
-        <Placed rect={{ x: detailStart, y: lowest + CHIP_HEIGHT, width: 120, height: CHIP_HEIGHT }} className={styles.chipSlot}>
+        <Placed rect={{ x: 0, y: layout.height + CHIP_HEIGHT, width: COLLAPSE_WIDTH, height: CHIP_HEIGHT }} className={styles.chipSlot}>
           <ButtonLink to={collapse} variant="line" size="small"><Icon glyph={ChevronUp} size="tiny" />{SECTIONS.collapse}</ButtonLink>
         </Placed>
       )}

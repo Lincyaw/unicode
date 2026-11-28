@@ -244,8 +244,10 @@ func raises(op graph.Node) []string {
 	return strings.Split(sig[0][at+len(" raises "):], ", ")
 }
 
-// calls: the input with the functions that realize it, and every salient
-// function they reach along calls and reaches edges between salient functions.
+// calls: the roots, which are the input and the functions that realize it;
+// every salient function the roots reach along calls and reaches edges
+// between salient functions; and the salient functions with a calls or
+// reaches edge straight into a root.
 func calls(ix index, r request) selection {
 	input := r.input
 	s := selection{kinds: []graph.EdgeKind{graph.EdgeKindCalls, graph.EdgeKindReaches, graph.EdgeKindRealizes}}
@@ -255,10 +257,22 @@ func calls(ix index, r request) selection {
 			s.add(f)
 		}
 	}
+	roots := slices.Clone(s.nodes)
+	isCall := func(e graph.Edge, end string) bool {
+		n := ix.nodes[end]
+		return (e.Kind == graph.EdgeKindCalls || e.Kind == graph.EdgeKindReaches) && n.Kind == graph.NodeKindOp && n.Salient
+	}
 	for i := 0; i < len(s.nodes); i++ {
 		for _, e := range ix.out[s.nodes[i]] {
-			if n := ix.nodes[e.To]; (e.Kind == graph.EdgeKindCalls || e.Kind == graph.EdgeKindReaches) && n.Kind == graph.NodeKindOp && n.Salient {
+			if isCall(e, e.To) {
 				s.add(e.To)
+			}
+		}
+	}
+	for _, root := range roots {
+		for _, e := range ix.in[root] {
+			if isCall(e, e.From) {
+				s.add(e.From)
 			}
 		}
 	}

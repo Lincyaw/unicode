@@ -12,9 +12,15 @@ import { arrange, routeThrough, type Arrangement, type Box, type Direction, type
  * through a channel of its own between the two.
  */
 
-/** A link to draw from `from` to `to`; `reversed` ranks it the other way round, such as a call back into a view's input. */
+/**
+ * A link to draw from `from` to `to`; `reversed` ranks it the other way round, such as a call back into a view's input.
+ * A `mark` of this size stands on the line in a column of marks beside the wall next to whichever of its ends meets
+ * fewer lines on its side (the end it goes to when they meet as many), as the code view's marks do; the route's `mid`
+ * is the mark's centre.
+ */
 export interface LayeredLink extends Link {
   reversed?: boolean;
+  mark?: { width: number; height: number };
 }
 
 /**
@@ -319,7 +325,13 @@ export function layOut(boxes: Box[], links: LayeredLink[], direction: Direction,
   // The channels: the one after each rank holds the legs between it and the next, and the lines from a box back to it.
   const channels = Array.from({ length: rankCount }, () => [] as ChannelLine[]);
   const legKey = (link: string, index: number) => `${link} ${index}`;
-  for (const [id, stops] of stopsOf) {
+  const sideCounts = Map.groupBy(meets, item => `${item.box} ${item.side}`);
+  const linesAt = (stop: Stop | undefined) => (stop && 'meet' in stop ? sideCounts.get(`${stop.meet.box} ${stop.meet.side}`)?.length ?? 0 : Infinity);
+  const marked = new Map<string, number>();
+  for (const link of ranked) {
+    const stops = stopsOf.get(link.id) ?? [];
+    // The mark goes on the first leg beside the box it leaves, or on the last beside the box it enters.
+    const onFirst = link.mark !== undefined && linesAt(stops[0]) < linesAt(stops.at(-1));
     for (const [index, stop] of stops.slice(0, -1).entries()) {
       const next = stops[index + 1];
       if (next === undefined) {
@@ -328,7 +340,14 @@ export function layOut(boxes: Box[], links: LayeredLink[], direction: Direction,
       // A leg runs from the start wall to the end wall going down the ranks, the other way going up, and from the start
       // wall back to it for a box's line to itself.
       const [leave, arrive]: [Wall, Wall] = next.rank > stop.rank ? ['start', 'end'] : next.rank < stop.rank ? ['end', 'start'] : ['start', 'start'];
-      channels[Math.min(stop.rank, next.rank)]?.push({ id: legKey(id, index), from: { y: crossAt(stop, leave), wall: leave }, to: { y: crossAt(next, arrive), wall: arrive } });
+      const markHere = link.mark !== undefined && (onFirst ? index === 0 : index === stops.length - 2);
+      if (markHere) {
+        marked.set(link.id, index);
+      }
+      channels[Math.min(stop.rank, next.rank)]?.push({
+        id: legKey(link.id, index), from: { y: crossAt(stop, leave), wall: leave }, to: { y: crossAt(next, arrive), wall: arrive },
+        ...(link.mark && markHere ? { mark: { wall: onFirst ? leave : arrive, ...link.mark } } : {}),
+      });
     }
   }
   const plans = channels.map((lines, rank) => (rank < rankCount - 1 || lines.length > 0 ? planChannel(lines, rank < rankCount - 1 ? spacing.rank : 0) : undefined));
@@ -359,6 +378,13 @@ export function layOut(boxes: Box[], links: LayeredLink[], direction: Direction,
 
   // The routes: from the first box's side to its rank's edge, through each channel and each rank passed, into the last box.
   const points = new Map<string, Point[]>();
+  const mids = new Map<string, Point>();
+  for (const [id, index] of marked) {
+    const leg = legs.get(legKey(id, index));
+    if (leg) {
+      mids.set(id, axis.point(leg.mid.x, leg.mid.y));
+    }
+  }
   for (const [id, stops] of stopsOf) {
     const path: Point[] = [];
     for (const [index, stop] of stops.entries()) {
@@ -409,7 +435,11 @@ export function layOut(boxes: Box[], links: LayeredLink[], direction: Direction,
   }
   return {
     rects,
-    routes: new Map([...points].map(([id, path]) => [id, routeThrough(tidy(path.map(point => ({ x: point.x - left, y: point.y - top }))))])),
+    routes: new Map([...points].map(([id, path]) => {
+      const moved = tidy(path.map(point => ({ x: point.x - left, y: point.y - top })));
+      const mid = mids.get(id);
+      return [id, mid ? routeThrough(moved, { x: mid.x - left, y: mid.y - top }) : routeThrough(moved)];
+    })),
     width: Math.max(0, ...corners.map(point => point.x - left)),
     height: Math.max(0, ...corners.map(point => point.y - top)),
   };

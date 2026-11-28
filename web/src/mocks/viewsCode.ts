@@ -1,4 +1,4 @@
-import { calleesOf, childrenOf, detailCalleesOf, findEdge, incoming, outgoing, ownerOf, raw, realizersOf } from './graph';
+import { calleesOf, callersOf, childrenOf, detailCalleesOf, findEdge, incoming, outgoing, ownerOf, raw, realizersOf } from './graph';
 import type { RawEdge, ViewNode } from './schemaTypes';
 import { Aggregates, focusOf, NotApplicable, viewEdge, viewNode, type Drawing } from './viewKit';
 
@@ -22,9 +22,9 @@ function reachesKey(each: RawEdge): string {
 }
 
 /**
- * The functions realizing an operation (or the function given) and the salient functions they call or reach;
- * callees in a support container merge into the container. `expand` adds a salient function's direct detail callees,
- * or the detail functions a reaches edge passes through.
+ * An operation with the functions realizing it (or the function given), the salient functions they call or reach, and the
+ * salient functions that call or reach them directly; a function in a support container merges into the container.
+ * `expand` adds a salient function's direct detail callees, or the detail functions a reaches edge passes through.
  */
 export function calls(input: string, expand: string[]): Drawing {
   const node = raw(input);
@@ -34,8 +34,9 @@ export function calls(input: string, expand: string[]): Drawing {
   const roots = node.layer === 'design' ? realizersOf(input) : [input];
   const home = roots[0] === undefined ? undefined : ownerOf(roots[0]);
   const expanded = new Set(expand);
-  const drawn: string[] = [...roots];
-  const edges: RawEdge[] = [];
+  // A design operation is drawn with the functions realizing it, each joined to it by its realizes edge.
+  const drawn: string[] = node.layer === 'design' ? [input, ...roots] : [...roots];
+  const edges: RawEdge[] = node.layer === 'design' ? incoming(input, 'realizes').filter(each => roots.includes(each.from)) : [];
   const aggregates = new Aggregates();
   const foldedContents = new Map<string, string[]>();
   const hiddenContainers = new Set<string>();
@@ -44,19 +45,26 @@ export function calls(input: string, expand: string[]): Drawing {
       drawn.push(id);
     }
   };
+  // Each call between a root and another function: the other end drawn, or merged into its folded container.
+  const place = (each: RawEdge, other: string) => {
+    const placement = placementOf(other, home, expanded);
+    const owner = ownerOf(other) ?? '';
+    if (placement === 'drawn') {
+      draw(other);
+      edges.push(each);
+    } else if (placement === 'folded') {
+      aggregates.add(each, other === each.from ? owner : each.from, other === each.to ? owner : each.to);
+      foldedContents.set(owner, [...new Set([...(foldedContents.get(owner) ?? []), other])]);
+    } else {
+      hiddenContainers.add(owner);
+    }
+  };
   for (const root of roots) {
     for (const each of calleesOf(root)) {
-      const placement = placementOf(each.to, home, expanded);
-      const owner = ownerOf(each.to) ?? '';
-      if (placement === 'drawn') {
-        draw(each.to);
-        edges.push(each);
-      } else if (placement === 'folded') {
-        aggregates.add(each, each.from, owner);
-        foldedContents.set(owner, [...new Set([...(foldedContents.get(owner) ?? []), each.to])]);
-      } else {
-        hiddenContainers.add(owner);
-      }
+      place(each, each.to);
+    }
+    for (const each of callersOf(root).filter(edge => raw(edge.from).salient)) {
+      place(each, each.from);
     }
   }
   for (const item of expand) {

@@ -1,6 +1,5 @@
 .chipSlot { position: absolute; display: flex; }
 .chipSlot > :first-child { width: 100%; }
-.count { position: absolute; top: 50%; left: calc(100% + var(--space-2)); display: flex; align-items: center; gap: var(--space-1); transform: translateY(-50%); }
 
 /* A file of the code view: a box of its types and functions, each with what it realizes. */
 .fileBox { position: relative; width: 100%; height: 100%; border: var(--rule-hairline); border-radius: var(--radius-md); background: var(--bg-page); }

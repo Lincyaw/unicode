@@ -123,11 +123,3 @@ export function chipWidth(label: string, dot = true): number {
 
 export const CHIP_HEIGHT = 30;
 
-/** The room a count, such as how many edges a merged edge stands for, takes after the chip it follows. */
-export const COUNT_ROOM = 72;
-
-/** The box a count takes after a chip. */
-export function countBox(chip: { x: number; y: number; width: number; height: number }): { x: number; y: number; width: number; height: number } {
-  return { x: chip.x + chip.width, y: chip.y, width: COUNT_ROOM, height: chip.height };
-}
-

@@ -65,6 +65,24 @@ export function fromField(edge: ViewEdge, nodes: ReadonlyMap<string, ViewNode>):
   return source?.kind === 'type' && (source.members ?? []).some(member => member.refers.includes(edge.to) || member.refers.some(ref => edge.to === ref.split('.')[0]));
 }
 
+/** The size the page draws a tag at, as the kit's Tag draws one with an icon and a number of these digits. */
+const TAG_HEIGHT = 24;
+function tagWidth(digits: number): number {
+  return 36 + 8 * digits;
+}
+
+/**
+ * The mark a call carries on its line (CallMark), if any, at about the size the page draws it: how many detail
+ * functions a reaches edge passes, and how many calls a merged edge stands for.
+ */
+export function markOf(edge: ViewEdge): { width: number; height: number } | undefined {
+  const tags = [
+    ...(edge.kind === 'reaches' ? [String(edge.attrs.via?.length ?? 0).length] : []),
+    ...(edge.count === undefined ? [] : [String(edge.count).length]),
+  ];
+  return tags.length > 0 ? { width: tags.reduce((sum, digits) => sum + tagWidth(digits), 0) + 4 * (tags.length - 1), height: TAG_HEIGHT } : undefined;
+}
+
 /** The number of imports and calls an undeclared dependency stands for, as its badge counts them. */
 export function evidenceCount(edge: ViewEdge): number {
   return (edge.attrs.imports?.length ?? 0) + (edge.attrs.calls?.length ?? 0);

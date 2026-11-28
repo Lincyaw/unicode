@@ -8,14 +8,14 @@ import { InfoHint } from '../../ui/hint';
 import { Icon } from '../../ui/icons';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { LineMarks, Lines, type Line, type LineMark } from '../canvas/Edges';
-import { ViaTag } from '../details/sections';
 import { relative, scopeOf, shortPath, statusOf } from '../marks/format';
-import { Code, FileCode, FlaskConical, KindIcon, Merge, Split } from '../marks/icons';
+import { Code, FileCode, FlaskConical, KindIcon, Split } from '../marks/icons';
 import { useLinks, useNodeActions } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
 import { NodeRef } from '../marks/NodeRef';
+import { CallMark } from './CallMark';
 import { bindingOf, layOutCode, rowLabel, type Box } from './codeLayout';
-import { edgeKey } from './graphParts';
+import { edgeKey, markOf } from './graphParts';
 import styles from './views.module.css';
 
 const COVERAGE_GAP = 24;
@@ -61,16 +61,6 @@ function FileBox({ box, details }: { box: Box; details?: number }) {
   );
 }
 
-/** What a line carries on it: how many detail functions a reaches edge passes, and how many calls a merged edge stands for. */
-function CallMark({ edge }: { edge: ViewEdge }) {
-  return (
-    <>
-      {edge.kind === 'reaches' && <ViaTag count={edge.attrs.via?.length ?? 0} />}
-      {edge.count !== undefined && <Tag><Icon glyph={Merge} size="tiny" />{edge.count}</Tag>}
-    </>
-  );
-}
-
 /**
  * The code view (Figma 11): the input file (or type) with its types and functions and what they realize; the files
  * whose functions call into it on its left and those it calls on its right, each headed by a link to the file; the
@@ -91,7 +81,7 @@ export function CodeView({ view }: { view: View }) {
   const lines: Line[] = layout.calls.map(edge => ({
     id: edgeKey(edge), route: routeOf(edge), tone: edge.kind === 'reaches' ? 'reach' : 'plain', select: edge.kind === 'reaches' ? edgeKey(edge) : undefined,
   }));
-  const marks: LineMark[] = layout.calls.filter(edge => edge.kind === 'reaches' || edge.count !== undefined)
+  const marks: LineMark[] = layout.calls.filter(edge => markOf(edge) !== undefined)
     .map(edge => ({ id: edgeKey(edge), route: routeOf(edge), sides: ['center'], children: <CallMark edge={edge} /> }));
   const inputRect = layout.boxes[0]?.rect;
   if (!inputRect) {

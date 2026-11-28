@@ -349,13 +349,24 @@ func (w world) candidates(a asked) map[string]bool {
 				add(f)
 			}
 		}
+		roots := maps.Clone(c)
+		salientCall := func(e graph.Edge, end string) bool {
+			n := w.nodes[end]
+			return (e.Kind == graph.EdgeKindCalls || e.Kind == graph.EdgeKindReaches) && n.Kind == graph.NodeKindOp && n.Salient
+		}
 		for grown := true; grown; {
 			grown = false
 			for _, e := range w.edges {
-				if n := w.nodes[e.To]; c[e.From] && !c[e.To] && (e.Kind == graph.EdgeKindCalls || e.Kind == graph.EdgeKindReaches) && n.Kind == graph.NodeKindOp && n.Salient {
+				if c[e.From] && !c[e.To] && salientCall(e, e.To) {
 					add(e.To)
 					grown = true
 				}
+			}
+		}
+		// The callers: one step back from a root, not further.
+		for _, e := range w.edges {
+			if roots[e.To] && salientCall(e, e.From) {
+				add(e.From)
 			}
 		}
 	case ViewKindProperty:
