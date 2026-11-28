@@ -75,10 +75,14 @@ function placeEntries(place: ViewPlace): [string, string | undefined][] {
 }
 
 function readPlace(kind: ViewKind, params: URLSearchParams): ViewPlace {
+  const expand = params.getAll('expand');
+  if (kind === 'code' && expand.length > 0) {
+    throw new Error('The address expands the code view, which the viewer draws unexpanded: remove its expand entries');
+  }
   return {
     kind,
     input: params.get('input') ?? undefined,
-    expand: params.getAll('expand'),
+    expand,
     select: params.get('select') ?? undefined,
     layer: readChoice(classLayerValues, params.get('layer'), 'the class view layer'),
     level: readChoice(c4LevelValues, params.get('level'), 'the C4 level'),

@@ -52,8 +52,9 @@ export function SizedFrame({ place, ...parts }: {
   const treeMax = Math.max(TREE_MIN, room - canvas - (drawers.includes('pane') ? 0 : paneWidth));
   const paneMax = Math.max(PANE_MIN, room - canvas - treeWidth);
   const [opened, setOpened] = useState<{ drawer: Drawer; at: string }>();
-  // A drawer whose column the window holds again is closed for good, so narrowing the window later does not reopen it.
-  if (opened !== undefined && !drawers.includes(opened.drawer)) {
+  // A drawer is closed for good once its column is back in the row or the reader moves elsewhere, so narrowing the
+  // window later, or coming back to the same place, does not reopen it.
+  if (opened !== undefined && (!drawers.includes(opened.drawer) || opened.at !== place)) {
     setOpened(undefined);
   }
   return (
@@ -62,7 +63,7 @@ export function SizedFrame({ place, ...parts }: {
       treeSize={{ width: treeWidth, min: TREE_MIN, max: treeMax, onResize: width => setTreeWidth(Math.min(width, treeMax)), onReset: () => setTreeWidth(treeStart) }}
       paneSize={{ width: paneWidth, min: PANE_MIN, max: paneMax, onResize: width => setPaneWidth(Math.min(width, paneMax)), onReset: () => setPaneWidth(paneStart) }}
       drawers={drawers}
-      drawer={opened?.at === place && drawers.includes(opened.drawer) ? opened.drawer : undefined}
+      drawer={opened?.drawer}
       onDrawer={drawer => setOpened(drawer && { drawer, at: place })}
     />
   );

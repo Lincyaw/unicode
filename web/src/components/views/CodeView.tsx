@@ -8,7 +8,6 @@ import { InfoHint } from '../../ui/hint';
 import { Icon } from '../../ui/icons';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { LineMarks, Lines, type Line, type LineMark } from '../canvas/Edges';
-import { CHIP_HEIGHT } from '../canvas/sizes';
 import { ViaTag } from '../details/sections';
 import { relative, scopeOf, shortPath, statusOf } from '../marks/format';
 import { Code, FileCode, FlaskConical, KindIcon, Merge, Split } from '../marks/icons';
@@ -106,7 +105,8 @@ export function CodeView({ view }: { view: View }) {
       <Lines width={layout.width} height={height} lines={lines} selected={links.selected} onSelect={links.select} />
       {layout.boxes.map(({ box, rect }) => (box.folded
         ? (
-          <Placed key={box.key} rect={{ ...rect, y: rect.y + (rect.height - CHIP_HEIGHT) / 2, height: CHIP_HEIGHT }} className={styles.chipSlot}>
+          // A folded component is as tall as the lines that meet it need, so each of them starts on it.
+          <Placed key={box.key} rect={rect} className={styles.chipSlot}>
             <NodeChip node={box.folded} state="folded" />
           </Placed>
         )

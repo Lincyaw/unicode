@@ -203,7 +203,7 @@ export function code(input: string, expand: string[]): Drawing {
   const typesIn = (container: string) => within(container).filter(id => raw(id).kind === 'type').sort();
   const counted = (id: string) => raw(id).layer === 'code' && (raw(id).kind === 'type' || raw(id).form === 'file');
   const nodes: ViewNode[] = [
-    ...[...drawn].map(id => (counted(id) ? viewNode(id, { details: detailCount(id, drawn) }) : viewNode(id))),
+    ...[...drawn].map(id => (counted(id) && detailCount(id, drawn) > 0 ? viewNode(id, { details: detailCount(id, drawn) }) : viewNode(id))),
     ...foldedContainers.map(container => viewNode(container, { contents: typesIn(container).map(type => viewNode(type)) })),
   ].sort((a, b) => (a.id < b.id ? -1 : 1));
   return { nodes, edges: [...edges.map(each => viewEdge(each)), ...aggregates.edges()], folded: foldedContainers, hidden: hiddenContainers.size };
