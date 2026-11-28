@@ -48,7 +48,7 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | `internal/run` | 对每种已配置的语言回放或探索，保存逐输入的报告和仓库的提交信息；录制之后由 CLI 重新生成驱动 | graph、lang、syntax、diag、evidence、repo |
 | `cmd/unicode` | 解析参数，调用其余组件，输出结果和退出码 | 全部 |
 | `python/uc` | Python 运行时包 `uc`（装饰器），随工具链发布 | — |
-| `monitor` | Go 运行时包 `github.com/lincyaw/unicode/monitor`：组合根接入监控文件的 `Wrap` 和 `Entry`，受监控的调用的采样、轨迹和流程的核对器（§6.6），随工具链发布，编进使用者的程序 | — |
+| `monitor` | Go 运行时包 `github.com/lincyaw/unicode/monitor`：组合根接入监控文件的 `Wrap` 和 `Entry`，受监控的调用的采样、轨迹和流程的核对器，结论经 OpenTelemetry 的报告和运行时的运行记录（§6.6），随工具链发布，编进使用者的程序 | — |
 
 `graph` 在最底层：设计层由 `design` 写入图，代码层由语言后端写入图，证据由 `run` 写入图，其余组件只读图。
 
@@ -72,6 +72,8 @@ unicode 把一个仓库的设计意图、代码和证据组织成一张图（[mo
 | 前端的接口类型和请求：由 OpenAPI 文档生成 TypeScript 类型，按类型发出请求 | `openapi-typescript` 7.13.0 与 `openapi-fetch` 0.17.0 |
 | 查看器画布的缩放与平移：滚轮、触控板和触摸屏的手势，拖动与点击的区分 | `d3-zoom` 3.0.1，及其所需的 `d3-selection` 3.0.1、`d3-transition` 3.0.2 |
 | 发布的程序：构建前端，再为各平台构建 `unicode`，附校验和（§8） | GoReleaser v2.20.3（`.goreleaser.yaml`），由 `goreleaser/goreleaser-action` v7.3.0 运行 |
+| 运行时判定的轨迹、事件和计数（§6.6）：`monitor` 只用 API | OpenTelemetry for Go 的 API `go.opentelemetry.io/otel`、`go.opentelemetry.io/otel/trace`、`go.opentelemetry.io/otel/metric`，v1.47.0（2026 年 10 月发布） |
+| `cmd/unicode` 在监控构建中导出轨迹和计数 | `go.opentelemetry.io/otel/sdk`、`go.opentelemetry.io/otel/sdk/metric`，以及 OTLP/HTTP 导出器 `go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp`、`go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp`，v1.47.0 |
 
 规范格式的打印没有现成的库，由 `syntax` 自己完成。
 
@@ -149,7 +151,7 @@ type Runner interface {
 
 1. `syntax` 解析 `design/` 下的设计文件和 `corpus/` 下的录制文件。`design` 把它们载入成设计层的节点和边，并检查用例的值是否符合符号的类型和限定。
 2. 每种已配置的语言，由它的后端抽取源码根目录下的代码。
-3. `graph` 合并设计层和代码层，再按 [model.md](model.md) §9 推导出 `owns`、方法的 `realizes`、`depends`、`traces`、`exercises`、显著性和 `reaches`。每条性质和流程的当前证据（[model.md](model.md) §3.5）从 `.unicode/runs/` 中取出，作为证据并入。
+3. `graph` 合并设计层和代码层，再按 [model.md](model.md) §9 推导出 `owns`、方法的 `realizes`、`depends`、`traces`、`exercises`、显著性和 `reaches`。每条性质和流程的当前证据（[model.md](model.md) §3.5），测试和运行时各一份，从 `.unicode/runs/` 中取出，作为证据并入。
 4. `check` 检查 [model.md](model.md) §10 的约束，把结果写成诊断和声明项的状态。
 5. `build` 把快照写到 `.unicode/graph.json`，搜索索引写到 `.unicode/index.json`，仓库所在的提交和工作区是否有改动写到 `.unicode/build.json`。快照中不含提交，相同的输入因此总是得到相同的快照。`.unicode/` 不进 Git。
 
@@ -343,7 +345,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 
 ### 6.6 运行时判定
 
-部署的程序在处理真实的调用时判定性质（[model.md](model.md) §3.4，[language.md](language.md) §4.7）。`unicode gen` 为此写出监控文件；运行时包 `monitor` 提供组合根的接入、采样、轨迹和流程的核对。
+部署的程序在处理真实的调用时判定性质（[model.md](model.md) §3.4，[language.md](language.md) §4.7）。`unicode gen` 为此写出监控文件；运行时包 `monitor` 提供组合根的接入、采样、轨迹和流程的核对，以及结论的报告。
 
 **受监控的调用。** 一次调用经过下面两种包装之一，才是受监控的调用：
 
@@ -387,6 +389,14 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 - 调用之前或之后的判定代码 panic 时，装饰器恢复它，记为检查错误，调用照常进行或照常返回。
 - 真实的调用 panic 时，装饰器记下一次反例，再以同一个值继续 panic。
 - 判定不在真实的调用期间持有锁；结论在后台写出，写不出时只计数（见下文的报告）。
+
+**报告。** 判定的结论经 OpenTelemetry 报告，并写成运行记录：
+
+- 每个反例、域外调用和检查错误是这次调用的 span 上的一个事件，名为 `unicode.counterexample`、`unicode.outside_domain` 和 `unicode.check_error`。事件的属性 `unicode.check` 是性质或流程的标识，`unicode.clause` 是不成立的子句、限定或前提，写作 `ensure#2`、`where#1`、`requires#1` 这样的序号，`unicode.input_hash` 是输入哈希；事件不带输入的值。
+- 计数器按 `unicode.check` 计数：`unicode.monitor.judged` 是判定的调用，`unicode.monitor.counterexamples`、`unicode.monitor.outside_domain` 和 `unicode.monitor.check_errors` 是三种结论，`unicode.monitor.write_failures` 是写不出的记录；直方图 `unicode.monitor.duration` 按 `unicode.op` 记下受监控的调用的耗时，以秒计。
+- `monitor` 只依赖 OpenTelemetry 的 API（`go.opentelemetry.io/otel` 的 `trace` 和 `metric`），导出由组合根装上的 SDK 完成。`cmd/unicode` 在带同一构建条件的文件中装上 SDK 和 OTLP/HTTP 导出器，按 OpenTelemetry 标准的 `OTEL_*` 环境变量配置，所以默认构建不含 SDK。没有装 SDK 时，span 没有标识，流程不核对次序，其余照常。
+- 每个**记录周期**（一分钟）结束时，`monitor` 为这个周期中有判定的性质和流程写出一份运行记录，格式与 `unicode test` 的相同（§8 运行的 JSON），执行场合为 `runtime`（[model.md](model.md) §3.5）。每条结论记下判定的调用数、域外调用数及各条不成立的限定或前提的次数、每个子句被判定的次数、检查错误、带 `within` 时耗时的第 95 百分位，以及反例：每个反例带冻结的输入、不成立的子句和时间；通过的调用不留输入。流程另记下核对的轨迹数。记录的提交和工作区是否有改动取自 Go 写进程序的构建信息，即 `runtime/debug.ReadBuildInfo` 的 `vcs.revision` 和 `vcs.modified`。记录写到环境变量 `UNICODE_MONITOR_DIR` 给出的目录（缺省为工作目录下的 `.unicode`）中的 `runs/`，文件名是内容的 SHA-256，所以几个副本同时写入互不覆盖。
+- 部署的程序写出的 `runs/` 中的文件放进仓库的 `.unicode/runs/` 之后，`unicode build` 像对测试的运行记录一样把它们编进快照的证据层（§5），查看器因此只从快照读到运行时的证据（CLAUDE.md 原则 12）。运行时的结论的执行输入哈希，是记录的提交上该性质或流程的执行输入哈希：`build` 像查询的 `--rev` 一样取出这个提交并建图求出，每个提交只建一次，结果按提交缓存在 `.unicode/cache/` 中。记录的工作区有改动，或者没有提交时，结论没有执行输入哈希，只是历史。
 
 ## 7 视图、切片与查询
 
@@ -474,6 +484,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 - **页面只放数据。** 说明性的文字，例如小节的说明、图例、读法和计数口径，收进标题旁的 ⓘ，悬停时显示；页面上不出现"点击……""另有……"之类的提示句。
 - **能用图标的用图标。** 节点种类、操作、状态和链接用图标表示，不写成文字标签，也不用手打的符号。图标取自 Lucide（前端为 `lucide-react`），16px（小字旁 14px，标签内 12px），笔画 1.4，颜色随文字。状态用圆点：绿色为已验证，黄色为缺失，空心为骨架，红色为不一致。
 - **操作标出效果和平均耗时。** 类型卡片、调用视图和代码视图中的操作和函数，以及操作页的标题，在名称旁用图标标出它的效果（[model.md](model.md) §9 D8）：没有效果，或者时间或随机数、文件系统、进程、网络中的每一种；效果不确定时不标。操作页另显示平均耗时（[model.md](model.md) §3.5），不确定时不显示。
+- **运行时的证据与测试的证据并列。** 性质和流程的证据按执行场合（[model.md](model.md) §3.5）分开显示，各以场合的图标标出。运行时的证据显示记录的提交和周期、判定的调用数、域外调用数及各条不成立的限定或前提的次数、每个子句的判定次数、反例的输入和不成立的子句，带 `within` 时另有耗时的第 95 百分位，流程另有核对的轨迹数。只有在运行时判定的性质和流程（[model.md](model.md) §3.4）才有运行时的证据；用例和反例的历史中，每一项也以图标标出执行场合。
 - **类型卡片显示内容。** 类型卡片列出设计中写出的字段、枚举值和操作签名，字段最多 6 个，其余折叠为"+n"，点"+n"在原处展开全部字段，画布让展开的卡片留在视野内；代码中多出的字段算细节，不列出。折叠的组件列出其中的类型名称，名称排成卡片高度所容的几行，放不下的截短并以省略号结尾，悬停时显示全名；操作签名同样截短。
 - **单击预览，双击进入。** 单击节点在右栏预览；双击节点，或点右栏标题旁的 ↗，进入实体页。卡片里提到的其他节点（字段的类型、操作、折叠组件中的类型、外部系统的操作）各自是一个点击目标，同样单击预览、双击进入；点卡片的其余部分预览卡片本身。一个控件不嵌在另一个控件里。
 - **画布保持可读，随手势移动。** 视图的画布按适合窗口的比例打开，但不小于 80%，放不下的部分由读者移动查看。按住 Ctrl 或 Cmd 转动滚轮、在触控板或触摸屏上双指捏合，以指针处为中心缩放，比例在 25% 到 200% 之间；直接转动滚轮、在触控板上双指滑动、用鼠标或单指拖动，都移动画布；拖动超过几个像素就不算点击，不会选中起点处的节点；从卡片里的引用、链接、ⓘ 和展开箭头上按下不拖动画布，留给它们自己的点击。画布上的拖动用于移动，因此不能拖选卡片中的文字，需要复制时到实体页中复制。右下角的缩小、放大和适合窗口与百分比始终一致。每个视图（输入、层和层级）的缩放和位置在本次会话中保留，回到该视图时恢复。画布本身不滚动：选中项不在视野内时（从设计树选中，或由地址给出），以及键盘把焦点移到视野外的节点或边时，画布把它移进视野并标出。
@@ -496,6 +507,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 | 设计树、详情栏、切换到浅色、切换到深色、搜索 | `list-tree`、`panel-right`、`sun`、`moon`、`search` |
 | 放大、缩小、适合窗口 | `plus`、`minus`、`maximize` |
 | 没有效果；效果 `time`、`fs`、`process`、`network`；平均耗时 | `lambda`；`clock`、`hard-drive`、`terminal`、`globe`；`timer` |
+| 执行场合 `test`、`runtime`；域外调用 | `test-tube`、`activity`；`circle-slash` |
 
 | 含义 | 页面用词 |
 | --- | --- |
@@ -529,12 +541,16 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 | 合并成一条的边；未画出的工具组件 | 合并的边；未画出的组件 |
 | 没有效果；效果种类 `time`、`fs`、`process`、`network` | 无效果；时间或随机数、文件系统、进程、网络 |
 | 操作的平均耗时 | 平均耗时 |
+| 证据的执行场合 `test`、`runtime` | 测试、运行时 |
+| 运行时判定的调用；子句被判定的次数 | 判定的调用；判定次数 |
+| 输入不适用于性质的受监控的调用 | 域外调用 |
+| 运行时耗时的第 95 百分位；流程核对的轨迹 | 第 95 百分位耗时；核对的轨迹 |
 
 #### 7.5.1 接口
 
 **数据来源。** 查看器显示的图、证据和评审只来自 `unicode build` 写出的快照 `.unicode/graph.json`，快照中已经编入证据层和评审层，服务端不读运行和评审存储；代码的摘录另从工作区读源文件，工作区的提交取自 build 记录和 git（见下文），比较的基准由命令行建图。载入快照时，服务端按 `unicode check` 的约束检查一遍，得到诊断和每个声明项的状态，用 `review.recorded` 从评审层还原出评审记录，并算出每个页面都要读的结果：每种视图的输入、按目标索引的评审结果，以及每个设计类型的成员与代码的比较；这些结果每个快照只算一次，与每个基准提交的比较和对它的评审计算也在一个快照上各只算一次。快照文件改变后（按修改时间和大小判断），下一次请求时重新载入；每个请求只从一个快照回答。`unicode test` 和 `unicode review record` 只写各自的存储，新的运行结果和评审记录由下一次 `unicode build` 编进快照之后，查看器才显示（`cli.stores-reach-viewer-through-build`）；存储的读取诊断由 `build` 报出。应答的时限由 `design/serve.uc` 中带 `within` 的两条性质给出。快照所在的工作区取自 `build` 写在快照旁边的 `build.json`：其中的提交和是否有改动，另由 git 给出该提交的缩写、说明、时间和检出在它上面的分支，git 读不出时这几项为空；记录的提交为 `null` 时只有是否有改动。没有 `build.json` 时，在读入快照时由 git 给出；`build.json` 不是 `{commit, dirty}` 时，快照算作读不出。比较的基准由命令行按查询的 `--rev` 的方式取出该提交并建图（`serve` 的 `Builder`），每个提交只建一次，在进程内保留；比较由 `graph.compare` 给出，`base` 和 `head` 的写法与 `unicode diff --format json` 相同，`head` 是快照所在的工作区。实体页的变更取自同一个比较：节点本身，以及在基准或快照中实现它的代码元素，各一项，没有变化的为 `unchanged`；代码类型和函数另有 `linesChanged`，即它的声明在基准提交中和在工作区中所占的各行之间，按 `git diff` 计的增加和删除的行数，一边没有时按空计。`/compare` 的各项不带 `linesChanged`。
 
-**约定。** 接口只读：视图、输入、展开、选中项和导航路径都记在页面地址中，服务端不保存状态。标识中含有 `.`、`#`、`:` 和 `/`，一律放在查询参数里，不放在路径中。接口的源文件是 `api/*.tsp`，`api/openapi.yaml` 由它生成，`make api-check` 确认二者一致；各字段的含义和取法以源文件中的说明为准。证据（运行、结果、覆盖，M6）和评审记录（M7）的字段是可选的，图中有了这些数据之后才给出。
+**约定。** 接口只读：视图、输入、展开、选中项和导航路径都记在页面地址中，服务端不保存状态。标识中含有 `.`、`#`、`:` 和 `/`，一律放在查询参数里，不放在路径中。接口的源文件是 `api/*.tsp`，`api/openapi.yaml` 由它生成，`make api-check` 确认二者一致；各字段的含义和取法以源文件中的说明为准。证据（运行、结果、覆盖，M6；运行时的证据，M8）和评审记录（M7）的字段是可选的，图中有了这些数据之后才给出。
 
 **形状。** 已有的形状都沿用，字段名与命令行的 JSON 相同：
 
@@ -618,6 +634,8 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 | 步骤预览：子步骤、所在调用、处理的错误（02、09） | `/entity` | `step.children`、`step.call`、`node.step.target` |
 | 步骤预览：代码追溯（02、09） | `/entity` | `step.traces`；`step.callSites` 中 calls 边的 `attrs.sites` |
 | 用例预览：取值、来源、历史、覆盖的函数（03） | `/entity` | `node.attrs.values`、`node.attrs.reason`；`evidence.history`、`case.covers`（M6） |
+| 证据的执行场合（03） | `/views/property`、`/entity` | `evidence.history` 各项的 `venue`（M8） |
+| 性质和流程：运行时的证据（03、06） | `/views/property`、`/entity` | `evidence.runtime`：`commit`、`from`、`to`、`judged`、`outsideDomain`（各项 `clause`、`calls`）、`clauses`（各项 `clause`、`judged`）、`counterexamples`（各项 `inputHash`、`clause`、`values`、`at`）、`p95`、`traces`；只有性质和流程节点才有（M8） |
 | 函数预览：实现、位置、签名、调用方、被调用方、细节函数（11） | `/entity` | `node.bindings`、`node.origin`；`code.declaration`、`code.callers`、`code.callees`、`code.details` |
 | reaches 预览：经过的细节函数、终点、相关步骤、展开（04） | `/edge` | `nodes`、`toNode`、`steps`、`views` |
 
@@ -671,7 +689,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 - **改写与输出**：改写在 POSIX 上是原子的（Windows 上不保证原子），并保留文件的权限，失败时不留下临时文件；写入或输出失败时退出码为 1。`cli.not-canonical` 的位置是与规范格式第一处不同的字节。`--help` 写到标准输出，退出码为 0。JSON 缩进两个空格。带 `--format json` 时，诊断是数据，写在标准输出的 JSON 中，标准错误只放日志；文本模式下，诊断写到标准错误，标准输出只列出改写了的或不是规范格式的文件。
 - **诊断的 JSON**：`{code, subject, path, line, column, message, fix}`。`code` 是稳定的诊断码，写作 `<组件>.<短横线名称>`，例如 `syntax.unexpected-token`；每条约束有一个或几个，修正办法不同的子规则各用一个。`subject` 是出错的节点、边或文件；`syntax` 和 `cli` 的诊断，`subject` 是文件的路径。
 - **生成的 JSON**：与 `lang.Generation` 同形，为 `{edits: [{path, content, createOnly}], diagnostics: [...]}`；`content` 是 UTF-8 源码字符串，不是字节的 base64。`--dry-run` 返回同样的生成计划，不写文件。有诊断时 `gen` 不写入任何文件；没有诊断时，文本模式只列出生成文件的路径。目标已有文件而没有生成标记时是冲突，退出码为 5。
-- **运行的 JSON**：与 `lang.RunReport` 同形，为 `{version, snapshot, commit, dirty, at, mode, results: [{id, passed, accepted, rejected, observations, differences, diagnostics, cases, codeTotal?, branchTotal?, errorTotal?}], diagnostics}`；cases 保存逐输入的冻结模型值、inputHash、覆盖、轨迹、耗时及结果，数组为空时也输出 `[]`。外层的 `diagnostics` 列出不属于任何一条结论的诊断：工具失败、检查错误（[language.md](language.md) E15）和结果写入失败，有这样的诊断时退出码为 10；工具链不存在仍为 7。外层没有诊断而有 `passed = false` 的结论时退出码为 11，该结论的 `diagnostics` 指出不成立的 `ensure` 或范围外的差异。观察失败可以另列在相关的结论中，但外层的 `diagnostics` 中必须也有。命令输出和 `.unicode/results.json` 均使用小驼峰字段，所有层级的诊断都使用上面的扁平 JSON 形状；`diag.Diagnostic` 的 JSON 编解码统一写成此形状。
+- **运行的 JSON**：与 `lang.RunReport` 同形，为 `{version, snapshot, commit, dirty, at, venue, mode, results: [{id, passed, accepted, rejected, observations, differences, diagnostics, cases, codeTotal?, branchTotal?, errorTotal?}], diagnostics}`；`venue` 是执行场合（[model.md](model.md) §3.5），`unicode test` 写 `test`。运行时的运行记录（§6.6）与它同形，`venue` 为 `runtime`，没有 `snapshot` 和 `mode`，`accepted` 是判定的调用数，结论另有 `outsideDomain`（各项为不成立的限定或前提 `clause` 和次数 `calls`）、`clauses`（各项为子句 `clause` 和判定的次数 `judged`）、`p95`（以纳秒计）和流程的 `traces`，`cases` 只有反例；cases 保存逐输入的冻结模型值、inputHash、覆盖、轨迹、耗时及结果，数组为空时也输出 `[]`。外层的 `diagnostics` 列出不属于任何一条结论的诊断：工具失败、检查错误（[language.md](language.md) E15）和结果写入失败，有这样的诊断时退出码为 10；工具链不存在仍为 7。外层没有诊断而有 `passed = false` 的结论时退出码为 11，该结论的 `diagnostics` 指出不成立的 `ensure` 或范围外的差异。观察失败可以另列在相关的结论中，但外层的 `diagnostics` 中必须也有。命令输出和 `.unicode/results.json` 均使用小驼峰字段，所有层级的诊断都使用上面的扁平 JSON 形状；`diag.Diagnostic` 的 JSON 编解码统一写成此形状。
 - **诊断码与规则**：违反规则的诊断码按规则列在 [language.md](language.md) 和 [model.md](model.md) 的附录 B 中。不属于任何规则的诊断码如下：
 
   | 诊断码 | 原因 |
@@ -795,6 +813,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 22. **运行时经接口包装，不改写代码**：Go 不改动调用处就截不住一次直接调用。测试中可以在内存中给源码插桩（§6.4），部署的程序却应当就是评审过的源码编出的。接口是组合根本来就掌握的接缝，装饰器包装在这里，业务代码不变；不经接口的函数只在入口包装，因为入口的函数值同样由组合根交出去。
 23. **监控文件带构建条件**：默认构建不含监控文件，`monitor.Wrap` 和 `monitor.Entry` 原样返回参数，程序的行为和开销与没有监控时相同；组合根在两种构建中是同一份源码，打开监控只是换一个构建条件。
 24. **判定深度和廉价都由效果推出**：效果（[model.md](model.md) §9 D8）已经是执行计划估计耗时的依据（§6.3），读文件、进程或网络的操作和适配器本来就慢，每次真实的调用再读一遍状态，开销和风险都落在用户身上。由效果推出不需要新的语法，也不会与代码不符：适配器改成读文件，它就不再廉价。
+25. **运行时的结论按提交求执行输入哈希**：部署的程序中没有图，求不出执行输入哈希；把哈希写进监控文件，则改动执行范围中任何一个函数体都要重新生成，`unicode gen --check` 会频繁失败。程序的构建信息已经带着提交，`build` 按提交建图求哈希，每个提交只建一次。
 
 ## 附录 B 待定
 

@@ -138,11 +138,13 @@
 ### 3.5 证据与评审记录
 
 - `run` 是在一个提交上执行一组性质和流程的一次运行；`result` 是一条性质或一个流程在一次运行中的结论。
+- 运行的**执行场合**是测试或运行时：`unicode test` 的运行是测试；受监控的程序在一个记录周期中的判定（§3.4，[design.md](design.md) §6.6）是运行时。
 - 黑盒契约的结果另记录有效执行数、拒绝的候选输入数（[language.md](language.md) E22、E23）、观察范围，以及失败子句的位置或范围外的差异。观察失败是检查错误（[language.md](language.md) E15），不当作取得了空的观察值，也不算反例。允许变化的范围属于设计，范围外的差异属于证据。
-- 每个用例的结果记下它的执行耗时，以及被测调用和调用序列中每次调用的操作与耗时。设计层操作 o 的**平均耗时**，是当前证据记下的调用中，操作为 o 的那些调用的耗时的平均值；没有这样的调用时，平均耗时不确定。
-- 一条性质或一个流程 p 的**执行范围**包括 p 本身；`unicode test --since` 的影响传播（[design.md](design.md) §6.3）会因其新增、删除或改变而选中 p 的节点和边；以及按 D8 的方式，从 p 的谓词、生成器、派生函数、观察适配器和安装器可达的函数。p 的**执行输入哈希**是执行范围按执行输入哈希的规则（[design.md](design.md) §7.6）编码的 SHA-256，另含模块依赖文件（Go 的 `go.mod` 和 `go.sum`）的内容、语言工具链的版本和 unicode 的版本。
-- 一个用例的**判定**是它执行得出的结论，即通过、反例或被前提拒绝，连同它的耗时；检查错误不是判定。判定按（p 的标识、用例的输入哈希、p 的执行输入哈希）保存和查找：三项都与一个已保存的判定相同时，沿用该判定，不再执行。
-- p 的**当前证据**是运行记录中执行输入哈希等于 p 当前执行输入哈希的最近一次结论，其中的判定可以是沿用的；p 的其余结论只是历史。
+- 运行时的结论记录判定的调用数、域外调用数及各条不成立的限定或前提的次数、每个子句被判定的次数、检查错误、带 `within` 时耗时的第 95 百分位，流程另记录核对的轨迹数。其中的反例是真实的调用，记下它的输入、不成立的子句和时间；判定通过的调用不留输入。
+- 每个用例的结果记下它的执行耗时，以及被测调用和调用序列中每次调用的操作与耗时。设计层操作 o 的**平均耗时**，是测试的当前证据记下的调用中，操作为 o 的那些调用的耗时的平均值；没有这样的调用时，平均耗时不确定。
+- 一条性质或一个流程 p 的**执行范围**包括 p 本身；`unicode test --since` 的影响传播（[design.md](design.md) §6.3）会因其新增、删除或改变而选中 p 的节点和边；以及按 D8 的方式，从 p 的谓词、生成器、派生函数、观察适配器和安装器可达的函数。p 的**执行输入哈希**是执行范围按执行输入哈希的规则（[design.md](design.md) §7.6）编码的 SHA-256，另含模块依赖文件（Go 的 `go.mod` 和 `go.sum`）的内容、语言工具链的版本和 unicode 的版本。运行时的结论的执行输入哈希，是受监控的程序构建所在的提交上 p 的执行输入哈希；程序从有改动的工作区构建，或者没有提交时，结论没有执行输入哈希。
+- 一个用例的**判定**是它执行得出的结论，即通过、反例或被前提拒绝，连同它的耗时；检查错误不是判定。判定按（p 的标识、用例的输入哈希、p 的执行输入哈希）保存和查找：三项都与一个已保存的判定相同时，沿用该判定，不再执行。判定只在测试中沿用。
+- p 的**当前证据**按执行场合各有一份：该场合的运行记录中，执行输入哈希等于 p 当前执行输入哈希的最近一次结论，测试的结论中的判定可以是沿用的；p 的其余结论只是历史。运行时的证据因此只对它运行时的代码版本有效。
 - 运行中由生成器产生、但没有录制的输入不作为 case 进入快照；完整运行记录可以保存其输入和覆盖，当前图只连接声明及录制的用例。
 - 用例执行到的代码和步骤记为 `covers` 边。
 - `review` 记录评审者、执行输入哈希（[design.md](design.md) §7.6）、提交与工作区信息、被评审的节点或边、当时的有效内容指纹、结论和意见；记录存于 `.unicode/reviews/`，不进入 Git。记录不可变，是否有效在读取当前图时重新计算，见 [design.md](design.md) §7.6。
@@ -444,7 +446,7 @@
 | 34 | `check.missing-observer`、`check.multiple-observers`、`check.observer-signature`、`check.observer-outside-container` | `check.rejects-broken-graph` |
 | 35 | `design.invalid-observation`、`design.invalid-change-path`、`lang.golang.expression-failed`、`lang.golang.frame-violation`、`lang.golang.observation-failed` | `design.rejects-broken-design`、`lang.golang.executes-contracts` |
 | 36 | 由性质验证：评审指纹决定观察适配器变化后的待审状态 | `review.evaluation-follows-content` |
-| 37 | `check.runtime-counterexample`、`check.runtime-purity-violation` | `evidence.attachment-preserves-input-identity`、`evidence.recordings-are-replayable` |
+| 37 | `check.runtime-counterexample`、`check.runtime-purity-violation`；运行时的当前证据中的反例待做：M8 | `evidence.attachment-preserves-input-identity`、`evidence.recordings-are-replayable` |
 | 38 | `design.invalid-codec`、`design.value-type-mismatch`、`lang.golang.input-codec-failed` | `design.codecs-are-typed`、`evidence.recordings-are-replayable` |
 | 39 | 待做：效果推导之后由 `check` 报 check.effect-in-pure-op | — |
 | 40 | 待做：派生输入和效果推导之后由 `check` 报 check.derived-input-value、check.missing-generated-value 和 check.nondeterministic-derivation | — |
