@@ -25,15 +25,17 @@ import (
 // carries, and the working tree it was read from. It does not change once
 // loaded.
 type state struct {
-	root              string
-	path              string
-	builtAt           time.Time
-	g                 graph.Graph
-	nodes             map[string]graph.Node
-	out, in           map[string][]graph.Edge
-	edges             map[string]graph.Edge
-	system            string
-	files             map[string]string
+	root    string
+	path    string
+	builtAt time.Time
+	g       graph.Graph
+	nodes   map[string]graph.Node
+	out, in map[string][]graph.Edge
+	edges   map[string]graph.Edge
+	system  string
+	files   map[string]string
+	// codeFiles maps a code file's path to the file's node.
+	codeFiles         map[string]string
 	checked           check.Checked
 	head              WorkingTree
 	records           []review.Record
@@ -102,6 +104,12 @@ func indexed(root string, g graph.Graph) *state {
 		st.edges[edgeID(e.Kind, e.From, e.To)] = e
 	}
 	st.files = files(st.nodes)
+	st.codeFiles = map[string]string{}
+	for _, n := range st.nodes {
+		if n.Layer == graph.LayerCode && n.Kind == graph.NodeKindContainer && n.Form == "file" {
+			st.codeFiles[n.Origin.Path] = n.Id
+		}
+	}
 	return st
 }
 

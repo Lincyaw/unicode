@@ -167,7 +167,7 @@ func (st *state) filesByCode(files []string) []string {
 	weights := map[string]weight{}
 	for _, f := range files {
 		w := weight{}
-		w.test = st.attr(f, "language") == "go" && golang.TestFile(st.attr(f, "path"))
+		w.test = st.attr(f, "language") == golang.NewBackend().Language() && golang.TestFile(st.attr(f, "path"))
 		for _, c := range st.within(f) {
 			w.test = w.test || st.verifies(c)
 			if len(st.targets(c, graph.EdgeKindRealizes)) > 0 {

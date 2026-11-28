@@ -528,6 +528,47 @@ func sameView(t rapid.TB, s *Server, req Request, resp Response, g *graph.Graph)
 	return why
 }
 
+//uc:checks serve.views-name-code-files
+func checkViewsNameCodeFiles(t rapid.TB, exchange Exchange) {
+	s, root, g := served(t, exchange)
+	defer removeAll(t, root)
+	for _, req := range exchange.Requests {
+		resp := s.Answer(req)
+		if resp.Status != http.StatusOK {
+			continue
+		}
+		if why := sameFiles(decode[View](t, req, resp).Nodes, &g); why != "" {
+			t.Fatalf("the answer to %s is wrong: %s", req, why)
+		}
+	}
+}
+
+// sameFiles tells why the file a view gives a node is wrong: a code type or
+// function carries the code file whose path is its origin's, and no other
+// node carries one.
+func sameFiles(nodes []ViewNode, g *graph.Graph) string {
+	files := map[string]string{}
+	for _, n := range g.Nodes() {
+		if n.Layer == graph.LayerCode && n.Kind == graph.NodeKindContainer && n.Form == "file" {
+			files[n.Origin.Path] = n.Id
+		}
+	}
+	for _, n := range nodes {
+		want := ""
+		if n.Layer == LayerCode && (n.Kind == NodeKindType || n.Kind == NodeKindOp) {
+			want = files[n.Origin.Path]
+		}
+		got := ""
+		if n.File != nil {
+			got = *n.File
+		}
+		if got != want {
+			return fmt.Sprintf("it gives %q the file %q, not %q, the code file at %s", n.Id, got, want, n.Origin.Path)
+		}
+	}
+	return ""
+}
+
 func cmpOr(whys ...string) string {
 	for _, w := range whys {
 		if w != "" {

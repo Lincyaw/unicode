@@ -76,6 +76,12 @@ property tabs-open-views invariant "实体页和视图的 tabs 按标签的次�
   manual "需要对图中每个节点调用 view.select 判断视图是否适用，表达式中只能调用纯操作，而 view.select 不是纯操作"
 }
 
+property views-name-code-files invariant "视图中代码层的类型和函数的 file 是路径与它的出处相同的代码文件，其他节点不带 file" {
+  about Server.answer
+  forall exchange: Exchange generated "一个随机小仓库的图和文件，每个组件有一至三个代码文件，方法有时写在它的类型之外的文件中，以及以其中一个代码文件或代码类型为输入的一至四个代码视图请求"
+  manual "需要解码 JSON 应答并按出处的路径在图中找出代码文件节点，表达式不能解析 JSON"
+}
+
 property code-tab-ranks-files invariant "组件的实体页没有代码的相关视图、而组件拥有代码视图接受的文件时，代码标签指向其中排在最前的文件，不是测试文件的在前，落实设计节点的代码元素多的其次，最后按路径" {
   about Server.answer
   forall exchange: Exchange generated "一个随机小仓库的图和文件，每个组件有一至三个代码文件，可有第二个文件和一个 _test.go 文件，三者路径的次序与这一排序相反，各文件随机分到组件的类型、函数和谓词，以及对 /api/entity 的一至六个请求：标识约七分之一不存在，约六分之一带基准 HEAD，约五分之一重复前面的请求"

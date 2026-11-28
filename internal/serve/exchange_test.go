@@ -225,7 +225,8 @@ func (r *repoDraw) codeOf(c string) {
 			}
 			for _, op := range r.children(d) {
 				method := "Op" + strings.TrimPrefix(op[strings.LastIndex(op, ".")+1:], "op")
-				m := r.code(typ+"."+method, graph.NodeKindOp, "method", file, []string{"func (" + name + ") " + method + "() {", "}", ""},
+				// A method may be written in another file than its type, as Go allows.
+				m := r.code(typ+"."+method, graph.NodeKindOp, "method", rapid.SampledFrom(paths).Draw(t, "methodFile"), []string{"func (" + name + ") " + method + "() {", "}", ""},
 					map[string][]string{"name": {strings.ToLower(method[:1]) + method[1:]}, "signature": {r.ids[op].Attrs["signature"][0]}, "stub": {"false"}, "testKind": {"none"}})
 				r.edge(graph.EdgeKindContains, typ, m, nil)
 				if rapid.Bool().Draw(t, "methodRealizes?") {
@@ -619,6 +620,27 @@ func genExchange() *rapid.Generator[Exchange] {
 //uc:generates serve.queries-agree.exchange
 func genQueryExchange() *rapid.Generator[Exchange] {
 	return genExchangeOf(queryEndpoints)
+}
+
+// genCodeViewExchange draws code views whose input is one of the repository's
+// code files or code types.
+//
+//uc:generates serve.views-name-code-files.exchange
+func genCodeViewExchange() *rapid.Generator[Exchange] {
+	return rapid.Custom(func(t *rapid.T) Exchange {
+		f, files := genRepo(t)
+		var inputs []string
+		for _, n := range f.Nodes {
+			if n.Layer == graph.LayerCode && (n.Kind == graph.NodeKindType || n.Kind == graph.NodeKindContainer && n.Form == "file") {
+				inputs = append(inputs, n.Id)
+			}
+		}
+		x := Exchange{Fragment: f, Files: files}
+		for range rapid.IntRange(1, 4).Draw(t, "requests") {
+			x.Requests = append(x.Requests, Request{Path: "/api/views/code", Query: map[string][]string{"input": {rapid.SampledFrom(inputs).Draw(t, "input")}}})
+		}
+		return x
+	})
 }
 
 // genEntityExchange draws requests for entity pages.
