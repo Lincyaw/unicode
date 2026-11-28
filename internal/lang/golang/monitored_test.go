@@ -53,7 +53,9 @@ type MonitoredRun struct {
 // it, and by the token's prefix panics, returns an undeclared error or
 // returns the declared error Denied, each of them carrying the token's text.
 // demo.Tally implements demo.Counter, whose methods take a context first,
-// under one lock, and keeps the context its last Add received.
+// under one lock, and keeps the context its last Add received. demo.observed
+// observes a Tally through Tallied, which has no effect, and Stamp, which
+// reads the process.
 //
 // The program takes levels, then "--", then secrets. It calls score through
 // monitor.Entry and directly on each level, unlock through monitor.Entry on
@@ -67,6 +69,7 @@ var monitoredFiles = map[string]string{
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 )
@@ -157,6 +160,12 @@ func Seen() context.Context {
 	defer lock.Unlock()
 	return seen
 }
+
+//uc:observes demo.observed.tallied
+func Tallied(tally *Tally) int { return tally.Count }
+
+//uc:observes demo.observed.stamp
+func Stamp(tally *Tally) int { return os.Getpid() }
 `,
 	"src/cmd/demo/main.go": `package main
 
@@ -367,7 +376,8 @@ func writeFiles(root string, files map[string]string) error {
 // runtime on score; the pure operation demo.unlock of a sensitive Token and a
 // Badge that extends it, raising Denied, and demo.unlocks judged on it; the
 // interface demo.Counter and its implementation demo.Tally, and demo.totals
-// judged on Tally's total.
+// judged on Tally's total, and demo.observed, judged on it through two named
+// observations.
 func monitoredGraph(root string) (graph.Graph, error) {
 	g := graph.NewGraph()
 	var problems []error
@@ -415,6 +425,16 @@ func monitoredGraph(root string) (graph.Graph, error) {
 		"symbols": {"tally: demo.Tally"}, "call": {"tally.total()"}, "ensure": {"result == tally.count"},
 	})
 	edge(graph.EdgeKindRefers, "demo.totals", "demo.Tally.total", "call#1")
+	observation := func(id, parent string) {
+		add(id, graph.NodeKindObservation, "snapshot", parent, map[string][]string{"type": {"int"}, "inputs": {"tally"}})
+	}
+	add("demo.observed", graph.NodeKindProperty, "postcondition", "demo", map[string][]string{
+		"symbols": {"tally: demo.Tally"}, "call": {"tally.total()"}, "observe": {"tallied: int from tally", "stamp: int from tally"},
+		"ensure": {"result == tallied", "stamp > 0"},
+	})
+	observation("demo.observed.tallied", "demo.observed")
+	observation("demo.observed.stamp", "demo.observed")
+	edge(graph.EdgeKindRefers, "demo.observed", "demo.Tally.total", "call#1")
 	if err := errors.Join(problems...); err != nil {
 		return g, err
 	}
@@ -439,6 +459,7 @@ func monitoredGraph(root string) (graph.Graph, error) {
 //uc:generates lang.golang.monitoring-hides-sensitive-values.secrets
 //uc:generates lang.golang.monitoring-wraps-and-links-contexts.secrets
 //uc:generates lang.golang.monitoring-reads-receivers-without-races.secrets
+//uc:generates lang.golang.monitoring-reads-cheap-observations.secrets
 func genSecrets() *rapid.Generator[[]string] {
 	return rapid.SliceOfN(rapid.StringMatching("zq[a-z]{8}"), 1, 3)
 }
@@ -457,6 +478,7 @@ const raceExit = 66
 //uc:generates lang.golang.monitoring-hides-sensitive-values.run
 //uc:generates lang.golang.monitoring-wraps-and-links-contexts.run
 //uc:generates lang.golang.monitoring-reads-receivers-without-races.run
+//uc:generates lang.golang.monitoring-reads-cheap-observations.run
 func deriveMonitoredRun(levels []int, secrets []string) (MonitoredRun, error) {
 	module, program, _, err := monitoredModule()
 	if err != nil {

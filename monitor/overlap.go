@@ -35,11 +35,14 @@ func newGates() *gates {
 }
 
 // window is one monitored call's view of its receiver's gate; a call
-// without a receiver of its own identity has none.
+// without a receiver of its own identity has none. joined records that
+// another monitored real call on the receiver was in progress when this one
+// started.
 type window struct {
 	gates  *gates
 	key    any
 	start  uint64
+	joined bool
 	reader bool
 }
 
@@ -97,6 +100,7 @@ func (w *window) begin() {
 		w.gates.ready.Wait()
 	}
 	g := w.gates.of(w.key)
+	w.joined = g.calls > 0
 	g.calls++
 	g.starts++
 	w.start = g.starts
@@ -104,8 +108,8 @@ func (w *window) begin() {
 
 // end marks the call's real call as returned, and reports whether the call
 // may read its receiver after it: no other monitored real call on the
-// receiver is in progress or started since this one did. When it may, the
-// reading lasts until done.
+// receiver overlapped it, that is, none was in progress when it started and
+// none started since. When it may, the reading lasts until done.
 func (w *window) end() bool {
 	if w.gates == nil {
 		return false
@@ -114,7 +118,7 @@ func (w *window) end() bool {
 	defer w.gates.mu.Unlock()
 	g := w.gates.of(w.key)
 	g.calls--
-	readable := g.calls == 0 && g.starts == w.start
+	readable := !w.joined && g.starts == w.start
 	if readable {
 		g.reading++
 		w.reader = true

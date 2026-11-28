@@ -1385,21 +1385,24 @@ func unicodeMonitorWalk(e *unicodeMonitorExpr, visit func(*unicodeMonitorExpr)) 
 }
 func (env *unicodeMonitorEnvironment) readObservers() {
 	for _, o := range env.spec.Observers {
-		args := make([]reflect.Value, len(o.Inputs))
-		for i, input := range o.Inputs {
-			args[i] = unicodeMonitorNative(env.values[input], o.Read.Type().In(i))
-		}
-		values := o.Read.Call(args)
-		if len(values) == 2 {
-			if !values[1].IsNil() {
-				unicodeMonitorFail("lang.golang.observation-failed", "observer "+o.Name+" failed: "+values[1].Interface().(error).Error(), nil)
-			}
-		}
-		if len(values) < 1 || len(values) > 2 {
-			unicodeMonitorFail("lang.golang.observation-failed", "observer "+o.Name+" returned an invalid signature", nil)
-		}
-		env.values[o.Name] = unicodeMonitorNormalize(values[0], o.Type, env.spec.Types)
+		env.readObserver(o)
 	}
+}
+func (env *unicodeMonitorEnvironment) readObserver(o unicodeMonitorObserver) {
+	args := make([]reflect.Value, len(o.Inputs))
+	for i, input := range o.Inputs {
+		args[i] = unicodeMonitorNative(env.values[input], o.Read.Type().In(i))
+	}
+	values := o.Read.Call(args)
+	if len(values) == 2 {
+		if !values[1].IsNil() {
+			unicodeMonitorFail("lang.golang.observation-failed", "observer "+o.Name+" failed: "+values[1].Interface().(error).Error(), nil)
+		}
+	}
+	if len(values) < 1 || len(values) > 2 {
+		unicodeMonitorFail("lang.golang.observation-failed", "observer "+o.Name+" returned an invalid signature", nil)
+	}
+	env.values[o.Name] = unicodeMonitorNormalize(values[0], o.Type, env.spec.Types)
 }
 
 type unicodeMonitorSegment struct {
@@ -2028,7 +2031,7 @@ func unicodeMonitorJudge(u *unicodeMonitorUnit, observed monitor.Observed) monit
 		j.models[symbol.Name] = symbol.Type
 	}
 	for _, o := range s.Observers {
-		j.unreadable[o.Name] = true
+		j.unreadable[o.Name] = !o.Read.IsValid()
 	}
 	j.live = j.natives(observed)
 	judged, finish := true, monitor.Finish(nil)
@@ -2071,6 +2074,7 @@ func (j *unicodeMonitorJudging) before(reads monitor.Reads) (bool, monitor.Finis
 		j.input[name] = monitor.Conceal(unicodeMonitorWireToMonitor(frozen), j.models[name], j.schema)
 	}
 	j.read()
+	j.observe(reads)
 	j.judgment.InputHash = monitor.InputHash(j.input)
 	clause, readable := unicodeMonitorDomain(s, j.env.values)
 	if !readable {
@@ -2089,7 +2093,7 @@ func (j *unicodeMonitorJudging) before(reads monitor.Reads) (bool, monitor.Finis
 			return true, j.settled()
 		}
 	}
-	frame := j.unit.Deep && reads.State && len(s.Observers) == 0
+	frame := j.unit.Deep && reads.State && !slices.ContainsFunc(s.Observers, func(o unicodeMonitorObserver) bool { return j.unreadable[o.Name] })
 	j.prepared = j.env.beforeCall(func(e *unicodeMonitorExpr) bool { return !unicodeMonitorReads(e, j.unreadable) }, frame)
 	return true, j.after
 }
@@ -2102,23 +2106,27 @@ func (j *unicodeMonitorJudging) after(results []any, failure error, panicked any
 		// that reads the receiver after the call is judged.
 		j.unreadable[j.unit.Receiver] = true
 		delete(j.env.values, j.unit.Receiver)
-		j.prepared.judged = slices.DeleteFunc(j.prepared.judged, func(i int) bool { return unicodeMonitorReads(j.spec.Ensures[i], j.unreadable) })
-		j.prepared.roots = nil
-	}
-	if !reads.State {
-		j.prepared.roots = nil
 	}
 	op := j.spec.Operations[j.unit.Op]
 	raised := ""
 	var out unicodeMonitorOutcome
+	if problem := unicodeMonitorGuard(func() { j.read(); j.observe(reads) }); problem != "" {
+		j.judgment.Verdict, j.judgment.Message = monitor.VerdictCheckError, "the state cannot be read after the call: "+problem
+		return j.judgment, true
+	}
 	if problem := unicodeMonitorGuard(func() {
-		j.read()
 		j.env.captureCall(op, j.values(results, failure, op), j.spec.Call, &out)
 		j.env.result = unicodeMonitorDetach(j.env.result)
 		raised = j.raised(failure)
 	}); problem != "" {
 		j.judgment.Verdict, j.judgment.Message = monitor.VerdictCheckError, "the call's result is no model value: "+problem
 		return j.judgment, true
+	}
+	// What became unreadable after the call is judged by no ensure, and the
+	// frame is not compared when any of it is.
+	j.prepared.judged = slices.DeleteFunc(j.prepared.judged, func(i int) bool { return unicodeMonitorReads(j.spec.Ensures[i], j.unreadable) })
+	if !reads.State || slices.ContainsFunc(j.prepared.roots, func(r unicodeMonitorRoot) bool { return j.unreadable[r.Name] }) {
+		j.prepared.roots = nil
 	}
 	if len(out.Diagnostics) > 0 {
 		return j.counterexample("raises", fmt.Sprintf("the call returned an undeclared error of type %T", failure)), true
@@ -2159,6 +2167,19 @@ func (j *unicodeMonitorJudging) read() {
 		if !j.unreadable[name] {
 			j.env.values[name] = unicodeMonitorDetach(unicodeMonitorLazyValue(native, j.models[name], j.spec.Types))
 		}
+	}
+}
+func (j *unicodeMonitorJudging) observe(reads monitor.Reads) {
+	for _, o := range j.spec.Observers {
+		if j.unreadable[o.Name] {
+			continue
+		}
+		if !reads.State || slices.ContainsFunc(o.Inputs, func(input string) bool { return j.unreadable[input] }) {
+			j.unreadable[o.Name] = true
+			delete(j.env.values, o.Name)
+			continue
+		}
+		j.env.readObserver(o)
 	}
 }
 func (j *unicodeMonitorJudging) values(results []any, failure error, op unicodeMonitorOperation) []reflect.Value {

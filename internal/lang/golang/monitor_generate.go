@@ -78,7 +78,6 @@ func (c *contractCompiler) monitorFiles(units map[string]*contractUnit) map[stri
 	wrapped := map[string]bool{}
 	excluded := c.monitorClosure()
 	monitored := lang.MonitoredCalls(c.plan.Graph)
-	effects := c.plan.Graph.Effects()
 	for _, id := range slices.Sorted(maps.Keys(monitored)) {
 		call, unit := monitored[id], units[id]
 		// A derived input is not given by the call (docs/model.md §3.4).
@@ -88,7 +87,7 @@ func (c *contractCompiler) monitorFiles(units map[string]*contractUnit) map[stri
 		if _, known := c.nodes[call.Op]; !known {
 			continue
 		}
-		judge := &monitorJudge{unit: unit, call: call, deep: judgedDeep(effects, call.Op)}
+		judge := &monitorJudge{unit: unit, call: call, deep: c.onlyTime(call.Op)}
 		judge.collect = judge.deep && !c.reachesInterface(unit, call)
 		owner := c.parents[call.Op]
 		var d nativeDeclaration
@@ -140,12 +139,56 @@ func (c *contractCompiler) monitorFiles(units map[string]*contractUnit) map[stri
 	return files
 }
 
-// judgedDeep tells whether calls of the design operation op are judged deep
-// (docs/design.md §6.6): its effects (docs/model.md §9 D8) are none or only
-// time. An operation whose effects are not known is judged shallow.
-func judgedDeep(effects map[string]graph.OperationEffects, op string) bool {
-	e, ok := effects[op]
+// onlyTime tells whether the operation op, of the design or of the code, has
+// no effect or only time (docs/model.md §9 D8): calls of such a design
+// operation are judged deep, and such an adapter is cheap (docs/design.md
+// §6.6). An operation whose effects are not known has every effect.
+func (c *contractCompiler) onlyTime(op string) bool {
+	if c.effects == nil {
+		c.effects = c.plan.Graph.Effects()
+	}
+	e, ok := c.effects[op]
 	return ok && !slices.ContainsFunc(e.Effects, func(kind graph.Effect) bool { return kind != graph.EffectTime })
+}
+
+// monitorAdapter gives, as file's monitor file names it, the adapter of the
+// named observation name of unit when a monitored call may run it (docs/
+// design.md §6.6): a cheap function, declared outside test files, in the
+// monitor file's package or, exported, in a package it already imports at
+// some depth, so that the import adds no cycle.
+func (c *contractCompiler) monitorAdapter(file *contractFile, unit *contractUnit, name string) (string, bool) {
+	ids := c.bindings[graph.EdgeKindObserves][unit.node.Id+"."+name]
+	if len(ids) != 1 || !c.onlyTime(ids[0]) {
+		return "", false
+	}
+	d, ok := c.declarations[ids[0]]
+	if !ok {
+		return "", false
+	}
+	fn, isFunc := d.obj.(*types.Func)
+	if !isFunc || fn.Signature().Recv() != nil || TestFile(d.pkg.Fset.Position(fn.Pos()).Filename) {
+		return "", false
+	}
+	if d.pkg.PkgPath != file.pkg.PkgPath && (!fn.Exported() || !importedPaths(file.pkg.Types)[d.pkg.PkgPath]) {
+		return "", false
+	}
+	return c.qualify(fn, file.pkg, file.imports), true
+}
+
+// importedPaths are the paths of every package p imports, at any depth, as
+// the type checker gives them.
+func importedPaths(p *types.Package) map[string]bool {
+	out := map[string]bool{}
+	pending := p.Imports()
+	for len(pending) > 0 {
+		q := pending[0]
+		pending = pending[1:]
+		if !out[q.Path()] {
+			out[q.Path()] = true
+			pending = append(pending, q.Imports()...)
+		}
+	}
+	return out
 }
 
 // monitorClosure is the monitor package and every package it imports, at
@@ -153,20 +196,9 @@ func judgedDeep(effects map[string]graph.OperationEffects, op string) bool {
 // monitor package and close an import cycle.
 func (c *contractCompiler) monitorClosure() map[string]bool {
 	out := map[string]bool{monitorPackage: true}
-	var pending []*types.Package
 	for _, p := range c.loaded.packages {
 		if p.PkgPath == monitorPackage && p.Types != nil {
-			pending = append(pending, p.Types)
-		}
-	}
-	for len(pending) > 0 {
-		p := pending[0]
-		pending = pending[1:]
-		for _, imported := range p.Imports() {
-			if !out[imported.Path()] {
-				out[imported.Path()] = true
-				pending = append(pending, imported)
-			}
+			maps.Copy(out, importedPaths(p.Types))
 		}
 	}
 	return out

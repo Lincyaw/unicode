@@ -98,8 +98,8 @@ type ucJudging struct {
 // precondition reads a value it may not read. A shallow judgment reads the
 // arguments and the call's result or error; a deep one reads the receiver
 // too, only while no other monitored call on it overlaps, and checks the
-// frame then. Named observations are not read: whether their adapters are
-// cheap needs the effects of the code.
+// frame then. A named observation is read at either depth when the monitor
+// file wired its adapter, which gen does only for a cheap one.
 func ucMonitorJudge(u *ucMonitorUnit, observed monitor.Observed) monitor.Finish {
 	s, schema := u.contract()
 	j := &ucJudging{unit: u, spec: s, schema: schema, models: map[string]string{}, unreadable: map[string]bool{},
@@ -109,7 +109,7 @@ func ucMonitorJudge(u *ucMonitorUnit, observed monitor.Observed) monitor.Finish 
 		j.models[symbol.Name] = symbol.Type
 	}
 	for _, o := range s.Observers {
-		j.unreadable[o.Name] = true
+		j.unreadable[o.Name] = !o.Read.IsValid()
 	}
 	j.live = j.natives(observed)
 	judged, finish := true, monitor.Finish(nil)
@@ -161,6 +161,7 @@ func (j *ucJudging) before(reads monitor.Reads) (bool, monitor.Finish) {
 		j.input[name] = monitor.Conceal(ucWireToMonitor(frozen), j.models[name], j.schema)
 	}
 	j.read()
+	j.observe(reads)
 	j.judgment.InputHash = monitor.InputHash(j.input)
 	clause, readable := ucDomain(s, j.env.values)
 	if !readable {
@@ -179,7 +180,7 @@ func (j *ucJudging) before(reads monitor.Reads) (bool, monitor.Finish) {
 			return true, j.settled()
 		}
 	}
-	frame := j.unit.Deep && reads.State && len(s.Observers) == 0
+	frame := j.unit.Deep && reads.State && !slices.ContainsFunc(s.Observers, func(o ucObserver) bool { return j.unreadable[o.Name] })
 	j.prepared = j.env.beforeCall(func(e *ucExpr) bool { return !ucMonitorReads(e, j.unreadable) }, frame)
 	return true, j.after
 }
@@ -195,23 +196,27 @@ func (j *ucJudging) after(results []any, failure error, panicked any, reads moni
 		// that reads the receiver after the call is judged.
 		j.unreadable[j.unit.Receiver] = true
 		delete(j.env.values, j.unit.Receiver)
-		j.prepared.judged = slices.DeleteFunc(j.prepared.judged, func(i int) bool { return ucMonitorReads(j.spec.Ensures[i], j.unreadable) })
-		j.prepared.roots = nil
-	}
-	if !reads.State {
-		j.prepared.roots = nil
 	}
 	op := j.spec.Operations[j.unit.Op]
 	raised := ""
 	var out ucOutcome
+	if problem := ucMonitorGuard(func() { j.read(); j.observe(reads) }); problem != "" {
+		j.judgment.Verdict, j.judgment.Message = monitor.VerdictCheckError, "the state cannot be read after the call: "+problem
+		return j.judgment, true
+	}
 	if problem := ucMonitorGuard(func() {
-		j.read()
 		j.env.captureCall(op, j.values(results, failure, op), j.spec.Call, &out)
 		j.env.result = ucDetach(j.env.result)
 		raised = j.raised(failure)
 	}); problem != "" {
 		j.judgment.Verdict, j.judgment.Message = monitor.VerdictCheckError, "the call's result is no model value: "+problem
 		return j.judgment, true
+	}
+	// What became unreadable after the call is judged by no ensure, and the
+	// frame is not compared when any of it is.
+	j.prepared.judged = slices.DeleteFunc(j.prepared.judged, func(i int) bool { return ucMonitorReads(j.spec.Ensures[i], j.unreadable) })
+	if !reads.State || slices.ContainsFunc(j.prepared.roots, func(r ucRoot) bool { return j.unreadable[r.Name] }) {
+		j.prepared.roots = nil
 	}
 	if len(out.Diagnostics) > 0 {
 		return j.counterexample("raises", fmt.Sprintf("the call returned an undeclared error of type %T", failure)), true
@@ -258,6 +263,24 @@ func (j *ucJudging) read() {
 		if !j.unreadable[name] {
 			j.env.values[name] = ucDetach(ucLazyValue(native, j.models[name], j.spec.Types))
 		}
+	}
+}
+
+// observe reads each named observation whose adapter the monitor file wired,
+// when the state may be read now and every input of the adapter was read;
+// the adapter runs on copies, as an expression's operations do. Any other
+// observation is unreadable from then on.
+func (j *ucJudging) observe(reads monitor.Reads) {
+	for _, o := range j.spec.Observers {
+		if j.unreadable[o.Name] {
+			continue
+		}
+		if !reads.State || slices.ContainsFunc(o.Inputs, func(input string) bool { return j.unreadable[input] }) {
+			j.unreadable[o.Name] = true
+			delete(j.env.values, o.Name)
+			continue
+		}
+		j.env.readObserver(o)
 	}
 }
 

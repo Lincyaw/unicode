@@ -1422,21 +1422,27 @@ func ucWalk(e *ucExpr, visit func(*ucExpr)) {
 }
 func (env *ucEnvironment) readObservers() {
 	for _, o := range env.spec.Observers {
-		args := make([]reflect.Value, len(o.Inputs))
-		for i, input := range o.Inputs {
-			args[i] = ucNative(env.values[input], o.Read.Type().In(i))
-		}
-		values := o.Read.Call(args)
-		if len(values) == 2 {
-			if !values[1].IsNil() {
-				ucFail("lang.golang.observation-failed", "observer "+o.Name+" failed: "+values[1].Interface().(error).Error(), nil)
-			}
-		}
-		if len(values) < 1 || len(values) > 2 {
-			ucFail("lang.golang.observation-failed", "observer "+o.Name+" returned an invalid signature", nil)
-		}
-		env.values[o.Name] = ucNormalize(values[0], o.Type, env.spec.Types)
+		env.readObserver(o)
 	}
+}
+
+// readObserver reads one named observation through its adapter, from the
+// values of the adapter's inputs.
+func (env *ucEnvironment) readObserver(o ucObserver) {
+	args := make([]reflect.Value, len(o.Inputs))
+	for i, input := range o.Inputs {
+		args[i] = ucNative(env.values[input], o.Read.Type().In(i))
+	}
+	values := o.Read.Call(args)
+	if len(values) == 2 {
+		if !values[1].IsNil() {
+			ucFail("lang.golang.observation-failed", "observer "+o.Name+" failed: "+values[1].Interface().(error).Error(), nil)
+		}
+	}
+	if len(values) < 1 || len(values) > 2 {
+		ucFail("lang.golang.observation-failed", "observer "+o.Name+" returned an invalid signature", nil)
+	}
+	env.values[o.Name] = ucNormalize(values[0], o.Type, env.spec.Types)
 }
 
 type ucSegment struct {

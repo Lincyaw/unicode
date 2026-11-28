@@ -286,7 +286,7 @@ property monitored-judgments-match-replay postcondition "回放 run.root 中采�
   forall backend: Backend
   forall levels: list<int>
   forall secrets: list<string> generated "一至三个口令，各是 zq 之后八个小写字母"
-  forall run: MonitoredRun generated "把受监控的模块复制到新目录再运行得到的目录、运行记录和结果：模块中纯操作 demo.score 在 3 上返回 2、在 4 上 panic、其余返回 level + 1，纯操作 demo.ratio 在 -3 上 panic，性质 demo.bounded 限定 level in -5..5、前提 level != 0、ensure result >= level 和 ratio(level) == level，纯操作 demo.unlock 接收带 sensitive 标签的 Token 和经 extends 继承它的 Badge、按口令前缀 panic-、undeclared-、denied- 分别 panic、返回未声明的错误或返回声明的错误 Denied（说明里都带着口令），接口 demo.Counter 的方法以 context.Context 为第一个参数、由 demo.Tally 实现，性质 demo.totals 在 total 上读接收者；程序以 unicode_monitor 和竞态检测构建，以抽样比例 1、打开采集运行，对 levels 中每个值经 monitor.Entry 和直接各调用一次 score，对 secrets 中每个口令以四种前缀经 monitor.Entry 调用 unlock，经 monitor.Wrap 包装一个 Tally、以带 span 的 context 调用它，再以八个 goroutine 并发调用它的 add 和 total"
+  forall run: MonitoredRun generated "把受监控的模块复制到新目录再运行得到的目录、运行记录和结果：模块中纯操作 demo.score 在 3 上返回 2、在 4 上 panic、其余返回 level + 1，纯操作 demo.ratio 在 -3 上 panic，性质 demo.bounded 限定 level in -5..5、前提 level != 0、ensure result >= level 和 ratio(level) == level，纯操作 demo.unlock 接收带 sensitive 标签的 Token 和经 extends 继承它的 Badge、按口令前缀 panic-、undeclared-、denied- 分别 panic、返回未声明的错误或返回声明的错误 Denied（说明里都带着口令），接口 demo.Counter 的方法以 context.Context 为第一个参数、由 demo.Tally 实现，性质 demo.totals 在 total 上读接收者，性质 demo.observed 在 total 上经没有效果的适配器读具名观察 tallied、经有 process 效果的适配器读具名观察 stamp，ensure result == tallied 和 stamp > 0；程序以 unicode_monitor 和竞态检测构建，以抽样比例 1、打开采集运行，对 levels 中每个值经 monitor.Entry 和直接各调用一次 score，对 secrets 中每个口令以四种前缀经 monitor.Entry 调用 unlock，经 monitor.Wrap 包装一个 Tally、以带 span 的 context 调用它，再以八个 goroutine 并发调用它的 add 和 total"
   forall plan: lang.RunPlan generated "以 run.root 的设计和代码建出的图回放 demo.bounded 的运行输入，traffic 是按 language.md E29 把 run.root 中采集的调用对应成的 demo.bounded 的输入"
   where levels size 1..4
   where levels in -8..8
@@ -325,6 +325,17 @@ property monitoring-wraps-and-links-contexts invariant "受监控的程序中 mo
   where levels size 1..4
   where levels in -8..8
   ensure run.wraps and run.keepsUnregistered and run.contextLinked
+}
+
+property monitoring-reads-cheap-observations invariant "受监控的程序中，demo.observed 读适配器廉价的具名观察 tallied 的 ensure 有判定过的调用且没有反例，读适配器有 process 效果的具名观察 stamp 的 ensure 没有判定过的调用" {
+  about Backend
+  forall levels: list<int>
+  forall secrets: list<string> generated "一至三个口令，各是 zq 之后八个小写字母"
+  forall run: MonitoredRun generated "与 monitored-judgments-match-replay 的 run 相同"
+  where levels size 1..4
+  where levels in -8..8
+  ensure any(x in run.record.results: x.id == "demo.observed" and size(x.cases) == 0 and any(c in x.clauses: c.clause == "ensure#1" and c.judged > 0))
+  ensure all(x in run.record.results: x.id == "demo.observed" implies not any(c in x.clauses: c.clause == "ensure#2" and c.judged > 0))
 }
 
 property monitoring-reads-receivers-without-races invariant "八个 goroutine 并发调用同一个 demo.Tally 的受监控的 add 和 total 时，竞态检测没有报出竞态，demo.totals 有判定过的调用而没有反例" {

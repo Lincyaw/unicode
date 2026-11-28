@@ -85,9 +85,10 @@ type contractCompiler struct {
 	foreignNames    map[string]string
 	foreignOriginal map[string]string
 	carrierModels   map[string]string
-	edges           []graph.Edge        // the plan graph's edges (graphEdges)
-	extends         map[string][]string // a type's model parents (modelParents)
-	sensitive       *string             // the sensitive design types, quoted (sensitiveTypes)
+	edges           []graph.Edge                      // the plan graph's edges (graphEdges)
+	extends         map[string][]string               // a type's model parents (modelParents)
+	sensitive       *string                           // the sensitive design types, quoted (sensitiveTypes)
+	effects         map[string]graph.OperationEffects // the operations' effects (operationEffects)
 }
 type contractUnit struct {
 	node          graph.Node
@@ -849,10 +850,16 @@ func (c *contractCompiler) renderSpec(body *strings.Builder, file *contractFile,
 }
 
 // renderMonitorSpec writes the function specName that builds a unit's
-// contract for a monitor file: a monitored call reads no named observation,
-// and its inputs are real values, so it needs no adapters, carriers or doubles.
+// contract for a monitor file: what renderSpecBody writes, and the adapters
+// of the named observations a monitored call may read (monitorAdapter). Its
+// inputs are real values, so it needs no carriers or doubles.
 func (c *contractCompiler) renderMonitorSpec(body *strings.Builder, file *contractFile, unit *contractUnit, specName string) {
 	c.renderSpecBody(body, file, unit, specName)
+	for i, o := range unit.spec.Observers {
+		if adapter, ok := c.monitorAdapter(file, unit, o.Name); ok {
+			fmt.Fprintf(body, "s.Observers[%d].Read=reflect.ValueOf(%s);", i, adapter)
+		}
+	}
 	body.WriteString("return &s }\n")
 }
 

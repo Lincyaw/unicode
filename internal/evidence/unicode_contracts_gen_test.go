@@ -1453,21 +1453,27 @@ func unicodeGeneratedWalk(e *unicodeGeneratedExpr, visit func(*unicodeGeneratedE
 }
 func (env *unicodeGeneratedEnvironment) readObservers() {
 	for _, o := range env.spec.Observers {
-		args := make([]reflect.Value, len(o.Inputs))
-		for i, input := range o.Inputs {
-			args[i] = unicodeGeneratedNative(env.values[input], o.Read.Type().In(i))
-		}
-		values := o.Read.Call(args)
-		if len(values) == 2 {
-			if !values[1].IsNil() {
-				unicodeGeneratedFail("lang.golang.observation-failed", "observer "+o.Name+" failed: "+values[1].Interface().(error).Error(), nil)
-			}
-		}
-		if len(values) < 1 || len(values) > 2 {
-			unicodeGeneratedFail("lang.golang.observation-failed", "observer "+o.Name+" returned an invalid signature", nil)
-		}
-		env.values[o.Name] = unicodeGeneratedNormalize(values[0], o.Type, env.spec.Types)
+		env.readObserver(o)
 	}
+}
+
+// readObserver reads one named observation through its adapter, from the
+// values of the adapter's inputs.
+func (env *unicodeGeneratedEnvironment) readObserver(o unicodeGeneratedObserver) {
+	args := make([]reflect.Value, len(o.Inputs))
+	for i, input := range o.Inputs {
+		args[i] = unicodeGeneratedNative(env.values[input], o.Read.Type().In(i))
+	}
+	values := o.Read.Call(args)
+	if len(values) == 2 {
+		if !values[1].IsNil() {
+			unicodeGeneratedFail("lang.golang.observation-failed", "observer "+o.Name+" failed: "+values[1].Interface().(error).Error(), nil)
+		}
+	}
+	if len(values) < 1 || len(values) > 2 {
+		unicodeGeneratedFail("lang.golang.observation-failed", "observer "+o.Name+" returned an invalid signature", nil)
+	}
+	env.values[o.Name] = unicodeGeneratedNormalize(values[0], o.Type, env.spec.Types)
 }
 
 type unicodeGeneratedSegment struct {
