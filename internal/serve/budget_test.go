@@ -5,6 +5,7 @@ import (
 	"math/rand/v2"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -58,6 +59,9 @@ func budgetOf(seed int) budgetRepo {
 	return repo
 }
 
+// writeBudgetRepo writes the budget repository of seed into a new
+// directory, commits its files with git, writes its snapshot and opens a
+// server on it whose base commits all have the graph baseOf gives.
 func writeBudgetRepo(seed int) (budgetRepo, error) {
 	f, files := bulkRepo(seed)
 	root, err := os.MkdirTemp("", "unicode-serve-budget-")
@@ -67,18 +71,14 @@ func writeBudgetRepo(seed int) (budgetRepo, error) {
 	budgetMu.Lock()
 	budgetDirs = append(budgetDirs, root)
 	budgetMu.Unlock()
-	g := graph.NewGraph()
-	for _, n := range f.Nodes {
-		if err := g.AddNode(n); err != nil {
-			return budgetRepo{}, err
-		}
+	g, err := fragmentGraph(f)
+	if err != nil {
+		return budgetRepo{}, err
 	}
-	for _, e := range f.Edges {
-		if err := g.AddEdge(e); err != nil {
-			return budgetRepo{}, err
-		}
+	base, err := fragmentGraph(baseOf(f))
+	if err != nil {
+		return budgetRepo{}, err
 	}
-	files[".unicode/graph.json"] = string(g.Encode())
 	for path, text := range files {
 		target := filepath.Join(root, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -88,7 +88,23 @@ func writeBudgetRepo(seed int) (budgetRepo, error) {
 			return budgetRepo{}, err
 		}
 	}
-	s, err := Open(root, filepath.Join(root, ".unicode", "graph.json"), nil)
+	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"-c", "user.name=unicode", "-c", "user.email=unicode@example.com", "-c", "commit.gpgsign=false",
+		"-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "the budget repository"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return budgetRepo{}, fmt.Errorf("git %v: %w\n%s", args, err, out)
+		}
+	}
+	snapshot := filepath.Join(root, ".unicode", "graph.json")
+	if err := os.MkdirAll(filepath.Dir(snapshot), 0o755); err != nil {
+		return budgetRepo{}, err
+	}
+	if err := os.WriteFile(snapshot, g.Encode(), 0o644); err != nil {
+		return budgetRepo{}, err
+	}
+	s, err := Open(root, snapshot, baseBuilder{base})
 	if err != nil {
 		return budgetRepo{}, err
 	}
@@ -97,6 +113,22 @@ func writeBudgetRepo(seed int) (budgetRepo, error) {
 		inputs[kind] = view.Inputs(&g, kind)
 	}
 	return budgetRepo{fragment: f, server: s, inputs: inputs}, nil
+}
+
+// fragmentGraph adds the nodes and then the edges of f to a new graph.
+func fragmentGraph(f graph.Fragment) (graph.Graph, error) {
+	g := graph.NewGraph()
+	for _, n := range f.Nodes {
+		if err := g.AddNode(n); err != nil {
+			return g, err
+		}
+	}
+	for _, e := range f.Edges {
+		if err := g.AddEdge(e); err != nil {
+			return g, err
+		}
+	}
+	return g, nil
 }
 
 // TestMain removes the budget repositories that cases made, after the tests.
@@ -118,15 +150,22 @@ func genBudgetServer(seed int) *rapid.Generator[*Server] {
 
 // genPageRequest draws a request of the viewer's pages to the budget
 // repository of seed: the snapshot, the design tree, the diagnostics, an
-// entity page, a group of nodes, an edge, or a search for part of an
-// identity.
+// entity page, a group of nodes, an edge, a search for part of an identity,
+// or the reviews of a node, pending or all, against the base commit HEAD
+// three times in four.
 //
 //uc:generates serve.pages-answer-within-budget.request
 func genPageRequest(seed int) *rapid.Generator[Request] {
 	f := budgetOf(seed).fragment
 	return rapid.Custom(func(t *rapid.T) Request {
 		node := func(label string) string { return rapid.SampledFrom(f.Nodes).Draw(t, label).Id }
-		switch path := rapid.SampledFrom([]string{"/api/snapshot", "/api/tree", "/api/diagnostics", "/api/entity", "/api/nodes", "/api/edge", "/api/search"}).Draw(t, "endpoint"); path {
+		switch path := rapid.SampledFrom([]string{"/api/snapshot", "/api/tree", "/api/diagnostics", "/api/entity", "/api/nodes", "/api/edge", "/api/search", "/api/reviews"}).Draw(t, "endpoint"); path {
+		case "/api/reviews":
+			q := url.Values{"id": {node("reviewed")}, "pending": {fmt.Sprint(rapid.Bool().Draw(t, "pending"))}}
+			if rapid.IntRange(0, 3).Draw(t, "reviewBase?") > 0 {
+				q["base"] = []string{"HEAD"}
+			}
+			return Request{Path: path, Query: q}
 		case "/api/entity":
 			return Request{Path: path, Query: url.Values{"id": {node("entity")}}}
 		case "/api/nodes":
@@ -149,17 +188,15 @@ func genPageRequest(seed int) *rapid.Generator[Request] {
 }
 
 // genQueryRequest draws a query or view request to the budget repository of
-// seed: a node with its edges, a slice, an impact, the reviews of a node,
-// pending or all, or a view of a kind and one of its inputs.
+// seed: a node with its edges, a slice, an impact, or a view of a kind and
+// one of its inputs.
 //
 //uc:generates serve.queries-answer-within-budget.request
 func genQueryRequest(seed int) *rapid.Generator[Request] {
 	repo := budgetOf(seed)
 	return rapid.Custom(func(t *rapid.T) Request {
 		node := func(label string) string { return rapid.SampledFrom(repo.fragment.Nodes).Draw(t, label).Id }
-		switch path := rapid.SampledFrom([]string{"/api/node", "/api/slice", "/api/impact", "/api/reviews", "/api/views"}).Draw(t, "endpoint"); path {
-		case "/api/reviews":
-			return Request{Path: path, Query: url.Values{"id": {node("reviewed")}, "pending": {fmt.Sprint(rapid.Bool().Draw(t, "pending"))}}}
+		switch path := rapid.SampledFrom([]string{"/api/node", "/api/slice", "/api/impact", "/api/views"}).Draw(t, "endpoint"); path {
 		case "/api/views":
 			kind := rapid.SampledFrom(viewKinds).Draw(t, "kind")
 			return Request{Path: path + "/" + string(kind), Query: url.Values{"input": {rapid.SampledFrom(repo.inputs[kind]).Draw(t, "input")}}}

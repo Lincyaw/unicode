@@ -16,6 +16,7 @@ import (
 
 	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
+	"github.com/lincyaw/unicode/internal/review"
 )
 
 // Exchange is a repository and requests to its viewer: the graph of its
@@ -402,11 +403,13 @@ var endpoints = map[string]func(r *requests) url.Values{
 		return url.Values{"base": {rapid.SampledFrom([]string{"HEAD", "HEAD", "-x", "nope", ""}).Draw(r.t, "base")}}
 	},
 	"/api/views":   func(r *requests) url.Values { return r.view() },
+	"/api/reviews": func(r *requests) url.Values { return r.reviews() },
 	"/api/nowhere": func(*requests) url.Values { return nil },
 }
 
-// queryEndpoints are the endpoints that answer as query, view and graph.Compare do.
-var queryEndpoints = []string{"/api/node", "/api/search", "/api/slice", "/api/impact", "/api/views", "/api/compare"}
+// queryEndpoints are the endpoints that answer as query, view, graph.Compare
+// and review.Evaluate do, and the entity page, whose review is review.Evaluate's.
+var queryEndpoints = []string{"/api/node", "/api/search", "/api/slice", "/api/impact", "/api/views", "/api/compare", "/api/reviews", "/api/entity"}
 
 // requests draws requests about one graph: identities are mostly its nodes'.
 type requests struct {
@@ -473,6 +476,23 @@ func (r *requests) code() url.Values {
 	return q
 }
 
+// reviews draws the parameters of a review listing: zero to three identities,
+// pending true, false or not given, and about a third of the time the base
+// commit HEAD.
+func (r *requests) reviews() url.Values {
+	q := url.Values{}
+	if ids := r.ids("reviewed", 0); len(ids) > 0 {
+		q["id"] = ids
+	}
+	if pending := rapid.SampledFrom([]string{"", "true", "false"}).Draw(r.t, "pending"); pending != "" {
+		q["pending"] = []string{pending}
+	}
+	if rapid.IntRange(0, 2).Draw(r.t, "reviewBase?") == 0 {
+		q["base"] = []string{"HEAD"}
+	}
+	return q
+}
+
 // view draws a view kind, now and then one that does not exist, and its
 // input and expansions; now and then a layer or a level, given to any view
 // and now and then naming no value.
@@ -504,6 +524,7 @@ func (r *requests) view() url.Values {
 func genExchangeOf(paths []string) *rapid.Generator[Exchange] {
 	return rapid.Custom(func(t *rapid.T) Exchange {
 		f, files := genRepo(t)
+		f = withReviews(t, f)
 		x := Exchange{Fragment: f, Files: files}
 		for range rapid.IntRange(1, 6).Draw(t, "requests") {
 			if len(x.Requests) > 0 && rapid.IntRange(0, 4).Draw(t, "again?") == 0 {
@@ -516,6 +537,53 @@ func genExchangeOf(paths []string) *rapid.Generator[Exchange] {
 		}
 		return x
 	})
+}
+
+// withReviews adds to f the review layer of zero to three records that
+// review.Write gives for candidate targets of f, by one of two reviewers,
+// with either decision and with or without a comment; after about a third
+// of the records about a node, the node's summary changes, so that the
+// record no longer matches its content.
+func withReviews(t *rapid.T, f graph.Fragment) graph.Fragment {
+	g := graphOf(t, f)
+	candidates := review.Evaluate(&g, nil, nil).Items
+	count := rapid.IntRange(0, 3).Draw(t, "reviews")
+	if len(candidates) == 0 || count == 0 {
+		return f
+	}
+	dir, err := os.MkdirTemp("", "unicode-reviews-")
+	if err != nil {
+		t.Fatalf("setup failed: cannot make a directory for the review store: %v", err)
+	}
+	defer removeAll(t, dir)
+	var records []review.Record
+	changed := map[string]bool{}
+	for range count {
+		target := rapid.SampledFrom(candidates).Draw(t, "reviewed").Target
+		written := review.Write(dir, &g, nil, review.Request{Target: target, Reviewer: rapid.SampledFrom([]string{"reviewer", "张三"}).Draw(t, "reviewer"),
+			Decision: rapid.SampledFrom([]string{"approved", "changes-requested"}).Draw(t, "decision"), Comment: rapid.SampledFrom([]string{"", "字段与代码一致"}).Draw(t, "comment")})
+		if written.Record == nil {
+			t.Fatalf("setup failed: review.Write refused a review of the candidate %+v: %v", target, written.Diagnostics)
+		}
+		records = append(records, *written.Record)
+		if target.Node != "" && rapid.IntRange(0, 2).Draw(t, "changed?") == 0 {
+			changed[target.Node] = true
+		}
+	}
+	out := graph.Fragment{Nodes: slices.Clone(f.Nodes), Edges: slices.Clone(f.Edges)}
+	for i, n := range out.Nodes {
+		if changed[n.Id] {
+			out.Nodes[i].Summary = n.Summary + " (changed after its review)"
+		}
+	}
+	changedGraph := graphOf(t, out)
+	attached := review.Attach(&changedGraph, records)
+	if len(attached.Diagnostics) > 0 {
+		t.Fatalf("setup failed: review.Attach refused the records review.Write gave: %v", attached.Diagnostics)
+	}
+	out.Nodes = append(out.Nodes, attached.Fragment.Nodes...)
+	out.Edges = append(out.Edges, attached.Fragment.Edges...)
+	return out
 }
 
 // genExchange draws requests to every endpoint, and to one that does not exist.
@@ -531,7 +599,8 @@ func genExchange() *rapid.Generator[Exchange] {
 	return genExchangeOf(slices.Sorted(maps.Keys(endpoints)))
 }
 
-// genQueryExchange draws requests to the endpoints that query and view answer.
+// genQueryExchange draws requests to the endpoints that query, view,
+// graph.Compare and review.Evaluate answer, and to entity pages.
 //
 //uc:generates serve.queries-agree.exchange
 func genQueryExchange() *rapid.Generator[Exchange] {

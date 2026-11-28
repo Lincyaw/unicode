@@ -26,6 +26,7 @@ import (
 
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/query"
+	"github.com/lincyaw/unicode/internal/review"
 	"github.com/lincyaw/unicode/internal/view"
 )
 
@@ -137,8 +138,9 @@ var identityKeys = map[string]bool{"id": true, "from": true, "to": true, "focus"
 	"select": true, "children": true, "folded": true, "refers": true}
 
 // identitiesIn collects the node identities in a decoded answer; a node's
-// or an edge's attrs hold none, and a comparison's items as the base has
-// them, and those it removed, are not in the snapshot.
+// or an edge's attrs hold none, a review record's id names the record, and
+// a comparison's items as the base has them, and those it or a review
+// listing against a base removed, are not in the snapshot.
 func identitiesIn(v any, key string, into map[string]bool) {
 	switch v := v.(type) {
 	case string:
@@ -150,11 +152,11 @@ func identitiesIn(v any, key string, into map[string]bool) {
 			identitiesIn(x, key, into)
 		}
 	case map[string]any:
-		if v["change"] == "removed" {
+		if v["change"] == "removed" || v["removed"] == true {
 			return
 		}
 		for k, x := range v {
-			if k == "attrs" || k == "before" {
+			if k == "attrs" || k == "before" || k == "record" {
 				continue
 			}
 			if counts, ok := x.(map[string]any); ok && k == "details" {
@@ -316,13 +318,94 @@ func checkQueriesAgree(t rapid.TB, exchange Exchange) {
 			}
 			base := graphOf(t, baseOf(exchange.Fragment))
 			why = sameComparison(decode[Comparison](t, req, resp), &base, &g)
+		case "/api/reviews":
+			var base *graph.Graph
+			if q.Has("base") {
+				b := graphOf(t, baseOf(exchange.Fragment))
+				base = &b
+			}
+			why = sameReviews(decode[ReviewCollection](t, req, resp), reviewsOf(&g, base), q.Get("pending") != "false", q["id"])
+		case "/api/entity":
+			id := q.Get("id")
+			if g.Node(id) == nil {
+				refusal(t, req, resp, http.StatusNotFound, "serve.not-found")
+				continue
+			}
+			var want *review.Item
+			for _, item := range reviewsOf(&g, nil) {
+				if item.Target == (review.Target{Node: id}) {
+					want = &item
+				}
+			}
+			why = sameReview(decode[Entity](t, req, resp).Review, want)
 		default:
 			why = sameView(t, s, req, resp, &g)
 		}
 		if why != "" {
-			t.Fatalf("the answer to %s differs from calling query or view directly: %s\n%s", req, why, resp.Body)
+			t.Fatalf("the answer to %s differs from calling query, view, graph.Compare or review.Evaluate directly: %s\n%s", req, why, resp.Body)
 		}
 	}
+}
+
+// reviewsOf is what review.Evaluate gives for the records that the review
+// layer of g carries, against base when it is not nil.
+func reviewsOf(g, base *graph.Graph) []review.Item {
+	return review.Evaluate(g, base, review.Recorded(g).Records).Items
+}
+
+// sameReviews tells where a review listing differs from the evaluated items,
+// kept as design.md §7.6 filters them: pending ones only when pending, and
+// those whose target names one of ids when ids are given; "" when nowhere.
+func sameReviews(got ReviewCollection, items []review.Item, pending bool, ids []string) string {
+	var want []review.Item
+	for _, item := range items {
+		named := len(ids) == 0 || slices.Contains(ids, item.Target.Node) || slices.Contains(ids, item.Target.From) || slices.Contains(ids, item.Target.To)
+		if named && (!pending || item.State == "pending") {
+			want = append(want, item)
+		}
+	}
+	if len(got.Items) != len(want) {
+		return fmt.Sprintf("the answer lists %d review items, review.Evaluate keeps %d", len(got.Items), len(want))
+	}
+	for i, w := range want {
+		g := got.Items[i]
+		target := reviewTarget(w.Target)
+		recordID := ""
+		if g.Record != nil {
+			recordID = g.Record.Id
+		}
+		wantID := ""
+		if w.Record != nil {
+			wantID = w.Record.Id
+		}
+		if !reflect.DeepEqual(g.Target, target) || g.Digest != w.Digest || string(g.State) != w.State || recordID != wantID {
+			return fmt.Sprintf("review item %d is %+v (record %q), review.Evaluate gives %+v (record %q)", i, g, recordID, w, wantID)
+		}
+	}
+	return ""
+}
+
+// sameReview tells where an entity page's review differs from the evaluated
+// item of its node, or from none when the node is not a candidate; "" when
+// nowhere.
+func sameReview(got *Review, want *review.Item) string {
+	switch {
+	case got == nil && want == nil:
+		return ""
+	case got == nil || want == nil:
+		return fmt.Sprintf("the entity page's review is %+v, review.Evaluate gives %+v", got, want)
+	}
+	recordID, wantID := "", ""
+	if got.RecordId != nil {
+		recordID = *got.RecordId
+	}
+	if want.Record != nil {
+		wantID = want.Record.Id
+	}
+	if string(got.State) != want.State || got.Digest == nil || *got.Digest != want.Digest || recordID != wantID {
+		return fmt.Sprintf("the entity page's review is in state %s at %v with record %q, review.Evaluate gives %s at %s with record %q", got.State, got.Digest, recordID, want.State, want.Digest, wantID)
+	}
+	return ""
 }
 
 // sameComparison tells where a comparison's answer differs from

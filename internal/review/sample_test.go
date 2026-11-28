@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"time"
 
 	"pgregory.net/rapid"
 
@@ -22,6 +23,17 @@ type Sample struct {
 	Records []Record
 	Targets []Target
 	Pending []Target
+}
+
+// Malformed is a graph with a review layer, the identities of its
+// review-layer nodes that carry no valid record, and the records the others
+// carry.
+//
+//uc:realizes review.Malformed
+type Malformed struct {
+	Graph  *graph.Graph
+	Broken []string
+	Valid  []Record
 }
 
 type sampleRecord struct {
@@ -301,35 +313,151 @@ func oracleContent(g *graph.Graph, target Target) any {
 	return append(body, links)
 }
 
-// genProjected is the sample's graph without its review layer, as a build
-// has it before attaching, with the review layer that Attach projects from
-// the sample's records.
-//
-//uc:generates review.recorded-inverts-attach.projected
-func genProjected(sample Sample) *rapid.Generator[*graph.Graph] {
-	projected := graph.NewGraph()
-	for _, node := range sample.Graph.Nodes() {
+// withoutReviews is g without its review-layer nodes and the edges at them.
+func withoutReviews(g *graph.Graph) graph.Graph {
+	out := graph.NewGraph()
+	for _, node := range g.Nodes() {
 		if node.Layer == graph.LayerReview {
 			continue
 		}
-		if err := projected.AddNode(node); err != nil {
+		if err := out.AddNode(node); err != nil {
 			panic(err)
 		}
 	}
-	for _, edge := range sample.Graph.Edges() {
-		if projected.Node(edge.From) == nil || projected.Node(edge.To) == nil {
+	for _, edge := range g.Edges() {
+		if out.Node(edge.From) == nil || out.Node(edge.To) == nil {
 			continue
 		}
-		if err := projected.AddEdge(edge); err != nil {
+		if err := out.AddEdge(edge); err != nil {
 			panic(err)
 		}
 	}
-	attached := Attach(&projected, sample.Records)
+	return out
+}
+
+// drawRecord draws a valid record about one of targets: marked removed now
+// and then, by one of three reviewers, with either decision, at a random
+// second and nanosecond of 2026-11-27, with an empty, 40- or 64-digit commit,
+// either dirty flag, an empty, English or Chinese-and-emoji comment, and
+// random 64-digit content and input digests.
+func drawRecord(t *rapid.T, targets []Target) Record {
+	hex := func(size int, label string) string {
+		return rapid.StringOfN(rapid.RuneFrom([]rune("0123456789abcdef")), size, size, -1).Draw(t, label)
+	}
+	target := rapid.SampledFrom(targets).Draw(t, "target")
+	target.Removed = rapid.IntRange(0, 3).Draw(t, "removed?") == 0
+	at := time.Date(2026, 11, 27, 0, 0, 0, 0, time.UTC).Add(time.Duration(rapid.IntRange(0, 86399).Draw(t, "second")) * time.Second).
+		Add(time.Duration(rapid.IntRange(0, 999999999).Draw(t, "nanosecond")))
+	r := Record{Version: 1, Reviewer: rapid.SampledFrom([]string{"reviewer", "张三", "review-bot"}).Draw(t, "reviewer"), At: at.Format(time.RFC3339Nano),
+		Snapshot: hex(64, "snapshot"), Commit: hex(rapid.SampledFrom([]int{0, 40, 64}).Draw(t, "commitSize"), "commit"), Dirty: rapid.Bool().Draw(t, "dirty"),
+		Target: target, Digest: hex(64, "digest"), Decision: rapid.SampledFrom([]string{"approved", "changes-requested"}).Draw(t, "decision"),
+		Comment: rapid.SampledFrom([]string{"", "looks right", "字段名与代码一致 ✅"}).Draw(t, "comment")}
+	r.Id = recordId(r)
+	return r
+}
+
+// genRecords draws zero to eight valid records about the nodes and edges of
+// the sample's graph.
+//
+//uc:generates review.recorded-inverts-attach.records
+func genRecords(sample Sample) *rapid.Generator[[]Record] {
+	targets := sortedOracleTargets(oracleTargets(sample.Graph))
+	return rapid.Custom(func(t *rapid.T) []Record {
+		records := []Record{}
+		for range rapid.IntRange(0, 8).Draw(t, "records") {
+			records = append(records, drawRecord(t, targets))
+		}
+		return records
+	})
+}
+
+// genProjected is the sample's graph without its review layer, as a build
+// has it before attaching, with the review layer that Attach projects from
+// records.
+//
+//uc:generates review.recorded-inverts-attach.projected
+func genProjected(sample Sample, records []Record) *rapid.Generator[*graph.Graph] {
+	projected := withoutReviews(sample.Graph)
+	attached := Attach(&projected, records)
 	if len(attached.Diagnostics) > 0 {
-		panic(fmt.Sprintf("cannot attach the sample's records, which are valid by construction: %v", attached.Diagnostics))
+		panic(fmt.Sprintf("cannot attach records that are valid by construction: %v", attached.Diagnostics))
 	}
 	if err := projected.AddFragment(attached.Fragment); err != nil {
 		panic(err)
 	}
 	return rapid.Just(&projected)
+}
+
+// genMalformed draws a small graph with the review layer of one to six valid
+// records, of which at least one node is damaged in one way: an attribute
+// missing, an attribute with two values, version 2, a dirty or removed flag
+// that is not a boolean, an identity without the review: prefix, a changed
+// comment that no longer hashes to the identity, or a time that is not
+// canonical UTC.
+//
+//uc:generates review.recorded-reports-malformed-nodes.malformed
+func genMalformed() *rapid.Generator[Malformed] {
+	return rapid.Custom(func(t *rapid.T) Malformed {
+		g := withoutReviews(sampleGraph(t, 0))
+		targets := sortedOracleTargets(oracleTargets(&g))
+		byID := map[string]Record{}
+		for range rapid.IntRange(1, 6).Draw(t, "records") {
+			r := drawRecord(t, targets)
+			byID[r.Id] = r
+		}
+		records := slices.Collect(maps.Values(byID))
+		attached := Attach(&g, records)
+		if len(attached.Diagnostics) > 0 {
+			panic(fmt.Sprintf("cannot attach records that are valid by construction: %v", attached.Diagnostics))
+		}
+		nodes, edges := attached.Fragment.Nodes, attached.Fragment.Edges
+		damaged := make([]bool, len(nodes))
+		for i := range nodes {
+			damaged[i] = rapid.Bool().Draw(t, "damaged?")
+		}
+		if !slices.Contains(damaged, true) {
+			damaged[rapid.IntRange(0, len(nodes)-1).Draw(t, "damagedNode")] = true
+		}
+		out := Malformed{Broken: []string{}, Valid: []Record{}}
+		for i, node := range nodes {
+			id := strings.TrimPrefix(node.Id, "review:")
+			if !damaged[i] {
+				out.Valid = append(out.Valid, byID[id])
+				continue
+			}
+			attrs := maps.Clone(node.Attrs)
+			keys := slices.Sorted(maps.Keys(attrs))
+			switch rapid.IntRange(0, 7).Draw(t, "damage") {
+			case 0:
+				delete(attrs, rapid.SampledFrom(keys).Draw(t, "missing"))
+			case 1:
+				key := rapid.SampledFrom(keys).Draw(t, "doubled")
+				attrs[key] = append(slices.Clone(attrs[key]), "again")
+			case 2:
+				attrs["version"] = []string{"2"}
+			case 3:
+				attrs[rapid.SampledFrom([]string{"dirty", "removed"}).Draw(t, "flag")] = []string{"maybe"}
+			case 4:
+				renamed := "record:" + id
+				for j := range edges {
+					if edges[j].From == node.Id {
+						edges[j].From = renamed
+					}
+				}
+				node.Id = renamed
+			case 5:
+				attrs["comment"] = []string{attrs["comment"][0] + " changed"}
+			default:
+				attrs["at"] = []string{strings.Replace(attrs["at"][0], "Z", "+00:00", 1)}
+			}
+			node.Attrs = attrs
+			nodes[i] = node
+			out.Broken = append(out.Broken, node.Id)
+		}
+		if err := g.AddFragment(graph.Fragment{Nodes: nodes, Edges: edges}); err != nil {
+			panic(err)
+		}
+		out.Graph = &g
+		return out
+	})
 }

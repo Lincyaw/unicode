@@ -271,24 +271,25 @@ func Read(root string) Loaded {
 	return out
 }
 
-func knownTarget(g, base *graph.Graph, target Target) bool {
+// knownTarget tells whether target is a candidate of head, or, when it is
+// marked removed, a candidate of before that head no longer has.
+func knownTarget(head, before *content, target Target) bool {
 	current := target
 	current.Removed = false
 	if target.Removed {
-		if base == nil {
+		if before == nil {
 			return false
 		}
-		_, before := indexContent(base).candidates()[targetKey(current)]
-		if !before {
+		if _, was := before.candidates()[targetKey(current)]; !was {
 			return false
 		}
 		if target.Node != "" {
-			return g.Node(target.Node) == nil
+			return head.g.Node(target.Node) == nil
 		}
-		_, exists := indexContent(g).edge(current)
+		_, exists := head.edge(current)
 		return !exists
 	}
-	_, exists := indexContent(g).candidates()[targetKey(current)]
+	_, exists := head.candidates()[targetKey(current)]
 	return exists
 }
 
@@ -297,17 +298,24 @@ func knownTarget(g, base *graph.Graph, target Target) bool {
 //uc:realizes review.write
 func Write(root string, g *graph.Graph, base *graph.Graph, request Request) Written {
 	out := Written{Diagnostics: []diag.Diagnostic{}}
+	head, sources := indexContent(g), []*content{}
+	var before *content
+	if base != nil {
+		before = indexContent(base)
+	}
+	for _, source := range []*content{head, before} {
+		if source != nil {
+			sources = append(sources, source)
+		}
+	}
 	fail := func(code, cause, fix string) Written {
 		problem := issue(code, "design/system.uc", targetSubject(request.Target), cause, fix)
-		for _, source := range []*graph.Graph{g, base} {
-			if source == nil {
-				continue
-			}
-			if node := source.Node(request.Target.Node); node != nil && node.Origin.Path != "" {
+		for _, source := range sources {
+			if node := source.g.Node(request.Target.Node); node != nil && node.Origin.Path != "" {
 				problem.Position = node.Origin
 				break
 			}
-			if edge, found := indexContent(source).edge(request.Target); found && edge.Origin.Path != "" {
+			if edge, found := source.edge(request.Target); found && edge.Origin.Path != "" {
 				problem.Position = edge.Origin
 				break
 			}
@@ -333,12 +341,12 @@ func Write(root string, g *graph.Graph, base *graph.Graph, request Request) Writ
 	if request.ExpectedDigest != "" && !hexString(request.ExpectedDigest, 64) {
 		return fail("review.invalid-record", "the expected digest is not a lowercase SHA-256 digest", "give the 64-character digest listed for the target")
 	}
-	if !knownTarget(g, base, request.Target) {
+	if !knownTarget(head, before, request.Target) {
 		return fail("review.unknown-target", "the graph or comparison has no such reviewable target", "select a current target or a deletion from a comparison with its base")
 	}
-	view := indexContent(g)
+	view := head
 	if request.Target.Removed {
-		view = indexContent(base)
+		view = before
 	}
 	current := view.item(request.Target, nil)
 	if request.ExpectedDigest != "" && request.ExpectedDigest != current.Digest {

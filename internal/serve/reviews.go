@@ -7,7 +7,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/review"
 )
 
@@ -50,12 +49,22 @@ func (st *state) reviewOf(target review.Target) *Review {
 	return nil
 }
 
+// reviewsAgainst is the review evaluation of the snapshot against the base
+// commit of c; it is made once per base commit and kept with the snapshot.
+func (st *state) reviewsAgainst(c *compared) review.Evaluation {
+	if known, ok := st.baseReviews.Load(c.base.Commit); ok {
+		return known.(review.Evaluation)
+	}
+	evaluation, _ := st.baseReviews.LoadOrStore(c.base.Commit, review.Evaluate(&st.g, &c.graph.g, st.records))
+	return evaluation.(review.Evaluation)
+}
+
 func (a answers) ListReviews(ctx context.Context, request ListReviewsRequestObject) (ListReviewsResponseObject, error) {
 	st := stateOf(ctx)
 	if len(st.reviewDiagnostics) > 0 {
 		return nil, fmt.Errorf("cannot read review records: %v", st.reviewDiagnostics)
 	}
-	var baseline *graph.Graph
+	result := st.evaluated.Evaluation
 	if request.Params.Base != nil {
 		if *request.Params.Base == "" {
 			return nil, refuse(http.StatusBadRequest, "serve.bad-parameter", "give a base commit or omit base", "base is empty")
@@ -64,14 +73,10 @@ func (a answers) ListReviews(ctx context.Context, request ListReviewsRequestObje
 		if err != nil {
 			return nil, err
 		}
-		baseline = &comparison.graph.g
+		result = st.reviewsAgainst(comparison)
 	}
 	pending := request.Params.Pending == nil || *request.Params.Pending
 	ids := value(request.Params.Id)
-	result := st.evaluated.Evaluation
-	if baseline != nil {
-		result = review.Evaluate(&st.g, baseline, st.records)
-	}
 	if len(result.Diagnostics) > 0 {
 		return nil, fmt.Errorf("cannot evaluate reviews: %v", result.Diagnostics)
 	}

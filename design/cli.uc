@@ -15,6 +15,13 @@ type SinceSample record "changed-checks-are-selected 的输入：基准图、当
   field selected: list<string>
 }
 
+type StoreWrite record "stores-reach-viewer-through-build 的输入：打开在一个仓库的快照上的查看器后端、一个请求、往存储写入一条记录之前和之后对它的应答，生成时已在写入之后再运行一次 unicode build" {
+  field server: serve.Server
+  field request: serve.Request
+  field before: serve.Response
+  field written: serve.Response
+}
+
 op affectedChecks(base: graph.Graph, head: graph.Graph, selected: list<string>) -> list<string> "供 unicode test --since 使用：比较 base 和 head，按 design.md §6.3 从变化的节点和边传播影响，返回仍存在且受影响的性质和流程，再与 selected 中显式给出的标识取交集"
 
 op main(args: list<string>) -> int "执行一条命令，返回退出码"
@@ -114,4 +121,13 @@ property changed-checks-are-selected invariant "affectedChecks 返回的恰是�
   about affectedChecks
   forall sample: SinceSample generated "两张小图：一半是带包级声明和导入关系（有时成环）的四个代码包，在一处改动包级声明、文件或导入，或只改位置，或不改，另一半是零至四组性质、流程、观察、用例和代码，每组不改或改动函数体、ensure、摘要、用例、调用、绑定、增删性质或只改位置，约十分之一两张图都为空；约一半另有显式的选择，有时重复同一标识"
   manual "需要在两张图上反复传播影响直到不再变化，表达式没有迭代到不动点的构造"
+}
+
+property stores-reach-viewer-through-build postcondition "往评审存储或运行存储写入一条记录之后，unicode build 之前查看器对这条记录所指节点的请求的应答与写入之前相同，unicode build 之后以 200 应答且应答与写入之前不同" {
+  about serve.Server.answer
+  forall change: StoreWrite generated "一个建图没有诊断的小仓库（一至三个组件的设计文件、Go 源码和谓词）运行 unicode build 后打开的查看器后端，以及一个请求：约一半是对其中一个组件的 /api/node 或 /api/entity 请求，写入的是 unicode review record 给这个组件记的 approved 评审，其余是对这个组件的性质 keeps 的 /api/node 请求，写入的是 evidence.save 给 keeps 保存的一份运行报告"
+  call change.server.answer(change.request)
+  ensure change.written == change.before
+  ensure result.status == 200
+  ensure result != change.before
 }

@@ -355,7 +355,7 @@ func (p *page) typeDetail(id string) *TypeDetail {
 // with the code type that realizes it, which a type's card shows too.
 func (p *page) members(id string) []Member {
 	rows := []Member{}
-	for _, m := range p.st.members(id) {
+	for _, m := range p.st.typeMembers[id] {
 		rows = append(rows, member(m))
 		for _, r := range m.Refers {
 			p.listed[r] = true

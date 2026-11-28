@@ -45,8 +45,10 @@ type state struct {
 	inputs      map[view.ViewKind][]string
 	evaluated   evaluated
 	typeMembers map[string][]check.Member
-	// comparisons memoizes the comparison with each base commit.
+	// comparisons memoizes the comparison with each base commit, and
+	// baseReviews the review evaluation against each base commit.
 	comparisons sync.Map
+	baseReviews sync.Map
 }
 
 // load reads the snapshot file path of the repository at root, decodes it
@@ -399,10 +401,6 @@ func (st *state) viewApplies(kind view.ViewKind, input string) bool {
 // inputsOf are the inputs the view of the kind takes, by identity
 // (view.Inputs), as prepare made them.
 func (st *state) inputsOf(kind view.ViewKind) []string { return st.inputs[kind] }
-
-// members are the members of the design type id compared with the code
-// (check.Members), as prepare made them.
-func (st *state) members(id string) []check.Member { return st.typeMembers[id] }
 
 // prepare makes what every page of the served snapshot reads, so that no
 // request pays for it: the inputs of each view kind, the review evaluation
