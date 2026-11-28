@@ -3666,7 +3666,8 @@ type unicodeGeneratedProcessPlan struct {
 	effective int // the cases rapid runs: its count, or a fifth of it under -short
 	short     bool
 	forwarded []string
-	logged    bool // whether go test keeps a test log of this process
+	logged    bool   // whether go test keeps a test log of this process
+	gocache   string // the children's GOCACHE (ucRunBuildCache), or "" for the user's
 	cache     string
 	pool      unicodeGeneratedProcessPool
 	ctx       context.Context
@@ -3707,6 +3708,12 @@ func unicodeGeneratedNewProcessPlan(t *testing.T) (*unicodeGeneratedProcessPlan,
 			t.Fatal(err)
 		}
 		cleanups = append(cleanups, func() { _ = os.RemoveAll(p.cache) })
+	}
+	if p.gocache, err = unicodeGeneratedRunBuildCache(); err != nil {
+		t.Fatalf("no Go build cache for the property processes: %v; set UNICODE_TEST_GOCACHE=keep to use GOCACHE", err)
+	}
+	if p.gocache != "" {
+		cleanups = append(cleanups, func() { _ = os.RemoveAll(p.gocache) })
 	}
 	// Children are stopped before go test's own deadline, so that this
 	// process still removes their directories and reports them.
@@ -3826,6 +3833,9 @@ func (p *unicodeGeneratedProcessPlan) run(id, ids string, index int, s *unicodeG
 	if p.cache != "" {
 		cmd.Env = append(cmd.Env, "UNICODE_CACHE="+p.cache)
 	}
+	if p.gocache != "" {
+		cmd.Env = append(cmd.Env, "GOCACHE="+p.gocache)
+	}
 	grouped := unicodeGeneratedOwnProcessGroup(cmd)
 	cmd.Cancel = func() error { return unicodeGeneratedSignalGroup(cmd.Process, grouped, ucsyscall.SIGQUIT) }
 	cmd.WaitDelay = 10 * time.Second
@@ -3882,6 +3892,116 @@ func unicodeGeneratedSignalGroup(child *os.Process, grouped bool, sig os.Signal)
 	}
 	if err := child.Signal(sig); err != nil && sig != os.Kill {
 		return child.Kill()
+	}
+	return nil
+}
+
+// ucRunBuildCache gives the children of this run a Go build cache of their
+// own, so that what their go commands compile for the throwaway modules
+// tests write never reaches the user's GOCACHE: a directory whose entries
+// start as hard links to a base cache that holds the standard library and
+// rapid compiled for this toolchain. The base is built once per toolchain in
+// go-build-base/ of the user's cache directory, and the run's directory, made
+// beside it so that links work, is removed when the run ends.
+// UNICODE_TEST_GOCACHE=keep leaves the children on GOCACHE and gives "".
+func unicodeGeneratedRunBuildCache() (string, error) {
+	if os.Getenv("UNICODE_TEST_GOCACHE") == "keep" {
+		return "", nil
+	}
+	user, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	settings, err := ucexec.Command("go", "env", "-json", "GOVERSION", "GOROOT", "GOOS", "GOARCH", "GOFLAGS", "GOEXPERIMENT", "GOAMD64", "CGO_ENABLED").Output()
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(settings)
+	key := hex.EncodeToString(sum[:])[:16]
+	bases := ucfilepath.Join(user, "unicode", "go-build-base")
+	base := ucfilepath.Join(bases, key)
+	if _, err := os.Stat(ucfilepath.Join(base, "unicode-complete")); err != nil {
+		if err := unicodeGeneratedBuildBaseCache(bases, key); err != nil {
+			return "", err
+		}
+	}
+	runs := ucfilepath.Join(user, "unicode", "go-build-runs")
+	if err := os.MkdirAll(runs, 0o755); err != nil {
+		return "", err
+	}
+	// A run killed before its cleanup leaves its directory; take back those
+	// older than a day.
+	if entries, err := os.ReadDir(runs); err == nil {
+		for _, e := range entries {
+			if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > 24*time.Hour {
+				_ = os.RemoveAll(ucfilepath.Join(runs, e.Name()))
+			}
+		}
+	}
+	run, err := os.MkdirTemp(runs, "run-")
+	if err != nil {
+		return "", err
+	}
+	err = ucfilepath.WalkDir(base, func(path string, d ucfs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := ucfilepath.Rel(base, path)
+		if err != nil || rel == "." {
+			return err
+		}
+		if d.IsDir() {
+			return os.Mkdir(ucfilepath.Join(run, rel), 0o755)
+		}
+		if rel == "unicode-complete" || rel == "trim.txt" {
+			return nil
+		}
+		return os.Link(path, ucfilepath.Join(run, rel))
+	})
+	// A fresh trim.txt keeps the go command from trimming the linked entries,
+	// whose times are those of the base.
+	if err == nil {
+		err = os.WriteFile(ucfilepath.Join(run, "trim.txt"), []byte(strconv.FormatInt(time.Now().Unix(), 10)+"\n"), 0o644)
+	}
+	if err != nil {
+		_ = os.RemoveAll(run)
+		return "", err
+	}
+	return run, nil
+}
+
+// ucBuildBaseCache compiles the standard library and rapid into the base
+// cache key of bases, and removes the bases of other toolchains.
+func unicodeGeneratedBuildBaseCache(bases, key string) error {
+	if err := os.MkdirAll(bases, 0o755); err != nil {
+		return err
+	}
+	staging, err := os.MkdirTemp(bases, key+".staging-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(staging) }()
+	cmd := ucexec.Command("go", "list", "-e", "-export", "-deps", "std", "pgregory.net/rapid")
+	cmd.Env = append(os.Environ(), "GOCACHE="+staging)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("building the base Go build cache: %w: %s", err, out)
+	}
+	if err := os.WriteFile(ucfilepath.Join(staging, "unicode-complete"), nil, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(staging, ucfilepath.Join(bases, key)); err != nil {
+		if _, statErr := os.Stat(ucfilepath.Join(bases, key, "unicode-complete")); statErr != nil {
+			return err
+		}
+	}
+	entries, err := os.ReadDir(bases)
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		if e.Name() != key && !strings.Contains(e.Name(), ".staging-") {
+			_ = os.RemoveAll(ucfilepath.Join(bases, e.Name()))
+		}
 	}
 	return nil
 }
