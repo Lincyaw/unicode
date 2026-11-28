@@ -98,13 +98,14 @@ export function Canvas({ about, label, width, height, toolbar, footer, margin = 
 
   return (
     <div className={styles.canvas}>
-      <div ref={viewport} className={styles.viewport}>
+      <div ref={viewport} className={styles.viewport} data-viewport>
         <div
           ref={sheet}
           className={styles.sheet}
+          data-sheet
           style={{ width: size.width, height: size.height, visibility: opened ? undefined : 'hidden', transform: transform ? `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})` : undefined }}
         >
-          <div ref={drawing} className={styles.drawing} role="group" aria-label={label} style={{ width, height, left: margin.side, top: margin.top }}>
+          <div ref={drawing} className={styles.drawing} role="group" aria-label={label} data-drawing style={{ width, height, left: margin.side, top: margin.top }}>
             <RevealProvider value={id => setAsked({ id })}>{children}</RevealProvider>
           </div>
         </div>

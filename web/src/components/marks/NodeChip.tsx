@@ -42,10 +42,10 @@ export function NodeChip({ node, label, state = 'default', mode = 'select', stat
   const control = clsx(classes, 'loop-edge');
   switch (mode) {
     case 'current':
-      return <span className={classes} data-state={state} aria-current="page">{content}</span>;
+      return <span className={classes} data-box data-state={state} aria-current="page">{content}</span>;
     case 'link':
-      return <Link className={control} data-state={state} to={links.entityHref(node.id)}>{content}</Link>;
+      return <Link className={control} data-box data-state={state} to={links.entityHref(node.id)}>{content}</Link>;
     case 'select':
-      return <MarkButton className={control} data-state={state} {...actions}>{content}</MarkButton>;
+      return <MarkButton className={control} data-box data-state={state} {...actions}>{content}</MarkButton>;
   }
 }

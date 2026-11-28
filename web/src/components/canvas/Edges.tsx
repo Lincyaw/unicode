@@ -103,7 +103,7 @@ export function LineMarks({ marks, obstacles }: { marks: LineMark[]; obstacles: 
             elements.current.delete(mark.id);
           }
         }}
-        className={styles.marker} style={place ? { left: place.x, top: place.y } : { left: mark.route.mid.x, top: mark.route.mid.y, visibility: 'hidden' }}
+        className={styles.marker} data-mark style={place ? { left: place.x, top: place.y } : { left: mark.route.mid.x, top: mark.route.mid.y, visibility: 'hidden' }}
       >
         {mark.children}
       </div>

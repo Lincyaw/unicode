@@ -29,7 +29,7 @@ function BoxHead({ id, children }: { id: string; children: ReactNode }) {
 /** A box of types and functions, each with the design node it realizes. */
 function FileBox({ box, details }: { box: Box; details?: number }) {
   return (
-    <div className={clsx(styles.fileBox, box.input && 'loop-edge-still')} aria-current={box.input ? 'true' : undefined}>
+    <div className={clsx(styles.fileBox, box.input && 'loop-edge-still')} data-box aria-current={box.input ? 'true' : undefined}>
       {box.input && (
         <BoxHead id={box.input.id}>
           <KindIcon node={box.input} size="tiny" />

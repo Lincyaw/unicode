@@ -42,13 +42,13 @@ function Rows({ rows, onUnfold }: { rows: CardRow[]; onUnfold?: () => void }) {
     switch (row.kind) {
       case 'field':
         return (
-          <span key={index} className={styles.field} data-warn={row.warn}>
+          <span key={index} className={styles.field} data-field data-warn={row.warn}>
             <span>{row.name}</span>
             <span className={styles.fieldType}><TypeText parts={row.type} references="preview" /></span>
           </span>
         );
       case 'value':
-        return <span key={index} className={styles.field} data-warn={row.warn}><span>{row.name}</span></span>;
+        return <span key={index} className={styles.field} data-field data-warn={row.warn}><span>{row.name}</span></span>;
       case 'op':
         // A long signature is cut short on the card; its whole text shows while the pointer rests on it.
         return <Hint key={index} content={row.text}><NodeRef id={row.op.id} className={styles.op}>{row.text}</NodeRef></Hint>;
@@ -71,7 +71,7 @@ export function TypeCard({ node, rows, onUnfold, style }: { node: ViewNode; rows
     reveal(node.id);
   });
   return (
-    <div className={clsx(styles.card, box.selected && 'loop-edge-still')} data-status={node.status} style={style} {...box.props}>
+    <div className={clsx(styles.card, box.selected && 'loop-edge-still')} data-box data-status={node.status} style={style} {...box.props}>
       <span className={styles.head}>
         <CoverButton id={node.id}>
           <StatusDot status={node.status} />
@@ -107,7 +107,7 @@ export function FoldedCard({ node, names, style }: { node: ViewNode; names: View
   const box = useSelectedBox(node.id);
   const expandHref = links.expandHref?.(node.id);
   return (
-    <div className={clsx(styles.card, styles.folded, box.selected && 'loop-edge-still')} style={style} {...box.props}>
+    <div className={clsx(styles.card, styles.folded, box.selected && 'loop-edge-still')} data-box style={style} {...box.props}>
       <span className={styles.head}>
         <StatusDot status={node.status} />
         {expandHref && <Toggle href={expandHref} open={false} />}
@@ -138,7 +138,7 @@ export function ExternalCard({ node, style }: { node: ViewNode; style?: CSSPrope
   const box = useSelectedBox(node.id);
   const ops = (node.contents ?? []).filter(child => child.kind === 'op');
   return (
-    <div className={clsx(styles.card, styles.external, box.selected && 'loop-edge-still')} style={style} {...box.props}>
+    <div className={clsx(styles.card, styles.external, box.selected && 'loop-edge-still')} data-box style={style} {...box.props}>
       <span className={styles.head}>
         <CoverButton id={node.id}>
           <KindIcon node={node} size="small" />

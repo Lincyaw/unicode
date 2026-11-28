@@ -40,7 +40,7 @@ function C4Card({ node, style }: { node: ViewNode; style?: CSSProperties }) {
   const box = useSelectedBox(node.id);
   const external = node.kind === 'actor' && node.form === 'external';
   return (
-    <div className={clsx(styles.c4Card, box.selected && 'loop-edge-still')} data-external={external} data-person={node.form === 'person'} style={style} {...box.props}>
+    <div className={clsx(styles.c4Card, box.selected && 'loop-edge-still')} data-box data-external={external} data-person={node.form === 'person'} style={style} {...box.props}>
       <span className={styles.c4Head}>
         {node.form !== 'person' && <StatusDot status={node.status} />}
         <CoverButton id={node.id}>
