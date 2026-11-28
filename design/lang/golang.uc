@@ -67,6 +67,12 @@ type MeasurementSample record "measured-execution-keeps-real-evidence 的输入�
   field variant: int
 }
 
+type CacheChange record "extraction-cache-follows-changes 的输入：改动的种类 kind、在模块的包或文件中选哪一个的序号 pick，以及写进改动的常数 value" {
+  field kind: int
+  field pick: int
+  field value: int
+}
+
 op newBackend() -> Backend "创建 Go 后端"
 
 op testFile(path: string) -> bool pure "path 是不是 Go 的测试文件，即文件名以 _test.go 结尾、只有 go test 才编译的文件"
@@ -127,4 +133,18 @@ property implementation-content-is-normalized invariant "函数体、类型声�
   about Backend
   forall sample: BodySample generated "函数返回的常数 -1000 至 1000，以及是否改动函数体、是否只改排版和注释"
   manual "需要写出临时 Go 模块并抽取，再与 go/format 给出的规范文本比较，表达式不能读写文件"
+}
+
+property extraction-cache-hits-moved-module invariant "随机 Go 模块经内容缓存抽取之后，写到另一个目录的同一模块按同一种抽取（普通的或供生成用的）命中缓存，得到的节点、边和诊断与在那个目录不经缓存抽取的完全相同" {
+  about Backend
+  forall module: Module generated "一个随机的 Go 模块：一至三个包，各有一至两个源码文件，可有内部测试文件和外部测试包，含零至六个类型及其方法、零至五个函数、按测试命名的函数、调用、导入、嵌入、实现接口的类型、零至三个包级变量和 //uc: 绑定；部分绑定和生成标记故意写错，部分方法的签名与接口只差一个类型，部分声明只在排版和注释上与另一个不同，另有不成节点的声明"
+  forall forGeneration: bool
+  manual "需要在两个临时目录写出同一个 Go 模块，经缓存和不经缓存各用 go/packages 抽取，表达式不能读写文件"
+}
+
+property extraction-cache-follows-changes invariant "随机 Go 模块经内容缓存抽取之后，在一个源码文件末尾加一个函数、在一个包中新增一个源码文件、删除一个测试文件或把 go.mod 的 go 版本行改成 1.24、1.25 或 1.26，再经缓存抽取得到的节点、边和诊断与不经缓存抽取的完全相同" {
+  about Backend
+  forall module: Module generated "一个随机的 Go 模块：一至三个包，各有一至两个源码文件，可有内部测试文件和外部测试包，含零至六个类型及其方法、零至五个函数、按测试命名的函数、调用、导入、嵌入、实现接口的类型、零至三个包级变量和 //uc: 绑定；部分绑定和生成标记故意写错，部分方法的签名与接口只差一个类型，部分声明只在排版和注释上与另一个不同，另有不成节点的声明"
+  forall change: CacheChange generated "kind 取 0 至 3，依次是加函数、新增文件、删除测试文件（模块没有测试文件时不改动）和改写 go 版本行，pick 和 value 各取 0 至 1000：pick 按模块中候选的文件或包的个数取余选出一个，value 写进新函数的名称和返回值，也按 3 取余选出 go 版本 1.24、1.25 或 1.26"
+  manual "需要写出临时 Go 模块、改动其中的文件，再经缓存和不经缓存各用 go/packages 抽取，表达式不能读写文件"
 }

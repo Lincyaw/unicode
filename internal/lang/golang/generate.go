@@ -175,7 +175,7 @@ func (b *Backend) Generate(plan lang.GenPlan) lang.Generation {
 	slices.SortFunc(generation.Edits, func(a, b lang.Edit) int { return strings.Compare(a.Path, b.Path) })
 	generation.Diagnostics = c.diagnostics
 	if len(generation.Diagnostics) == 0 && len(generation.Edits) > 0 {
-		if _, err := loadPlannedGo(plan, generation.Edits, false); err != nil {
+		if err := checkPlannedGo(plan, generation.Edits); err != nil {
 			generation.Diagnostics = append(generation.Diagnostics, runDiagnostic("lang.golang.generate-failed", err.Error(), "correct source bindings or unsupported native signatures before writing the generation plan"))
 		}
 	}

@@ -3,8 +3,6 @@ package golang
 import (
 	"fmt"
 	"maps"
-	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -74,20 +72,8 @@ func describeDiagnostic(d diag.Diagnostic) string {
 
 //uc:checks lang.golang.extracts-generated-module
 func checkExtractsGeneratedModule(t rapid.TB, module Module) {
-	dir, err := os.MkdirTemp("", "unicode-golang-")
-	if err != nil {
-		t.Fatalf("cannot make a directory to write the module in: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	for path, content := range module.Files {
-		file := filepath.Join(dir, filepath.FromSlash(path))
-		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
-			t.Fatalf("cannot make the directory of %s: %v", path, err)
-		}
-		if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
-			t.Fatalf("cannot write %s: %v", path, err)
-		}
-	}
+	dir, remove := writeModule(t, module)
+	defer remove()
 	extracted, err := NewBackend().Extract(dir, []string{"."})
 	if err != nil {
 		t.Fatalf("Extract failed on the generated module, which is valid Go unless genModule wrote it wrong: %v\n%s", err, listing(module))

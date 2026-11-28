@@ -54,6 +54,8 @@ const goMod = "module " + modulePath + "\n\ngo 1.26\n\nrequire pgregory.net/rapi
 // misplaced.
 //
 //uc:generates lang.golang.extracts-generated-module.module
+//uc:generates lang.golang.extraction-cache-hits-moved-module.module
+//uc:generates lang.golang.extraction-cache-follows-changes.module
 func genModule() *rapid.Generator[Module] {
 	return rapid.Custom(func(t *rapid.T) Module {
 		w := &world{t: t}

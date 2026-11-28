@@ -31,6 +31,39 @@ func loadWithSkeletons(plan lang.GenPlan, edits []lang.Edit) (loaded, error) {
 	return loadPlannedGo(plan, edits, true)
 }
 
+// checkPlannedGo tells whether the code loads once edits are written. A
+// success is kept in the content cache under the inputs of the load with
+// the edits in place, so the same planned code is type-checked once
+// (docs/design.md §6.3); the paths of the edits are checked every time.
+func checkPlannedGo(plan lang.GenPlan, edits []lang.Edit) error {
+	const kind = cachePlanned
+	abs, err := filepath.Abs(plan.Root)
+	if err != nil {
+		return err
+	}
+	if err := validatePlannedGoPaths(abs, edits); err != nil {
+		return err
+	}
+	overlay := make(map[string][]byte, len(edits))
+	for _, edit := range edits {
+		overlay[filepath.Join(abs, filepath.FromSlash(edit.Path))] = edit.Content
+	}
+	cache := sharedCache()
+	key, keyed := goInputKey(abs, plan.Roots, "planned-generation", overlay)
+	if keyed {
+		if _, hit := cache.get(kind, key); hit {
+			return nil
+		}
+	}
+	if _, err := loadPlannedGo(plan, edits, false); err != nil {
+		return err
+	}
+	if after, ok := goInputKey(abs, plan.Roots, "planned-generation", overlay); keyed && ok && after == key {
+		cache.put(kind, key, []byte("loads\n"))
+	}
+	return nil
+}
+
 func loadPlannedGo(plan lang.GenPlan, edits []lang.Edit, bootstrapCarriers bool) (loaded, error) {
 	root, roots := plan.Root, plan.Roots
 	abs, err := filepath.Abs(root)

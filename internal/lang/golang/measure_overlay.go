@@ -279,7 +279,7 @@ func (p *measuredProgram) compile(ctx context.Context, target string, index int)
 	binary := filepath.Join(p.temp, fmt.Sprintf("contracts-%d.test", index))
 	cmd := exec.CommandContext(ctx, "go", "test", "-c", "-buildvcs=false", "-mod=readonly", "-overlay="+p.overlay, "-toolexec="+strconv.Quote(p.tool), "-covermode=atomic", "-coverpkg="+strings.Join(p.packages, ","), "-o", binary, target)
 	cmd.Dir = p.root
-	cmd.Env = os.Environ()
+	cmd.Env = append(os.Environ(), p.coverToolEnvironment()...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("compile measured contracts: %w: %s", err, output)
