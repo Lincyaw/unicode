@@ -59,11 +59,12 @@ const (
 	cacheExtraction = "go-extract"
 	cachePlanned    = "go-planned"
 	cacheTool       = "go-tool"
+	cacheEffects    = "go-effects"
 )
 
 // cacheKinds are the subdirectories trim looks after; the cache directory
 // may hold other tools' entries, which it leaves alone.
-var cacheKinds = []string{cacheExtraction, cachePlanned, cacheTool}
+var cacheKinds = []string{cacheExtraction, cachePlanned, cacheTool, cacheEffects}
 
 // contentCache is a directory of entries; the empty directory is the cache
 // turned off.

@@ -232,8 +232,8 @@ property derived-template-skips-self-naming-state invariant "派生函数建出�
 property extracts-direct-effects postcondition "抽取 root 中的模块没有诊断，抽取出的操作恰是 module.expected 中的那些，每个操作带 directEffects 当且仅当 module.expected 给它非空的效果，带的效果种类与 module.expected 中的相同" {
   about lang.Backend.extract
   forall backend: Backend
-  forall module: EffectModule generated "位于根目录、源码根目录恰为 . 的模块 example.test/m 和它依赖并以目录 dep 替换的模块 example.test/dep 的文件，依赖模块有未导出的辅助函数、保存函数字面量的包级变量和一至三个导出函数（各调用零至两个标准库函数，可能调用辅助函数、该变量的函数和更早的导出函数），本模块有接口 Doer、类型 Impl 的方法 Do、保存函数字面量的包级变量和一至四个函数（各在函数体和其中的函数字面量中各调用零至两个标准库函数，可能调用依赖模块的一个导出函数、该变量的函数、本模块的一个函数和经 Doer 调用的 Do），标准库的调用取自表中每一行的函数和方法、经 net.Conn 调用的方法和表外的同包函数，以及按这些调用逐个函数算出的、含抽象方法 Doer.Do 在内的每个操作的直接效果"
-  forall root: string generated "把 module.files 写进的新目录的路径"
+  forall module: EffectModule generated "位于根目录、源码根目录恰为 . 、依赖有版本的模块 golang.org/x/mod 的模块 example.test/m，以及一半机会另有它依赖并以目录 dep 替换的模块 example.test/dep 的文件：依赖模块有未导出的辅助函数、保存函数字面量的包级变量和一至三个导出函数（各调用零至两个标准库，可能调用辅助函数、该变量的函数和更早的导出函数），本模块有接口 Doer、类型 Impl 的方法 Do、保存函数字面量的包级变量和一至四个函数（各在函数体和其中的函数字面量中调用零至两个标准库，可能调用 semver.IsValid、依赖模块的一个导出函数、该变量的函数、本模块的一个函数和经 Doer 调用的 Do），辅助函数、变量的函数字面量和 Do 也各调用零至两个标准库；对标准库的调用取自 design.md §4 效果表中每个有效果的包、其中的例外、没有效果的包、经 net.Conn 调用的方法和表中列出的变量（单独用到或传给没有效果的函数），以及按这些调用逐个函数算出的、含抽象方法 Doer.Do 在内的每个操作的直接效果"
+  forall root: string generated "把 module.files 和仓库的 go.sum 写进的新目录的路径"
   call backend.extract(root, module.roots)
   ensure size(result.diagnostics) == 0
   ensure all(id in module.expected: any(n in result.fragment.nodes: n.id == id))

@@ -5,236 +5,216 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"go/ast"
-	"go/types"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
+	"strings"
 
-	"github.com/google/renameio/v2/maybe"
 	"golang.org/x/tools/go/packages"
 
+	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
 )
 
-// The effects of a function of a dependency module (docs/design.md §4) are
-// D8 (docs/model.md §9) along calls on the code of the dependency modules:
-// each function's direct effects are the kinds of the standard library
-// functions it calls, by the same table and the same calls as the code
-// layer, where a package-level variable lends its function literals only to
-// the functions of its own package. What a dependency package gives, its
-// functions with their direct effects and the functions of dependency
-// packages they call, is summarized once and kept in the user's cache,
-// keyed by the package, the version of its module and the files the build
-// selects. A module without a version, such as one replaced by a directory,
-// is summarized again on every extraction.
+// The code outside the source roots that the code calls, the packages of
+// dependency modules and the main modules' other packages (go.work modules
+// included), is walked by the same rules as the code layer (docs/design.md
+// §4): it is extracted the same way, functions, methods, interfaces, calls
+// and the closures package-level variables lend, its functions get their
+// direct effects from the table, and D8 gives them their effects, interface
+// dispatch included. What that gives, the effects of every function there
+// and the diagnostics of packages the table does not classify, is kept in
+// the content cache (cache.go) as one entry, under a key that holds the
+// unicode executable, the go command's settings, and every walked package:
+// its module and version when the module is versioned, the content of its
+// files otherwise.
 
-// packageSummary is what one dependency package gives, by function.
-type packageSummary struct {
-	Functions map[string]functionSummary `json:"functions"`
+// walkedResult is the cached form of what the walk gives.
+type walkedResult struct {
+	Effects     map[string][]string
+	Diagnostics []cachedDiagnostic
 }
 
-// functionSummary is a function's direct effects and the functions of
-// dependency packages it calls, its own package's included.
-type functionSummary struct {
-	Effects []string `json:"effects,omitempty"`
-	Calls   []string `json:"calls,omitempty"`
-}
-
-// dependencyEffects gives every function of the dependency packages among
-// known its effects.
-func dependencyEffects(root string, known map[string]*packages.Package) (map[string][]graph.Effect, error) {
-	summaries := map[string]packageSummary{}
-	keys := map[string]string{}
-	var missing []string
+// outsideEffects gives the effects of every function of the walked packages
+// among known, and the diagnostics of the standard library packages they
+// call that the table does not classify.
+func outsideEffects(l loaded, known map[string]*packages.Package) (map[string]effectMask, []diag.Diagnostic, error) {
+	roots := map[string]bool{}
+	for _, p := range l.packages {
+		roots[p.PkgPath] = true
+	}
+	var paths []string
 	for _, path := range slices.Sorted(maps.Keys(known)) {
-		p := known[path]
-		if !dependency(p) {
-			continue
-		}
-		key := summaryKey(p)
-		keys[path] = key
-		if s, ok := readSummary(key); ok {
-			summaries[path] = s
-		} else {
-			missing = append(missing, path)
+		if !roots[path] && place(known[path]) == walked {
+			paths = append(paths, path)
 		}
 	}
-	if len(missing) > 0 {
-		loaded, err := loadDependencies(root, missing)
-		if err != nil {
-			return nil, err
-		}
-		for _, p := range loaded {
-			s := summarize(p, known)
-			summaries[p.PkgPath] = s
-			writeSummary(keys[p.PkgPath], s)
-		}
+	if len(paths) == 0 {
+		return nil, nil, nil
 	}
-	g := graph.NewGraph()
-	for _, path := range slices.Sorted(maps.Keys(summaries)) {
-		for _, id := range slices.Sorted(maps.Keys(summaries[path].Functions)) {
-			attrs := map[string][]string{"directEffects": summaries[path].Functions[id].Effects}
-			if err := g.AddNode(graph.Node{Id: id, Kind: graph.NodeKindOp, Form: "func", Layer: graph.LayerCode, Source: graph.SourceExtracted, Attrs: attrs}); err != nil {
-				return nil, err
+	cache, err := sharedCache()
+	if err != nil {
+		return nil, nil, err
+	}
+	key, keyed := walkKey(l.root, paths, known)
+	var result walkedResult
+	if data, hit, err := cache.get(cacheEffects, key); err != nil {
+		return nil, nil, err
+	} else if keyed && hit {
+		if err := json.Unmarshal(data, &result); err != nil {
+			return nil, nil, cache.corrupt(cache.entryPath(cacheEffects, key), err)
+		}
+	} else {
+		if result, err = walk(l.root, paths, known); err != nil {
+			return nil, nil, err
+		}
+		if keyed {
+			if data, err := json.Marshal(result); err == nil {
+				cache.put(cacheEffects, key, data)
 			}
 		}
 	}
-	for _, s := range summaries {
-		for from, f := range s.Functions {
-			for _, to := range f.Calls {
-				if g.Node(to) != nil {
-					if err := g.AddEdge(graph.Edge{Kind: graph.EdgeKindCalls, From: from, To: to, Source: graph.SourceExtracted}); err != nil {
-						return nil, err
-					}
-				}
-			}
+	out := map[string]effectMask{}
+	for id, kinds := range result.Effects {
+		var m effectMask
+		for _, k := range kinds {
+			m |= mask(graph.Effect(k))
 		}
+		out[id] = m
 	}
-	out := map[string][]graph.Effect{}
-	for id, r := range g.Effects() {
-		out[id] = r.Effects
-	}
-	return out, nil
+	return out, convertAll(result.Diagnostics, func(d cachedDiagnostic) diag.Diagnostic { return diag.Diagnostic(d) }), nil
 }
 
-// summaryKey names a dependency package's summary in the cache, or is ""
-// for a package of a module without a version, such as one replaced by a
-// directory, whose files may change under the same name.
-func summaryKey(p *packages.Package) string {
-	m := p.Module
-	if m.Replace != nil {
-		m = m.Replace
+// walkKey is the cache key of the walk of the packages, or false when an
+// input cannot be read.
+func walkKey(root string, paths []string, known map[string]*packages.Package) (string, bool) {
+	exe, ok := executableDigest()
+	if !ok {
+		return "", false
 	}
-	if m.Version == "" {
-		return ""
+	env, ok := goEnvironment(root)
+	if !ok {
+		return "", false
 	}
 	h := sha256.New()
-	write := func(s string) { h.Write([]byte(s + "\x00")) }
-	write(effectsRules())
-	write(runtime.Version())
-	write(p.PkgPath)
-	write(m.Path + "@" + m.Version)
-	files := slices.Clone(p.GoFiles)
-	slices.Sort(files)
-	for _, f := range files {
-		write(filepath.Base(f))
+	record := func(fields ...string) {
+		for _, f := range fields {
+			_, _ = fmt.Fprintf(h, "%d:%s", len(f), f)
+		}
+		_, _ = h.Write([]byte{'\n'})
 	}
-	return hex.EncodeToString(h.Sum(nil))
+	record("unicode-go-effects", exe)
+	for _, name := range goEnvironmentNames {
+		record("env", name, env[name])
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return "", false
+	}
+	for _, path := range paths {
+		p := known[path]
+		m := p.Module
+		if m.Replace != nil {
+			m = m.Replace
+		}
+		record("package", path, m.Path, m.Version)
+		files := slices.Clone(p.GoFiles)
+		slices.Sort(files)
+		for _, f := range files {
+			if m.Version != "" {
+				// A module version's files never change; their names say
+				// which ones the build selected.
+				record("file", filepath.Base(f))
+				continue
+			}
+			content, err := os.ReadFile(f)
+			if err != nil {
+				return "", false
+			}
+			rel, err := filepath.Rel(abs, f)
+			if err != nil {
+				rel = f
+			}
+			sum := sha256.Sum256(content)
+			record("file", filepath.ToSlash(rel), hex.EncodeToString(sum[:]))
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), true
 }
 
-// summaryPath is where the cache keeps the summary of key, or "" when the
-// user has no cache directory.
-func summaryPath(key string) string {
-	dir, err := os.UserCacheDir()
-	if err != nil || key == "" {
-		return ""
-	}
-	return filepath.Join(dir, "unicode", "effects", key+".json")
-}
-
-func readSummary(key string) (packageSummary, bool) {
-	var s packageSummary
-	path := summaryPath(key)
-	if path == "" {
-		return s, false
-	}
-	data, err := os.ReadFile(path)
-	if err != nil || json.Unmarshal(data, &s) != nil || s.Functions == nil {
-		return packageSummary{}, false
-	}
-	return s, true
-}
-
-// writeSummary keeps a summary in the cache; a cache it cannot write only
-// makes the next extraction summarize again.
-func writeSummary(key string, s packageSummary) {
-	path := summaryPath(key)
-	if path == "" || os.MkdirAll(filepath.Dir(path), 0o755) != nil {
-		return
-	}
-	if data, err := json.Marshal(s); err == nil {
-		_ = maybe.WriteFile(path, data, 0o644)
-	}
-}
-
-// loadDependencies loads the dependency packages of the paths from their
-// source, as the module at root selects them.
-func loadDependencies(root string, paths []string) ([]*packages.Package, error) {
+// walk loads the packages from their source, as the module at root selects
+// them, extracts them as the code layer is extracted, and gives every
+// function D8's effects.
+func walk(root string, paths []string, known map[string]*packages.Package) (walkedResult, error) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo |
-			packages.NeedModule,
+			packages.NeedModule | packages.NeedImports,
 		Dir: root, BuildFlags: []string{"-buildvcs=false"}, ParseFile: parseFile,
 	}
-	loaded, err := packages.Load(cfg, paths...)
+	pkgs, err := packages.Load(cfg, paths...)
 	if err != nil {
-		return nil, err
+		return walkedResult{}, err
 	}
 	var problems []error
-	for _, p := range loaded {
+	for _, p := range pkgs {
 		for _, e := range p.Errors {
 			problems = append(problems, e)
 		}
 	}
 	if len(problems) > 0 {
-		return nil, errors.Join(problems...)
+		return walkedResult{}, errors.Join(problems...)
 	}
-	return loaded, nil
+	slices.SortFunc(pkgs, func(a, b *packages.Package) int { return strings.Compare(a.PkgPath, b.PkgPath) })
+	// The walked files lie anywhere; the extraction is rooted at the file
+	// system's root, and a diagnostic's path is made relative to root.
+	x := newExtraction(string(filepath.Separator))
+	for _, p := range pkgs {
+		x.addPackage(p)
+	}
+	for _, d := range x.declared {
+		if d.fn != nil {
+			n := x.nodes[d.id]
+			n.Attrs["name"] = []string{designName(d.fn.Name())}
+			x.nodes[d.id] = n
+		}
+		if d.name != nil {
+			x.addTypeEdges(d)
+		} else {
+			x.addFuncEdges(d)
+		}
+	}
+	x.addImplements()
+	x.diagnostics = nil
+	direct, _ := x.tableEffects(pkgs, known)
+	for id, m := range direct {
+		if n, ok := x.nodes[id]; ok && n.Kind == graph.NodeKindOp && m != none {
+			n.Attrs["directEffects"] = m.written()
+			x.nodes[id] = n
+		}
+	}
+	diagnostics := slices.Clone(x.diagnostics)
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return walkedResult{}, err
+	}
+	for i, d := range diagnostics {
+		if rel, err := filepath.Rel(abs, string(filepath.Separator)+filepath.FromSlash(d.Position.Path)); err == nil {
+			diagnostics[i].Position.Path = filepath.ToSlash(rel)
+		}
+	}
+	g := graph.NewGraph()
+	if err := g.AddFragment(x.result().Fragment); err != nil {
+		return walkedResult{}, err
+	}
+	out := walkedResult{Effects: map[string][]string{}, Diagnostics: convertAll(diagnostics, func(d diag.Diagnostic) cachedDiagnostic { return cachedDiagnostic(d) })}
+	for id, r := range g.Effects() {
+		var kinds []string
+		for _, k := range r.Effects {
+			kinds = append(kinds, string(k))
+		}
+		out.Effects[id] = kinds
+	}
+	return out, nil
 }
-
-// summarize reads a dependency package's functions with the calls the code
-// layer would give them, and splits their callees into the standard library
-// functions, whose kinds are direct effects, and the functions of
-// dependency packages.
-func summarize(p *packages.Package, known map[string]*packages.Package) packageSummary {
-	x := newExtraction("")
-	for _, f := range p.Syntax {
-		for _, decl := range f.Decls {
-			if gen, ok := decl.(*ast.GenDecl); ok {
-				for _, spec := range gen.Specs {
-					if value, ok := spec.(*ast.ValueSpec); ok {
-						x.addInitializers(p, value)
-					}
-				}
-			}
-		}
-	}
-	s := packageSummary{Functions: map[string]functionSummary{}}
-	for _, f := range p.Syntax {
-		for _, decl := range f.Decls {
-			fd, ok := decl.(*ast.FuncDecl)
-			if !ok || !funcIsNode(fd) {
-				continue
-			}
-			fn, ok := p.TypesInfo.Defs[fd.Name].(*types.Func)
-			if !ok {
-				continue
-			}
-			x.addFuncEdges(declared{id: funcID(fn), pkg: p, pos: fd.Name.Pos(), decl: fd, fn: fn})
-			s.Functions[funcID(fn)] = functionSummary{}
-		}
-	}
-	for from, callees := range x.externals(usedFuncs([]*packages.Package{p}), known) {
-		f, ok := s.Functions[from]
-		if !ok {
-			continue
-		}
-		for _, c := range callees {
-			if dependency(c.pkg) {
-				f.Calls = append(f.Calls, funcID(c.fn))
-			} else if k := c.effect(); k != "" && !slices.Contains(f.Effects, string(k)) {
-				f.Effects = append(f.Effects, string(k))
-			}
-		}
-		s.Functions[from] = f
-	}
-	for id, f := range s.Functions {
-		slices.SortFunc(f.Effects, func(a, b string) int { return effectRank(a) - effectRank(b) })
-		s.Functions[id] = f
-	}
-	return s
-}
-
-func effectRank(e string) int { return slices.Index(effectKinds, graph.Effect(e)) }

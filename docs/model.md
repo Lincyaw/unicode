@@ -69,7 +69,7 @@
 - `actor`：`person` 是人，只能发起调用；`external` 是外部系统，可以包含 `type` 和 `op`，描述本系统用到的接口。外部系统的类型和操作由本仓库中的客户端代码实现。
 - 关注度 focus(c) ∈ {core, support, utility}，是设计层 `container` 的属性，只影响视图（[design.md](design.md) §7.2）。
 - 代码层 `op`：签名是语言无关的归一化形式（[design.md](design.md) §4）；测试类别 testKind ∈ {none, example, property, fuzz}，由后端按该语言的测试约定判定；骨架指函数体恰为 `gen` 生成的占位标记。
-- **效果种类**有四种：`time`（时间或随机数）、`fs`（文件系统）、`process`（进程）和 `network`（网络）。代码层 `op` 的**直接效果** directEffects 是它的函数体直接调用的标准库函数和依赖模块中的函数所带的效果种类的集合，由语言后端给出（[design.md](design.md) §4）。操作的效果由直接效果沿调用推导（§9 D8）。
+- **效果种类**有四种：`time`（时间或随机数）、`fs`（文件系统）、`process`（进程）和 `network`（网络）。代码层 `op` 的**直接效果** directEffects 是它的调用所指的标准库函数、它的函数体用到的标准库变量所带的效果种类，以及它调用的源码根目录之外的函数（依赖模块和主模块的其他包中的，按本节和 §9 D8 的同样规则求出）的效果的集合，由语言后端给出（[design.md](design.md) §4）。操作的效果由直接效果沿调用推导（§9 D8）。
 
 ### 3.2 流程
 

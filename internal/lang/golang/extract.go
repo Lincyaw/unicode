@@ -267,7 +267,8 @@ func (x *extraction) addTypeEdges(d declared) {
 	origin := x.position(d.pkg, d.pos)
 	refer := func(t *types.Named) { x.addEdge(graph.EdgeKindRefers, d.id, typeID(t.Obj()), origin) }
 	embed := func(t types.Type) {
-		if named := namedOf(t); named != nil {
+		// A universe type such as error has no package and no node.
+		if named := namedOf(t); named != nil && named.Obj().Pkg() != nil {
 			x.addEdge(graph.EdgeKindExtends, d.id, typeID(named.Obj()), origin)
 		}
 	}
@@ -493,10 +494,7 @@ func (x *extraction) result() lang.Extracted {
 	for _, id := range slices.Sorted(maps.Keys(x.nodes)) {
 		out.Fragment.Nodes = append(out.Fragment.Nodes, x.nodes[id])
 	}
-	keys := slices.SortedFunc(maps.Keys(x.edges), func(a, b edgeKey) int {
-		return cmp.Or(cmp.Compare(a.kind, b.kind), cmp.Compare(a.from, b.from), cmp.Compare(a.to, b.to))
-	})
-	for _, key := range keys {
+	for _, key := range slices.SortedFunc(maps.Keys(x.edges), compareEdgeKeys) {
 		e := *x.edges[key]
 		_, fromNode := x.nodes[e.From]
 		_, toNode := x.nodes[e.To]
@@ -514,6 +512,10 @@ func (x *extraction) result() lang.Extracted {
 		out.Fragment.Edges = append(out.Fragment.Edges, e)
 	}
 	return out
+}
+
+func compareEdgeKeys(a, b edgeKey) int {
+	return cmp.Or(cmp.Compare(a.kind, b.kind), cmp.Compare(a.from, b.from), cmp.Compare(a.to, b.to))
 }
 
 func comparePositions(a, b diag.Position) int {
