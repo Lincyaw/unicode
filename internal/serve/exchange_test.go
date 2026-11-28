@@ -185,23 +185,36 @@ func (r *repoDraw) signature() string {
 	return sig
 }
 
-// codeOf adds a component's Go package and file, a code type for each of
-// its types with a method for each operation, and a function for each free
-// operation, each realizing its design node now and then.
+// codeOf adds a component's Go package and its files: always one, now and
+// then a second and a _test.go file, named so that their paths sort in the
+// opposite order to how the code tab ranks them. Each file gets some of the code: a code
+// type for each of the component's types with a method for each operation,
+// and a function for each free operation, each realizing its design node now
+// and then, and the predicates of its properties.
 func (r *repoDraw) codeOf(c string) {
 	t := r.t
 	pkg := "go:example.com/shop/src/" + c
-	file := "src/" + c + "/" + c + ".go"
-	r.files[file] = []string{"package " + c, ""}
+	paths := []string{"src/" + c + "/" + c + ".go"}
+	if rapid.Bool().Draw(t, "secondFile?") {
+		paths = append(paths, "src/"+c+"/b.go")
+	}
+	if rapid.Bool().Draw(t, "testFile?") {
+		paths = append(paths, "src/"+c+"/a_test.go")
+	}
 	r.node(graph.Node{Id: pkg, Kind: graph.NodeKindContainer, Form: "package", Layer: graph.LayerCode, Source: graph.SourceExtracted,
-		Origin: diag.Position{Path: file, Line: 1, Column: 1}, Attrs: map[string][]string{"language": {"go"}, "path": {"example.com/shop/src/" + c}}})
-	fileID := r.node(graph.Node{Id: "file:" + file, Kind: graph.NodeKindContainer, Form: "file", Layer: graph.LayerCode, Source: graph.SourceExtracted,
-		Origin: diag.Position{Path: file, Line: 1, Column: 1}, Attrs: map[string][]string{"language": {"go"}, "path": {file}}})
-	r.edge(graph.EdgeKindContains, pkg, fileID, nil)
-	r.edge(graph.EdgeKindOwns, c, fileID, nil)
+		Origin: diag.Position{Path: paths[0], Line: 1, Column: 1}, Attrs: map[string][]string{"language": {"go"}, "path": {"example.com/shop/src/" + c}}})
+	for _, file := range paths {
+		r.files[file] = []string{"package " + c, ""}
+		fileID := r.node(graph.Node{Id: "file:" + file, Kind: graph.NodeKindContainer, Form: "file", Layer: graph.LayerCode, Source: graph.SourceExtracted,
+			Origin: diag.Position{Path: file, Line: 1, Column: 1}, Attrs: map[string][]string{"language": {"go"}, "path": {file}}})
+		r.edge(graph.EdgeKindContains, pkg, fileID, nil)
+		r.edge(graph.EdgeKindOwns, c, fileID, nil)
+	}
 	for _, d := range r.children(c) {
 		n := r.ids[d]
 		name := d[strings.LastIndex(d, ".")+1:]
+		file := rapid.SampledFrom(paths).Draw(t, "file")
+		fileID := "file:" + file
 		switch n.Kind {
 		case graph.NodeKindType:
 			typ := r.code(pkg+"."+name, graph.NodeKindType, "struct", file, []string{"// " + name + " is drawn.", "type " + name + " struct {", "\tID string", "}", ""},
@@ -232,9 +245,10 @@ func (r *repoDraw) codeOf(c string) {
 		}
 	}
 	for k := range rapid.IntRange(0, 2).Draw(t, "helpers") {
+		file := rapid.SampledFrom(paths).Draw(t, "helperFile")
 		h := r.code(fmt.Sprintf("%s.helper%d", pkg, k), graph.NodeKindOp, "func", file, []string{fmt.Sprintf("func helper%d() {", k), "}", ""},
 			map[string][]string{"name": {fmt.Sprintf("helper%d", k)}, "signature": {"()"}, "stub": {"false"}, "testKind": {"none"}})
-		r.edge(graph.EdgeKindContains, fileID, h, nil)
+		r.edge(graph.EdgeKindContains, "file:"+file, h, nil)
 	}
 }
 
@@ -605,6 +619,13 @@ func genExchange() *rapid.Generator[Exchange] {
 //uc:generates serve.queries-agree.exchange
 func genQueryExchange() *rapid.Generator[Exchange] {
 	return genExchangeOf(queryEndpoints)
+}
+
+// genEntityExchange draws requests for entity pages.
+//
+//uc:generates serve.code-tab-ranks-files.exchange
+func genEntityExchange() *rapid.Generator[Exchange] {
+	return genExchangeOf([]string{"/api/entity"})
 }
 
 // genTabsExchange draws requests for the answers that give tabs: entity pages and views.

@@ -645,7 +645,7 @@ func synopsis(group *ast.CommentGroup) string {
 // calls rapid.Check and an example otherwise.
 func testKind(info *types.Info, f sourceFile, decl *ast.FuncDecl, fn *types.Func) string {
 	sig := fn.Signature()
-	if decl.Recv != nil || !strings.HasSuffix(f.rel, "_test.go") || sig.TypeParams().Len() > 0 ||
+	if decl.Recv != nil || !TestFile(f.rel) || sig.TypeParams().Len() > 0 ||
 		sig.Params().Len() != 1 || sig.Results().Len() != 0 {
 		return "none"
 	}
@@ -660,6 +660,12 @@ func testKind(info *types.Info, f sourceFile, decl *ast.FuncDecl, fn *types.Func
 	}
 	return "none"
 }
+
+// TestFile tells whether the file at path is a Go test file, one only go
+// test compiles: its name ends in _test.go.
+//
+//uc:realizes lang.golang.testFile
+func TestFile(path string) bool { return strings.HasSuffix(path, "_test.go") }
 
 // isTestName tells whether name is prefix followed by nothing or by a
 // character that is not a lower-case letter, as go test requires.

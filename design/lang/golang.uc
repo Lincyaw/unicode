@@ -69,6 +69,8 @@ type MeasurementSample record "measured-execution-keeps-real-evidence 的输入�
 
 op newBackend() -> Backend "创建 Go 后端"
 
+op testFile(path: string) -> bool pure "path 是不是 Go 的测试文件，即文件名以 _test.go 结尾、只有 go test 才编译的文件"
+
 op declaration(src: bytes, line: int, column: int) -> optional<Lines> "src 中包含第 line 行第 column 列的顶层声明所占的行，从文档注释起，分组的类型声明中只取包含该位置的类型；源码解析不了或该位置不在声明中时为空"
 
 property extracts-generated-module invariant "抽取随机 Go 模块不出错，得到的节点和边与按 design.md §4、§5.2 的规则从生成模块时的模型算出的相同，其中内容哈希是 SHA-256 并把节点分成同样的类，诊断的诊断码、文件和行也相同" {

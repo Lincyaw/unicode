@@ -596,6 +596,103 @@ func viewRequest(r ViewRequest, system string) Request {
 	return Request{Path: "/api/views/" + string(r.Kind), Query: q}
 }
 
+// checkCodeTab checks the code tab of a component's entity page that offers
+// no code view of its own: when the component owns files the code view
+// takes, the tab leads to the first of them, a file that is not a test file
+// before one that is, then the file with more code elements realizing a
+// design node, then by path. A test file is a _test.go file, or one that
+// holds a test function or code bound by checks, generates, observes or
+// substitutes.
+func checkCodeTab(t rapid.TB, s *Server, g graph.Graph, req Request, tabs []ViewTab) {
+	id := ""
+	if ids := req.Query["id"]; req.Path == "/api/entity" && len(ids) == 1 {
+		id = ids[0]
+	}
+	if n := g.Node(id); n == nil || n.Layer != graph.LayerDesign || n.Kind != graph.NodeKindContainer {
+		return
+	}
+	if slices.ContainsFunc(decode[Entity](t, req, s.Answer(req)).Views, func(v ViewRequest) bool { return v.Kind == ViewKindCode }) {
+		return
+	}
+	edges := g.Edges()
+	from := func(id string, kinds ...graph.EdgeKind) []string {
+		var ids []string
+		for _, e := range edges {
+			if e.From == id && slices.Contains(kinds, e.Kind) {
+				ids = append(ids, e.To)
+			}
+		}
+		return ids
+	}
+	var within func(string) []string
+	within = func(id string) []string {
+		var ids []string
+		for _, c := range from(id, graph.EdgeKindContains) {
+			ids = append(append(ids, c), within(c)...)
+		}
+		return ids
+	}
+	type rank struct {
+		test      bool
+		realizing int
+	}
+	rankOf := func(file string) rank {
+		r := rank{test: strings.HasSuffix(g.Node(file).Attrs["path"][0], "_test.go")}
+		for _, c := range within(file) {
+			kind := g.Node(c).Attrs["testKind"]
+			r.test = r.test || len(kind) > 0 && kind[0] != "none" ||
+				len(from(c, graph.EdgeKindChecks, graph.EdgeKindGenerates, graph.EdgeKindObserves, graph.EdgeKindSubstitutes)) > 0
+			if len(from(c, graph.EdgeKindRealizes)) > 0 {
+				r.realizing++
+			}
+		}
+		return r
+	}
+	before := func(a, b string) bool {
+		ra, rb := rankOf(a), rankOf(b)
+		if ra.test != rb.test {
+			return rb.test
+		}
+		if ra.realizing != rb.realizing {
+			return ra.realizing > rb.realizing
+		}
+		return a < b
+	}
+	var taken []string
+	for _, f := range from(id, graph.EdgeKindOwns) {
+		if s.Answer(Request{Path: "/api/views/code", Query: map[string][]string{"input": {f}}}).Status == http.StatusOK {
+			taken = append(taken, f)
+		}
+	}
+	if len(taken) == 0 {
+		return
+	}
+	i := slices.IndexFunc(tabs, func(tab ViewTab) bool { return tab.Kind == ViewKindCode })
+	if i < 0 || tabs[i].View == nil {
+		t.Fatalf("the answer to %s gives no code view, yet %q owns the files %v that the code view takes", req, id, taken)
+	}
+	chosen := tabs[i].View.Input.Id
+	if !slices.Contains(taken, chosen) {
+		t.Fatalf("the answer to %s leads the code tab to %q, not to one of the files %v that %q owns and the code view takes", req, chosen, taken, id)
+	}
+	for _, f := range taken {
+		if before(f, chosen) {
+			t.Fatalf("the answer to %s leads the code tab to %q, yet %q ranks before it: %+v against %+v", req, chosen, f, rankOf(f), rankOf(chosen))
+		}
+	}
+}
+
+//uc:checks serve.code-tab-ranks-files
+func checkCodeTabRanksFiles(t rapid.TB, exchange Exchange) {
+	s, root, g := served(t, exchange)
+	defer removeAll(t, root)
+	for _, req := range exchange.Requests {
+		if tabs, ok := tabsAnswered(t, req, s.Answer(req)); ok {
+			checkCodeTab(t, s, g, req, tabs)
+		}
+	}
+}
+
 //uc:checks serve.tabs-open-views
 func checkTabsOpenViews(t rapid.TB, exchange Exchange) {
 	s, root, g := served(t, exchange)

@@ -76,6 +76,12 @@ property tabs-open-views invariant "实体页和视图的 tabs 按标签的次�
   manual "需要对图中每个节点调用 view.select 判断视图是否适用，表达式中只能调用纯操作，而 view.select 不是纯操作"
 }
 
+property code-tab-ranks-files invariant "组件的实体页没有代码的相关视图、而组件拥有代码视图接受的文件时，代码标签指向其中排在最前的文件，不是测试文件的在前，落实设计节点的代码元素多的其次，最后按路径" {
+  about Server.answer
+  forall exchange: Exchange generated "一个随机小仓库的图和文件，每个组件有一至三个代码文件，可有第二个文件和一个 _test.go 文件，三者路径的次序与这一排序相反，各文件随机分到组件的类型、函数和谓词，以及对 /api/entity 的一至六个请求：标识约七分之一不存在，约六分之一带基准 HEAD，约五分之一重复前面的请求"
+  manual "需要对组件拥有的每个文件调用 view.select 判断代码视图是否接受它，表达式中只能调用纯操作，而 view.select 不是纯操作"
+}
+
 property answers-are-deterministic invariant "同一个快照上，同一个请求的应答逐字节相同，与它之前回答过哪些请求无关" {
   about Server.answer
   forall exchange: Exchange generated "一个随机小仓库的图和文件（系统、人、外部系统、一至三个组件及其类型、操作、流程、性质、用例和 Go 代码，以及零至三条评审记录的评审层，约三分之一的被评节点在评审之后改了摘要），以及对各个接口和一个不是接口的路径的一至六个请求：标识约七分之一不存在，参数有时不合格式，约五分之一重复前面的请求"

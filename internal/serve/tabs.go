@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/lincyaw/unicode/internal/graph"
+	"github.com/lincyaw/unicode/internal/lang/golang"
 	"github.com/lincyaw/unicode/internal/view"
 )
 
@@ -155,7 +156,9 @@ func (st *state) ownedFiles(id string) []string {
 
 // filesByCode orders code files as the code tab prefers them (docs/design.md
 // §7.5.1): a file that is not a test file first, then the file with more
-// code elements that realize a design node, then by path.
+// code elements that realize a design node, then by path. A test file is one
+// its language marks as a test file (Go's _test.go), or one that holds a
+// test function or code bound by checks, generates, observes or substitutes.
 func (st *state) filesByCode(files []string) []string {
 	type weight struct {
 		test      bool
@@ -164,6 +167,7 @@ func (st *state) filesByCode(files []string) []string {
 	weights := map[string]weight{}
 	for _, f := range files {
 		w := weight{}
+		w.test = st.attr(f, "language") == "go" && golang.TestFile(st.attr(f, "path"))
 		for _, c := range st.within(f) {
 			w.test = w.test || st.verifies(c)
 			if len(st.targets(c, graph.EdgeKindRealizes)) > 0 {

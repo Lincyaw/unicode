@@ -194,7 +194,7 @@ func (c *contractCompiler) bound(kind graph.EdgeKind, id string) (nativeDeclarat
 }
 func (c *contractCompiler) positionFile(p *packages.Package) string {
 	for _, f := range filesUnder(c.loaded.root, p) {
-		if !strings.HasSuffix(f.rel, "_test.go") {
+		if !TestFile(f.rel) {
 			return f.rel
 		}
 	}

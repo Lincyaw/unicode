@@ -202,7 +202,7 @@ func (p *skeletonPlanner) implementationEdits(plan lang.GenPlan, l loaded) []lan
 			p.fail(p.nodes[id], "the receiver source lies outside the repository", "realize the receiver inside its configured source roots")
 			continue
 		}
-		test := strings.HasSuffix(rel, "_test.go")
+		test := TestFile(rel)
 		edits = append(edits, lang.Edit{Path: path.Join(path.Dir(filepath.ToSlash(rel)), skeletonFileName("implements:"+id, test)), Content: content, CreateOnly: true})
 	}
 	return edits
