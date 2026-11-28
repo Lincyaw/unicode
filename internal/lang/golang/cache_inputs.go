@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path"
@@ -156,23 +157,38 @@ func (s inputSet) addFile(root, name string) error {
 }
 
 // current tells whether every input still has its recorded digest, with
-// paths taken relative to root.
-func (s inputSet) current(root string) bool {
-	for key, want := range s {
+// paths taken relative to root and the files of overlay (absolute path to
+// content) read as if they were written.
+func (s inputSet) current(root string, overlay map[string][]byte) bool {
+	return maps.Equal(s, s.recomputed(root, overlay))
+}
+
+// recomputed is the set with the same keys, digested afresh.
+func (s inputSet) recomputed(root string, overlay map[string][]byte) inputSet {
+	out := make(inputSet, len(s))
+	for key := range s {
 		kind, rel, ok := strings.Cut(key, ":")
 		if !ok {
-			return false
+			out[key] = "invalid"
+			continue
 		}
 		name := filepath.Join(root, filepath.FromSlash(rel))
-		got := fileDigest(name)
 		if kind == "dir" {
-			got = dirDigest(name)
-		}
-		if got != want {
-			return false
+			var extra []string
+			for path := range overlay {
+				if filepath.Dir(path) == name {
+					extra = append(extra, filepath.Base(path))
+				}
+			}
+			out[key] = dirDigest(name, extra...)
+		} else if content, ok := overlay[name]; ok {
+			sum := sha256.Sum256(content)
+			out[key] = hex.EncodeToString(sum[:])
+		} else {
+			out[key] = fileDigest(name)
 		}
 	}
-	return true
+	return out
 }
 
 // fileDigest is the SHA-256 of the file at name, read through links, or
@@ -194,15 +210,22 @@ func fileDigest(name string) string {
 }
 
 // dirDigest is the SHA-256 of the names and kinds of the entries of the
-// directory at name, or "missing".
-func dirDigest(name string) string {
+// directory at name, extra counted as regular files in it, or "missing".
+func dirDigest(name string, extra ...string) string {
 	entries, err := os.ReadDir(name)
-	if err != nil {
+	if err != nil && len(extra) == 0 {
 		return "missing"
 	}
-	h := sha256.New()
+	kinds := map[string]fs.FileMode{}
 	for _, e := range entries {
-		_, _ = fmt.Fprintf(h, "%s\x00%v\n", e.Name(), e.Type())
+		kinds[e.Name()] = e.Type()
+	}
+	for _, x := range extra {
+		kinds[x] = 0
+	}
+	h := sha256.New()
+	for _, n := range slices.Sorted(maps.Keys(kinds)) {
+		_, _ = fmt.Fprintf(h, "%s\x00%v\n", n, kinds[n])
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

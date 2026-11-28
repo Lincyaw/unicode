@@ -41,7 +41,7 @@ func (c contentCache) extraction(root string, srcRoots []string, forGeneration b
 		extracted, err := freshExtraction(root, srcRoots, forGeneration)
 		return extracted, false, err
 	}
-	value, hit, err := c.getChecked(kind, key, root)
+	value, hit, err := c.getChecked(kind, key, root, nil)
 	if err != nil {
 		return lang.Extracted{}, false, err
 	}
@@ -66,7 +66,7 @@ func (c contentCache) extraction(root string, srcRoots []string, forGeneration b
 	if err != nil || inputs == nil {
 		return extracted, false, err
 	}
-	if after, ok := goInputKey(root, srcRoots, mode, nil); ok && after == key && inputs.current(root) {
+	if after, ok := goInputKey(root, srcRoots, mode, nil); ok && after == key && inputs.current(root, nil) {
 		c.putChecked(kind, key, inputs, encodeExtraction(extracted))
 	}
 	return extracted, false, nil

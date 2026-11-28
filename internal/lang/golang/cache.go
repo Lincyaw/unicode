@@ -130,8 +130,9 @@ type checkedEntry struct {
 }
 
 // getChecked reads the entry of kind for key and checks its input set
-// against root: a changed input is a miss.
-func (c contentCache) getChecked(kind, key, root string) (json.RawMessage, bool, error) {
+// against root, with the files of overlay read as if written: a changed
+// input is a miss.
+func (c contentCache) getChecked(kind, key, root string, overlay map[string][]byte) (json.RawMessage, bool, error) {
 	data, hit, err := c.get(kind, key)
 	if err != nil || !hit {
 		return nil, false, err
@@ -144,7 +145,7 @@ func (c contentCache) getChecked(kind, key, root string) (json.RawMessage, bool,
 	if err != nil || entry.Inputs == nil || entry.Value == nil {
 		return nil, false, c.corrupt(c.entryPath(kind, key), cmp.Or(err, errors.New("it lacks its inputs or its value")))
 	}
-	if !entry.Inputs.current(root) {
+	if !entry.Inputs.current(root, overlay) {
 		return nil, false, nil
 	}
 	return entry.Value, true, nil

@@ -74,7 +74,7 @@ func (c contentCache) plannedLoads(plan lang.GenPlan, edits []lang.Edit) error {
 		_, err := loadPlannedGo(plan, edits, false)
 		return err
 	}
-	value, hit, err := c.getChecked(kind, key, abs)
+	value, hit, err := c.getChecked(kind, key, abs, overlay)
 	if err != nil {
 		return err
 	}
@@ -90,16 +90,19 @@ func (c contentCache) plannedLoads(plan lang.GenPlan, edits []lang.Edit) error {
 	go func() {
 		inputs, err := readInputs(abs, plan.Roots, true, imports)
 		if err != nil {
-			inputs = nil
+			listed <- nil
+			return
 		}
-		listed <- inputs
+		// The planned files count as written, so that the entry still
+		// holds once they are: unicode test checks after unicode gen.
+		listed <- inputs.recomputed(abs, overlay)
 	}()
 	_, err = loadPlannedGo(plan, edits, false)
 	inputs := <-listed
 	if err != nil {
 		return err
 	}
-	if after, ok := goInputKey(abs, plan.Roots, "planned-generation", overlay); ok && inputs != nil && after == key && inputs.current(abs) {
+	if after, ok := goInputKey(abs, plan.Roots, "planned-generation", overlay); ok && inputs != nil && after == key && inputs.current(abs, overlay) {
 		c.putChecked(kind, key, inputs, loads)
 	}
 	return nil
