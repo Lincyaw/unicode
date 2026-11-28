@@ -30,6 +30,7 @@ type ucWorkerUnit struct {
 	Spec   func() *ucContract
 	Types  []reflect.Type
 	Draw   func(*rapid.T, *ucContract) map[string]reflect.Value
+	Derive func(*ucContract, map[string]reflect.Value) map[string]reflect.Value
 	Invoke func(rapid.TB, *ucContract, map[string]reflect.Value)
 	Cases  []ucWorkerCase
 }
@@ -76,6 +77,7 @@ func ucCandidateWorker(t *testing.T, units []ucWorkerUnit) (handled bool) {
 		return false
 	}
 	handled = true
+	defer ucCleanDerived()
 	response := ucWorkerResponse{Cases: []ucReplayCase{}, Diagnostics: []ucDiagnostic{}}
 	var spec *ucContract
 	var request ucWorkerRequest
@@ -168,7 +170,7 @@ func ucCandidateWorker(t *testing.T, units []ucWorkerUnit) (handled bool) {
 			panic(*drawIssue)
 		}
 	case "prepare", "execute":
-		values := ucThawInputs(request.Input, selected.Types, spec)
+		values := selected.Derive(spec, ucThawInputs(request.Input, selected.Types, spec))
 		response.Input = request.Input
 		if request.Mode == "prepare" {
 			return true

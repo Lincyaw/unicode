@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"reflect"
 	"slices"
 	"strconv"
@@ -131,10 +132,60 @@ func ucWireAdapt(value reflect.Value, target reflect.Type) reflect.Value {
 	ucFail("lang.golang.input-codec-failed", "a model codec's native type does not match its declaration", nil)
 	return reflect.Value{}
 }
+
+// ucDerivedRoots are the directories that the derived inputs of the current
+// case build their state in (docs/language.md E25); ucCleanDerived removes
+// them when the case ends.
+var ucDerivedRoots []string
+
+// ucDerive computes a derived input (docs/language.md E24) by calling its
+// derivation function, with the temporary directory pointed at a new one
+// that the case owns, so that the state it builds there is removed when the
+// case ends, however it ends. A derivation that fails or panics is a check
+// error.
+func ucDerive(name string, call func() (any, error)) reflect.Value {
+	root, err := os.MkdirTemp("", "unicode-derived-")
+	if err != nil {
+		ucFail("lang.golang.derivation-failed", "the derived input "+name+" has no directory to build its state in: "+err.Error(), nil)
+	}
+	ucDerivedRoots = append(ucDerivedRoots, root)
+	previous, had := os.LookupEnv("TMPDIR")
+	_ = os.Setenv("TMPDIR", root)
+	defer func() {
+		if had {
+			_ = os.Setenv("TMPDIR", previous)
+		} else {
+			_ = os.Unsetenv("TMPDIR")
+		}
+	}()
+	value, err := func() (value any, err error) {
+		defer func() {
+			if problem := recover(); problem != nil {
+				err = fmt.Errorf("the derivation panicked: %v", problem)
+			}
+		}()
+		return call()
+	}()
+	if err != nil {
+		ucFail("lang.golang.derivation-failed", "the derived input "+name+" cannot be computed: "+err.Error(), nil)
+	}
+	return reflect.ValueOf(value)
+}
+
+func ucCleanDerived() {
+	for _, root := range ucDerivedRoots {
+		_ = os.RemoveAll(root)
+	}
+	ucDerivedRoots = nil
+}
+
 func ucFreezeInputs(s *ucContract, values map[string]reflect.Value) ucWireInput {
 	ucCheckInputAliases(s, values)
 	input := ucWireInput{Values: map[string]ucWireValue{}}
 	for _, symbol := range s.Symbols {
+		if slices.Contains(s.Derived, symbol.Name) {
+			continue
+		}
 		value, ok := values[symbol.Name]
 		if !ok {
 			ucFail("lang.golang.input-codec-failed", "an input symbol is missing: "+symbol.Name, nil)
@@ -608,11 +659,14 @@ func ucThawScript(w ucWireValue, op ucReplyOperation, s *ucContract, depth int) 
 }
 
 func ucThawInputs(input ucWireInput, native []reflect.Type, s *ucContract) map[string]reflect.Value {
-	if len(input.Values) != len(s.Symbols) || len(native) != len(s.Symbols) {
+	if len(input.Values) != len(s.Symbols)-len(s.Derived) || len(native) != len(s.Symbols) {
 		ucFail("lang.golang.input-outside-domain", "the recorded inputs do not match this check's symbols", nil)
 	}
 	values := map[string]reflect.Value{}
 	for i, symbol := range s.Symbols {
+		if slices.Contains(s.Derived, symbol.Name) {
+			continue
+		}
 		value, ok := input.Values[symbol.Name]
 		if !ok {
 			ucFail("lang.golang.input-outside-domain", "a recorded input symbol is missing: "+symbol.Name, nil)

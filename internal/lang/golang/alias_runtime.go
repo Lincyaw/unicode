@@ -2,6 +2,7 @@ package golang
 
 import (
 	"reflect"
+	"slices"
 	"strconv"
 )
 
@@ -109,6 +110,8 @@ func ucCheckInputAliases(s *ucContract, inputs map[string]reflect.Value) {
 		}
 	}
 	for _, symbol := range s.Symbols {
-		visit(inputs[symbol.Name], symbol.Type, symbol.Name, 0)
+		if !slices.Contains(s.Derived, symbol.Name) {
+			visit(inputs[symbol.Name], symbol.Type, symbol.Name, 0)
+		}
 	}
 }

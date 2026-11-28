@@ -8,6 +8,7 @@ type Backend object "Go 的后端：用 go/packages 和 go/types 静态抽取，
   implements lang.Generator
   implements lang.GenerationExtractor
   implements lang.Runner
+  op run(plan: lang.RunPlan) -> lang.RunReport "核对 plan.root 中的生成文件后回放，或在 plan.explore 时长内探索，返回每条性质和流程的结论"
 }
 
 type ContractSample record "executes-contracts 的输入：一次转账的余额表、转出和转入的账户、金额，对其他值的改动量 foreignDelta，以及被测函数是否返回错误" {
@@ -71,6 +72,19 @@ type CacheChange record "extraction-cache-follows-changes 和 planned-check-cach
   field kind: int
   field pick: int
   field value: int
+}
+
+type DerivedOutcome enum "derived-state-is-removed 的输入：一个用例的结局" {
+  value passes
+  value fails
+  value rejected
+  value panics
+  value underivable
+}
+
+type BuiltState record "derived-state-is-removed 的观察：派生函数记下的目录数，以及其中仍然存在的目录数" {
+  field recorded: int
+  field remaining: int
 }
 
 op newBackend() -> Backend "创建 Go 后端"
@@ -183,4 +197,26 @@ property split-failures-replay-by-seed invariant "一条性质在奇数输入上
   forall checks: int
   where checks in 30..40
   manual "需要生成并编译一个 Go 模块的驱动，再拆分执行并按 rapid 给出的种子重放它的测试二进制，读取输出，表达式不能运行程序"
+}
+
+property derived-state-is-removed postcondition "Go 后端回放一条派生函数建出目录的性质之后，派生函数记下了目录，记下的目录都已删除，不论用例通过、失败、被前提拒绝、panic 还是派生函数出错" {
+  about Backend.run
+  forall backend: Backend
+  forall outcomes: list<DerivedOutcome>
+  forall plan: lang.RunPlan generated "把一个 Go 模块写进新目录、生成驱动并建图得到的运行输入：模块中的一条性质带派生输入，派生函数新建一个目录并把它的路径记在模块根目录的 built.txt 中，outcomes 的每一项是这条性质的一个声明的用例，按其结局使用例通过、失败、被前提拒绝、在被测调用中 panic，或者使派生函数记下目录之后返回错误"
+  where outcomes size 1..5
+  observe built: BuiltState from plan
+  changes built
+  call backend.run(plan)
+  ensure built.recorded > 0 and built.remaining == 0
+}
+
+property underivable-input-is-check-error postcondition "Go 后端回放的用例中有派生函数返回错误的时，运行报告的诊断中有 lang.golang.derivation-failed" {
+  about Backend.run
+  forall backend: Backend
+  forall outcomes: list<DerivedOutcome>
+  forall plan: lang.RunPlan generated "与 derived-state-is-removed 的 plan 相同"
+  where outcomes size 1..5
+  call backend.run(plan)
+  ensure DerivedOutcome.underivable in outcomes implies any(d in result.diagnostics: d.code == "lang.golang.derivation-failed")
 }

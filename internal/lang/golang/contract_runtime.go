@@ -68,6 +68,9 @@ type ucContract struct {
 	Installers                 map[string]reflect.Value `json:"-"`
 	Codecs                     map[string]ucCodec
 	SkipInstall                bool `json:"-"`
+	// Derived names the derived inputs (docs/language.md E24): the
+	// generated symbols whose bound function returns their value.
+	Derived []string
 }
 type ucDiagnostic struct {
 	Code, Subject string

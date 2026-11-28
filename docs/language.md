@@ -892,8 +892,8 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 | E21 | `lang.golang.expression-failed`、`lang.golang.observation-failed` | `lang.golang.executes-contracts` |
 | E22 | `lang.golang.input-outside-domain`、`lang.golang.expression-failed` | `lang.golang.executes-contracts` |
 | E23 | `lang.golang.no-effective-input` | `lang.golang.executes-contracts` |
-| E24 | 待做：Go 驱动按声明次序算出派生输入，算不出时报 lang.golang.derivation-failed | — |
-| E25 | 待做：Go 驱动在用例结束时删除派生输入建出的状态 | — |
+| E24 | `lang.golang.derivation-failed` | `lang.golang.underivable-input-is-check-error` |
+| E25 | 由性质验证 | `lang.golang.derived-state-is-removed` |
 | E26 | 待做：M8，监控文件的判定函数报出反例 monitor.ensure-failed、monitor.frame-violation、monitor.undeclared-error、monitor.call-panicked，检查错误 monitor.check-failed，流程的次序不符 monitor.flow-mismatch | — |
 | E27 | 待做：M8，监控文件的判定函数报出反例 monitor.ensure-failed、monitor.undeclared-error、monitor.call-panicked | — |
 | E28 | 待做：M8，记录周期的结论报出 monitor.within-exceeded | — |

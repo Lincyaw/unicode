@@ -63,6 +63,7 @@ var _ = ucParseTime
 var _ = ucParseDuration
 var _ = ucFinish
 var _ = ucFailedPredicate
+var _ = ucDerive
 
 type nativeDeclaration struct {
 	obj types.Object
@@ -554,6 +555,15 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 				unit.generatorArgs[symbol.Name] = append(unit.generatorArgs[symbol.Name], p.Name())
 			}
 			unit.generators[symbol.Name] = fn
+			if !returnsGenerator(sig) {
+				// A function that returns the value itself is a derivation
+				// (docs/language.md §6): its symbol is a derived input.
+				if results := sig.Results(); results.Len() == 2 && !types.Identical(results.At(1).Type(), types.Universe.Lookup("error").Type()) || results.Len() == 0 || results.Len() > 2 {
+					c.diagnostic(n, "lang.golang.unsupported-contract", "derivation "+fn.Name()+" of symbol "+symbol.Name+" returns neither its value nor its value and an error", "return the value, or the value and an error")
+					return nil
+				}
+				unit.spec.Derived = append(unit.spec.Derived, symbol.Name)
+			}
 		}
 		if strings.HasSuffix(n.Attrs["symbols"][len(earlier)], " generated") && unit.generators[symbol.Name] == nil {
 			c.diagnostic(n, "lang.golang.missing-generator", "generated symbol "+symbol.Name+" has no unique bound Go generator", "bind exactly one generator with //uc:generates before executing this property")
@@ -579,6 +589,21 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 	}
 	return unit
 }
+
+// returnsGenerator tells whether a function bound with generates returns a
+// rapid generator, rather than the value itself as a derivation does.
+func returnsGenerator(sig *types.Signature) bool {
+	if sig.Results().Len() != 1 {
+		return false
+	}
+	pointer, ok := sig.Results().At(0).Type().(*types.Pointer)
+	if !ok {
+		return false
+	}
+	named, ok := types.Unalias(pointer.Elem()).(*types.Named)
+	return ok && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == "pgregory.net/rapid" && named.Obj().Name() == "Generator"
+}
+
 func first(xs []string) string {
 	if len(xs) > 0 {
 		return xs[0]
@@ -970,35 +995,71 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		} else {
 			body.WriteString(")}\n")
 		}
+		// call writes the statement that gives the generated symbol s its
+		// value: a draw from its generator, or the value of its derivation.
+		call := func(s ucSymbol) (string, bool) {
+			fn := unit.generators[s.Name]
+			selector := c.qualify(fn, file.pkg, file.imports)
+			if selector == "" {
+				c.diagnostic(unit.node, "lang.golang.unsupported-contract", "a generator is inaccessible from the predicate package", "place it in the predicate package or export it")
+				return "", false
+			}
+			var args []string
+			for _, name := range unit.generatorArgs[s.Name] {
+				var model string
+				for _, prior := range unit.spec.Symbols {
+					if prior.Name == name {
+						model = prior.Type
+					}
+				}
+				args = append(args, "values["+strconv.Quote(name)+"].Interface().("+c.goType(model, file.pkg, file.imports)+")")
+			}
+			invocation := selector + "(" + strings.Join(args, ",") + ")"
+			switch {
+			case !slices.Contains(unit.spec.Derived, s.Name):
+				return fmt.Sprintf("values[%s]=reflect.ValueOf(%s.Draw(rt,%s));", strconv.Quote(s.Name), invocation, strconv.Quote(s.Name)), true
+			case fn.Signature().Results().Len() == 2:
+				return fmt.Sprintf("values[%s]=ucDerive(%s,func()(any,error){return %s});", strconv.Quote(s.Name), strconv.Quote(s.Name), invocation), true
+			}
+			return fmt.Sprintf("values[%s]=ucDerive(%s,func()(any,error){return %s,nil});", strconv.Quote(s.Name), strconv.Quote(s.Name), invocation), true
+		}
 		fmt.Fprintf(&body, "func ucInputs%s(rt *rapid.T,s *ucContract) map[string]reflect.Value{ values:=map[string]reflect.Value{};", id)
 		for _, s := range unit.spec.Symbols {
-			if fn := unit.generators[s.Name]; fn != nil {
-				selector := c.qualify(fn, file.pkg, file.imports)
-				if selector == "" {
-					c.diagnostic(unit.node, "lang.golang.unsupported-contract", "a generator is inaccessible from the predicate package", "place it in the predicate package or export it")
+			if unit.generators[s.Name] != nil {
+				statement, ok := call(s)
+				if !ok {
 					return nil
 				}
-				var args []string
-				for _, name := range unit.generatorArgs[s.Name] {
-					var model string
-					for _, prior := range unit.spec.Symbols {
-						if prior.Name == name {
-							model = prior.Type
-						}
-					}
-					args = append(args, "values["+strconv.Quote(name)+"].Interface().("+c.goType(model, file.pkg, file.imports)+")")
-				}
-				fmt.Fprintf(&body, "values[%s]=reflect.ValueOf(%s(%s).Draw(rt,%s));", strconv.Quote(s.Name), selector, strings.Join(args, ","), strconv.Quote(s.Name))
+				body.WriteString(statement)
 			} else {
 				fmt.Fprintf(&body, "values[%s]=ucDraw(rt,reflect.TypeFor[%s](),%s,s.Types,%#v,%s,0);", strconv.Quote(s.Name), c.goType(s.Type, file.pkg, file.imports), strconv.Quote(s.Type), unit.limits, strconv.Quote(s.Name))
 			}
 		}
 		body.WriteString("return values}\n")
-		fmt.Fprintf(&body, "func ucRandom%s(rt *rapid.T,s *ucContract){ucInvoke%s(rt,s,ucInputs%s(rt,s))}\n", id, id, id)
+		// ucDerive gives the derived inputs their values from the others, in
+		// the order of the symbols, for a declared case or a recorded input.
+		fmt.Fprintf(&body, "func ucDerive%s(s *ucContract, values map[string]reflect.Value) map[string]reflect.Value{", id)
+		for _, s := range unit.spec.Symbols {
+			if slices.Contains(unit.spec.Derived, s.Name) {
+				statement, ok := call(s)
+				if !ok {
+					return nil
+				}
+				body.WriteString(statement)
+			}
+		}
+		body.WriteString("return values}\n")
+		fmt.Fprintf(&body, "func ucRandom%s(rt *rapid.T,s *ucContract){defer ucCleanDerived();ucInvoke%s(rt,s,ucInputs%s(rt,s))}\n", id, id, id)
 		fmt.Fprintf(&body, "func ucDrive%s(t *testing.T, mode string, budget time.Duration, r *ucRunResult) { s:=%s(); *r=ucRunResult{Id:s.ID,Passed:true,Observations:append([]string{},s.Observe...)}; for _,o:=range s.Observers {r.Observations=append(r.Observations,o.Name)}; restore:=ucContext(r,false); defer restore(); defer func(){ucFailedPredicate(t,s,r);ucFinish(t,s,r)}();", id, specName)
+		if len(unit.spec.Derived) > 0 {
+			body.WriteString("defer ucCleanDerived();")
+		}
 		for _, ca := range unit.cases {
 			var vals []string
 			for i, text := range ca {
+				if slices.Contains(unit.spec.Derived, unit.spec.Symbols[i].Name) {
+					continue
+				}
 				x, err := c.literal(text, c.goType(unit.spec.Symbols[i].Type, file.pkg, file.imports), file.pkg)
 				if err != nil {
 					c.diagnostic(unit.node, "lang.golang.unsupported-case", err.Error(), "use a finite replay value supported by the Go backend")
@@ -1006,7 +1067,14 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 				}
 				vals = append(vals, strconv.Quote(unit.spec.Symbols[i].Name)+":reflect.ValueOf("+x+")")
 			}
-			fmt.Fprintf(&body, "ucInvoke%s(t,s,map[string]reflect.Value{%s});", id, strings.Join(vals, ","))
+			if len(unit.spec.Derived) == 0 {
+				fmt.Fprintf(&body, "ucInvoke%s(t,s,map[string]reflect.Value{%s});", id, strings.Join(vals, ","))
+			} else {
+				// The state a case's derived inputs build is removed after
+				// the case; the deferred removal in the drive covers a case
+				// that stops the test.
+				fmt.Fprintf(&body, "ucInvoke%s(t,s,ucDerive%s(s,map[string]reflect.Value{%s}));ucCleanDerived();", id, id, strings.Join(vals, ","))
+			}
 		}
 		fmt.Fprintf(&body, "if mode!=\"replay\" { restoreRandom:=ucContext(r,true); defer restoreRandom(); start:=time.Now(); rapid.Check(t,func(rt *rapid.T){if mode==\"explore\"&&time.Since(start)>budget{return};ucRandom%s(rt,s)})} }\n", id)
 		fmt.Fprintf(&body, "// FuzzUnicode_%x checks %s.\nfunc FuzzUnicode_%x(f *testing.F){f.Fuzz(rapid.MakeFuzz(func(rt *rapid.T){restore:=ucContext(nil,true);defer restore();ucRandom%s(rt,%s())}))}\n", sha256.Sum256([]byte(unit.node.Id)), unit.node.Id, sha256.Sum256([]byte(unit.node.Id)), id, specName)
@@ -1105,6 +1173,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		owned["ucSpec"+strconv.Itoa(i)] = true
 		owned["ucDrive"+strconv.Itoa(i)] = true
 		owned["ucInputs"+strconv.Itoa(i)] = true
+		owned["ucDerive"+strconv.Itoa(i)] = true
 		owned["ucInvoke"+strconv.Itoa(i)] = true
 		owned["ucRandom"+strconv.Itoa(i)] = true
 	}

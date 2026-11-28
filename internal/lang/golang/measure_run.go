@@ -453,7 +453,7 @@ func workerDiagnostics(input []ucDiagnostic) []diag.Diagnostic {
 }
 func isMeasuredEnvironment(code string) bool {
 	switch code {
-	case "lang.golang.no-effective-input", "lang.golang.input-codec-failed", "lang.golang.input-outside-domain", "lang.golang.run-failed", "lang.golang.coverage-failed", "lang.golang.trace-failed", "lang.golang.trace-instrumentation-failed", "lang.golang.trace-missing", "lang.golang.observation-failed", "lang.golang.adapter-failed", "lang.golang.unsupported-contract":
+	case "lang.golang.no-effective-input", "lang.golang.derivation-failed", "lang.golang.input-codec-failed", "lang.golang.input-outside-domain", "lang.golang.run-failed", "lang.golang.coverage-failed", "lang.golang.trace-failed", "lang.golang.trace-instrumentation-failed", "lang.golang.trace-missing", "lang.golang.observation-failed", "lang.golang.adapter-failed", "lang.golang.unsupported-contract":
 		return true
 	}
 	return false
