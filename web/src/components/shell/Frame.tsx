@@ -15,17 +15,17 @@ export interface ColumnSize {
   onReset: () => void;
 }
 
-/** The side column a narrow window opens over the canvas. */
+/** A side column that can lie over the canvas as a drawer. */
 export type Drawer = 'tree' | 'pane';
 
 /**
  * The viewer's frame: the top bar, the header, then the design tree, the canvas and the right pane side by side, and
  * the status bar. It fills the window; each of the three columns scrolls on its own, and the reader sizes the two
- * side columns. Below the narrow breakpoint the canvas takes the whole width and the side columns open over it as
- * drawers, from the buttons either side of the header. An open drawer takes the focus and leaves the canvas behind it
- * inert; Escape closes it and returns the focus to its button.
+ * side columns. The side columns named in `drawers` leave the row and open over the canvas as drawers, from the
+ * buttons at the ends of the header; `drawer` is the one open. An open drawer takes the focus and leaves the canvas
+ * behind it inert; Escape closes it and returns the focus to its button.
  */
-export function Frame({ topBar, header, tree, main, pane, statusBar, treeSize, paneSize, drawer, onDrawer }: {
+export function Frame({ topBar, header, tree, main, pane, statusBar, treeSize, paneSize, drawers, drawer, onDrawer }: {
   topBar: ReactNode;
   header: ReactNode;
   tree: ReactNode;
@@ -34,6 +34,7 @@ export function Frame({ topBar, header, tree, main, pane, statusBar, treeSize, p
   statusBar: ReactNode;
   treeSize: ColumnSize;
   paneSize: ColumnSize;
+  drawers: readonly Drawer[];
   drawer?: Drawer;
   onDrawer: (drawer: Drawer | undefined) => void;
 }) {
@@ -67,28 +68,30 @@ export function Frame({ topBar, header, tree, main, pane, statusBar, treeSize, p
     <div className={styles.frame}>
       {topBar}
       <div className={styles.headerRow}>
-        <span className={styles.drawerToggle}>
+        <span className={styles.drawerToggle} hidden={!drawers.includes('tree')}>
           <IconButton ref={treeButton} label={CONTROLS.tree} variant="quiet" expanded={drawer === 'tree'} controls={treeId} onClick={() => toggle('tree')}>
             <Icon glyph={ListTree} data-upright />
           </IconButton>
         </span>
         {header}
-        <span className={styles.drawerToggle}>
+        <span className={styles.drawerToggle} hidden={!drawers.includes('pane')}>
           <IconButton ref={paneButton} label={CONTROLS.details} variant="quiet" expanded={drawer === 'pane'} controls={paneId} onClick={() => toggle('pane')}>
             <Icon glyph={PanelRight} data-upright />
           </IconButton>
         </span>
       </div>
-      <div className={styles.body} data-drawer={drawer} style={{ '--tree-width': `${treeSize.width}px`, '--pane-width': `${paneSize.width}px` } as CSSProperties}>
+      <div
+        className={styles.body} data-tree={drawers.includes('tree') ? 'drawer' : undefined} data-pane={drawers.includes('pane') ? 'drawer' : undefined}
+        data-drawer={drawer} style={{ '--tree-width': `${treeSize.width}px`, '--pane-width': `${paneSize.width}px` } as CSSProperties}>
         <nav ref={treeColumn} id={treeId} className={styles.tree} aria-label={CONTROLS.tree} tabIndex={-1}>{tree}</nav>
         <ResizeHandle
           label={CONTROLS.resizeTree} size={treeSize.width} min={treeSize.min} max={treeSize.max} grows="end" onResize={treeSize.onResize} onReset={treeSize.onReset}
-          className={styles.handle}
+          className={styles.treeHandle}
         />
         <main className={styles.main} inert={drawer !== undefined}>{main}</main>
         <ResizeHandle
           label={CONTROLS.resizePane} size={paneSize.width} min={paneSize.min} max={paneSize.max} grows="start" onResize={paneSize.onResize} onReset={paneSize.onReset}
-          className={styles.handle}
+          className={styles.paneHandle}
         />
         <aside ref={paneColumn} id={paneId} className={styles.pane} aria-label={CONTROLS.details} tabIndex={-1}>{pane}</aside>
       </div>

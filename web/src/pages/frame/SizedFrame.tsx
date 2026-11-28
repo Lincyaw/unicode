@@ -1,21 +1,35 @@
 import { useState, type ReactNode } from 'react';
 import { Frame, type Drawer } from '../../components/shell/Frame';
-import { NARROW_QUERY, tokenPixels, useMediaQuery, useWindowWidth } from '../../ui/media';
+import { tokenPixels, useWindowWidth } from '../../ui/media';
 import { useStoredSize } from '../../ui/storedSize';
 
 /** Where the browser keeps the widths the reader gives the design tree and the right pane. */
 const TREE_WIDTH_KEY = 'unicode-viewer.treeWidth';
 const PANE_WIDTH_KEY = 'unicode-viewer.paneWidth';
 
-/** Neither side column narrows below its minimum, and the canvas keeps at least this much between them. */
+/** Neither side column narrows below its minimum. */
 const TREE_MIN = 200;
 const PANE_MIN = 240;
-const CANVAS_MIN = 280;
+
+/** The canvas never narrows below this (docs/design.md §7.5). */
+const CANVAS_MIN = 480;
 
 /**
- * The frame with the widths the reader gave its side columns, held within the window and starting at base.css's
- * --tree-width and --pane-width, and the drawer the reader opened on a narrow window. `place` is the page's address:
- * going elsewhere closes the drawer, and so does widening the window past the narrow breakpoint.
+ * The side columns that lie over the canvas as drawers, given the room the canvas leaves them: the pane once the room
+ * cannot hold both columns at their widths, then the tree too once it cannot hold the tree.
+ */
+function drawersFor(room: number, tree: number, pane: number): Drawer[] {
+  if (room >= tree + pane) {
+    return [];
+  }
+  return room >= tree ? ['pane'] : ['tree', 'pane'];
+}
+
+/**
+ * The frame with the widths the reader gave its side columns, starting at base.css's --tree-width and --pane-width;
+ * the side columns that the window cannot hold beside the canvas at those widths, as drawers; and the drawer the reader
+ * opened. A column keeps its width whatever the window: it becomes a drawer instead of narrowing. `place` is the
+ * page's address: going elsewhere closes the drawer, and so does widening the window until its column fits.
  */
 export function SizedFrame({ place, ...parts }: {
   place: string;
@@ -27,20 +41,24 @@ export function SizedFrame({ place, ...parts }: {
   statusBar: ReactNode;
 }) {
   const room = useWindowWidth();
-  const narrow = useMediaQuery(NARROW_QUERY);
   const treeStart = tokenPixels('--tree-width');
   const paneStart = tokenPixels('--pane-width');
-  const treeMax = Math.max(TREE_MIN, room - PANE_MIN - CANVAS_MIN);
-  const [treeWidth, setTreeWidth] = useStoredSize(TREE_WIDTH_KEY, treeStart, TREE_MIN, treeMax);
-  const paneMax = Math.max(PANE_MIN, room - treeWidth - CANVAS_MIN);
-  const [paneWidth, setPaneWidth] = useStoredSize(PANE_WIDTH_KEY, paneStart, PANE_MIN, paneMax);
+  // The canvas sits between the main column's hairline borders.
+  const canvas = CANVAS_MIN + 2 * tokenPixels('--size-hairline');
+  const [treeWidth, setTreeWidth] = useStoredSize(TREE_WIDTH_KEY, treeStart, TREE_MIN, Number.POSITIVE_INFINITY);
+  const [paneWidth, setPaneWidth] = useStoredSize(PANE_WIDTH_KEY, paneStart, PANE_MIN, Number.POSITIVE_INFINITY);
+  const drawers = drawersFor(room - canvas, treeWidth, paneWidth);
+  // A drag widens a column in the row only as far as the canvas keeps its minimum.
+  const treeMax = Math.max(TREE_MIN, room - canvas - (drawers.includes('pane') ? 0 : paneWidth));
+  const paneMax = Math.max(PANE_MIN, room - canvas - treeWidth);
   const [opened, setOpened] = useState<{ drawer: Drawer; at: string }>();
   return (
     <Frame
       {...parts}
-      treeSize={{ width: treeWidth, min: TREE_MIN, max: treeMax, onResize: setTreeWidth, onReset: () => setTreeWidth(treeStart) }}
-      paneSize={{ width: paneWidth, min: PANE_MIN, max: paneMax, onResize: setPaneWidth, onReset: () => setPaneWidth(paneStart) }}
-      drawer={narrow && opened?.at === place ? opened.drawer : undefined}
+      treeSize={{ width: treeWidth, min: TREE_MIN, max: treeMax, onResize: width => setTreeWidth(Math.min(width, treeMax)), onReset: () => setTreeWidth(treeStart) }}
+      paneSize={{ width: paneWidth, min: PANE_MIN, max: paneMax, onResize: width => setPaneWidth(Math.min(width, paneMax)), onReset: () => setPaneWidth(paneStart) }}
+      drawers={drawers}
+      drawer={opened?.at === place && drawers.includes(opened.drawer) ? opened.drawer : undefined}
       onDrawer={drawer => setOpened(drawer && { drawer, at: place })}
     />
   );

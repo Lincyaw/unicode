@@ -12,7 +12,6 @@
 .main { position: relative; min-width: 0; overflow: hidden; border-left: var(--rule-hairline); border-right: var(--rule-hairline); }
 .pane { min-width: 0; padding: var(--space-5); overflow: auto; }
 .headerRow { display: flex; align-items: center; min-width: 0; border-bottom: var(--rule-hairline); }
-.drawerToggle { display: none; }
 
 /* Top bar */
 .topBar { display: flex; align-items: center; gap: var(--space-3); min-width: 0; padding: 0 var(--space-6); border-bottom: var(--rule-hairline); }
@@ -86,9 +85,31 @@
 .treeLabel { flex: 1; min-width: 0; overflow: hidden; font: var(--type-code); text-overflow: ellipsis; white-space: nowrap; }
 
 /*
- * Below the narrow breakpoint the canvas takes the whole width; the design tree and the right pane lie over it as
- * drawers, which slide in from their sides when the reader opens them from the header.
+ * A side column the window cannot hold beside the canvas leaves the row and lies over the canvas as a drawer
+ * (SizedFrame), which slides in from its side when the reader opens it from the header.
  */
+.drawerToggle:not([hidden]) { display: flex; flex: none; }
+.body[data-pane="drawer"] { grid-template-columns: var(--tree-width) auto minmax(0, 1fr); overflow: hidden; }
+.body[data-tree="drawer"] { grid-template-columns: minmax(0, 1fr); }
+.body[data-tree="drawer"] > .treeHandle, .body[data-pane="drawer"] > .paneHandle { display: none; }
+.body[data-tree="drawer"] > .main { border-left: 0; }
+.body[data-pane="drawer"] > .main { border-right: 0; }
+.body[data-tree="drawer"] > .tree, .body[data-pane="drawer"] > .pane {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 30;
+  background: var(--bg-page);
+  box-shadow: var(--shadow-float);
+  visibility: hidden;
+  /* A drawer shows at once as it slides in, so that it can take the focus, and hides at once as it closes. */
+  transition: transform var(--duration-base) var(--ease-out);
+}
+.body[data-tree="drawer"] > .tree { left: 0; width: min(calc(100% - var(--space-12)), var(--tree-width)); border-right: var(--rule-hairline); transform: translateX(-100%); }
+.body[data-pane="drawer"] > .pane { right: 0; width: min(calc(100% - var(--space-12)), var(--pane-width)); border-left: var(--rule-hairline); transform: translateX(100%); }
+.body[data-drawer="tree"] > .tree, .body[data-drawer="pane"] > .pane { visibility: visible; transform: none; }
+
+/* Below the narrow breakpoint the bars and the header tighten, and the tabs take a line of their own. */
 @media (max-width: 760px) {
   .topBar { padding: 0 var(--space-4); }
   .appName { display: none; }
@@ -98,23 +119,4 @@
   .tools { order: 1; }
   /* The tabs' own edge sits a hairline outside their track, so the scrolling slot leaves it that room. */
   .tabs { order: 2; padding: var(--size-hairline); overflow-x: auto; scrollbar-width: none; }
-  .drawerToggle { display: flex; flex: none; }
-  .body { grid-template-columns: minmax(0, 1fr); overflow: hidden; }
-  .handle { display: none; }
-  .main { border: 0; }
-  .tree, .pane {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    z-index: 30;
-    width: min(calc(100% - var(--space-12)), 24rem);
-    background: var(--bg-page);
-    box-shadow: var(--shadow-float);
-    visibility: hidden;
-    /* A drawer shows at once as it slides in, so that it can take the focus, and hides at once as it closes. */
-    transition: transform var(--duration-base) var(--ease-out);
-  }
-  .tree { left: 0; border-right: var(--rule-hairline); transform: translateX(-100%); }
-  .pane { right: 0; border-left: var(--rule-hairline); transform: translateX(100%); }
-  .body[data-drawer="tree"] > .tree, .body[data-drawer="pane"] > .pane { visibility: visible; transform: none; }
 }
