@@ -4,12 +4,11 @@ component gen "对每种已配置的语言调用有生成能力的后端，合�
   uses graph, lang, diag, repo
 }
 
-type WriteSample record "write 和 checkFiles 各性质的输入：一棵目录树（repo 下是仓库，outside 下是仓库之外的文件），一份生成计划，计划中各路径在树中的路径，按构造定下的这份计划是否安全，以及把计划写进这棵树之后的树" {
+type WriteSample record "write 和 checkFiles 各性质的输入：一棵目录树（repo 下是仓库，outside 下是仓库之外的文件），一份生成计划，计划中各路径在树中的路径，以及按构造定下的这份计划是否安全" {
   field tree: repo.Tree
   field edits: list<lang.Edit>
   field keys: map<string, string>
   field safe: bool
-  field applied: repo.Tree
 }
 
 type PlanSample record "plan 各性质的输入：一张图，go、python 和 unused 各自的后端替身预先给出的生成计划，以及其中已配置的语言的生成计划" {
@@ -34,7 +33,7 @@ op checkFiles(root: string, edits: list<lang.Edit>) -> list<diag.Diagnostic> "�
 
 property write-applies-safe-plans postcondition "生成计划安全时，write 没有诊断，每个目标都是普通文件，内容是计划中的" {
   about write
-  forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全，applied 在安全时是把计划中的每个文件写进这棵树之后的树（新的目录权限位 755，新文件 644，已有的保留权限位），不安全时是原来的树"
+  forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全"
   forall dir: string generated "materialize 把 sample.tree 写成的新目录"
   forall root: string generated "dir 下的 repo 目录"
   observe files: repo.Tree from dir
@@ -45,7 +44,7 @@ property write-applies-safe-plans postcondition "生成计划安全时，write �
 
 property write-rejects-unsafe-plans postcondition "生成计划不安全时，write 至少给出一条诊断，仓库内外的条目都不变" {
   about write
-  forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全，applied 在安全时是把计划中的每个文件写进这棵树之后的树（新的目录权限位 755，新文件 644，已有的保留权限位），不安全时是原来的树"
+  forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全"
   forall dir: string generated "materialize 把 sample.tree 写成的新目录"
   forall root: string generated "dir 下的 repo 目录"
   observe files: repo.Tree from dir
@@ -56,7 +55,7 @@ property write-rejects-unsafe-plans postcondition "生成计划不安全时，wr
 
 property write-keeps-other-entries postcondition "write 之后，计划的目标之外原有的条目（仓库之外的也在内）都不变，新出现的条目只有目标和目录" {
   about write
-  forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全，applied 在安全时是把计划中的每个文件写进这棵树之后的树（新的目录权限位 755，新文件 644，已有的保留权限位），不安全时是原来的树"
+  forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全"
   forall dir: string generated "materialize 把 sample.tree 写成的新目录"
   forall root: string generated "dir 下的 repo 目录"
   observe files: repo.Tree from dir
@@ -68,7 +67,7 @@ property write-keeps-other-entries postcondition "write 之后，计划的目标
 
 property write-keeps-modes postcondition "write 没有诊断时，改写的原有目标保留原来的权限位" {
   about write
-  forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全，applied 在安全时是把计划中的每个文件写进这棵树之后的树（新的目录权限位 755，新文件 644，已有的保留权限位），不安全时是原来的树"
+  forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全"
   forall dir: string generated "materialize 把 sample.tree 写成的新目录"
   forall root: string generated "dir 下的 repo 目录"
   observe files: repo.Tree from dir
@@ -77,19 +76,19 @@ property write-keeps-modes postcondition "write 没有诊断时，改写的原�
   ensure size(result) == 0 implies all(e in sample.edits: sample.keys[e.path] in old(files).entries implies files.entries[sample.keys[e.path]].mode == old(files).entries[sample.keys[e.path]].mode)
 }
 
-property write-diagnostics-are-described postcondition "write 给出的每条诊断都有位置的路径、从 1 起的行和列、原因和修正" {
+property write-diagnostics-are-described postcondition "write 给出的每条诊断都有 subject、位置的路径、从 1 起的行和列、原因和修正" {
   about write
-  forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全，applied 在安全时是把计划中的每个文件写进这棵树之后的树（新的目录权限位 755，新文件 644，已有的保留权限位），不安全时是原来的树"
+  forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全"
   forall dir: string generated "materialize 把 sample.tree 写成的新目录"
   forall root: string generated "dir 下的 repo 目录"
   call write(root, sample.edits)
-  ensure all(d in result: size(d.position.path) > 0 and d.position.line >= 1 and d.position.column >= 1 and size(d.message) > 0 and size(d.fix) > 0)
+  ensure all(d in result: size(d.subject) > 0 and size(d.position.path) > 0 and d.position.line >= 1 and d.position.column >= 1 and size(d.message) > 0 and size(d.fix) > 0)
 }
 
 property write-is-idempotent postcondition "把安全的生成计划再写进已写入它的树，计划中有 createOnly 的文件时 write 给出诊断，否则没有诊断，仓库内外的条目都不变" {
   about write
   forall sample: WriteSample generated "与 write-rejects-unsafe-plans 的 sample 相同，只取三种安全的情形"
-  forall dir: string generated "materialize 把 sample.applied 写成的新目录"
+  forall dir: string generated "materialize 把 sample.tree 写成的新目录，再用 write 把 sample.edits 写进其中的 repo"
   forall root: string generated "dir 下的 repo 目录"
   observe files: repo.Tree from dir
   changes none
@@ -99,7 +98,7 @@ property write-is-idempotent postcondition "把安全的生成计划再写进已
 
 property check-files-agrees-with-write postcondition "生成计划不安全时，checkFiles 给出与 write 相同的诊断" {
   about checkFiles, write
-  forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全，applied 在安全时是把计划中的每个文件写进这棵树之后的树（新的目录权限位 755，新文件 644，已有的保留权限位），不安全时是原来的树"
+  forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全"
   forall rejection: list<diag.Diagnostic> generated "write 把 sample.edits 写进 sample.tree 的另一份副本时给出的诊断"
   forall dir: string generated "materialize 把 sample.tree 写成的新目录"
   forall root: string generated "dir 下的 repo 目录"
@@ -110,9 +109,12 @@ property check-files-agrees-with-write postcondition "生成计划不安全时�
 property check-files-reports-stale-targets postcondition "生成计划安全、没有已存在的 createOnly 目标时，checkFiles 恰给每个缺失或内容不同的目标报一条 subject 为它的路径的 gen.stale-file，没有别的诊断，仓库内外的条目和修改时间都不变" {
   about checkFiles
   forall sample: WriteSample generated "与 write-rejects-unsafe-plans 的 sample 相同，只取三种安全的情形"
-  forall state: repo.Tree generated "等概率取 sample.tree、sample.applied，或者 sample.applied 中改了一个目标的内容或删去一个目标的树"
-  forall dir: string generated "materialize 把 state 写成的新目录"
+  forall stage: int
+  forall which: int
+  forall dir: string generated "materialize 把 sample.tree 写成的新目录；stage 为 1 至 3 时再用 write 把 sample.edits 写进其中的 repo，stage 为 2 时另在第 which 除以目标数的余数个目标的内容末尾加一个 !，为 3 时删去这个目标"
   forall root: string generated "dir 下的 repo 目录"
+  where stage in 0..3
+  where which in 0..1
   observe files: repo.Tree from dir
   observe stamps: map<string, time> from dir
   requires not any(e in sample.edits: e.createOnly and sample.keys[e.path] in files.entries)
@@ -125,7 +127,7 @@ property check-files-reports-stale-targets postcondition "生成计划安全、�
 property check-files-rejects-written-create-only postcondition "安全的生成计划写入之后，计划中有 createOnly 的文件时 checkFiles 给出诊断，否则没有诊断，仓库内外的条目和修改时间都不变" {
   about checkFiles
   forall sample: WriteSample generated "与 write-rejects-unsafe-plans 的 sample 相同，只取三种安全的情形"
-  forall dir: string generated "materialize 把 sample.applied 写成的新目录"
+  forall dir: string generated "materialize 把 sample.tree 写成的新目录，再用 write 把 sample.edits 写进其中的 repo"
   forall root: string generated "dir 下的 repo 目录"
   observe files: repo.Tree from dir
   observe stamps: map<string, time> from dir
@@ -134,16 +136,16 @@ property check-files-rejects-written-create-only postcondition "安全的生成�
   ensure any(e in sample.edits: e.createOnly) == (size(result) > 0)
 }
 
-property check-files-diagnostics-are-described postcondition "checkFiles 给出的每条诊断都有位置的路径、从 1 起的行和列、原因和修正，仓库内外的条目和修改时间都不变" {
+property check-files-diagnostics-are-described postcondition "checkFiles 给出的每条诊断都有 subject、位置的路径、从 1 起的行和列、原因和修正，仓库内外的条目和修改时间都不变" {
   about checkFiles
-  forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全，applied 在安全时是把计划中的每个文件写进这棵树之后的树（新的目录权限位 755，新文件 644，已有的保留权限位），不安全时是原来的树"
+  forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全"
   forall dir: string generated "materialize 把 sample.tree 写成的新目录"
   forall root: string generated "dir 下的 repo 目录"
   observe files: repo.Tree from dir
   observe stamps: map<string, time> from dir
   changes none
   call checkFiles(root, sample.edits)
-  ensure all(d in result: size(d.position.path) > 0 and d.position.line >= 1 and d.position.column >= 1 and size(d.message) > 0 and size(d.fix) > 0)
+  ensure all(d in result: size(d.subject) > 0 and size(d.position.path) > 0 and d.position.line >= 1 and d.position.column >= 1 and size(d.message) > 0 and size(d.fix) > 0)
 }
 
 property plan-dispatches-configured-languages postcondition "plan 给每种已配置的语言的后端恰一次生成输入，传入仓库根目录、这种语言的源码根目录和同一张图，不调用未配置的语言的后端，返回 merge 对已配置的语言的生成计划给出的结果，不改动仓库" {

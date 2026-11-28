@@ -12,14 +12,6 @@ import (
 	"github.com/lincyaw/unicode/internal/diag"
 )
 
-// The directories and files that a derivation sample's paths and patterns
-// are drawn from: nested directories, so that the deepest owner matters, and
-// one directory that no pattern names but **.
-var (
-	sampleDirs  = []string{"a", "a/b", "c", "c/d"}
-	sampleFiles = []string{"a/x.go", "a/y.go", "a/b/x.go", "c/x.go", "c/d/x.go", "e/x.go"}
-)
-
 // sampler builds a fragment node by node, giving every node and edge its own
 // line, and every edge a new identity.
 type sampler struct {
@@ -27,18 +19,25 @@ type sampler struct {
 	f    Fragment
 	keys map[edgeKey]bool
 	line int
-	// What the sample is built to be: each design container's paths
-	// patterns and depth, each code element's container, and the external
-	// system of each operation declared under it.
-	patterns    map[string][]string
+	// What the sample is built to be: each component's directory, the
+	// forms of its paths patterns and its depth, the components with an
+	// invalid pattern, the components each file was drawn to match, each
+	// code element's container, the external system of each operation
+	// declared under it, and the chains of detail functions drawn.
+	dirs        map[string]string
+	up          map[string]string
+	forms       map[string][]string
 	depth       map[string]int
+	bad         []string
+	matched     map[string][]string
 	parent      map[string]string
 	externalOps map[string]string
+	chains      []Chain
 }
 
 func newSampler(t *rapid.T) *sampler {
-	return &sampler{t: t, keys: map[edgeKey]bool{}, patterns: map[string][]string{}, depth: map[string]int{"sys": 0},
-		parent: map[string]string{}, externalOps: map[string]string{}}
+	return &sampler{t: t, keys: map[edgeKey]bool{}, dirs: map[string]string{}, up: map[string]string{}, forms: map[string][]string{},
+		depth: map[string]int{"sys": 0}, matched: map[string][]string{}, parent: map[string]string{}, externalOps: map[string]string{}}
 }
 
 func (s *sampler) pos(path string) diag.Position {
@@ -87,11 +86,6 @@ func (s *sampler) subset(label string, options []string) []string {
 	return out
 }
 
-func (s *sampler) pattern() string {
-	dir := s.pick("dir", sampleDirs)
-	return rapid.SampledFrom([]string{"**", dir + "/**", dir + "/**", dir + "/*.go", s.pick("file", sampleFiles), dir + "/["}).Draw(s.t, "pattern")
-}
-
 // sampleDesign is what the code part of a sample binds to.
 type sampleDesign struct {
 	types, ops, others, properties, observations []string
@@ -102,17 +96,25 @@ func (s *sampler) design() sampleDesign {
 	containers := []string{s.node("sys", LayerDesign, NodeKindContainer, "system", nil)}
 	for i := range rapid.IntRange(0, 4).Draw(s.t, "components") {
 		parent := s.pick("parent", containers)
-		id := fmt.Sprintf("k%d", i)
+		id, dir := fmt.Sprintf("k%d", i), fmt.Sprintf("d%d", i)
 		if parent != "sys" {
-			id = parent + "." + id
+			id, dir = parent+"."+id, s.dirs[parent]+"/"+dir
 		}
+		// Each pattern is drawn as a form whose files are known: every
+		// file, the files under the component's directory, the .go files
+		// directly in it, its file z.go, or none, for an invalid pattern.
 		var paths []string
 		for range rapid.IntRange(0, 2).Draw(s.t, "patterns") {
-			paths = append(paths, s.pattern())
+			form := rapid.SampledFrom([]string{"all", "under", "under", "in", "exact", "invalid"}).Draw(s.t, "pattern")
+			s.forms[id] = append(s.forms[id], form)
+			paths = append(paths, map[string]string{"all": "**", "under": dir + "/**", "in": dir + "/*.go", "exact": dir + "/z.go", "invalid": dir + "/["}[form])
+			if form == "invalid" {
+				s.bad = append(s.bad, id)
+			}
 		}
 		s.node(id, LayerDesign, NodeKindContainer, "component", map[string][]string{"paths": paths})
 		s.contains(parent, id)
-		s.patterns[id], s.depth[id] = paths, s.depth[parent]+1
+		s.dirs[id], s.up[id], s.depth[id] = dir, parent, s.depth[parent]+1
 		containers = append(containers, id)
 	}
 	owners := containers[1:]
@@ -183,8 +185,64 @@ func (s *sampler) steps(flow, parent string, n *int, ops []string, depth int) {
 	}
 }
 
+// plantFiles draws the files: x.go and y.go in each component's directory,
+// z.go where a component names it exactly, and e/x.go outside them all. It
+// records, for each file, the components whose pattern forms match it.
+func (s *sampler) plantFiles() []string {
+	var files []string
+	for _, c := range slices.Sorted(maps.Keys(s.dirs)) {
+		names := []string{"x.go", "y.go"}
+		if slices.Contains(s.forms[c], "exact") {
+			names = append(names, "z.go")
+		}
+		for _, name := range s.subset("file", names) {
+			files = append(files, s.dirs[c]+"/"+name)
+			s.matched["file:"+s.dirs[c]+"/"+name] = s.matching(c, name)
+		}
+	}
+	if rapid.Bool().Draw(s.t, "outsideFile") {
+		files = append(files, "e/x.go")
+		s.matched["file:e/x.go"] = s.matching("", "x.go")
+	}
+	return files
+}
+
+// matching lists the components whose drawn forms match the file name
+// drawn in the directory of the component owner ("" for none).
+func (s *sampler) matching(owner, name string) []string {
+	out := []string{}
+	for _, c := range slices.Sorted(maps.Keys(s.forms)) {
+		if slices.ContainsFunc(s.forms[c], func(form string) bool {
+			switch form {
+			case "all":
+				return true
+			case "under":
+				return s.within(owner, c)
+			case "in":
+				return owner == c
+			case "exact":
+				return owner == c && name == "z.go"
+			}
+			return false
+		}) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// within tells whether the component owner is c or nested in it.
+func (s *sampler) within(owner, c string) bool {
+	for at := owner; at != "" && at != "sys"; at = s.up[at] {
+		if at == c {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *sampler) code(d sampleDesign) {
-	files := s.subset("file", sampleFiles)
+	files := s.plantFiles()
 	packages := map[string]bool{}
 	for _, f := range files {
 		dir := path.Dir(f)
@@ -282,9 +340,13 @@ func (s *sampler) code(d sampleDesign) {
 		for i := 1; i < len(chain); i++ {
 			s.call(chain[i-1], chain[i])
 		}
+		s.chains = append(s.chains, Chain{From: from, To: to, Via: slices.Clone(chain[1 : len(chain)-1])})
 		if rapid.Bool().Draw(s.t, "shortcut") {
 			s.call(from, to)
 		}
+	}
+	if len(d.properties) > 0 && rapid.Bool().Draw(s.t, "witness") {
+		s.witnessGadget(files, s.pick("witnessCheck", d.properties))
 	}
 	for i := range s.f.Nodes {
 		node := &s.f.Nodes[i]
@@ -295,6 +357,31 @@ func (s *sampler) code(d sampleDesign) {
 	pkgs := slices.Sorted(maps.Keys(packages))
 	for range rapid.IntRange(0, 5).Draw(s.t, "imports") {
 		s.edge(EdgeKindImports, "file:"+s.pick("importer", files), "go:m/"+s.pick("imported", pkgs), SourceExtracted, nil)
+	}
+}
+
+// witnessGadget declares, in one file, a predicate W of check and functions
+// it reaches by paths of known length: We by a path of two through Wa and Wb
+// and by a shorter one through Wd (Wa sorts before Wd), Wf through Wa or
+// through Wc at the same distance (a tie Wa breaks), and Wg only through Wa
+// and Wb.
+func (s *sampler) witnessGadget(files []string, check string) {
+	f := s.pick("witnessFile", files)
+	fn := func(name string) string {
+		id := s.node(fmt.Sprintf("go:m/%s.%s", path.Dir(f), name), LayerCode, NodeKindOp, "func", map[string][]string{"name": {strings.ToLower(name)}})
+		s.contains("file:"+f, id)
+		s.parent[id] = "file:" + f
+		return id
+	}
+	w := fn("W")
+	s.edge(EdgeKindChecks, w, check, SourceDeclared, nil)
+	ids := map[string]string{}
+	for _, name := range []string{"Wa", "Wb", "Wc", "Wd", "We", "Wf", "Wg"} {
+		ids[name] = fn(name)
+	}
+	ids["W"] = w
+	for _, c := range [][2]string{{"W", "Wa"}, {"W", "Wc"}, {"W", "Wd"}, {"Wa", "Wb"}, {"Wb", "Wg"}, {"Wb", "We"}, {"Wd", "We"}, {"Wa", "Wf"}, {"Wc", "Wf"}} {
+		s.call(ids[c[0]], ids[c[1]])
 	}
 }
 
@@ -369,6 +456,16 @@ type DeriveSample struct {
 	Ancestors   map[string][]string
 	ExternalOps map[string]string
 	Usages      []Usage
+	Chains      []Chain
+}
+
+// Chain is a chain of calls drawn into a derivation sample: from a function
+// through new functions without bindings to another function.
+//
+//uc:realizes graph.Chain
+type Chain struct {
+	From, To string
+	Via      []string
 }
 
 // genDeriveSample draws a small design and code layer: nested components
@@ -400,6 +497,10 @@ type DeriveSample struct {
 //uc:generates graph.reaches-joins-salient-functions.sample
 //uc:generates graph.reaches-covers-detail-chains.sample
 //uc:generates graph.derive-ignores-order.sample
+//uc:generates graph.derive-adds-only-defined-edges.sample
+//uc:generates graph.exercises-paths-are-shortest.sample
+//uc:generates graph.exercises-paths-are-ordered.sample
+//uc:generates graph.reaches-covers-planted-chains.sample
 func genDeriveSample() *rapid.Generator[DeriveSample] {
 	return rapid.Custom(func(t *rapid.T) DeriveSample {
 		s := newSampler(t)
@@ -410,29 +511,14 @@ func genDeriveSample() *rapid.Generator[DeriveSample] {
 
 // sample gives the fragment with the facts it was drawn to have.
 func (s *sampler) sample() DeriveSample {
-	out := DeriveSample{Fragment: s.f, Matches: map[string][]string{}, Depth: s.depth, Dangling: map[string]diag.Position{},
-		Files: map[string]string{}, SourceFiles: map[string]string{}, Ancestors: map[string][]string{}, ExternalOps: s.externalOps}
+	out := DeriveSample{Fragment: s.f, Matches: s.matched, Depth: s.depth, BadPatterns: s.bad, Dangling: map[string]diag.Position{},
+		Files: map[string]string{}, SourceFiles: map[string]string{}, Ancestors: map[string][]string{}, ExternalOps: s.externalOps, Chains: s.chains}
 	nodes := map[string]Node{}
 	for _, n := range s.f.Nodes {
 		nodes[n.Id] = n
 	}
-	for _, c := range slices.Sorted(maps.Keys(s.patterns)) {
-		for _, p := range s.patterns[c] {
-			if strings.Contains(p, "[") {
-				out.BadPatterns = append(out.BadPatterns, c)
-			}
-		}
-	}
 	for _, n := range s.f.Nodes {
-		switch {
-		case n.Layer == LayerCode && n.Kind == NodeKindContainer && n.Form == "file":
-			out.Matches[n.Id] = []string{}
-			for _, c := range slices.Sorted(maps.Keys(s.patterns)) {
-				if slices.ContainsFunc(s.patterns[c], func(p string) bool { return !strings.Contains(p, "[") && matches(p, n.Attrs["path"][0]) }) {
-					out.Matches[n.Id] = append(out.Matches[n.Id], c)
-				}
-			}
-		case n.Layer == LayerCode && (n.Kind == NodeKindType || n.Kind == NodeKindOp):
+		if n.Layer == LayerCode && (n.Kind == NodeKindType || n.Kind == NodeKindOp) {
 			for a := s.parent[n.Id]; a != ""; a = s.parent[a] {
 				out.Ancestors[n.Id] = append(out.Ancestors[n.Id], a)
 				if nodes[a].Form == "file" && out.Files[n.Id] == "" {
@@ -503,6 +589,9 @@ func fragmentGraph(nodes []Node, edges []Edge) (*Graph, error) {
 //uc:generates graph.container-salience-follows-elements.snapshot
 //uc:generates graph.reaches-joins-salient-functions.snapshot
 //uc:generates graph.derive-ignores-order.snapshot
+//uc:generates graph.derive-adds-only-defined-edges.snapshot
+//uc:generates graph.exercises-paths-are-shortest.snapshot
+//uc:generates graph.reaches-covers-planted-chains.snapshot
 func deriveUnderived(sample DeriveSample) (*Graph, error) {
 	return fragmentGraph(sample.Fragment.Nodes, sample.Fragment.Edges)
 }
@@ -515,19 +604,6 @@ func deriveReordered(sample DeriveSample, rotation int) (*Graph, error) {
 	}
 	g.Derive()
 	return g, nil
-}
-
-// matches is a path pattern's meaning for the forms a derivation sample draws.
-func matches(pattern, p string) bool {
-	switch dir, _, _ := strings.Cut(pattern, "/*"); {
-	case pattern == "**":
-		return true
-	case strings.HasSuffix(pattern, "/**"):
-		return p == dir || strings.HasPrefix(p, dir+"/")
-	case strings.HasSuffix(pattern, "/*.go"):
-		return path.Dir(p) == dir && strings.HasSuffix(p, ".go")
-	}
-	return pattern == p
 }
 
 // reachesByDefinition is what docs/model.md §9 D7 derives from the calls
@@ -598,12 +674,41 @@ func checkReachesCoversDetailChains(t rapid.TB, sample DeriveSample) {
 		if !ok {
 			t.Fatalf("Derive joined %s to %s by reaches, but no chain of detail functions leads from one to the other", e.From, e.To)
 		}
-		if got := slices.Sorted(slices.Values(e.Attrs["via"])); !slices.Equal(got, via) {
-			t.Fatalf("the reaches edge from %s to %s lists via %q, but the detail functions on its chains are %q", e.From, e.To, got, via)
+		if got := e.Attrs["via"]; !slices.Equal(got, via) {
+			t.Fatalf("the reaches edge from %s to %s lists via %q, but the detail functions on its chains, in identity order, are %q", e.From, e.To, got, via)
 		}
 		delete(want, key)
 	}
 	for key, via := range want {
 		t.Fatalf("Derive did not join %s to %s by reaches, though the chains through the detail functions %q lead from one to the other", key.from, key.to, via)
+	}
+}
+
+//uc:checks graph.exercises-paths-are-ordered
+func checkExercisesPathsAreOrdered(t rapid.TB, sample DeriveSample) {
+	g, err := fragmentGraph(sample.Fragment.Nodes, sample.Fragment.Edges)
+	if err != nil {
+		t.Fatalf("AddFragment refused a fragment whose nodes are distinct and whose edges start at its nodes: %v", err)
+	}
+	g.Derive()
+	for _, x := range g.Edges() {
+		path := x.Attrs["path"]
+		if x.Kind != EdgeKindExercises || len(path) == 0 {
+			continue
+		}
+		last := path[len(path)-1]
+		if g.Edge(EdgeKindCalls, last, x.To) == nil {
+			t.Fatalf("the path %q of exercises(%s, %s) ends in %s, which does not call %s", path, x.From, x.To, last, x.To)
+		}
+		before := g.Edge(EdgeKindExercises, x.From, last)
+		if before == nil || !slices.Equal(before.Attrs["path"], path[:len(path)-1]) {
+			t.Fatalf("the path %q of exercises(%s, %s) does not continue the path of exercises(%s, %s): %+v", path, x.From, x.To, x.From, last, before)
+		}
+		for _, c := range g.Edges() {
+			caller := g.Edge(EdgeKindExercises, x.From, c.From)
+			if c.Kind == EdgeKindCalls && c.To == x.To && c.From < last && caller != nil && len(caller.Attrs["path"]) == len(path)-1 {
+				t.Fatalf("the path %q of exercises(%s, %s) ends in %s, but %s, as near to %s and with a smaller identity, also calls %s", path, x.From, x.To, last, c.From, x.From, x.To)
+			}
+		}
 	}
 }

@@ -168,7 +168,7 @@ property write-adds-a-new-record postcondition "请求与同一目标最后一�
   ensure not sample.repeat implies all(r in old(stored).records: r.target == sample.request.target implies r.at != result.record.at)
 }
 
-property write-is-idempotent postcondition "把同一目标最后写入的请求再写一次，write 没有诊断，返回存储中已有的记录，不改动目录" {
+property write-is-idempotent postcondition "把同一目标最后写入的请求再写一次，write 没有诊断，返回 evaluate 给这个目标列出的当前记录（目标已删除时按基准图比较，否则不带基准图），它的评审者、结论和意见与请求的相同，不改动目录" {
   about write
   forall sample: WriteSample generated "与 write-records-the-request 的 sample 相同地取图和请求，但至少有一个先写入的请求，之后要写的请求就是最后一个先写入的请求，repeat 为真"
   forall dir: string generated "一个新的空目录，其中依次用 write 写入了 sample.history 中的请求"
@@ -177,6 +177,8 @@ property write-is-idempotent postcondition "把同一目标最后写入的请求
   changes none
   call write(dir, sample.graph, sample.base, sample.request)
   ensure size(result.diagnostics) == 0 and result.record in stored.records
+  ensure (sample.request.target.removed implies any(item in evaluate(sample.graph, sample.base, stored.records).items: item.target == sample.request.target and item.record == result.record)) and (not sample.request.target.removed implies any(item in evaluate(sample.graph, none, stored.records).items: item.target == sample.request.target and item.record == result.record))
+  ensure result.record.reviewer == sample.request.reviewer and result.record.decision == sample.request.decision and result.record.comment == sample.request.comment
 }
 
 property read-is-repeatable postcondition "read 不改动目录，读出的结果与之前一次 read 的相同" {

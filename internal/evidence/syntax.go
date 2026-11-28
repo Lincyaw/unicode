@@ -1,7 +1,6 @@
 package evidence
 
 import (
-	"bytes"
 	"encoding/base64"
 	"fmt"
 	"regexp"
@@ -587,15 +586,4 @@ func replySyntax(g *graph.Graph, id string, value syntax.Value, depth int) (lang
 		out.Items = append(out.Items, normalized)
 	}
 	return out, nil
-}
-
-func validateRoundtrip(g *graph.Graph, check string, input lang.Input, lines []syntax.CaseLine) error {
-	restored, err := inputFromAssignments(g, check, lines)
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(canonical(restored.Values), canonical(input.Values)) {
-		return fmt.Errorf("the corpus representation does not preserve the frozen model input")
-	}
-	return nil
 }

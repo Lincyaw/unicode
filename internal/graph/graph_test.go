@@ -93,6 +93,7 @@ func genNode() *rapid.Generator[Node] {
 //uc:generates graph.compare-balances-attr-values.base
 //uc:generates graph.compare-is-canonical.base
 //uc:generates graph.compare-lists-are-present.base
+//uc:generates graph.compare-keeps-value-order.base
 //uc:generates graph.compare-reverses.base
 func genFragment() *rapid.Generator[Fragment] {
 	return rapid.Custom(func(t *rapid.T) Fragment {

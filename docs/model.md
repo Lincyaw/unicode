@@ -269,7 +269,7 @@
   1. 设计层的节点都是显著的。
   2. 代码层的类型和函数是显著的，当且仅当它实现设计节点（包括按 D2 实现操作的方法），或带 `checks`、`generates`、`observes`、`substitutes`、`publishes` 绑定；但 `gen` 产生的生成文件中的元素都是细节。
   3. 代码层的文件和包是显著的，当且仅当它含有显著的元素。
-- **D7 `reaches`**：对显著的函数 f 和 g，reaches(f, g) 当且仅当存在 f → h1 → … → hk → g 的 `calls` 路径，k ≥ 1，且 h1, …, hk 都是细节。属性列出每条这样的路径上的 h1, …, hk。f 直接调用 g 时只有 `calls`，没有 `reaches`。
+- **D7 `reaches`**：对显著的函数 f 和 g，reaches(f, g) 当且仅当存在 f → h1 → … → hk → g 的 `calls` 路径，k ≥ 1，且 h1, …, hk 都是细节。属性 `via` 按标识的次序列出每条这样的路径上的 h1, …, hk。f 直接调用 g 时只有 `calls`，没有 `reaches`。
 - **D8 效果**：操作 f 的后继 succ(f)：代码层操作是它沿 `calls` 调用的代码层操作，`abstract` 方法另有实现该接口的各代码层类型中的同名方法（类型自己的，没有时取它经嵌入得到的最近的一个）；有实现的设计层操作是实现它的代码层操作，它的直接效果为空。效果 eff 是满足 directEffects(f) ⊆ eff(f)、并且对每个 g ∈ succ(f) 有 eff(g) ⊆ eff(f) 的最小的一组集合，即沿后继可达的各操作的直接效果之并。eff(f) 中每个种类 k 有一个**来历** (via, rank)：k ∈ directEffects(f) 时 via 为空、rank 为 0；否则 via 是 succ(f) 中有 k 的、rank 最小的那个（同样小时取标识最小的），rank 比它的大一。来历使最小性可以逐个操作核对：每个效果都有一条 rank 递减、终于直接效果的来历链。设计层操作没有实现时，它的效果不确定。eff(f) 为空时，称 f 没有效果。
 
 ## 10 约束
@@ -403,13 +403,13 @@
 
 | 规则 | 诊断码 | 验证的性质 |
 | --- | --- | --- |
-| D1 | 由性质验证 | `graph.owns-follows-deepest-pattern` |
-| D2 | 由性质验证 | `graph.method-realizes-follows-candidates`、`lang.golang.extracts-generated-module` |
+| D1 | 由性质验证 | `graph.owns-follows-deepest-pattern`、`graph.derive-adds-only-defined-edges` |
+| D2 | 由性质验证 | `graph.method-realizes-follows-candidates`、`lang.golang.extracts-generated-module`、`graph.derive-adds-only-defined-edges` |
 | D3 | 由性质验证 | `graph.depends-lists-calls`、`graph.depends-lists-imports`、`graph.depends-attrs-are-distinct-usages`、`graph.depends-values-are-usages` |
-| D4 | 由性质验证 | `graph.traces-follow-realizations` |
-| D5 | 由性质验证 | `graph.exercises-close-over-calls`、`graph.exercises-paths-lead-to-predicates` |
+| D4 | 由性质验证 | `graph.traces-follow-realizations`、`graph.derive-adds-only-defined-edges` |
+| D5 | 由性质验证 | `graph.exercises-close-over-calls`、`graph.exercises-paths-lead-to-predicates`、`graph.exercises-paths-are-shortest`、`graph.exercises-paths-are-ordered`、`graph.derive-adds-only-defined-edges` |
 | D6 | 由性质验证 | `graph.design-nodes-are-salient`、`graph.code-salience-follows-bindings`、`graph.container-salience-follows-elements`、`lang.golang.extracts-generated-module` |
-| D7 | 由性质验证 | `graph.reaches-joins-salient-functions`、`graph.reaches-covers-detail-chains` |
+| D7 | 由性质验证 | `graph.reaches-joins-salient-functions`、`graph.reaches-covers-detail-chains`、`graph.reaches-covers-planted-chains`、`graph.derive-adds-only-defined-edges` |
 | D8 | 由性质验证 | `graph.effects-follow-calls`、`graph.effects-read-the-graph`、`graph.dispatch-finds-implementations` |
 | 1 | `design.unresolved-reference`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
 | 2 | `design.duplicate-name` | `design.rejects-broken-design` |

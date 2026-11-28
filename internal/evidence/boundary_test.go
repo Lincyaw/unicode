@@ -224,7 +224,9 @@ func derivePlan(sample CorpusSample, dir string) Recording {
 	return Recordings(dir, sample.Graph, sample.Cases)
 }
 
-// deriveWritten writes the sample's tree, then the plan for it.
+// deriveWritten writes the sample's tree, then the plan for it when the
+// plan has no diagnostics; a plan without diagnostics that does not apply
+// fails the derivation.
 //
 //uc:generates evidence.recordings-are-idempotent.written
 func deriveWritten(sample CorpusSample) (string, error) {
@@ -232,7 +234,11 @@ func deriveWritten(sample CorpusSample) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	ApplyRecordings(dir, Recordings(dir, sample.Graph, sample.Cases))
+	if plan := Recordings(dir, sample.Graph, sample.Cases); len(plan.Diagnostics) == 0 {
+		if problems := ApplyRecordings(dir, plan); len(problems) > 0 {
+			return "", fmt.Errorf("a plan without diagnostics does not apply: %+v", problems)
+		}
+	}
 	return dir, nil
 }
 

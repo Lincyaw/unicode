@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"encoding/json"
 	"maps"
 	"slices"
 
@@ -18,6 +19,7 @@ import (
 //uc:generates graph.compare-balances-attr-values.head
 //uc:generates graph.compare-is-canonical.head
 //uc:generates graph.compare-lists-are-present.head
+//uc:generates graph.compare-keeps-value-order.head
 //uc:generates graph.compare-reverses.head
 func genEdit(base Fragment) *rapid.Generator[Fragment] {
 	return rapid.Custom(func(t *rapid.T) Fragment {
@@ -159,8 +161,8 @@ func deriveRotatedHead(head Fragment, rotation int) (*Graph, error) {
 	return graphOf(rotate(head.Nodes, rotation), rotate(head.Edges, rotation))
 }
 
-//uc:checks graph.compare-lists-are-present
-func checkCompareListsArePresent(t rapid.TB, base Fragment, head Fragment) {
+// graphsOf builds the base and head graphs of a comparison.
+func graphsOf(t rapid.TB, base, head Fragment) (*Graph, *Graph) {
 	gb, err := graphOf(base.Nodes, base.Edges)
 	if err != nil {
 		t.Fatalf("the base fragment does not make a graph: %v", err)
@@ -169,17 +171,67 @@ func checkCompareListsArePresent(t rapid.TB, base Fragment, head Fragment) {
 	if err != nil {
 		t.Fatalf("the head fragment does not make a graph: %v", err)
 	}
-	c := Compare(gb, gh)
-	if c.Nodes == nil || c.Edges == nil {
-		t.Fatalf("compare gave a nil list of node or edge changes: %+v", c)
+	return gb, gh
+}
+
+//uc:checks graph.compare-lists-are-present
+func checkCompareListsArePresent(t rapid.TB, base Fragment, head Fragment) {
+	gb, gh := graphsOf(t, base, head)
+	encoded, err := json.Marshal(Compare(gb, gh))
+	if err != nil {
+		t.Fatalf("the comparison does not encode as JSON: %v", err)
+	}
+	var c struct {
+		Nodes []struct {
+			Id    string                       `json:"id"`
+			Attrs []map[string]json.RawMessage `json:"attrs"`
+		} `json:"nodes"`
+		Edges json.RawMessage `json:"edges"`
+	}
+	if err := json.Unmarshal(encoded, &c); err != nil {
+		t.Fatalf("the comparison's JSON does not decode: %v", err)
+	}
+	if c.Nodes == nil || string(c.Edges) == "null" {
+		t.Fatalf("the comparison writes its nodes or edges as null: %s", encoded)
 	}
 	for _, n := range c.Nodes {
 		if n.Attrs == nil {
-			t.Fatalf("the change of the node %q has a nil list of attrs changes", n.Id)
+			t.Fatalf("the change of the node %q writes its attrs as null: %s", n.Id, encoded)
 		}
 		for _, a := range n.Attrs {
-			if a.Removed == nil || a.Added == nil {
-				t.Fatalf("the change of the key %q of the node %q has a nil list of removed or added values", a.Key, n.Id)
+			if string(a["removed"]) == "null" || string(a["added"]) == "null" {
+				t.Fatalf("an attrs change of the node %q writes its removed or added values as null: %s", n.Id, encoded)
+			}
+		}
+	}
+}
+
+// isSubsequence tells whether sub is xs with some values left out.
+func isSubsequence(sub, xs []string) bool {
+	i := 0
+	for _, x := range xs {
+		if i < len(sub) && sub[i] == x {
+			i++
+		}
+	}
+	return i == len(sub)
+}
+
+//uc:checks graph.compare-keeps-value-order
+func checkCompareKeepsValueOrder(t rapid.TB, base Fragment, head Fragment) {
+	gb, gh := graphsOf(t, base, head)
+	for _, n := range Compare(gb, gh).Nodes {
+		var was, is map[string][]string
+		if n.Before != nil {
+			was = n.Before.Attrs
+		}
+		if n.After != nil {
+			is = n.After.Attrs
+		}
+		for _, a := range n.Attrs {
+			if !isSubsequence(a.Removed, was[a.Key]) || !isSubsequence(a.Added, is[a.Key]) {
+				t.Fatalf("on the key %q of the node %q, the removed values %q are not in the order of the base's %q, or the added %q not in that of the head's %q",
+					a.Key, n.Id, a.Removed, was[a.Key], a.Added, is[a.Key])
 			}
 		}
 	}

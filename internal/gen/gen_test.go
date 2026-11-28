@@ -4,9 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"maps"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"time"
@@ -21,16 +19,15 @@ import (
 
 // WriteSample is a directory tree, with the repository under repo and a
 // directory outside it under outside, a generation plan for the repository,
-// the path in the tree of each path of the plan, whether the plan is safe
-// by the way it was drawn, and the tree the plan writes when it is safe.
+// the path in the tree of each path of the plan, and whether the plan is
+// safe by the way it was drawn.
 //
 //uc:realizes gen.WriteSample
 type WriteSample struct {
-	Tree    repo.Tree
-	Edits   []lang.Edit
-	Keys    map[string]string
-	Safe    bool
-	Applied repo.Tree
+	Tree  repo.Tree
+	Edits []lang.Edit
+	Keys  map[string]string
+	Safe  bool
 }
 
 // PlanSample supplies a system graph, each backend's generation, and the
@@ -105,34 +102,11 @@ func drawWriteSample(t *rapid.T, variants []int) WriteSample {
 	case 12:
 		edits = append(edits, lang.Edit{Path: "user.go", Content: []byte(text), CreateOnly: true})
 	}
-	sample := WriteSample{Tree: tree, Edits: edits, Keys: map[string]string{}, Safe: slices.Contains(safeVariants, variant), Applied: tree}
+	sample := WriteSample{Tree: tree, Edits: edits, Keys: map[string]string{}, Safe: slices.Contains(safeVariants, variant)}
 	for _, e := range edits {
 		sample.Keys[e.Path] = "repo/" + e.Path
 	}
-	if sample.Safe {
-		sample.Applied = written(tree, edits)
-	}
 	return sample
-}
-
-// written is tree after the safe plan edits is written into its repo: new
-// directories 755, new files 644, existing files keeping their bits.
-func written(tree repo.Tree, edits []lang.Edit) repo.Tree {
-	out := repo.Tree{Entries: maps.Clone(tree.Entries)}
-	for _, e := range edits {
-		target := "repo/" + e.Path
-		for dir := path.Dir(target); dir != "repo"; dir = path.Dir(dir) {
-			if _, ok := out.Entries[dir]; !ok {
-				out.Entries[dir] = repo.Entry{Kind: repo.EntryKindDir, Mode: 0o755}
-			}
-		}
-		mode := 0o644
-		if old, ok := out.Entries[target]; ok {
-			mode = old.Mode
-		}
-		out.Entries[target] = repo.Entry{Kind: repo.EntryKindFile, Content: e.Content, Mode: mode}
-	}
-	return out
 }
 
 //uc:generates gen.write-applies-safe-plans.sample
@@ -153,33 +127,6 @@ func genSafeWriteSample() *rapid.Generator[WriteSample] {
 	return rapid.Custom(func(t *rapid.T) WriteSample { return drawWriteSample(t, safeVariants) })
 }
 
-// genStaleState draws, with even chances, the tree before the plan is
-// written, the tree after, or the tree after with one target's content
-// changed (a ! appended) or with one target removed.
-//
-//uc:generates gen.check-files-reports-stale-targets.state
-func genStaleState(sample WriteSample) *rapid.Generator[repo.Tree] {
-	return rapid.Custom(func(t *rapid.T) repo.Tree {
-		choice := rapid.IntRange(0, 3).Draw(t, "state")
-		switch choice {
-		case 0:
-			return sample.Tree
-		case 1:
-			return sample.Applied
-		}
-		tree := repo.Tree{Entries: maps.Clone(sample.Applied.Entries)}
-		target := "repo/" + rapid.SampledFrom(sample.Edits).Draw(t, "target").Path
-		if choice == 2 {
-			e := tree.Entries[target]
-			e.Content = append(slices.Clone(e.Content), '!')
-			tree.Entries[target] = e
-		} else {
-			delete(tree.Entries, target)
-		}
-		return tree
-	})
-}
-
 //uc:generates gen.write-applies-safe-plans.dir
 //uc:generates gen.write-rejects-unsafe-plans.dir
 //uc:generates gen.write-keeps-other-entries.dir
@@ -189,12 +136,48 @@ func genStaleState(sample WriteSample) *rapid.Generator[repo.Tree] {
 //uc:generates gen.check-files-diagnostics-are-described.dir
 func deriveTreeDir(sample WriteSample) (string, error) { return repo.Materialize(sample.Tree) }
 
+// writtenDir writes the sample's tree, then its plan with the real Write.
+func writtenDir(sample WriteSample) (string, error) {
+	dir, err := repo.Materialize(sample.Tree)
+	if err != nil {
+		return "", err
+	}
+	if problems := Write(filepath.Join(dir, "repo"), sample.Edits); len(problems) > 0 {
+		return "", fmt.Errorf("the safe plan does not write: %+v", problems)
+	}
+	return dir, nil
+}
+
 //uc:generates gen.write-is-idempotent.dir
 //uc:generates gen.check-files-rejects-written-create-only.dir
-func deriveAppliedDir(sample WriteSample) (string, error) { return repo.Materialize(sample.Applied) }
+func deriveWrittenDir(sample WriteSample) (string, error) { return writtenDir(sample) }
 
+// deriveStageDir writes the tree, at stage 1 to 3 the plan too, and then
+// at stage 2 appends a ! to a target, at stage 3 removes it.
+//
 //uc:generates gen.check-files-reports-stale-targets.dir
-func deriveStateDir(state repo.Tree) (string, error) { return repo.Materialize(state) }
+func deriveStageDir(sample WriteSample, stage int, which int) (string, error) {
+	if stage == 0 {
+		return repo.Materialize(sample.Tree)
+	}
+	dir, err := writtenDir(sample)
+	if err != nil {
+		return "", err
+	}
+	target := filepath.Join(dir, "repo", filepath.FromSlash(sample.Edits[which%len(sample.Edits)].Path))
+	switch stage {
+	case 2:
+		f, err := os.OpenFile(target, os.O_APPEND|os.O_WRONLY, 0)
+		if err != nil {
+			return "", err
+		}
+		_, err = f.WriteString("!")
+		return dir, errors.Join(err, f.Close())
+	case 3:
+		return dir, os.Remove(target)
+	}
+	return dir, nil
+}
 
 //uc:generates gen.write-applies-safe-plans.root
 //uc:generates gen.write-rejects-unsafe-plans.root

@@ -41,12 +41,16 @@ type LatestSample struct {
 }
 
 // requestTargets are the targets a request may name: the current candidates
-// of the sample's graph and the targets its comparison removes.
-func requestTargets(s Sample) []Target {
-	targets := sortedOracleTargets(oracleTargets(s.Graph))
-	for _, target := range s.Targets {
-		if target.Removed {
-			targets = append(targets, target)
+// of head and, with a base, the candidates of before that head lacks.
+func requestTargets(before, head, base *graph.Graph) []Target {
+	current := oracleTargets(head)
+	targets := sortedOracleTargets(current)
+	if base != nil {
+		for _, target := range sortedOracleTargets(oracleTargets(before)) {
+			if !current[target] {
+				target.Removed = true
+				targets = append(targets, target)
+			}
 		}
 	}
 	return targets
@@ -70,9 +74,9 @@ func drawRequest(t *rapid.T, targets []Target) Request {
 // drawWriteSample draws a sample's graph and base, earlier requests and a
 // request; repeat makes the request the last earlier one.
 func drawWriteSample(t *rapid.T, repeat bool) WriteSample {
-	s := genSample().Draw(t, "sample")
-	targets := requestTargets(s)
-	out := WriteSample{Graph: s.Graph, Base: s.Base}
+	before, head, base := drawChange(t)
+	targets := requestTargets(before, head, base)
+	out := WriteSample{Graph: head, Base: base}
 	least := 0
 	if repeat {
 		least = 1

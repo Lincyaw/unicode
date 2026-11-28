@@ -173,7 +173,7 @@ property recordings-refuse-unreplayable-inputs postcondition "有用例不能写
   ensure not sample.printable and (sample.corpus == "none" or sample.corpus == "orphan") implies size(result.diagnostics) > 0 and all(d in result.diagnostics: d.code == "evidence.unreplayable-input") and size(result.edits) == 0 and size(result.removals) == 0
 }
 
-property recordings-retire-orphans postcondition "corpus 中有指向不是性质或流程的标识的录制文件时，recordings 的计划删除它，没有这样的文件时不删除文件，不改动仓库" {
+property recordings-retire-orphans postcondition "用例都能写成录制文件、corpus 中有指向不是性质或流程的标识的录制文件时，recordings 的计划删除它，corpus 中没有录制文件时不删除文件，不改动仓库" {
   about recordings
   forall sample: CorpusSample generated "一张图中组件 domain 下的性质 domain.rule 带一个 payload 符号，一至八个用例的结果，输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者约一半换成可打印的对应值（非 UTF-8 的字符串换成它的 Base64 文本，字节串换成它的 Base64 文本的字节）而能写成录制文件，其余不能写成录制文件（printable 为假），这时第一个用例是录制的反例，其余用例约一半是声明的，约四分之一是反例；仓库中有设计者的 design/domain.uc，corpus 等概率是 none（没有 corpus 目录）、orphan（corpus/removed.uc 是指向 removed 的录制文件，图中的 removed 等概率不存在或是设计层的操作、设计层的类型或代码层的性质）、foreign（corpus/broken.uc 的头是 corpus other）或 link（corpus/link.uc 是指向 ../design/domain.uc 的符号链接）"
   forall dir: string generated "materialize 把 sample.tree 写成的新目录"
@@ -205,7 +205,7 @@ property recordings-diagnostics-are-described postcondition "recordings 给出�
 property recordings-are-idempotent postcondition "用 applyRecordings 写入 recordings 的计划之后再规划，用例都能写成录制文件、corpus 中没有异常时计划为空，没有诊断" {
   about recordings, applyRecordings
   forall sample: CorpusSample generated "一张图中组件 domain 下的性质 domain.rule 带一个 payload 符号，一至八个用例的结果，输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者约一半换成可打印的对应值（非 UTF-8 的字符串换成它的 Base64 文本，字节串换成它的 Base64 文本的字节）而能写成录制文件，其余不能写成录制文件（printable 为假），这时第一个用例是录制的反例，其余用例约一半是声明的，约四分之一是反例；仓库中有设计者的 design/domain.uc，corpus 等概率是 none（没有 corpus 目录）、orphan（corpus/removed.uc 是指向 removed 的录制文件，图中的 removed 等概率不存在或是设计层的操作、设计层的类型或代码层的性质）、foreign（corpus/broken.uc 的头是 corpus other）或 link（corpus/link.uc 是指向 ../design/domain.uc 的符号链接）"
-  forall written: string generated "materialize 把 sample.tree 写成的新目录，再用 applyRecordings 写入 recordings 对它、sample.graph 和 sample.cases 给出的计划"
+  forall written: string generated "materialize 把 sample.tree 写成的新目录，recordings 对它、sample.graph 和 sample.cases 给出的计划没有诊断时再用 applyRecordings 写入这份计划"
   call recordings(written, sample.graph, sample.cases)
   ensure sample.printable and (sample.corpus == "none" or sample.corpus == "orphan") implies size(result.diagnostics) == 0 and size(result.edits) == 0 and size(result.removals) == 0
 }
@@ -268,7 +268,7 @@ property apply-refuses-foreign-removals postcondition "corpus 中有头与路径
   ensure sample.corpus == "foreign" or sample.corpus == "link" implies size(result) > 0
 }
 
-property save-keeps-history postcondition "save 没有诊断，之后 read 读出的报告中有 sample.report，原有的报告都还在，报告原来没有时多一份，原来有时份数不变" {
+property save-keeps-history postcondition "save 没有诊断，之后 read 没有诊断，读出的报告中有 sample.report，原有的报告都还在，报告原来没有时多一份，原来有时份数不变" {
   about save, read
   forall sample: StoreSample generated "零至两份先保存的报告和一份要保存的报告：版本 1，执行输入哈希是 64 位十六进制，时间是 2026-11-28 中各不相同的秒，方式 explore，各带 domain.rule 的一条结论，它的用例是一至八个用例的结果（输入取十四种模型值中的同一种，约一半是声明的，约四分之一是反例），按用例算出通过与否和有效执行数、拒绝数，约三分之一要保存的报告就是先保存的一份；damage 是 none"
   forall dir: string generated "materialize 写出只有 design/domain.uc 的新目录，再依次用 save 保存 sample.earlier 中的报告"

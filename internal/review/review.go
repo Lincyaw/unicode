@@ -143,14 +143,12 @@ func boolInt(value bool) int {
 type content struct {
 	g          *graph.Graph
 	edges      []graph.Edge
-	byTarget   map[Target]graph.Edge
 	from, into map[string][]graph.Edge
 }
 
 func indexContent(g *graph.Graph) *content {
-	c := &content{g: g, edges: g.Edges(), byTarget: map[Target]graph.Edge{}, from: map[string][]graph.Edge{}, into: map[string][]graph.Edge{}}
+	c := &content{g: g, edges: g.Edges(), from: map[string][]graph.Edge{}, into: map[string][]graph.Edge{}}
 	for _, edge := range c.edges {
-		c.byTarget[Target{EdgeKind: string(edge.Kind), From: edge.From, To: edge.To}] = edge
 		c.from[edge.From] = append(c.from[edge.From], edge)
 		c.into[edge.To] = append(c.into[edge.To], edge)
 	}
@@ -199,8 +197,11 @@ func (c *content) candidates() map[string]Target {
 
 // edge is the edge that target names, whether or not target is marked removed.
 func (c *content) edge(target Target) (graph.Edge, bool) {
-	edge, found := c.byTarget[Target{EdgeKind: target.EdgeKind, From: target.From, To: target.To}]
-	return edge, found
+	edge := c.g.Edge(graph.EdgeKind(target.EdgeKind), target.From, target.To)
+	if edge == nil {
+		return graph.Edge{}, false
+	}
+	return *edge, true
 }
 
 func (c *content) fingerprint(target Target) string {

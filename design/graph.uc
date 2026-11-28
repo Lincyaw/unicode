@@ -114,7 +114,7 @@ type Graph object "一张图：节点按标识索引，边按种类、起点和�
   op edges() -> list<Edge> pure "全部边，按种类、起点、终点排序"
   op edge(kind: EdgeKind, from: string, to: string) -> optional<Edge> pure "按种类、起点和终点取一条边"
   op digest(id: string) -> string pure "节点自身内容的 SHA-256：种类、形式、摘要和属性的规范编码，不含子节点"
-  op snapshot() -> Snapshot pure "快照的记录形式：节点按标识、边按种类、起点、终点排序，各字段取自节点和边，节点另带 digest 给出的内容哈希"
+  op snapshot() -> Snapshot pure "快照的记录形式：各字段取自节点和边，节点另带 digest 给出的内容哈希，次序与节点和边加入的次序无关"
   op encode() -> bytes pure "把 snapshot 编码成确定的 JSON 快照（model.md §8）"
   op effects() -> map<string, OperationEffects> pure "按 model.md §9 D8 求出的效果：每个代码层操作和每个有实现的设计层操作的标识，对应它的直接效果、后继、效果和每个效果种类的来历，种类按 time、fs、process、network 的次序"
   op dispatch(id: string) -> list<string> pure "调用接口的抽象方法 id 时可能执行的方法：实现该接口的每个代码层类型自己的同名方法，没有时取它经嵌入得到的最近的同名方法，按标识排序；其他操作没有"
@@ -155,7 +155,7 @@ type EdgeChange record "一条边的差别：种类、起点、终点、差别�
   field after: optional<Edge>
 }
 
-type Comparison record "两张图的差别：新增、删除和修改的节点，按标识排序；新增、删除和修改的边，按种类、起点、终点排序" {
+type Comparison record "两张图的差别：新增、删除和修改的节点和边，次序与它们加入两张图的次序无关" {
   field nodes: list<NodeChange>
   field edges: list<EdgeChange>
 }
@@ -213,7 +213,13 @@ type Usage record "DeriveSample 中的一条函数间的调用边或导入边：
   field label: string
 }
 
-type DeriveSample record "derive 各性质的输入：一个片段，以及生成它时就定下的事实：各代码文件被哪些设计层容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边" {
+type Chain record "DeriveSample 中画出的一条调用链：起点、终点，以及其间新的没有绑定的函数" {
+  field from: string
+  field to: string
+  field via: list<string>
+}
+
+type DeriveSample record "derive 各性质的输入：一个片段，以及生成它时就定下的事实：各代码文件被哪些设计层容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边，以及画出的调用链" {
   field fragment: Fragment
   field matches: map<string, list<string>>
   field depth: map<string, int>
@@ -224,6 +230,7 @@ type DeriveSample record "derive 各性质的输入：一个片段，以及生�
   field ancestors: map<string, list<string>>
   field externalOps: map<string, string>
   field usages: list<Usage>
+  field chains: list<Chain>
 }
 
 type FingerprintSample record "fingerprints-separate-inputs-and-artifacts 的输入：一张图，加上运行产物的同一张图，移动了一处源位置的同一张图，以及一条边、改了出处和来源的这条边和改了属性的这条边" {
@@ -292,16 +299,27 @@ property decode-is-total postcondition "解码 data 抛出的错误只有 NotASn
 
 property derive-keeps-resolved-edges postcondition "推导之后，图中来源不是 derived 的边恰是片段中终点是图中节点的、不是方法候选边的边，与片段中的相同" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(e in sample.fragment.edges: not (e.kind == EdgeKind.realizes and e.source == Source.derived) implies (snapshot.node(e.to) != none implies snapshot.edge(e.kind, e.from, e.to) == e) and (snapshot.node(e.to) == none implies snapshot.edge(e.kind, e.from, e.to) == none))
   ensure all(x in snapshot.edges(): x.source != Source.derived implies any(e in sample.fragment.edges: e.kind == x.kind and e.from == x.from and e.to == x.to))
 }
 
+property derive-adds-only-defined-edges postcondition "推导之后，来源为 derived 的边只有 owns、realizes、depends、traces、exercises 和 reaches，owns、traces 和推导的 realizes 没有属性，exercises 恰有属性 path，reaches 恰有属性 via" {
+  about Graph.derive
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
+  forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
+  call snapshot.derive()
+  ensure all(x in snapshot.edges(): x.source == Source.derived implies x.kind == EdgeKind.owns or x.kind == EdgeKind.realizes or x.kind == EdgeKind.depends or x.kind == EdgeKind.traces or x.kind == EdgeKind.exercises or x.kind == EdgeKind.reaches)
+  ensure all(x in snapshot.edges(): x.source == Source.derived and (x.kind == EdgeKind.owns or x.kind == EdgeKind.traces or x.kind == EdgeKind.realizes) implies size(x.attrs) == 0)
+  ensure all(x in snapshot.edges(): x.kind == EdgeKind.exercises implies "path" in x.attrs and size(x.attrs) == 1)
+  ensure all(x in snapshot.edges(): x.kind == EdgeKind.reaches implies "via" in x.attrs and size(x.attrs) == 1)
+}
+
 property derive-reports-unresolved-bindings postcondition "推导对片段中终点不是节点的每条绑定边恰给出一条 graph.unresolved-binding 诊断，对象是 sample.dangling 中这条边的种类、起点和终点，位置是它的出处，此外没有这个码的诊断" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(s in sample.dangling: count(d in result: d.code == "graph.unresolved-binding" and d.subject == s and d.position == sample.dangling[s]) == 1)
@@ -310,7 +328,7 @@ property derive-reports-unresolved-bindings postcondition "推导对片段中终
 
 property derive-reports-invalid-patterns postcondition "推导对每个不合写法的路径模式给出一条 graph.bad-path-pattern 诊断，对象是带这个模式的设计层容器，位置是容器的出处，此外没有这个码的诊断" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(c in sample.badPatterns: count(d in result: d.code == "graph.bad-path-pattern" and d.subject == c and d.position == snapshot.node(c).origin) == count(x in sample.badPatterns: x == c))
@@ -319,7 +337,7 @@ property derive-reports-invalid-patterns postcondition "推导对每个不合写
 
 property derive-diagnostics-are-described postcondition "推导给出的诊断码只有 graph.unresolved-binding 和 graph.bad-path-pattern，每条诊断都有原因和修正" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(d in result: (d.code == "graph.unresolved-binding" or d.code == "graph.bad-path-pattern") and size(d.message) > 0 and size(d.fix) > 0)
@@ -327,7 +345,7 @@ property derive-diagnostics-are-described postcondition "推导给出的诊断�
 
 property owns-follows-deepest-pattern postcondition "推导之后，代码文件 f 与设计层容器 c 之间有 owns 边，当且仅当 c 有合乎写法的模式匹配 f 的路径，且这样的容器中没有比 c 更深的" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(e in snapshot.edges(): e.kind == EdgeKind.owns implies e.to in sample.matches and e.from in sample.matches[e.to])
@@ -336,7 +354,7 @@ property owns-follows-deepest-pattern postcondition "推导之后，代码文件
 
 property method-realizes-follows-candidates postcondition "推导之后，图中来源为 derived 的 realizes 边恰是这样的方法候选边 (m, o)：o 是设计层的操作，包含 o 的设计层类型被包含 m 的代码层类型实现" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(c in sample.fragment.edges: c.kind == EdgeKind.realizes and c.source == Source.derived implies (snapshot.edge(EdgeKind.realizes, c.from, c.to) != none) == (snapshot.node(c.to) != none and snapshot.node(c.to).layer == Layer.design and snapshot.node(c.to).kind == NodeKind.op and any(t in sample.ancestors[c.from]: snapshot.node(t).kind == NodeKind.type and any(p in sample.fragment.edges: p.kind == EdgeKind.contains and p.to == c.to and snapshot.node(p.from).layer == Layer.design and snapshot.node(p.from).kind == NodeKind.type and snapshot.edge(EdgeKind.realizes, t, p.from) != none))))
@@ -345,7 +363,7 @@ property method-realizes-follows-candidates postcondition "推导之后，图中
 
 property depends-lists-calls postcondition "推导之后，对设计层容器 A ≠ B，A 拥有的函数调用 B 拥有的函数或外部系统 B 的客户端时，有 depends(A, B)，它的 calls 属性列出这条调用，拥有按 sample.matches 中最深的容器算" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(u in sample.usages: u.kind == EdgeKind.calls implies all(a in sample.matches[sample.files[u.from]]: all(b in sample.matches[sample.files[u.to]]: a != b and all(o in sample.matches[sample.files[u.from]]: sample.depth[o] <= sample.depth[a]) and all(o in sample.matches[sample.files[u.to]]: sample.depth[o] <= sample.depth[b]) implies snapshot.edge(EdgeKind.depends, a, b) != none and "calls" in snapshot.edge(EdgeKind.depends, a, b).attrs and u.label in snapshot.edge(EdgeKind.depends, a, b).attrs["calls"])))
@@ -354,7 +372,7 @@ property depends-lists-calls postcondition "推导之后，对设计层容器 A 
 
 property depends-lists-imports postcondition "推导之后，对设计层容器 A ≠ B，A 拥有的文件导入含 B 拥有的文件的包时，有 depends(A, B)，它的 imports 属性列出这条导入，拥有按 sample.matches 中最深的容器算" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(u in sample.usages: u.kind == EdgeKind.imports implies all(g in sample.fragment.edges: g.kind == EdgeKind.contains and g.from == u.to and g.to in sample.matches implies all(a in sample.matches[u.from]: all(b in sample.matches[g.to]: a != b and all(o in sample.matches[u.from]: sample.depth[o] <= sample.depth[a]) and all(o in sample.matches[g.to]: sample.depth[o] <= sample.depth[b]) implies snapshot.edge(EdgeKind.depends, a, b) != none and "imports" in snapshot.edge(EdgeKind.depends, a, b).attrs and u.label in snapshot.edge(EdgeKind.depends, a, b).attrs["imports"]))))
@@ -362,7 +380,7 @@ property depends-lists-imports postcondition "推导之后，对设计层容器 
 
 property depends-attrs-are-distinct-usages postcondition "推导之后，每条 depends(A, B) 的 A ≠ B，属性只有 calls 和 imports 两个键，每个键至少有一个值，每个值只出现一次" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(x in snapshot.edges(): x.kind == EdgeKind.depends implies x.from != x.to and size(x.attrs) > 0 and all(k in x.attrs: (k == "calls" or k == "imports") and size(x.attrs[k]) > 0 and all(v in x.attrs[k]: count(w in x.attrs[k]: w == v) == 1)))
@@ -370,7 +388,7 @@ property depends-attrs-are-distinct-usages postcondition "推导之后，每条 
 
 property depends-values-are-usages postcondition "推导之后，每条 depends(A, B) 的 calls 的每个值是 A 拥有的函数调用 B 拥有的函数或外部系统 B 的客户端的一条调用，imports 的每个值是 A 拥有的文件导入含 B 拥有的文件的包的一条导入，拥有按 sample.matches 中最深的容器算" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(x in snapshot.edges(): x.kind == EdgeKind.depends and "calls" in x.attrs implies all(v in x.attrs["calls"]: any(u in sample.usages: u.kind == EdgeKind.calls and u.label == v and x.from in sample.matches[sample.files[u.from]] and all(o in sample.matches[sample.files[u.from]]: sample.depth[o] <= sample.depth[x.from]) and (x.to in sample.matches[sample.files[u.to]] and all(o in sample.matches[sample.files[u.to]]: sample.depth[o] <= sample.depth[x.to]) or any(r in sample.fragment.edges: r.kind == EdgeKind.realizes and r.from == u.to and r.to in sample.externalOps and sample.externalOps[r.to] == x.to and snapshot.edge(EdgeKind.realizes, r.from, r.to) != none)))))
@@ -379,7 +397,7 @@ property depends-values-are-usages postcondition "推导之后，每条 depends(
 
 property traces-follow-realizations postcondition "推导之后，traces(s, f) 在图中，当且仅当 s 是形式为 call 或 send 的步骤，f 是代码层的操作，s 调用的某个操作由 f 实现" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(t in snapshot.edges(): t.kind == EdgeKind.traces implies snapshot.node(t.from).kind == NodeKind.step and (snapshot.node(t.from).form == "call" or snapshot.node(t.from).form == "send") and snapshot.node(t.to).layer == Layer.code and snapshot.node(t.to).kind == NodeKind.op and any(c in sample.fragment.edges: c.kind == EdgeKind.calls and c.from == t.from and snapshot.edge(EdgeKind.realizes, t.to, c.to) != none))
@@ -388,7 +406,7 @@ property traces-follow-realizations postcondition "推导之后，traces(s, f) �
 
 property exercises-close-over-calls postcondition "推导之后，exercises 边都从带解析了的 checks 绑定的谓词出发、指向代码层的操作，谓词直接调用的和从它执行到的函数所调用的代码层操作都由它执行到" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(x in snapshot.edges(): x.kind == EdgeKind.exercises implies snapshot.node(x.to).layer == Layer.code and snapshot.node(x.to).kind == NodeKind.op and any(k in sample.fragment.edges: k.kind == EdgeKind.checks and k.from == x.from and snapshot.node(k.to) != none))
@@ -397,15 +415,30 @@ property exercises-close-over-calls postcondition "推导之后，exercises 边�
 
 property exercises-paths-lead-to-predicates postcondition "推导之后，每条 exercises(p, g) 的 path 列出的函数都由 p 执行到，path 为空时 p 直接调用 g，否则 path 中有调用 g 的函数 h，exercises(p, h) 的 path 比它少一项" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(x in snapshot.edges(): x.kind == EdgeKind.exercises implies all(h in x.attrs["path"]: snapshot.edge(EdgeKind.exercises, x.from, h) != none) and (size(x.attrs["path"]) == 0 and snapshot.edge(EdgeKind.calls, x.from, x.to) != none or any(h in x.attrs["path"]: snapshot.edge(EdgeKind.calls, h, x.to) != none and size(snapshot.edge(EdgeKind.exercises, x.from, h).attrs["path"]) + 1 == size(x.attrs["path"]))))
 }
 
+property exercises-paths-are-shortest postcondition "推导之后，谓词 p 直接调用 g 时 exercises(p, g) 的 path 为空，p 执行到的函数 c 调用 g 时 exercises(p, g) 的 path 至多比 exercises(p, c) 的多一项" {
+  about Graph.derive
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
+  forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
+  call snapshot.derive()
+  ensure all(x in snapshot.edges(): x.kind == EdgeKind.exercises and snapshot.edge(EdgeKind.calls, x.from, x.to) != none implies size(x.attrs["path"]) == 0)
+  ensure all(c in sample.fragment.edges: c.kind == EdgeKind.calls implies all(k in sample.fragment.edges: k.kind == EdgeKind.checks and snapshot.edge(EdgeKind.exercises, k.from, c.from) != none and snapshot.edge(EdgeKind.exercises, k.from, c.to) != none implies size(snapshot.edge(EdgeKind.exercises, k.from, c.to).attrs["path"]) <= size(snapshot.edge(EdgeKind.exercises, k.from, c.from).attrs["path"]) + 1))
+}
+
+property exercises-paths-are-ordered invariant "推导之后，每条 exercises(p, g) 的 path 非空时，它的最后一个函数 h 调用 g，去掉 h 之后恰是 exercises(p, h) 的 path，h 是 p 执行到、调用 g、path 比 g 的少一项的函数中标识最小的" {
+  about Graph.derive
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
+  manual "需要按位置取列表的元素，表达式没有列表的位置访问"
+}
+
 property design-nodes-are-salient postcondition "推导之后，设计层的节点都显著" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(n in snapshot.nodes(): n.layer == Layer.design implies n.salient)
@@ -413,7 +446,7 @@ property design-nodes-are-salient postcondition "推导之后，设计层的节�
 
 property code-salience-follows-bindings postcondition "推导之后，代码层的类型和操作显著，当且仅当它有解析了的 realizes、checks、generates、observes、substitutes 或 publishes 边，且它的源文件不是生成文件" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(n in snapshot.nodes(): n.layer == Layer.code and (n.kind == NodeKind.type or n.kind == NodeKind.op) implies n.salient == (any(e in sample.fragment.edges: e.from == n.id and (e.kind == EdgeKind.realizes or e.kind == EdgeKind.checks or e.kind == EdgeKind.generates or e.kind == EdgeKind.observes or e.kind == EdgeKind.substitutes or e.kind == EdgeKind.publishes) and snapshot.edge(e.kind, e.from, e.to) != none) and not ("generated" in snapshot.node(sample.sourceFiles[n.id]).attrs and "true" in snapshot.node(sample.sourceFiles[n.id]).attrs["generated"])))
@@ -421,7 +454,7 @@ property code-salience-follows-bindings postcondition "推导之后，代码层�
 
 property container-salience-follows-elements postcondition "推导之后，代码层的文件和包显著，当且仅当它不是生成文件，并且是某个显著的类型或操作的源文件或包含它" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(c in snapshot.nodes(): c.layer == Layer.code and c.kind == NodeKind.container implies c.salient == (not ("generated" in c.attrs and "true" in c.attrs["generated"]) and any(e in snapshot.nodes(): e.salient and e.layer == Layer.code and (e.kind == NodeKind.type or e.kind == NodeKind.op) and (c.id in sample.ancestors[e.id] or sample.sourceFiles[e.id] == c.id))))
@@ -429,22 +462,30 @@ property container-salience-follows-elements postcondition "推导之后，代�
 
 property reaches-joins-salient-functions postcondition "推导之后，每条 reaches(f, g) 的 f 和 g 是不同的显著的代码层操作，f 不直接调用 g，via 非空，其中的函数各出现一次，都是代码层的细节操作，各由 f 或 via 中的函数调用，各调用 g 或 via 中的函数" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   call snapshot.derive()
   ensure all(x in snapshot.edges(): x.kind == EdgeKind.reaches implies x.from != x.to and snapshot.node(x.from).salient and snapshot.node(x.to).salient and snapshot.node(x.from).layer == Layer.code and snapshot.node(x.from).kind == NodeKind.op and snapshot.node(x.to).layer == Layer.code and snapshot.node(x.to).kind == NodeKind.op and snapshot.edge(EdgeKind.calls, x.from, x.to) == none and size(x.attrs["via"]) > 0)
   ensure all(x in snapshot.edges(): x.kind == EdgeKind.reaches implies all(h in x.attrs["via"]: count(w in x.attrs["via"]: w == h) == 1 and snapshot.node(h).layer == Layer.code and snapshot.node(h).kind == NodeKind.op and not snapshot.node(h).salient and (snapshot.edge(EdgeKind.calls, x.from, h) != none or any(w in x.attrs["via"]: snapshot.edge(EdgeKind.calls, w, h) != none)) and (snapshot.edge(EdgeKind.calls, h, x.to) != none or any(w in x.attrs["via"]: snapshot.edge(EdgeKind.calls, h, w) != none))))
 }
 
-property reaches-covers-detail-chains invariant "f 和 g 是不同的显著的函数、f 不直接调用 g、f 经一个或多个细节函数调用 g 时，推导得出 reaches(f, g)，via 恰列出这些调用链上的每个细节函数" {
+property reaches-covers-planted-chains postcondition "推导之后，画出的每条调用链两端是不同的显著函数、起点不直接调用终点时，有 reaches(起点, 终点)，它的 via 含链上的每个函数" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
+  forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
+  call snapshot.derive()
+  ensure all(c in sample.chains: c.from != c.to and snapshot.node(c.from).salient and snapshot.node(c.to).salient and snapshot.edge(EdgeKind.calls, c.from, c.to) == none implies snapshot.edge(EdgeKind.reaches, c.from, c.to) != none and all(h in c.via: h in snapshot.edge(EdgeKind.reaches, c.from, c.to).attrs["via"]))
+}
+
+property reaches-covers-detail-chains invariant "推导得出 reaches(f, g) 当且仅当 f 和 g 是不同的显著的函数、f 不直接调用 g、f 经一个或多个细节函数调用 g，via 按标识的次序恰列出这些调用链上的每个细节函数" {
+  about Graph.derive
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   manual "需要求出细节函数之间调用的传递闭包，表达式没有递归或不定次的迭代"
 }
 
 property derive-ignores-order postcondition "同一个片段的节点和边以原来的和轮换后的次序加入两张图，两张图推导之后编码出的快照相同" {
   about Graph.derive
-  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套、各带零至二个路径模式（其中有不合写法的）的组件，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层有包、文件（有的是生成文件）、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有的代码类型和函数的出处另指一个文件，并附上构造时就定下的事实：各代码文件被哪些容器的合乎写法的模式匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，以及每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点）"
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   forall rotation: int
   forall snapshot: Graph generated "把 sample.fragment 加入一张新图，不推导"
   forall reordered: Graph generated "把 sample.fragment 的节点和边各按 rotation 轮换次序后加入一张新图，再推导"
@@ -532,11 +573,18 @@ property compare-balances-attr-values postcondition "比较中每个键上去掉
   ensure all(c in result.nodes: all(a in c.attrs: (c.before != none and a.key in c.before.attrs and not (c.after != none and a.key in c.after.attrs) implies all(v in c.before.attrs[a.key]: count(x in a.removed: x == v) == count(x in c.before.attrs[a.key]: x == v))) and (c.after != none and a.key in c.after.attrs and not (c.before != none and a.key in c.before.attrs) implies all(v in c.after.attrs[a.key]: count(x in a.added: x == v) == count(x in c.after.attrs[a.key]: x == v)))))
 }
 
-property compare-lists-are-present invariant "compare 的结果中 nodes、edges、每个节点变化的 attrs 以及每个属性变化的 removed 和 added 都不是 nil 列表" {
+property compare-lists-are-present invariant "compare 的结果编码成 JSON 时，nodes、edges、每个节点变化的 attrs 以及每个属性变化的 removed 和 added 都不是 null" {
   about compare
   forall base: Fragment generated "零至八个标识互不相同的节点，以及零至十二条两端都在其中、彼此不同的边：标识是 a、b、.、#、- 组成的一至四个字符，种类、层和来源任取，出处取自三个路径（含空路径）和零至三的行列，形式、摘要以及属性的键和值都是由 a、b、英文双引号、< 和汉字“中”组成的零至三个字符，属性至多三个键、每键至多两个值，可以没有属性、有空的属性列表和自环，节点各以一半机会显著"
   forall head: Fragment generated "base 的一份改动：每个节点和边约五分之一删去、五分之一改内容（边只改属性，改动可能落空）、五分之一重取出处和来源（节点另重取层并翻转显著性），其余不变，端点被删去的边一并删去，再加上零至三个新节点和零至四条新边，新节点可能用回删去的节点的标识"
-  manual "需要区分 nil 列表和空列表，模型值的列表不区分两者"
+  manual "需要把结果编码成 JSON 再找出其中的 null，表达式不能编码或解析 JSON"
+}
+
+property compare-keeps-value-order invariant "比较中每个属性键上去掉的值按 base 中这个键的值的次序排列，加上的值按 head 中的次序排列，即各是那一边的子序列" {
+  about compare
+  forall base: Fragment generated "零至八个标识互不相同的节点，以及零至十二条两端都在其中、彼此不同的边：标识是 a、b、.、#、- 组成的一至四个字符，种类、层和来源任取，出处取自三个路径（含空路径）和零至三的行列，形式、摘要以及属性的键和值都是由 a、b、英文双引号、< 和汉字“中”组成的零至三个字符，属性至多三个键、每键至多两个值，可以没有属性、有空的属性列表和自环，节点各以一半机会显著"
+  forall head: Fragment generated "base 的一份改动：每个节点和边约五分之一删去、五分之一改内容（边只改属性，改动可能落空）、五分之一重取出处和来源（节点另重取层并翻转显著性），其余不变，端点被删去的边一并删去，再加上零至三个新节点和零至四条新边，新节点可能用回删去的节点的标识"
+  manual "需要按位置取列表的元素，表达式没有列表的位置访问"
 }
 
 property compare-is-canonical relation "两张图的节点和边各按 rotation 轮换次序后加入两张新图，compare 给出的比较与原来的逐项相同，次序也相同" {

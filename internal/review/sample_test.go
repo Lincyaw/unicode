@@ -47,60 +47,7 @@ type sampleRecord struct {
 //uc:generates review.concurrent-writes-keep-both.sample
 func genSample() *rapid.Generator[Sample] {
 	return rapid.Custom(func(t *rapid.T) Sample {
-		value := rapid.IntRange(-20, 20).Draw(t, "value")
-		mode := rapid.IntRange(0, 13).Draw(t, "change")
-		withBase := rapid.Bool().Draw(t, "base")
-		before := sampleGraph(t, value)
-		nodes, edges := before.Nodes(), before.Edges()
-		update := func(id string, change func(*graph.Node)) {
-			for index := range nodes {
-				if nodes[index].Id == id {
-					change(&nodes[index])
-				}
-			}
-		}
-		switch mode {
-		case 1:
-			nodes = append(nodes, graph.Node{Id: "domain.added", Kind: graph.NodeKindOp, Form: "op", Layer: graph.LayerDesign, Summary: fmt.Sprint(value)})
-		case 2:
-			nodes = slices.DeleteFunc(nodes, func(n graph.Node) bool { return n.Id == "go:sample.Helper" })
-			edges = slices.DeleteFunc(edges, func(e graph.Edge) bool { return e.From == "go:sample.Helper" || e.To == "go:sample.Helper" })
-		case 3:
-			update("domain.auto", func(n *graph.Node) { n.Summary += " changed" })
-		case 4:
-			update("go:sample.Check", func(n *graph.Node) { n.Attrs["body"] = []string{fmt.Sprint(value + 1)} })
-		case 5:
-			update("go:sample.Observe", func(n *graph.Node) { n.Attrs["body"] = []string{fmt.Sprint(value + 1)} })
-		case 6:
-			update("domain.manual.state", func(n *graph.Node) { n.Summary += " changed" })
-		case 7:
-			update("go:sample.Helper", func(n *graph.Node) { n.Attrs["body"] = []string{fmt.Sprint(value + 1)} })
-		case 8:
-			update("go:sample.Helper", func(n *graph.Node) { n.Origin.Line += 5; n.Salient = !n.Salient })
-		case 9:
-			edges = append(edges, graph.Edge{Kind: graph.EdgeKindUses, From: "domain", To: "domain.auto", Attrs: map[string][]string{"extra": {fmt.Sprint(value)}}})
-		case 10:
-			edges = slices.DeleteFunc(edges, func(e graph.Edge) bool { return e.Kind == graph.EdgeKindCalls })
-		case 11:
-			for index := range edges {
-				if edges[index].Kind == graph.EdgeKindCalls {
-					edges[index].Attrs["sites"] = []string{fmt.Sprintf("source.go:%d:1", value+30)}
-				}
-			}
-		case 12:
-			update("go:sample.Generated", func(n *graph.Node) { n.Attrs["body"] = []string{fmt.Sprint(value + 1)} })
-		case 13:
-			for index := range edges {
-				if edges[index].Kind == graph.EdgeKindChecks && edges[index].To == "domain.manual" {
-					edges[index].From = "go:sample.OtherCheck"
-				}
-			}
-		}
-		head := sampleBuild(t, nodes, edges)
-		var base *graph.Graph
-		if withBase {
-			base = before
-		}
+		before, head, base := drawChange(t)
 		allBefore, allHead := oracleTargets(before), oracleTargets(head)
 		selected := map[Target]bool{}
 		for target := range allHead {
@@ -153,10 +100,72 @@ func genSample() *rapid.Generator[Sample] {
 	})
 }
 
+// drawChange draws the fixed small graph of a value from -20 to 20 as the
+// graph before, the graph after one of fourteen changes, and, half the time,
+// the graph before as the base.
+func drawChange(t *rapid.T) (*graph.Graph, *graph.Graph, *graph.Graph) {
+	value := rapid.IntRange(-20, 20).Draw(t, "value")
+	mode := rapid.IntRange(0, 13).Draw(t, "change")
+	withBase := rapid.Bool().Draw(t, "base")
+	before := sampleGraph(t, value)
+	nodes, edges := before.Nodes(), before.Edges()
+	update := func(id string, change func(*graph.Node)) {
+		for index := range nodes {
+			if nodes[index].Id == id {
+				change(&nodes[index])
+			}
+		}
+	}
+	switch mode {
+	case 1:
+		nodes = append(nodes, graph.Node{Id: "domain.added", Kind: graph.NodeKindOp, Form: "op", Layer: graph.LayerDesign, Summary: fmt.Sprint(value)})
+	case 2:
+		nodes = slices.DeleteFunc(nodes, func(n graph.Node) bool { return n.Id == "go:sample.Helper" })
+		edges = slices.DeleteFunc(edges, func(e graph.Edge) bool { return e.From == "go:sample.Helper" || e.To == "go:sample.Helper" })
+	case 3:
+		update("domain.auto", func(n *graph.Node) { n.Summary += " changed" })
+	case 4:
+		update("go:sample.Check", func(n *graph.Node) { n.Attrs["body"] = []string{fmt.Sprint(value + 1)} })
+	case 5:
+		update("go:sample.Observe", func(n *graph.Node) { n.Attrs["body"] = []string{fmt.Sprint(value + 1)} })
+	case 6:
+		update("domain.manual.state", func(n *graph.Node) { n.Summary += " changed" })
+	case 7:
+		update("go:sample.Helper", func(n *graph.Node) { n.Attrs["body"] = []string{fmt.Sprint(value + 1)} })
+	case 8:
+		update("go:sample.Helper", func(n *graph.Node) { n.Origin.Line += 5; n.Salient = !n.Salient })
+	case 9:
+		edges = append(edges, graph.Edge{Kind: graph.EdgeKindUses, From: "domain", To: "domain.auto", Attrs: map[string][]string{"extra": {fmt.Sprint(value)}}})
+	case 10:
+		edges = slices.DeleteFunc(edges, func(e graph.Edge) bool { return e.Kind == graph.EdgeKindCalls })
+	case 11:
+		for index := range edges {
+			if edges[index].Kind == graph.EdgeKindCalls {
+				edges[index].Attrs["sites"] = []string{fmt.Sprintf("source.go:%d:1", value+30)}
+			}
+		}
+	case 12:
+		update("go:sample.Generated", func(n *graph.Node) { n.Attrs["body"] = []string{fmt.Sprint(value + 1)} })
+	case 13:
+		for index := range edges {
+			if edges[index].Kind == graph.EdgeKindChecks && edges[index].To == "domain.manual" {
+				edges[index].From = "go:sample.OtherCheck"
+			}
+		}
+	}
+	head := sampleBuild(t, nodes, edges)
+	var base *graph.Graph
+	if withBase {
+		base = before
+	}
+	return before, head, base
+}
+
 func sampleReview(g *graph.Graph, target Target, at, decision string) Record {
 	// The identity and digest make this a legal input record. Expected validity
-	// below is computed from model content, not from these production digests.
-	r := Record{Version: 1, Reviewer: "reviewer", At: at, Snapshot: graph.InputDigest(g), Target: target, Digest: indexContent(g).item(target, nil).Digest, Decision: decision, Comment: "sample review"}
+	// below is computed from model content, not from these production digests;
+	// no property reads the snapshot, which is planted.
+	r := Record{Version: 1, Reviewer: "reviewer", At: at, Snapshot: strings.Repeat("e", 64), Target: target, Digest: indexContent(g).item(target, nil).Digest, Decision: decision, Comment: "sample review"}
 	r.Id = recordId(r)
 	return r
 }

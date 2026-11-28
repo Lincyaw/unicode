@@ -286,14 +286,16 @@ func Recordings(root string, g *graph.Graph, cases []lang.CaseResult) Recording 
 		if len(parsed.Diagnostics) > 0 {
 			return fail("evidence.unreplayable-input", check, parsed.Diagnostics[0].Message, "provide values with a valid lossless corpus notation")
 		}
-		for _, declaration := range parsed.File.Decls {
-			if candidate, ok := declaration.(*syntax.RecordedCase); ok {
-				if err := validateRoundtrip(g, check, byName[string(candidate.Name)].Input, candidate.Lines); err != nil {
-					return fail("evidence.unreplayable-input", check, err.Error(), "provide complete values matching the declared symbols and codec representations")
-				}
+		content := parsed.File.Print()
+		restored, err := RecordedInputs(g, path, content)
+		if err != nil {
+			return fail("evidence.unreplayable-input", check, err.Error(), "provide complete values matching the declared symbols and codec representations")
+		}
+		for name, result := range byName {
+			if !bytes.Equal(canonical(restored[name].Values), canonical(result.Input.Values)) {
+				return fail("evidence.unreplayable-input", check, "the corpus representation does not preserve the frozen model input", "provide complete values matching the declared symbols and codec representations")
 			}
 		}
-		content := parsed.File.Print()
 		before, exists := files[check]
 		if len(byName) == 0 && !exists {
 			continue
