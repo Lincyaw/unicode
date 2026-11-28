@@ -220,3 +220,15 @@ property underivable-input-is-check-error postcondition "Go 后端回放的用�
   call backend.run(plan)
   ensure DerivedOutcome.underivable in outcomes implies any(d in result.diagnostics: d.code == "lang.golang.derivation-failed")
 }
+
+property derived-template-matches-fresh-derivation invariant "同一次运行中，派生输入以同样的前置符号第二次算出时不再调用派生函数而是得到模板的副本，派生值在新目录中的相对位置与第一次相同，副本的目录、文件、链接、权限位和内容与重新调用派生函数建出的相同" {
+  about Backend
+  forall module: Module generated "一个随机的 Go 模块：一至三个包，各有一至两个源码文件，可有内部测试文件和外部测试包，含零至六个类型及其方法、零至五个函数、按测试命名的函数、调用、作为值引用的函数和方法（函数名、方法值和方法表达式，包括接口的方法）、导入、嵌入、实现接口的类型、零至三个包级变量和 //uc: 绑定；部分绑定和生成标记故意写错，部分方法的签名与接口只差一个类型，部分声明只在排版和注释上与另一个不同，另有不成节点的声明"
+  manual "需要经生成驱动的派生运行时两次算出建出目录的派生输入，再与重新建出的目录逐项比较，表达式不能读写文件"
+}
+
+property derived-template-skips-self-naming-state invariant "派生函数建出的状态中有文件写着它自己的目录时，同一次运行中以同样的前置符号第二次算出派生输入仍调用派生函数，不用模板" {
+  about Backend
+  forall module: Module generated "一个随机的 Go 模块：一至三个包，各有一至两个源码文件，可有内部测试文件和外部测试包，含零至六个类型及其方法、零至五个函数、按测试命名的函数、调用、作为值引用的函数和方法（函数名、方法值和方法表达式，包括接口的方法）、导入、嵌入、实现接口的类型、零至三个包级变量和 //uc: 绑定；部分绑定和生成标记故意写错，部分方法的签名与接口只差一个类型，部分声明只在排版和注释上与另一个不同，另有不成节点的声明"
+  manual "需要经生成驱动的派生运行时两次算出建出目录的派生输入并数派生函数被调用的次数，表达式不能读写文件"
+}

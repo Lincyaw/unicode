@@ -42,10 +42,13 @@ var contractAliasRuntime string
 //go:embed process_runtime.go
 var contractProcessRuntime string
 
+//go:embed template_runtime.go
+var contractTemplateRuntime string
+
 // contractRuntimeParts are the runtime files that generated drivers embed
 // after contract_runtime.go, each without its imports.
 func contractRuntimeParts() []string {
-	return []string{contractDoubleRuntime, contractCaseRuntime, contractWorkerRuntime, contractAliasRuntime, contractProcessRuntime}
+	return []string{contractDoubleRuntime, contractCaseRuntime, contractWorkerRuntime, contractAliasRuntime, contractProcessRuntime, contractTemplateRuntime}
 }
 
 var _ = ucCandidateWorker
@@ -1015,13 +1018,18 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 				args = append(args, "values["+strconv.Quote(name)+"].Interface().("+c.goType(model, file.pkg, file.imports)+")")
 			}
 			invocation := selector + "(" + strings.Join(args, ",") + ")"
-			switch {
-			case !slices.Contains(unit.spec.Derived, s.Name):
+			if !slices.Contains(unit.spec.Derived, s.Name) {
 				return fmt.Sprintf("values[%s]=reflect.ValueOf(%s.Draw(rt,%s));", strconv.Quote(s.Name), invocation, strconv.Quote(s.Name)), true
-			case fn.Signature().Results().Len() == 2:
-				return fmt.Sprintf("values[%s]=ucDerive(%s,func()(any,error){return %s});", strconv.Quote(s.Name), strconv.Quote(s.Name), invocation), true
 			}
-			return fmt.Sprintf("values[%s]=ucDerive(%s,func()(any,error){return %s,nil});", strconv.Quote(s.Name), strconv.Quote(s.Name), invocation), true
+			var quoted []string
+			for _, name := range unit.generatorArgs[s.Name] {
+				quoted = append(quoted, strconv.Quote(name))
+			}
+			result := invocation
+			if fn.Signature().Results().Len() != 2 {
+				result += ",nil"
+			}
+			return fmt.Sprintf("values[%s]=ucDerive(s,%s,[]string{%s},values,reflect.TypeFor[%s](),func()(any,error){return %s});", strconv.Quote(s.Name), strconv.Quote(s.Name), strings.Join(quoted, ","), c.goType(s.Type, file.pkg, file.imports), result), true
 		}
 		fmt.Fprintf(&body, "func ucInputs%s(rt *rapid.T,s *ucContract) map[string]reflect.Value{ values:=map[string]reflect.Value{};", id)
 		for _, s := range unit.spec.Symbols {

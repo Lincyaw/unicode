@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/lincyaw/unicode/internal/diag"
@@ -47,7 +46,9 @@ var derivedModes = map[DerivedOutcome]int{
 // deriveCleanupPlan writes a Go module into a new directory: a function
 // Probe, and a property demo.cleans on it whose derived input dir is made by
 // a derivation that creates a directory and records its path in built.txt
-// at the module's root. Each outcome is one declared case. It generates the
+// at the module's root, the working directory of the drivers Backend.run
+// starts, so that the module names no directory of its own and its state
+// template can move. Each outcome is one declared case. It generates the
 // module's drivers and gives the plan that replays demo.cleans.
 //
 //uc:generates lang.golang.derived-state-is-removed.plan
@@ -68,7 +69,7 @@ func deriveCleanupPlan(outcomes []DerivedOutcome) (lang.RunPlan, error) {
 		"src/derive_test.go": "package probe\n\nimport (\n\t\"errors\"\n\t\"os\"\n)\n\n" +
 			"//uc:generates demo.cleans.dir\nfunc deriveDir(mode int) (string, error) {\n" +
 			"\tdir, err := os.MkdirTemp(\"\", \"built-\")\n\tif err != nil {\n\t\treturn \"\", err\n\t}\n" +
-			"\tf, err := os.OpenFile(" + strconv.Quote(filepath.Join(root, "built.txt")) + ", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)\n" +
+			"\tf, err := os.OpenFile(\"built.txt\", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)\n" +
 			"\tif err != nil {\n\t\treturn \"\", err\n\t}\n\tdefer f.Close()\n" +
 			"\tif _, err := f.WriteString(dir + \"\\n\"); err != nil {\n\t\treturn \"\", err\n\t}\n" +
 			"\tif mode == 4 {\n\t\treturn \"\", errors.New(\"the derivation refuses mode 4\")\n\t}\n\treturn dir, nil\n}\n",

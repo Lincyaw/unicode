@@ -138,28 +138,38 @@ func ucWireAdapt(value reflect.Value, target reflect.Type) reflect.Value {
 // them when the case ends.
 var ucDerivedRoots []string
 
-// ucDerive computes a derived input (docs/language.md E24) by calling its
-// derivation function, with the temporary directory pointed at a new one
-// that the case owns, so that the state it builds there is removed when the
-// case ends, however it ends. A derivation that fails or panics is a check
+// ucDerive computes the derived input name of s (docs/language.md E24) by
+// calling its derivation function, which takes the symbols args, with the
+// temporary directory pointed at a new one that the case owns, so that the
+// state it builds there is removed when the case ends, however it ends. When
+// a state template with the same key exists (template_runtime.go), the case
+// gets a copy of it instead. A derivation that fails or panics is a check
 // error.
-func ucDerive(name string, call func() (any, error)) reflect.Value {
+func ucDerive(s *ucContract, name string, args []string, values map[string]reflect.Value, native reflect.Type, call func() (any, error)) reflect.Value {
 	root, err := os.MkdirTemp("", "unicode-derived-")
 	if err != nil {
 		ucFail("lang.golang.derivation-failed", "the derived input "+name+" has no directory to build its state in: "+err.Error(), nil)
 	}
 	ucDerivedRoots = append(ucDerivedRoots, root)
+	templates := ucTemplateRoot()
+	key, keyed := "", false
+	if templates != "" {
+		key, keyed = ucTemplateKey(s, name, args, values)
+	}
+	if keyed {
+		if value, ok := ucTemplateUse(templates, key, root, s, name, native); ok {
+			return value
+		}
+	}
 	previous, had := os.LookupEnv("TMPDIR")
 	_ = os.Setenv("TMPDIR", root)
-	defer func() {
-		if had {
-			_ = os.Setenv("TMPDIR", previous)
-		} else {
-			_ = os.Unsetenv("TMPDIR")
-		}
-	}()
 	value, err := func() (value any, err error) {
 		defer func() {
+			if had {
+				_ = os.Setenv("TMPDIR", previous)
+			} else {
+				_ = os.Unsetenv("TMPDIR")
+			}
 			if problem := recover(); problem != nil {
 				err = fmt.Errorf("the derivation panicked: %v", problem)
 			}
@@ -168,6 +178,9 @@ func ucDerive(name string, call func() (any, error)) reflect.Value {
 	}()
 	if err != nil {
 		ucFail("lang.golang.derivation-failed", "the derived input "+name+" cannot be computed: "+err.Error(), nil)
+	}
+	if keyed {
+		ucTemplateSave(templates, key, root, s, name, reflect.ValueOf(value))
 	}
 	return reflect.ValueOf(value)
 }
