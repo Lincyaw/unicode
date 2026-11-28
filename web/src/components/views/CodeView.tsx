@@ -8,13 +8,13 @@ import { InfoHint } from '../../ui/hint';
 import { Icon } from '../../ui/icons';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { LineMarks, Lines, type Line, type LineMark } from '../canvas/Edges';
-import { relative, scopeOf, shortPath, statusOf } from '../marks/format';
+import { shortPath, statusOf } from '../marks/format';
 import { Code, FileCode, FlaskConical, KindIcon, Split } from '../marks/icons';
 import { useLinks, useNodeActions } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
 import { NodeRef } from '../marks/NodeRef';
 import { CallMark } from './CallMark';
-import { bindingOf, layOutCode, rowLabel, type Box } from './codeLayout';
+import { bindingLabel, bindingOf, layOutCode, rowLabel, type Box } from './codeLayout';
 import { edgeKey, markOf } from './graphParts';
 import styles from './views.module.css';
 
@@ -45,7 +45,7 @@ function FileBox({ box, details }: { box: Box; details?: number }) {
             {bound && (
               <NodeRef id={bound.id} className={styles.binding}>
                 <KindIcon node={bound} size="tiny" />
-                {relative(bound.id, scopeOf(bound.id))}
+                {bindingLabel(bound)}
               </NodeRef>
             )}
           </Placed>

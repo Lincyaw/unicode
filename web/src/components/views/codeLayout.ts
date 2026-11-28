@@ -4,7 +4,7 @@ import { planChannel, portFor, portRoom, portsAlong, routeChannel, type ChannelL
 import type { Rect, Route } from '../canvas/layout';
 import { monoWidth } from '../canvas/measure';
 import { CHIP_HEIGHT, chipWidth } from '../canvas/sizes';
-import { shortPath } from '../marks/format';
+import { relative, scopeOf, shortPath } from '../marks/format';
 import { edgeKey, markOf } from './graphParts';
 
 /*
@@ -69,6 +69,11 @@ export function bindingOf(node: ViewNode): ViewNode | undefined {
   return node.bindings?.[0]?.node;
 }
 
+/** How a row names the design node it realizes: its identity relative to its component. The layout measures this text. */
+export function bindingLabel(bound: ViewNode): string {
+  return relative(bound.id, scopeOf(bound.id));
+}
+
 /** Nodes in the order their source declares them. */
 function bySource(nodes: ViewNode[]): ViewNode[] {
   return [...nodes].sort((a, b) => a.origin.line - b.origin.line || a.origin.column - b.origin.column || (a.id < b.id ? -1 : 1));
@@ -78,7 +83,7 @@ function bySource(nodes: ViewNode[]): ViewNode[] {
 function boxOf(key: string, head: string, items: { node: ViewNode; depth: number }[], heightOf: (id: string) => number, details: number): Box {
   const widths = items.map(({ node, depth }) => {
     const bound = bindingOf(node);
-    return depth * INDENT + chipWidth(rowLabel(node, depth)) + (bound ? BINDING_GAP + ICON_SMALL + 4 + monoWidth(bound.title, 12) + 16 : 0);
+    return depth * INDENT + chipWidth(rowLabel(node, depth)) + (bound ? BINDING_GAP + ICON_SMALL + 4 + monoWidth(bindingLabel(bound), 12) + 16 : 0);
   });
   const width = Math.max(MIN_WIDTH, monoWidth(head, 12) + 60, ...widths.map(item => item + 2 * PADDING));
   let y = PADDING + HEAD + GAP + 4;
