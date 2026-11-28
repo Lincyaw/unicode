@@ -425,7 +425,7 @@
 | 15 | `lang.golang.missing-binding-id`、`lang.golang.invalid-binding-id`、`lang.golang.misplaced-binding`、`lang.golang.duplicate-binding`、`graph.unresolved-binding`、`check.wrong-binding-kind`、`check.multiple-checks`、`check.multiple-observes`、`check.multiple-substitutes`、`check.substitute-signature`、`check.substitute-outside-container`、`check.not-generated-symbol`、`check.method-binding`、`check.multiple-publications`、`check.publisher-signature`、`check.publisher-outside-container` | `lang.golang.extracts-generated-module`、`graph.derive-matches-definition`、`check.rejects-broken-graph` |
 | 16 | `check.unrealized`、`check.multiple-realizations`；按语言分别计数待做：实现差分 | `check.rejects-broken-graph` |
 | 17 | `check.realization-outside-container` | `check.rejects-broken-graph` |
-| 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value` | `check.rejects-broken-graph` |
+| 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value`；Go 签名略去第一个参数 `context.Context` 待做：M8（[design.md](design.md) §4） | `check.rejects-broken-graph` |
 | 19 | `check.missing-implements`、`check.missing-extends` | `check.rejects-broken-graph` |
 | 20 | `check.missing-predicate`、`check.multiple-predicates`、`check.predicate-signature`；Go 生成带陈述的性质和自动流程的谓词 | `check.rejects-broken-graph`、`lang.golang.executes-contracts` |
 | 21 | `check.handwritten-test`；Go 已启用，Python 待做：M5 | `check.rejects-broken-graph` |
