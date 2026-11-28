@@ -278,14 +278,14 @@ func counterexample(j Judgment, at time.Time) Case {
 
 // failure is the diagnostic of a counterexample, by what does not hold.
 func failure(j Judgment) Diagnostic {
-	switch {
-	case j.Clause == clauseFrame:
+	switch j.Clause {
+	case clauseFrame:
 		return diagnostic(j, "monitor.frame-violation", "a real call changed observed state outside its changes",
 			"correct the operation, or declare the change in the property's changes")
-	case j.Clause == clauseRaises:
+	case clauseRaises:
 		return diagnostic(j, "monitor.undeclared-error", "a real call raised an error its operation does not declare: "+j.Message,
 			"declare the error in the operation's raises, or stop raising it")
-	case j.Clause == clausePanic:
+	case clausePanic:
 		return diagnostic(j, "monitor.call-panicked", "a real call panicked: "+j.Message,
 			"correct the operation so that it returns or raises a declared error")
 	}

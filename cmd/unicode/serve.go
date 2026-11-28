@@ -156,7 +156,12 @@ func (w *statusWriter) WriteHeader(status int) {
 //uc:realizes cli.CommitGraphs
 type CommitGraphs struct{}
 
+// Build raises serve.Unbuildable, as serve.Builder declares, when the
+// commit's files cannot be taken out or build no graph.
 func (CommitGraphs) Build(root, commit string) (graph.Graph, error) {
 	g, _, err := revisionGraph(root, commit)
-	return g, err
+	if err != nil {
+		return g, serve.Unbuildable{Commit: commit, Cause: err}
+	}
+	return g, nil
 }
