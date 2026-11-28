@@ -32,7 +32,8 @@ self-check:
 	go run ./cmd/unicode check
 
 # Every numbered rule of docs/language.md and docs/model.md names the codes
-# that report it broken, and the tables list exactly the codes of the source.
+# that report it broken, the tables list exactly the codes of the source, and
+# every code literal of the source has the form <component>.<kebab-name>.
 rule-check:
 	python3 scripts/rulecodes.py
 

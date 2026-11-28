@@ -5,7 +5,8 @@ from pathlib import Path
 # Checks that every numbered rule of docs/language.md and docs/model.md has a
 # row in the document's appendix B, naming the diagnostic codes that report it
 # broken and the properties that verify it, and that these tables together
-# with the table of docs/design.md §8 list exactly the codes of the Go source.
+# with the table of docs/design.md §8 list exactly the codes of the Go source,
+# each of them written in the form <component>.<kebab-name>.
 
 ROOT = Path(__file__).resolve().parent.parent
 DESIGN_DIR = ROOT / "design"
@@ -30,6 +31,8 @@ QUOTED = re.compile(r'"([^"]*)"')
 BACKTICKED = re.compile(r"`([^`]+)`")
 # Comments, strings and runes of Go, so that a quote inside one starts no string.
 GO_TOKEN = re.compile(r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|`[^`]*`|\'(?:\\.|[^\'\\\n])*\'', re.DOTALL)
+# The text before a literal that makes it the value of a Code field.
+CODE_FIELD = re.compile(r"\bCode:\s*\Z")
 GLOB_PART = re.compile(r"(\*\*/|\*\*|\*|\?)")
 GLOB_REGEX = {"**/": "(?:.*/)?", "**": ".*", "*": "[^/]*", "?": "[^/]"}
 
@@ -57,18 +60,26 @@ def owner(path: str, patterns: dict[str, list[re.Pattern[str]]]) -> str | None:
     return max(matching, key=lambda c: c.count("."), default=None)
 
 
-def go_strings(text: str) -> list[tuple[int, str]]:
+# The string literals of Go source: each with its line, its text and
+# whether it is the value of a Code field.
+def go_strings(text: str) -> list[tuple[int, str, bool]]:
     strings = []
     for token in GO_TOKEN.finditer(text):
         if token.group()[0] in '"`':
-            strings.append((text.count("\n", 0, token.start()) + 1, token.group()[1:-1]))
+            field = CODE_FIELD.search(text, max(0, token.start() - 64), token.start()) is not None
+            strings.append((text.count("\n", 0, token.start()) + 1, token.group()[1:-1], field))
     return strings
 
 
 # A diagnostic code is `<component>.<kebab-name>`, named after the component
 # whose source reports it (CLAUDE.md principle 4); a string of that component
-# that ends in "." or "-" is the start of a code assembled at run time.
-def source_codes(patterns: dict[str, list[re.Pattern[str]]]) -> tuple[dict[str, str], list[str]]:
+# that ends in "." or "-" is the start of a code assembled at run time. Any
+# other string of that component that starts with its name and a dot and has
+# no white space, and any value of a Code field, must be a whole code, so that
+# a malformed code is reported here rather than by a check of the running code.
+def source_codes(
+    patterns: dict[str, list[re.Pattern[str]]], code_form: re.Pattern[str]
+) -> tuple[dict[str, str], list[str]]:
     codes, problems = {}, []
     for path in sorted(ROOT.rglob("*.go")):
         rel = relative(path)
@@ -82,13 +93,24 @@ def source_codes(patterns: dict[str, list[re.Pattern[str]]]) -> tuple[dict[str, 
             continue
         whole = re.compile(re.escape(component) + r"\." + KEBAB)
         partial = re.compile(re.escape(component) + r"\.(?:" + KEBAB + "-)?")
-        for line, literal in go_strings(path.read_text(encoding="utf-8")):
+        prefixed = re.compile(re.escape(component) + r"\.\S+")
+        for line, literal, field in go_strings(path.read_text(encoding="utf-8")):
             if whole.fullmatch(literal):
                 codes.setdefault(literal, f"{rel}:{line}")
             elif partial.fullmatch(literal):
                 problems.append(
                     f'{rel}:{line}: the code is assembled at run time from "{literal}"; '
                     "write each code that can be reported as one complete string literal"
+                )
+            elif prefixed.fullmatch(literal) and not code_form.fullmatch(literal):
+                problems.append(
+                    f'{rel}:{line}: "{literal}" is not a code of the form {component}.<kebab-name>; '
+                    "write the name after the dot in lower-case letters and digits, its words joined by single hyphens"
+                )
+            elif field and not code_form.fullmatch(literal):
+                problems.append(
+                    f'{rel}:{line}: the Code field "{literal}" is not a code of the form <component>.<kebab-name>; '
+                    "name a component of design/*.uc, then a dot and lower-case words joined by single hyphens"
                 )
     return codes, problems
 
@@ -205,7 +227,7 @@ def main() -> int:
     patterns = {c: [glob(p) for line in PATHS.findall(text) for p in QUOTED.findall(line)] for c, text in texts.items()}
     checks = {c + "." + name for c, text in texts.items() for name in CHECKED.findall(text)}
     code_form = re.compile("(?:" + "|".join(re.escape(c) for c in texts) + r")\." + KEBAB)
-    source, problems = source_codes(patterns)
+    source, problems = source_codes(patterns, code_form)
     language = language_rules()
     model = model_rules()
     in_language, found = rule_table(LANGUAGE_DOC, language, code_form, source, checks)

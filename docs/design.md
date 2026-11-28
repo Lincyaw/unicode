@@ -796,7 +796,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 
 ## 10 工具链对自己的验证
 
-- **静态检查**：`gofmt`、`go vet`、`golangci-lint`，以及 `unicode fmt --check` 和 `unicode check`。golangci-lint 的 tagliatelle 要求每个 JSON 键是它的 Go 字段名的小驼峰写法，`unicode check` 又要求实现设计记录的 Go 类型有设计的每个字段（[model.md](model.md) §10 第 18 条），所以实现设计记录的线上记录（如 `diag.Flat`）以设计的字段名为键。`make rule-check`（`scripts/rulecodes.py`）检查每条规则在 [language.md](language.md) 或 [model.md](model.md) 的附录 B 中有一行，这两张表与 §8 的表合起来恰好列出代码中的全部诊断码。M2 之前，组件之间的导入由 golangci-lint 的 depguard 检查；M2 起改由 `unicode check` 按设计中的 `uses` 检查。
+- **静态检查**：`gofmt`、`go vet`、`golangci-lint`，以及 `unicode fmt --check` 和 `unicode check`。golangci-lint 的 tagliatelle 要求每个 JSON 键是它的 Go 字段名的小驼峰写法，`unicode check` 又要求实现设计记录的 Go 类型有设计的每个字段（[model.md](model.md) §10 第 18 条），所以实现设计记录的线上记录（如 `diag.Flat`）以设计的字段名为键。`make rule-check`（`scripts/rulecodes.py`）检查每条规则在 [language.md](language.md) 或 [model.md](model.md) 的附录 B 中有一行，这两张表与 §8 的表合起来恰好列出代码中的全部诊断码；它还拒绝不合 `<组件>.<短横线名称>` 形式的诊断码字面量：组件的源码中以组件名和点开头、不含空白的字符串，以及 `Code` 字段的值，都必须是完整的诊断码，所以诊断码的形式不在运行时检查。M2 之前，组件之间的导入由 golangci-lint 的 depguard 检查；M2 起改由 `unicode check` 按设计中的 `uses` 检查。
 - **性质**（M1 时写成带符号的 `property`，M4 起由工具链自己生成驱动）：
   1. `fmt` 幂等。
   2. 规范格式打印之后再解析，得到同一棵语法树。
