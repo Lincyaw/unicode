@@ -6,7 +6,7 @@ import { FoldedCard, TypeCard } from '../canvas/cards';
 import { useUnfolded } from '../canvas/unfolded';
 import { CARD_WIDTH, cardHeight, foldedHeight, typeRows, unfoldedTypeRows } from '../canvas/sizes';
 import { Lines, type Line } from '../canvas/Edges';
-import { arrange, routeAll, type Link } from '../canvas/layout';
+import { layOut, type LayeredLink } from '../canvas/layered';
 import { useLinks } from '../marks/links';
 import { boxEdges, fromField } from './graphParts';
 
@@ -25,7 +25,7 @@ export function ClassView({ view, toolbar }: { view: View; toolbar: ReactNode })
   const drawn = new Set(view.nodes.map(node => node.id));
   const byId = new Map(view.nodes.flatMap(node => [[node.id, node] as const, ...(node.contents ?? []).map(child => [child.id, child] as const)]));
   const edges = boxEdges(view.edges, drawn);
-  const edgeLinks: Link[] = edges.map(edge => ({ id: edge.id, from: edge.from, to: edge.to }));
+  const edgeLinks: LayeredLink[] = edges.map(edge => ({ id: edge.id, from: edge.from, to: edge.to }));
   const boxes = cards.map(({ node, rows }) => ({
     id: node.id,
     width: CARD_WIDTH,
@@ -38,8 +38,7 @@ export function ClassView({ view, toolbar }: { view: View; toolbar: ReactNode })
     const leaf = folded.has(node.id) || (node.kind === 'type' && node.form === 'error');
     return leaf && into.length === 1 && into[0] && !edges.some(edge => edge.from === node.id) ? [[node.id, into[0].from] as const] : [];
   }));
-  const { rects, bends, width, height } = arrange(boxes, edgeLinks, 'TB', SPACING, beside);
-  const routes = routeAll(edgeLinks, rects, 'TB', bends);
+  const { rects, routes, width, height } = layOut(boxes, edgeLinks, 'TB', SPACING, { beside });
   const lines: Line[] = edges.flatMap(edge => {
     const route = routes.get(edge.id);
     const solid = edge.edge.kind !== 'refers' || fromField(edge.edge, byId);

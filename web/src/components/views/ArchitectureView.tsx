@@ -10,7 +10,8 @@ import { useUnfolded } from '../canvas/unfolded';
 import { CARD_WIDTH, cardHeight, CHIP_HEIGHT, chipWidth, CONTAINER_HEAD, CONTAINER_PADDING, externalHeight, foldedHeight, typeRows, unfoldedTypeRows, type CardRow } from '../canvas/sizes';
 import { LineMarks, Lines, type Line } from '../canvas/Edges';
 import { BADGE_SIDES } from '../canvas/markers';
-import { arrange, routeAll, type Box, type Link, type Rect } from '../canvas/layout';
+import { layOut, type LayeredLink } from '../canvas/layered';
+import type { Box, Rect } from '../canvas/layout';
 import { EyeOff, TriangleAlert } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { componentGraph, evidenceCount, externalsBeside } from './graphParts';
@@ -106,9 +107,8 @@ export function ArchitectureView({ view: answer }: { view: View }) {
     }
     return { id: node.id, width: CARD_WIDTH, height: foldedHeight(node.contents ?? []) };
   });
-  const edgeLinks: Link[] = view.edges.map(edge => ({ id: edgeKey(edge), from: edge.from, to: edge.to, unranked: edge.status === 'contradicted' }));
-  const { rects, bends, width, height } = arrange(boxes, edgeLinks, 'TB', SPACING, externalsBeside(view));
-  const routes = routeAll(edgeLinks, rects, 'TB', bends);
+  const edgeLinks: LayeredLink[] = view.edges.map(edge => ({ id: edgeKey(edge), from: edge.from, to: edge.to, unranked: edge.status === 'contradicted' }));
+  const { rects, routes, width, height } = layOut(boxes, edgeLinks, 'TB', SPACING, { beside: externalsBeside(view) });
   const lines: Line[] = view.edges.flatMap(edge => {
     const route = routes.get(edgeKey(edge));
     return route ? [{ id: edgeKey(edge), route, tone: edge.status === 'contradicted' ? 'warning' as const : edge.kind === 'uses' ? 'dashed' as const : 'plain' as const, select: edgeKey(edge) }] : [];

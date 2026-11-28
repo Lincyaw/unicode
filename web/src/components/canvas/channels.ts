@@ -43,6 +43,52 @@ const TRACK_GAP = 8;
 /** How far the outermost tracks keep from the walls, so an arrowhead has room. */
 const WALL_ROOM = 24;
 
+/**
+ * How far apart the heights are where lines meet a wall: whole multiples of PORT_STEP, the even ones at a channel's
+ * start wall and the odd ones at its end wall. Two lines of a channel thus never meet its two walls at one height, and
+ * the lines meeting one stretch of a wall stay at least two steps apart.
+ */
+const PORT_STEP = 4;
+
+/** The period of the ports' parity: a drawing moved by whole multiples of it keeps every port on its wall's parity. */
+export const PORT_GRID = 2 * PORT_STEP;
+
+/** The heights along a stretch of a wall, from `from` to `to`, where lines may meet it: the wall's multiples of PORT_STEP, a step inside the stretch. */
+export function portsAlong(from: number, to: number, wall: Wall): number[] {
+  const step = 2 * PORT_STEP;
+  const offset = wall === 'start' ? 0 : PORT_STEP;
+  const heights: number[] = [];
+  for (let y = Math.ceil((from + PORT_STEP / 2 - offset) / step) * step + offset; y <= to - PORT_STEP / 2; y += step) {
+    heights.push(y);
+  }
+  return heights;
+}
+
+/** The port the `index`-th of `count` lines takes among a stretch's ports, the lines spread evenly over it. */
+export function portFor(index: number, count: number, ports: number[]): number {
+  const port = ports[Math.floor(((index + 0.5) * ports.length) / count)];
+  if (port === undefined) {
+    throw new Error(`a stretch with ${ports.length} ports cannot hold ${count} lines`);
+  }
+  return port;
+}
+
+/** How long a stretch must be for `count` lines to meet it on a wall's ports. */
+export function portRoom(count: number): number {
+  return (count + 1) * 2 * PORT_STEP;
+}
+
+/** The nearest height to `at` among a wall's multiples of PORT_STEP, where a line passing it meets that wall. */
+export function portNear(at: number, wall: Wall): number {
+  const offset = wall === 'start' ? 0 : PORT_STEP;
+  return Math.round((at - offset) / (2 * PORT_STEP)) * 2 * PORT_STEP + offset;
+}
+
+/** The widest a channel without marks becomes for `count` lines (planChannel), however they run. */
+export function channelRoom(count: number): number {
+  return 2 * WALL_ROOM + Math.max(0, count - 1) * TRACK_GAP;
+}
+
 /** How far marks keep from a wall, from the tracks and from each other. */
 const MARK_GAP = 8;
 

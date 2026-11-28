@@ -33,6 +33,9 @@ export type Direction = 'TB' | 'LR';
 export interface Arrangement {
   rects: Map<string, Rect>;
 
+  /** For each ranked box, the centre of its rank along the ranks: a y for TB, an x for LR */
+  centres: Map<string, number>;
+
   /** For a link across several ranks, the points it passes between the boxes of the ranks it crosses */
   bends: Map<string, { x: number; y: number }[]>;
 
@@ -52,9 +55,10 @@ export const TIGHT: Spacing = { node: 16, rank: 40 };
 /**
  * Places the boxes with dagre; the arrangement starts at the origin. The boxes named in `beside` stay out of the
  * ranking and stand in a column to the right of the box each maps to, top-aligned with it, as an external system
- * beside the component that uses it; the box and its column are ranked as one, so nothing comes between them.
+ * beside the component that uses it; the box and its column are ranked as one, so nothing comes between them. A column
+ * stands `gaps` (by the box it is beside) from its box, by default the spacing between boxes.
  */
-export function arrange(boxes: Box[], links: Link[], direction: Direction, spacing: Spacing, beside: ReadonlyMap<string, string> = new Map()): Arrangement {
+export function arrange(boxes: Box[], links: Link[], direction: Direction, spacing: Spacing, beside: ReadonlyMap<string, string> = new Map(), gaps: ReadonlyMap<string, number> = new Map()): Arrangement {
   const byId = new Map(boxes.map(box => [box.id, box]));
   const anchorOf = (id: string) => {
     const anchor = beside.get(id);
@@ -71,11 +75,13 @@ export function arrange(boxes: Box[], links: Link[], direction: Direction, spaci
       return box;
     }
     const size = columnSize(column);
-    return { ...box, width: box.width + spacing.node + size.width, height: Math.max(box.height, size.height) };
+    return { ...box, width: box.width + (gaps.get(box.id) ?? spacing.node) + size.width, height: Math.max(box.height, size.height) };
   });
   const lift = (id: string) => anchorOf(id) ?? id;
   const rankedLinks = links.filter(link => !link.unranked).map(link => ({ ...link, from: lift(link.from), to: lift(link.to) }));
   const placed = arrangeRanked(ranked, rankedLinks, direction, spacing);
+  // A box with a column beside it is ranked with its column, so its rank's centre is the centre of the two together.
+  const centres = new Map([...placed.rects].map(([id, rect]) => [id, direction === 'TB' ? rect.y + rect.height / 2 : rect.x + rect.width / 2]));
   for (const [anchorId, column] of columns) {
     const group = placed.rects.get(anchorId);
     const anchor = byId.get(anchorId);
@@ -83,17 +89,17 @@ export function arrange(boxes: Box[], links: Link[], direction: Direction, spaci
       continue;
     }
     placed.rects.set(anchorId, { ...group, width: anchor.width, height: anchor.height });
-    const x = group.x + anchor.width + spacing.node;
+    const x = group.x + anchor.width + (gaps.get(anchorId) ?? spacing.node);
     let y = group.y;
     for (const box of column) {
       placed.rects.set(box.id, { x, y, width: box.width, height: box.height });
       y += box.height + spacing.node / 2;
     }
   }
-  return placed;
+  return { ...placed, centres };
 }
 
-function arrangeRanked(boxes: Box[], links: Link[], direction: Direction, spacing: Spacing): Arrangement {
+function arrangeRanked(boxes: Box[], links: Link[], direction: Direction, spacing: Spacing): Omit<Arrangement, 'centres'> {
   const graph = new Graph({ multigraph: true });
   graph.setGraph({ rankdir: direction, nodesep: spacing.node, ranksep: spacing.rank, marginx: 0, marginy: 0 });
   graph.setDefaultEdgeLabel(() => ({}));

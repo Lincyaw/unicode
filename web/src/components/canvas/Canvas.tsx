@@ -28,14 +28,39 @@ function boxOf(drawing: HTMLElement, id: string): HTMLElement | null {
   return mark && (mark.closest<HTMLElement>('[data-selected="true"]') ?? mark);
 }
 
+/**
+ * The point of the sheet a drawing opens centred on: the selected node's box when the drawing shows it; else the whole
+ * drawing's middle when it fits the canvas at the opening scale; else the middle of the box nearest the drawing's
+ * middle, so that the canvas opens on content.
+ */
+function openingCentre(sheet: HTMLElement, drawing: HTMLElement, selected: string | undefined, fits: boolean): { x: number; y: number } {
+  const frame = sheet.getBoundingClientRect();
+  const scale = frame.width / sheet.offsetWidth;
+  const middleOf = (element: Element) => {
+    const rect = element.getBoundingClientRect();
+    return { x: (rect.left + rect.width / 2 - frame.left) / scale, y: (rect.top + rect.height / 2 - frame.top) / scale };
+  };
+  const chosen = selected === undefined ? null : boxOf(drawing, selected);
+  if (chosen) {
+    return middleOf(chosen);
+  }
+  const middle = { x: sheet.offsetWidth / 2, y: sheet.offsetHeight / 2 };
+  if (fits) {
+    return middle;
+  }
+  const boxes = [...drawing.querySelectorAll('[data-node]')].map(middleOf);
+  return boxes.reduce((best, box) => (Math.hypot(box.x - middle.x, box.y - middle.y) < Math.hypot(best.x - middle.x, best.y - middle.y) ? box : best), boxes[0] ?? middle);
+}
+
 /** Where a canvas's ⓘ stands: top left, or bottom left for a drawing whose heads run along its top. */
 export type AboutSide = 'top' | 'bottom';
 
 /**
  * The canvas a view draws on: the drawing at its own size, panned and zoomed by the reader's gestures (panZoom.ts) and
- * by the control at the bottom right. It opens at a readable scale and brings a node into view when the selection
- * changes to one out of sight, or when a box asks for it, such as a card just unfolded. Its ⓘ, top left, says how to
- * read the view; `toolbar` sits top right and `footer` bottom left.
+ * by the control at the bottom right. It opens at a readable scale, centred on the selection or on the drawing's
+ * content (openingCentre), and brings a node into view when the selection changes to one out of sight, or when a box
+ * asks for it, such as a card just unfolded. Its ⓘ, top left, says how to read the view; `toolbar` sits top right and
+ * `footer` bottom left.
  */
 export function Canvas({ about, label, width, height, toolbar, footer, margin = CANVAS_MARGIN, aboutSide = 'top', children }: {
   about: string; label: string; width: number; height: number; toolbar?: ReactNode; footer?: ReactNode; margin?: { top: number; side: number };
@@ -43,11 +68,17 @@ export function Canvas({ about, label, width, height, toolbar, footer, margin = 
 }) {
   const { selected } = useLinks();
   const viewport = useRef<HTMLDivElement>(null);
+  const sheet = useRef<HTMLDivElement>(null);
   const drawing = useRef<HTMLDivElement>(null);
   const size = { width: width + 2 * margin.side, height: height + margin.top + BOTTOM_MARGIN };
   const { transform, zoomTo, fit, reveal } = usePanZoom(viewport, size, (roomWidth, roomHeight) => {
     const room = Math.min(roomWidth / size.width, roomHeight / size.height);
-    return zoomIdentity.scale(room >= 1 ? 1 : Math.max(READABLE_SCALE, Math.floor(room * 20) / 20));
+    const scale = room >= 1 ? 1 : Math.max(READABLE_SCALE, Math.floor(room * 20) / 20);
+    if (!sheet.current || !drawing.current) {
+      throw new Error('A canvas opens its drawing once the sheet and the drawing are rendered');
+    }
+    const centre = openingCentre(sheet.current, drawing.current, selected, room >= scale);
+    return zoomIdentity.translate(roomWidth / 2 - centre.x * scale, roomHeight / 2 - centre.y * scale).scale(scale);
   });
   const scale = transform?.k ?? 1;
   const step = (direction: 1 | -1) => zoomTo(Math.round((scale + direction * SCALE_STEP) * 100) / 100);
@@ -69,6 +100,7 @@ export function Canvas({ about, label, width, height, toolbar, footer, margin = 
     <div className={styles.canvas}>
       <div ref={viewport} className={styles.viewport}>
         <div
+          ref={sheet}
           className={styles.sheet}
           style={{ width: size.width, height: size.height, visibility: opened ? undefined : 'hidden', transform: transform ? `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})` : undefined }}
         >

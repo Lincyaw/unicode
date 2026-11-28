@@ -1,6 +1,6 @@
 import type { View, ViewEdge, ViewNode } from '../../api/types';
 import { ICON_SMALL } from '../../ui/icons';
-import { planChannel, routeChannel, type ChannelLine, type Wall } from '../canvas/channels';
+import { planChannel, portFor, portRoom, portsAlong, routeChannel, type ChannelLine, type Wall } from '../canvas/channels';
 import type { Rect, Route } from '../canvas/layout';
 import { monoWidth } from '../canvas/measure';
 import { CHIP_HEIGHT, chipWidth } from '../canvas/sizes';
@@ -44,13 +44,6 @@ function markOf(edge: ViewEdge): { width: number; height: number } | undefined {
   ];
   return tags.length > 0 ? { width: tags.reduce((sum, digits) => sum + tagWidth(digits), 0) + 4 * (tags.length - 1), height: TAG_HEIGHT } : undefined;
 }
-
-/**
- * The heights where lines leave or enter a box: whole multiples of PORT_STEP, at the channel's start wall on the even
- * ones and at its end wall on the odd ones. Two lines of a channel thus never leave its two walls at one height, and
- * the lines of one row stay at least two steps apart; a row with many lines grows to hold them.
- */
-const PORT_STEP = 4;
 
 /** A row of a box: a type or a function, indented under its type, at its place in the box. */
 export interface Row {
@@ -196,7 +189,7 @@ export function layOutCode(view: View): CodeLayout {
       ports.set(key, (ports.get(key) ?? 0) + 1);
     }
   }
-  const heightOf = (id: string, least: number) => Math.max(least, (Math.max(ports.get(`${id} left`) ?? 0, ports.get(`${id} right`) ?? 0) + 1) * 2 * PORT_STEP);
+  const heightOf = (id: string, least: number) => Math.max(least, portRoom(Math.max(ports.get(`${id} left`) ?? 0, ports.get(`${id} right`) ?? 0)));
   const input: Box = { ...boxOf(inputNode.id, inputNode.title, items, id => heightOf(id, ROW), inputNode.details ?? 0), input: inputNode };
   const groups: Box[] = [...members].sort(([a], [b]) => (a < b ? -1 : 1)).map(([key, group]): Box => {
     const [first] = group;
@@ -268,7 +261,7 @@ export function layOutCode(view: View): CodeLayout {
 
 /**
  * A leg as a line of its channel: it leaves and arrives at the walls its boxes face. Each end takes a height of its own
- * in its row, on the row's port heights for that wall (PORT_STEP), the lines of a row ordered by where their other
+ * in its row, on the row's ports for that wall (channels.ts's portsAlong), the lines of a row ordered by where their other
  * ends are so they cross as little as they can.
  */
 function lineOf(leg: Leg, legs: Leg[], input: Box): ChannelLine {
@@ -284,12 +277,7 @@ function lineOf(leg: Leg, legs: Leg[], input: Box): ChannelLine {
     };
     const ordered = sharing.sort((a, b) => centre(a.other, a.item) - centre(b.other, b.item));
     const index = ordered.findIndex(({ other, item }) => other === leg && item === end);
-    const heights = portHeights(end, wallOf(end));
-    const at = heights[Math.floor(((index + 0.5) * heights.length) / ordered.length)];
-    if (at === undefined) {
-      throw new Error(`the row at ${end.top} holds ${ordered.length} lines on ${heights.length} port heights`);
-    }
-    return at;
+    return portFor(index, ordered.length, portsAlong(end.top, end.top + end.height, wallOf(end)));
   };
   return {
     id: edgeKey(leg.edge), from: { y: heightAt(leg.from), wall: wallOf(leg.from) }, to: { y: heightAt(leg.to), wall: wallOf(leg.to) },
@@ -297,13 +285,3 @@ function lineOf(leg: Leg, legs: Leg[], input: Box): ChannelLine {
   };
 }
 
-/** The heights in a row where lines may meet a wall: the multiples of PORT_STEP of the wall's parity, a step inside the row. */
-function portHeights(end: End, wall: Wall): number[] {
-  const step = 2 * PORT_STEP;
-  const offset = wall === 'start' ? 0 : PORT_STEP;
-  const heights: number[] = [];
-  for (let y = Math.ceil((end.top + PORT_STEP / 2 - offset) / step) * step + offset; y <= end.top + end.height - PORT_STEP / 2; y += step) {
-    heights.push(y);
-  }
-  return heights;
-}

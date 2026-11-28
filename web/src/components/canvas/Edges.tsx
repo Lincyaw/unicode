@@ -43,7 +43,7 @@ export function Lines({ width, height, lines, selected, onSelect }: {
         const tone = line.select !== undefined && line.select === selected ? 'chosen' : line.tone;
         const key = line.select;
         return (
-          <g key={line.id}>
+          <g key={line.id} data-line={line.id}>
             {/* The target goes under the line it draws, so that its focus shows as a band on either side of the line. */}
             {key !== undefined && onSelect && (
               <path
