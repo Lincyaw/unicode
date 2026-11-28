@@ -27,6 +27,18 @@ type sampler struct {
 	f    Fragment
 	keys map[edgeKey]bool
 	line int
+	// What the sample is built to be: each design container's paths
+	// patterns and depth, each code element's container, and the external
+	// system of each operation declared under it.
+	patterns    map[string][]string
+	depth       map[string]int
+	parent      map[string]string
+	externalOps map[string]string
+}
+
+func newSampler(t *rapid.T) *sampler {
+	return &sampler{t: t, keys: map[edgeKey]bool{}, patterns: map[string][]string{}, depth: map[string]int{"sys": 0},
+		parent: map[string]string{}, externalOps: map[string]string{}}
 }
 
 func (s *sampler) pos(path string) diag.Position {
@@ -100,12 +112,14 @@ func (s *sampler) design() sampleDesign {
 		}
 		s.node(id, LayerDesign, NodeKindContainer, "component", map[string][]string{"paths": paths})
 		s.contains(parent, id)
+		s.patterns[id], s.depth[id] = paths, s.depth[parent]+1
 		containers = append(containers, id)
 	}
 	owners := containers[1:]
 	if rapid.Bool().Draw(s.t, "external") {
 		s.node("x", LayerDesign, NodeKindActor, "external", nil)
 		s.contains("sys", "x")
+		s.depth["x"] = 1
 		owners = append(owners, "x")
 	}
 	for _, c := range owners {
@@ -116,11 +130,17 @@ func (s *sampler) design() sampleDesign {
 			for _, name := range s.subset("typeOp", []string{"run", "stop"}) {
 				d.ops = append(d.ops, s.node(id+"."+name, LayerDesign, NodeKindOp, "op", nil))
 				s.contains(id, id+"."+name)
+				if c == "x" {
+					s.externalOps[id+"."+name] = c
+				}
 			}
 		}
 		for _, name := range s.subset("op", []string{"run", "load"}) {
 			d.ops = append(d.ops, s.node(c+"."+name, LayerDesign, NodeKindOp, "op", nil))
 			s.contains(c, c+"."+name)
+			if c == "x" {
+				s.externalOps[c+"."+name] = c
+			}
 		}
 	}
 	d.others = slices.Clone(containers)
@@ -173,11 +193,12 @@ func (s *sampler) code(d sampleDesign) {
 			s.node("go:m/"+dir, LayerCode, NodeKindContainer, "package", map[string][]string{"path": {"m/" + dir}, "language": {"go"}})
 		}
 		attrs := map[string][]string{"path": {f}, "language": {"go"}}
-		if rapid.Bool().Draw(s.t, "generatedFile") {
+		if rapid.IntRange(0, 3).Draw(s.t, "generatedFile") == 0 {
 			attrs["generated"] = []string{"true"}
 		}
 		s.node("file:"+f, LayerCode, NodeKindContainer, "file", attrs)
 		s.contains("go:m/"+dir, "file:"+f)
+		s.parent["file:"+f] = "go:m/" + dir
 	}
 	if len(files) == 0 {
 		return
@@ -194,22 +215,25 @@ func (s *sampler) code(d sampleDesign) {
 		}
 		id := s.node(fmt.Sprintf("go:m/%s.C%d", path.Dir(f), i), LayerCode, NodeKindType, form, map[string][]string{"name": {fmt.Sprintf("C%d", i)}})
 		s.contains("file:"+f, id)
+		s.parent[id] = "file:" + f
 		for _, name := range s.subset("method", []string{"run", "stop", "other"}) {
 			m := s.node(id+"."+strings.ToUpper(name[:1])+name[1:], LayerCode, NodeKindOp, methodForm, map[string][]string{"name": {name}})
 			s.contains(id, m)
+			s.parent[m] = id
 			methods[id] = append(methods[id], m)
 			functions = append(functions, m)
 			if rapid.IntRange(0, 9).Draw(s.t, "methodBinding") == 0 {
 				s.edge(EdgeKindRealizes, m, s.pick("methodTarget", d.ops), SourceDeclared, nil)
 			}
 		}
-		if rapid.IntRange(0, 3).Draw(s.t, "typeBinding") > 0 {
+		switch {
+		case rapid.IntRange(0, 3).Draw(s.t, "typeBinding") > 0:
 			target := s.pick("typeTarget", slices.Concat(d.types, d.types, d.others, missing))
 			s.edge(EdgeKindRealizes, id, target, SourceDeclared, nil)
-			for _, m := range methods[id] {
-				name := s.nodeAttr(m, "name")
-				s.edge(EdgeKindRealizes, m, target+"."+name, SourceDerived, nil)
-			}
+			s.candidates(methods[id], target)
+		case len(d.types) > 0 && rapid.Bool().Draw(s.t, "strayCandidates"):
+			// Candidates of a type that realizes nothing: none of them holds.
+			s.candidates(methods[id], s.pick("strayTarget", d.types))
 		}
 	}
 	for i := range rapid.IntRange(0, 6).Draw(s.t, "funcs") {
@@ -217,6 +241,7 @@ func (s *sampler) code(d sampleDesign) {
 		id := s.node(fmt.Sprintf("go:m/%s.F%d", path.Dir(f), i), LayerCode, NodeKindOp, "func",
 			map[string][]string{"name": {rapid.SampledFrom([]string{"run", "load", "check"}).Draw(s.t, "funcName")}})
 		s.contains("file:"+f, id)
+		s.parent[id] = "file:" + f
 		functions = append(functions, id)
 		switch rapid.IntRange(0, 5).Draw(s.t, "funcBinding") {
 		case 0:
@@ -232,9 +257,33 @@ func (s *sampler) code(d sampleDesign) {
 		}
 	}
 	for range rapid.IntRange(0, 16).Draw(s.t, "calls") {
-		from, to := s.pick("caller", functions), s.pick("callee", functions)
-		if from != "" {
-			s.edge(EdgeKindCalls, from, to, SourceExtracted, map[string][]string{"sites": {"code.go:1:1"}})
+		s.call(s.pick("caller", functions), s.pick("callee", functions))
+	}
+	if ops := slices.Sorted(maps.Keys(s.externalOps)); len(ops) > 0 && len(functions) > 0 && rapid.Bool().Draw(s.t, "client") {
+		// A client of the external system, and a call to it.
+		client := s.function(files, "X")
+		s.edge(EdgeKindRealizes, client, s.pick("clientOf", ops), SourceDeclared, nil)
+		s.call(s.pick("clientCaller", functions), client)
+		functions = append(functions, client)
+	}
+	if len(functions) > 1 && rapid.IntRange(0, 3).Draw(s.t, "chain") > 0 {
+		// A chain from one function to another through one or two new
+		// functions without bindings, and now and then a direct call too.
+		ends := functions
+		if bound := s.bound(functions); len(bound) > 1 {
+			ends = bound
+		}
+		from, to := s.pick("chainFrom", ends), s.pick("chainTo", ends)
+		chain := []string{from, s.function(files, "D1")}
+		if rapid.Bool().Draw(s.t, "longChain") {
+			chain = append(chain, s.function(files, "D2"))
+		}
+		chain = append(chain, to)
+		for i := 1; i < len(chain); i++ {
+			s.call(chain[i-1], chain[i])
+		}
+		if rapid.Bool().Draw(s.t, "shortcut") {
+			s.call(from, to)
 		}
 	}
 	for i := range s.f.Nodes {
@@ -249,6 +298,44 @@ func (s *sampler) code(d sampleDesign) {
 	}
 }
 
+// candidates gives each method the candidate edge of a backend to the
+// operation of target that has its name.
+func (s *sampler) candidates(methods []string, target string) {
+	for _, m := range methods {
+		s.edge(EdgeKindRealizes, m, target+"."+s.nodeAttr(m, "name"), SourceDerived, nil)
+	}
+}
+
+// function declares a function without bindings named name in one of the files.
+func (s *sampler) function(files []string, name string) string {
+	f := s.pick(name+"File", files)
+	id := s.node(fmt.Sprintf("go:m/%s.%s", path.Dir(f), name), LayerCode, NodeKindOp, "func", map[string][]string{"name": {strings.ToLower(name)}})
+	s.contains("file:"+f, id)
+	s.parent[id] = "file:" + f
+	return id
+}
+
+// bound lists the functions that carry a binding to a node of the sample.
+func (s *sampler) bound(functions []string) []string {
+	ids := map[string]bool{}
+	for _, n := range s.f.Nodes {
+		ids[n.Id] = true
+	}
+	var out []string
+	for _, e := range s.f.Edges {
+		if e.Kind != EdgeKindCalls && e.Kind != EdgeKindContains && e.Source != SourceDerived && ids[e.To] && slices.Contains(functions, e.From) && !slices.Contains(out, e.From) {
+			out = append(out, e.From)
+		}
+	}
+	return out
+}
+
+func (s *sampler) call(from, to string) {
+	if from != "" {
+		s.edge(EdgeKindCalls, from, to, SourceExtracted, map[string][]string{"sites": {"code.go:1:1"}})
+	}
+}
+
 func (s *sampler) nodeAttr(id, key string) string {
 	for _, n := range s.f.Nodes {
 		if n.Id == id {
@@ -258,340 +345,179 @@ func (s *sampler) nodeAttr(id, key string) string {
 	return ""
 }
 
-// genDeriveFragment draws a small design and code layer: nested components
+// Usage is a call between two code functions, or an import, of a
+// derivation sample, with the value that lists it in a depends edge's attrs.
+//
+//uc:realizes graph.Usage
+type Usage struct {
+	Kind     EdgeKind
+	From, To string
+	Label    string
+}
+
+// DeriveSample is a fragment and the facts it was drawn to have.
+//
+//uc:realizes graph.DeriveSample
+type DeriveSample struct {
+	Fragment    Fragment
+	Matches     map[string][]string
+	Depth       map[string]int
+	BadPatterns []string
+	Dangling    map[string]diag.Position
+	Files       map[string]string
+	SourceFiles map[string]string
+	Ancestors   map[string][]string
+	ExternalOps map[string]string
+	Usages      []Usage
+}
+
+// genDeriveSample draws a small design and code layer: nested components
 // with path patterns (some invalid), an external system, types, operations,
 // flows with steps and properties; files, types, methods, functions, calls,
 // imports, and bindings, some to nodes that do not exist or are of the wrong
-// kind, with the candidates a backend gives for methods.
+// kind, with the candidates a backend gives for methods. With it come the
+// facts the drawing fixed: which containers' patterns match each file by the
+// form drawn, the depths, the invalid patterns, the bindings to identities
+// of no node, each code element's file, source file and containers, the
+// external system's operations, and the calls and imports.
 //
-//uc:generates graph.derive-matches-definition.fragment
-func genDeriveFragment() *rapid.Generator[Fragment] {
-	return rapid.Custom(func(t *rapid.T) Fragment {
-		s := &sampler{t: t, keys: map[edgeKey]bool{}}
+//uc:generates graph.derive-keeps-resolved-edges.sample
+//uc:generates graph.derive-reports-unresolved-bindings.sample
+//uc:generates graph.derive-reports-invalid-patterns.sample
+//uc:generates graph.derive-diagnostics-are-described.sample
+//uc:generates graph.owns-follows-deepest-pattern.sample
+//uc:generates graph.method-realizes-follows-candidates.sample
+//uc:generates graph.depends-lists-calls.sample
+//uc:generates graph.depends-lists-imports.sample
+//uc:generates graph.depends-attrs-are-distinct-usages.sample
+//uc:generates graph.depends-values-are-usages.sample
+//uc:generates graph.traces-follow-realizations.sample
+//uc:generates graph.exercises-close-over-calls.sample
+//uc:generates graph.exercises-paths-lead-to-predicates.sample
+//uc:generates graph.design-nodes-are-salient.sample
+//uc:generates graph.code-salience-follows-bindings.sample
+//uc:generates graph.container-salience-follows-elements.sample
+//uc:generates graph.reaches-joins-salient-functions.sample
+//uc:generates graph.reaches-covers-detail-chains.sample
+//uc:generates graph.derive-ignores-order.sample
+func genDeriveSample() *rapid.Generator[DeriveSample] {
+	return rapid.Custom(func(t *rapid.T) DeriveSample {
+		s := newSampler(t)
 		s.code(s.design())
-		return s.f
+		return s.sample()
 	})
 }
 
-// expectation is what docs/model.md §9 derives from a fragment, computed
-// straight from the definitions without the graph: the derived edges with
-// their attrs, the salient nodes, the edges that join the graph as they are,
-// the diagnostics as `code subject`, and the origin of every node and edge.
-type expectation struct {
-	derived map[edgeKey]map[string][]string
-	salient map[string]bool
-	kept    map[edgeKey]bool
-	diags   []string
-	origins map[string]diag.Position
-
-	nodes     []Node
-	byID      map[string]Node
-	edges     []Edge
-	parent    map[string]string
-	realizes  map[edgeKey]bool
-	functions []string
-}
-
-func definition(f Fragment) expectation {
-	x := expectation{derived: map[edgeKey]map[string][]string{}, salient: map[string]bool{}, kept: map[edgeKey]bool{},
-		origins: map[string]diag.Position{}, nodes: f.Nodes, byID: map[string]Node{}, parent: map[string]string{},
-		realizes: map[edgeKey]bool{}}
-	for _, n := range f.Nodes {
-		x.byID[n.Id] = n
-		x.origins[n.Id] = n.Origin
-		if x.is(n.Id, LayerCode, NodeKindOp) {
-			x.functions = append(x.functions, n.Id)
+// sample gives the fragment with the facts it was drawn to have.
+func (s *sampler) sample() DeriveSample {
+	out := DeriveSample{Fragment: s.f, Matches: map[string][]string{}, Depth: s.depth, Dangling: map[string]diag.Position{},
+		Files: map[string]string{}, SourceFiles: map[string]string{}, Ancestors: map[string][]string{}, ExternalOps: s.externalOps}
+	nodes := map[string]Node{}
+	for _, n := range s.f.Nodes {
+		nodes[n.Id] = n
+	}
+	for _, c := range slices.Sorted(maps.Keys(s.patterns)) {
+		for _, p := range s.patterns[c] {
+			if strings.Contains(p, "[") {
+				out.BadPatterns = append(out.BadPatterns, c)
+			}
 		}
 	}
-	for _, e := range f.Edges {
-		key := edgeKey{e.Kind, e.From, e.To}
-		x.origins[string(e.Kind)+" "+e.From+" "+e.To] = e.Origin
-		_, resolved := x.byID[e.To]
+	for _, n := range s.f.Nodes {
+		switch {
+		case n.Layer == LayerCode && n.Kind == NodeKindContainer && n.Form == "file":
+			out.Matches[n.Id] = []string{}
+			for _, c := range slices.Sorted(maps.Keys(s.patterns)) {
+				if slices.ContainsFunc(s.patterns[c], func(p string) bool { return !strings.Contains(p, "[") && matches(p, n.Attrs["path"][0]) }) {
+					out.Matches[n.Id] = append(out.Matches[n.Id], c)
+				}
+			}
+		case n.Layer == LayerCode && (n.Kind == NodeKindType || n.Kind == NodeKindOp):
+			for a := s.parent[n.Id]; a != ""; a = s.parent[a] {
+				out.Ancestors[n.Id] = append(out.Ancestors[n.Id], a)
+				if nodes[a].Form == "file" && out.Files[n.Id] == "" {
+					out.Files[n.Id] = a
+				}
+			}
+			out.SourceFiles[n.Id] = out.Files[n.Id]
+			if _, ok := nodes["file:"+n.Origin.Path]; ok {
+				out.SourceFiles[n.Id] = "file:" + n.Origin.Path
+			}
+		}
+	}
+	for _, e := range s.f.Edges {
+		_, resolved := nodes[e.To]
 		switch {
 		case e.Kind == EdgeKindRealizes && e.Source == SourceDerived:
 		case !resolved:
-			x.diags = append(x.diags, "graph.unresolved-binding "+string(e.Kind)+" "+e.From+" "+e.To)
-		default:
-			x.kept[key] = true
-			x.edges = append(x.edges, e)
-			if e.Kind == EdgeKindContains {
-				x.parent[e.To] = e.From
-			}
-			if e.Kind == EdgeKindRealizes {
-				x.realizes[key] = true
-			}
-		}
-	}
-	x.owns()
-	x.methodRealizes()
-	x.salience()
-	x.depends()
-	x.traces()
-	x.exercises()
-	x.reaches()
-	slices.Sort(x.diags)
-	return x
-}
-
-func (x *expectation) is(id string, layer Layer, kind NodeKind, forms ...string) bool {
-	n, ok := x.byID[id]
-	return ok && n.Layer == layer && n.Kind == kind && (len(forms) == 0 || slices.Contains(forms, n.Form))
-}
-
-func (x *expectation) has(kind EdgeKind, from, to string) bool {
-	return x.kept[edgeKey{kind, from, to}]
-}
-
-func (x *expectation) derive(kind EdgeKind, from, to string, attrs map[string][]string) {
-	x.derived[edgeKey{kind, from, to}] = attrs
-}
-
-func (x *expectation) ancestors(id string) []string {
-	var out []string
-	for p, ok := x.parent[id]; ok; p, ok = x.parent[p] {
-		out = append(out, p)
-	}
-	return out
-}
-
-func (x *expectation) fileOf(id string) string {
-	for _, a := range append([]string{id}, x.ancestors(id)...) {
-		if x.is(a, LayerCode, NodeKindContainer, "file") {
-			return a
-		}
-	}
-	return ""
-}
-
-func (x *expectation) owners(id string) []string {
-	var out []string
-	for k := range x.derived {
-		if k.kind == EdgeKindOwns && k.to == x.fileOf(id) {
-			out = append(out, k.from)
+			out.Dangling[string(e.Kind)+" "+e.From+" "+e.To] = e.Origin
+		case e.Kind == EdgeKindImports || e.Kind == EdgeKindCalls && nodes[e.From].Layer == LayerCode && nodes[e.To].Layer == LayerCode:
+			out.Usages = append(out.Usages, Usage{Kind: e.Kind, From: e.From, To: e.To, Label: e.From + " " + e.To})
 		}
 	}
 	return out
 }
 
-func (x *expectation) calls(a, b string) bool {
-	return x.has(EdgeKindCalls, a, b) && x.is(a, LayerCode, NodeKindOp) && x.is(b, LayerCode, NodeKindOp)
+// graphOf adds the nodes, then the edges, in the order given, to a new
+// graph, each by AddNode and AddEdge.
+func graphOf(nodes []Node, edges []Edge) (*Graph, error) {
+	g := NewGraph()
+	for _, n := range nodes {
+		if err := g.AddNode(n); err != nil {
+			return nil, err
+		}
+	}
+	for _, e := range edges {
+		if err := g.AddEdge(e); err != nil {
+			return nil, err
+		}
+	}
+	return &g, nil
 }
 
-// owns: a file belongs to the deepest containers whose patterns match it.
-func (x *expectation) owns() {
-	for _, file := range x.nodes {
-		if !x.is(file.Id, LayerCode, NodeKindContainer, "file") {
-			continue
-		}
-		depth := -1
-		var deepest []string
-		for _, c := range x.nodes {
-			if !x.is(c.Id, LayerDesign, NodeKindContainer) ||
-				!slices.ContainsFunc(c.Attrs["paths"], func(p string) bool { return matches(p, file.Attrs["path"][0]) }) {
-				continue
-			}
-			switch d := len(x.ancestors(c.Id)); {
-			case d > depth:
-				depth, deepest = d, []string{c.Id}
-			case d == depth:
-				deepest = append(deepest, c.Id)
-			}
-		}
-		for _, c := range deepest {
-			x.derive(EdgeKindOwns, c, file.Id, nil)
-		}
+// fragmentGraph adds the nodes and edges, in the order given, to a new
+// graph by AddFragment, which keeps bindings and candidates for Derive.
+func fragmentGraph(nodes []Node, edges []Edge) (*Graph, error) {
+	g := NewGraph()
+	if err := g.AddFragment(Fragment{Nodes: nodes, Edges: edges}); err != nil {
+		return nil, err
 	}
-	for _, c := range x.nodes {
-		for _, p := range c.Attrs["paths"] {
-			if strings.Contains(p, "[") {
-				x.diags = append(x.diags, "graph.bad-path-pattern "+c.Id)
-			}
-		}
-	}
+	return &g, nil
 }
 
-// methodRealizes: c realizes t, o is an operation of t, and m a method of c named o.
-func (x *expectation) methodRealizes() {
-	for _, r := range x.edges {
-		if r.Kind != EdgeKindRealizes || !x.is(r.From, LayerCode, NodeKindType) || !x.is(r.To, LayerDesign, NodeKindType) {
-			continue
-		}
-		for _, o := range x.nodes {
-			for _, m := range x.nodes {
-				if x.is(o.Id, LayerDesign, NodeKindOp) && x.parent[o.Id] == r.To && x.is(m.Id, LayerCode, NodeKindOp) &&
-					x.parent[m.Id] == r.From && o.Id == r.To+"."+m.Attrs["name"][0] && !x.has(EdgeKindRealizes, m.Id, o.Id) {
-					x.derive(EdgeKindRealizes, m.Id, o.Id, nil)
-					x.realizes[edgeKey{EdgeKindRealizes, m.Id, o.Id}] = true
-				}
-			}
-		}
-	}
+//uc:generates graph.derive-keeps-resolved-edges.snapshot
+//uc:generates graph.derive-reports-unresolved-bindings.snapshot
+//uc:generates graph.derive-reports-invalid-patterns.snapshot
+//uc:generates graph.derive-diagnostics-are-described.snapshot
+//uc:generates graph.owns-follows-deepest-pattern.snapshot
+//uc:generates graph.method-realizes-follows-candidates.snapshot
+//uc:generates graph.depends-lists-calls.snapshot
+//uc:generates graph.depends-lists-imports.snapshot
+//uc:generates graph.depends-attrs-are-distinct-usages.snapshot
+//uc:generates graph.depends-values-are-usages.snapshot
+//uc:generates graph.traces-follow-realizations.snapshot
+//uc:generates graph.exercises-close-over-calls.snapshot
+//uc:generates graph.exercises-paths-lead-to-predicates.snapshot
+//uc:generates graph.design-nodes-are-salient.snapshot
+//uc:generates graph.code-salience-follows-bindings.snapshot
+//uc:generates graph.container-salience-follows-elements.snapshot
+//uc:generates graph.reaches-joins-salient-functions.snapshot
+//uc:generates graph.derive-ignores-order.snapshot
+func deriveUnderived(sample DeriveSample) (*Graph, error) {
+	return fragmentGraph(sample.Fragment.Nodes, sample.Fragment.Edges)
 }
 
-// salience: design nodes; code types and functions that realize, check or
-// generate; the files and packages that hold those.
-func (x *expectation) salience() {
-	for _, n := range x.nodes {
-		binds := false
-		for k := range x.realizes {
-			binds = binds || k.from == n.Id
-		}
-		for k := range x.kept {
-			binds = binds || (k.kind == EdgeKindChecks || k.kind == EdgeKindGenerates || k.kind == EdgeKindObserves || k.kind == EdgeKindSubstitutes || k.kind == EdgeKindPublishes) && k.from == n.Id
-		}
-		switch {
-		case n.Layer == LayerDesign:
-			x.salient[n.Id] = true
-		case n.Layer == LayerCode && (n.Kind == NodeKindType || n.Kind == NodeKindOp) && binds:
-			file := "file:" + n.Origin.Path
-			if !x.is(file, LayerCode, NodeKindContainer, "file") {
-				file = x.fileOf(n.Id)
-			}
-			if slices.Contains(x.byID[file].Attrs["generated"], "true") {
-				continue
-			}
-			x.salient[n.Id] = true
-			for _, a := range append(x.ancestors(n.Id), file) {
-				if x.is(a, LayerCode, NodeKindContainer) && (!x.is(a, LayerCode, NodeKindContainer, "file") || !slices.Contains(x.byID[a].Attrs["generated"], "true")) {
-					x.salient[a] = true
-				}
-			}
-		}
+//uc:generates graph.derive-ignores-order.reordered
+func deriveReordered(sample DeriveSample, rotation int) (*Graph, error) {
+	g, err := fragmentGraph(rotate(sample.Fragment.Nodes, rotation), rotate(sample.Fragment.Edges, rotation))
+	if err != nil {
+		return nil, err
 	}
+	g.Derive()
+	return g, nil
 }
 
-// clientOf tells whether the function h realizes an operation of the external system ext.
-func (x *expectation) clientOf(h, ext string) bool {
-	for k := range x.realizes {
-		if k.from != h || !x.is(k.to, LayerDesign, NodeKindOp) {
-			continue
-		}
-		for _, a := range x.ancestors(k.to) {
-			if x.is(a, LayerDesign, NodeKindContainer) {
-				break
-			}
-			if a == ext {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// depends: for every container A and every other container or external
-// system B, the imports and calls by which A's code uses B's.
-func (x *expectation) depends() {
-	for _, a := range x.nodes {
-		for _, b := range x.nodes {
-			external := x.is(b.Id, LayerDesign, NodeKindActor, "external")
-			if !x.is(a.Id, LayerDesign, NodeKindContainer) || a.Id == b.Id || !x.is(b.Id, LayerDesign, NodeKindContainer) && !external {
-				continue
-			}
-			attrs := map[string][]string{}
-			for _, e := range x.edges {
-				switch {
-				case e.Kind == EdgeKindImports && slices.Contains(x.owners(e.From), a.Id):
-					for _, file := range x.nodes {
-						if (file.Id == e.To || x.parent[file.Id] == e.To) && x.is(file.Id, LayerCode, NodeKindContainer, "file") &&
-							slices.Contains(x.owners(file.Id), b.Id) && !slices.Contains(attrs["imports"], e.From+" "+e.To) {
-							attrs["imports"] = append(attrs["imports"], e.From+" "+e.To)
-						}
-					}
-				case e.Kind == EdgeKindCalls && x.calls(e.From, e.To) && slices.Contains(x.owners(e.From), a.Id) &&
-					(slices.Contains(x.owners(e.To), b.Id) || external && x.clientOf(e.To, b.Id)):
-					attrs["calls"] = append(attrs["calls"], e.From+" "+e.To)
-				}
-			}
-			if len(attrs) > 0 {
-				for k := range attrs {
-					slices.Sort(attrs[k])
-				}
-				x.derive(EdgeKindDepends, a.Id, b.Id, attrs)
-			}
-		}
-	}
-}
-
-// traces: a call or send step to each function that realizes its operation.
-func (x *expectation) traces() {
-	for _, s := range x.nodes {
-		for _, fn := range x.functions {
-			for k := range x.realizes {
-				if x.is(s.Id, LayerDesign, NodeKindStep, "call", "send") && k.from == fn && x.has(EdgeKindCalls, s.Id, k.to) {
-					x.derive(EdgeKindTraces, s.Id, fn, nil)
-				}
-			}
-		}
-	}
-}
-
-// closure is the transitive closure of calls among the given functions.
-func (x *expectation) closure(among []string) map[[2]string]bool {
-	c := map[[2]string]bool{}
-	for _, a := range among {
-		for _, b := range among {
-			c[[2]string{a, b}] = x.calls(a, b)
-		}
-	}
-	for _, k := range among {
-		for _, a := range among {
-			for _, b := range among {
-				c[[2]string{a, b}] = c[[2]string{a, b}] || c[[2]string{a, k}] && c[[2]string{k, b}]
-			}
-		}
-	}
-	return c
-}
-
-// exercises: a predicate to every function in the closure of its calls.
-func (x *expectation) exercises() {
-	all := x.closure(x.functions)
-	for _, p := range x.functions {
-		checks := false
-		for k := range x.kept {
-			checks = checks || k.kind == EdgeKindChecks && k.from == p
-		}
-		for _, g := range x.functions {
-			if checks && all[[2]string{p, g}] {
-				x.derive(EdgeKindExercises, p, g, nil)
-			}
-		}
-	}
-}
-
-// reaches: d is on a chain f -> d1 -> ... -> d -> ... -> dk -> g of details
-// between two salient functions that do not call each other directly.
-func (x *expectation) reaches() {
-	var details []string
-	for _, fn := range x.functions {
-		if !x.salient[fn] {
-			details = append(details, fn)
-		}
-	}
-	within := x.closure(details)
-	along := func(a, b string) bool { return a == b || within[[2]string{a, b}] }
-	for _, fn := range x.functions {
-		for _, g := range x.functions {
-			if !x.salient[fn] || !x.salient[g] || fn == g || x.calls(fn, g) {
-				continue
-			}
-			var via []string
-			for _, d := range details {
-				from := slices.ContainsFunc(details, func(d1 string) bool { return x.calls(fn, d1) && along(d1, d) })
-				to := slices.ContainsFunc(details, func(dk string) bool { return along(d, dk) && x.calls(dk, g) })
-				if from && to {
-					via = append(via, d)
-				}
-			}
-			if len(via) > 0 {
-				slices.Sort(via)
-				x.derive(EdgeKindReaches, fn, g, map[string][]string{"via": via})
-			}
-		}
-	}
-}
-
-// matches is a path pattern's meaning for the forms a derivation sample uses.
+// matches is a path pattern's meaning for the forms a derivation sample draws.
 func matches(pattern, p string) bool {
 	switch dir, _, _ := strings.Cut(pattern, "/*"); {
 	case pattern == "**":
@@ -604,65 +530,80 @@ func matches(pattern, p string) bool {
 	return pattern == p
 }
 
-func describeAttrs(attrs map[string][]string) string {
-	var parts []string
-	for _, k := range slices.Sorted(maps.Keys(attrs)) {
-		parts = append(parts, k+"="+strings.Join(attrs[k], ","))
+// reachesByDefinition is what docs/model.md §9 D7 derives from the calls
+// between the code functions of g and their salience: for salient f and g
+// that are distinct and do not call each other directly, the detail
+// functions on some chain f -> d1 -> ... -> dk -> g of details, sorted.
+func reachesByDefinition(g *Graph) map[edgeKey][]string {
+	var functions, details []string
+	for _, n := range g.Nodes() {
+		if n.Layer == LayerCode && n.Kind == NodeKindOp {
+			functions = append(functions, n.Id)
+			if !n.Salient {
+				details = append(details, n.Id)
+			}
+		}
 	}
-	return "{" + strings.Join(parts, " ") + "}"
+	calls := func(a, b string) bool { return g.Edge(EdgeKindCalls, a, b) != nil }
+	// within is the transitive closure of calls among the details.
+	within := map[[2]string]bool{}
+	for _, a := range details {
+		for _, b := range details {
+			within[[2]string{a, b}] = a == b || calls(a, b)
+		}
+	}
+	for _, k := range details {
+		for _, a := range details {
+			for _, b := range details {
+				within[[2]string{a, b}] = within[[2]string{a, b}] || within[[2]string{a, k}] && within[[2]string{k, b}]
+			}
+		}
+	}
+	out := map[edgeKey][]string{}
+	for _, f := range functions {
+		for _, to := range functions {
+			if !g.Node(f).Salient || !g.Node(to).Salient || f == to || calls(f, to) {
+				continue
+			}
+			var via []string
+			for _, d := range details {
+				from := slices.ContainsFunc(details, func(d1 string) bool { return calls(f, d1) && within[[2]string{d1, d}] })
+				onward := slices.ContainsFunc(details, func(dk string) bool { return within[[2]string{d, dk}] && calls(dk, to) })
+				if from && onward {
+					via = append(via, d)
+				}
+			}
+			if len(via) > 0 {
+				out[edgeKey{EdgeKindReaches, f, to}] = via
+			}
+		}
+	}
+	return out
 }
 
-//uc:checks graph.derive-matches-definition
-func checkDeriveMatchesDefinition(t rapid.TB, fragment Fragment) {
-	g := NewGraph()
-	if err := g.AddFragment(fragment); err != nil {
+//uc:checks graph.reaches-covers-detail-chains
+func checkReachesCoversDetailChains(t rapid.TB, sample DeriveSample) {
+	g, err := fragmentGraph(sample.Fragment.Nodes, sample.Fragment.Edges)
+	if err != nil {
 		t.Fatalf("AddFragment refused a fragment whose nodes are distinct and whose edges start at its nodes: %v", err)
 	}
-	diags := g.Derive()
-	want := definition(fragment)
-	got := map[edgeKey]map[string][]string{}
+	g.Derive()
+	want := reachesByDefinition(g)
 	for _, e := range g.Edges() {
+		if e.Kind != EdgeKindReaches {
+			continue
+		}
 		key := edgeKey{e.Kind, e.From, e.To}
-		switch {
-		case e.Source == SourceDerived:
-			got[key] = e.Attrs
-		case !want.kept[key]:
-			t.Fatalf("the graph holds the edge %s %s %s, which the fragment does not have or whose target is not a node", e.Kind, e.From, e.To)
+		via, ok := want[key]
+		if !ok {
+			t.Fatalf("Derive joined %s to %s by reaches, but no chain of detail functions leads from one to the other", e.From, e.To)
 		}
-	}
-	for key := range want.kept {
-		if _, ok := g.edges[key]; !ok {
-			t.Fatalf("the edge %s %s %s of the fragment, whose ends are nodes, is not in the graph", key.kind, key.from, key.to)
+		if got := slices.Sorted(slices.Values(e.Attrs["via"])); !slices.Equal(got, via) {
+			t.Fatalf("the reaches edge from %s to %s lists via %q, but the detail functions on its chains are %q", e.From, e.To, got, via)
 		}
+		delete(want, key)
 	}
-	for key, attrs := range want.derived {
-		has, ok := got[key]
-		switch {
-		case !ok:
-			t.Fatalf("Derive did not derive %s %s %s, which model.md §9 derives with attrs %s", key.kind, key.from, key.to, describeAttrs(attrs))
-		case !sameAttrs(has, attrs):
-			t.Fatalf("Derive gave %s %s %s the attrs %s; model.md §9 gives %s", key.kind, key.from, key.to, describeAttrs(has), describeAttrs(attrs))
-		}
-	}
-	for key := range got {
-		if _, ok := want.derived[key]; !ok {
-			t.Fatalf("Derive derived %s %s %s, which model.md §9 does not derive", key.kind, key.from, key.to)
-		}
-	}
-	for _, n := range g.Nodes() {
-		if n.Salient != want.salient[n.Id] {
-			t.Fatalf("Derive made %s salient=%v; model.md §9 makes it salient=%v", n.Id, n.Salient, want.salient[n.Id])
-		}
-	}
-	var codes []string
-	for _, d := range diags {
-		codes = append(codes, d.Code+" "+d.Subject)
-		if d.Message == "" || d.Fix == "" || d.Position != want.origins[d.Subject] {
-			t.Fatalf("the diagnostic %+v lacks its message or fix, or is not at the origin %v of its subject", d, want.origins[d.Subject])
-		}
-	}
-	slices.Sort(codes)
-	if !slices.Equal(codes, want.diags) {
-		t.Fatalf("Derive reported %q; a binding to no node and an invalid path pattern each give one diagnostic: %q", codes, want.diags)
+	for key, via := range want {
+		t.Fatalf("Derive did not join %s to %s by reaches, though the chains through the detail functions %q lead from one to the other", key.from, key.to, via)
 	}
 }

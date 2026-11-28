@@ -16,7 +16,7 @@ type EffectSample struct {
 	Abstract string
 }
 
-// genEffectSample draws the graph of genDeriveFragment with up to six more
+// genEffectSample draws the graph of genDeriveSample with up to six more
 // edges, each by even chance an implements edge from a struct to an
 // interface or an extends edge between structs, and a random non-empty set
 // of direct effects on about half of the concrete functions and methods,
@@ -28,7 +28,7 @@ type EffectSample struct {
 //uc:generates graph.dispatch-finds-implementations.sample
 func genEffectSample() *rapid.Generator[EffectSample] {
 	return rapid.Custom(func(t *rapid.T) EffectSample {
-		s := &sampler{t: t, keys: map[edgeKey]bool{}}
+		s := newSampler(t)
 		s.code(s.design())
 		var structs, interfaces, abstract []string
 		for _, n := range s.f.Nodes {

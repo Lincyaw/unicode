@@ -398,14 +398,36 @@ func (d *derivation) reachable(starts []string, through func(string) bool) []str
 }
 
 // exercises joins each predicate to every function it reaches along calls.
+// Attr path is the witness of docs/model.md §9 D5: the functions between
+// the predicate and the function on a shortest call chain, whose last one
+// is, among the callers one call nearer the predicate, the one with the
+// smallest identity.
 func (d *derivation) exercises() {
 	for _, p := range d.g.Nodes() {
 		checks := d.out[EdgeKindChecks][p.Id]
 		if !d.isFunction(p.Id) || len(checks) == 0 {
 			continue
 		}
-		for _, f := range d.reachable(d.callees(p.Id), func(string) bool { return true }) {
-			d.add(Edge{Kind: EdgeKindExercises, From: p.Id, To: f, Origin: checks[0].Origin})
+		paths := map[string][]string{}
+		level := slices.Sorted(slices.Values(d.callees(p.Id)))
+		for _, f := range level {
+			paths[f] = []string{}
+		}
+		for len(level) > 0 {
+			var next []string
+			for _, c := range level {
+				for _, f := range d.callees(c) {
+					if _, seen := paths[f]; !seen {
+						paths[f] = append(slices.Clone(paths[c]), c)
+						next = append(next, f)
+					}
+				}
+			}
+			slices.Sort(next)
+			level = next
+		}
+		for _, f := range slices.Sorted(maps.Keys(paths)) {
+			d.add(Edge{Kind: EdgeKindExercises, From: p.Id, To: f, Origin: checks[0].Origin, Attrs: map[string][]string{"path": paths[f]}})
 		}
 	}
 }

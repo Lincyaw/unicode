@@ -25,6 +25,7 @@ type Broken struct {
 // genBroken draws a conforming graph and breaks one constraint at a random site of it.
 //
 //uc:generates check.rejects-broken-graph.broken
+//uc:generates check.diagnostics-are-described.broken
 func genBroken() *rapid.Generator[Broken] {
 	return rapid.Custom(func(t *rapid.T) Broken {
 		w := newWorld(t)
@@ -497,6 +498,20 @@ var breakages = []breakage{
 		w.setAttr(effectful, "directEffects", []string{choose(w, []string{"time", "fs", "process", "network"})})
 		return o.id
 	}},
+}
+
+// deriveBrokenSnapshot adds the broken fragment to a new graph and derives
+// it, whatever the derivation reports.
+//
+//uc:generates check.rejects-broken-graph.snapshot
+//uc:generates check.diagnostics-are-described.snapshot
+func deriveBrokenSnapshot(broken Broken) (*graph.Graph, error) {
+	g := graph.NewGraph()
+	if err := g.AddFragment(broken.Fragment); err != nil {
+		return nil, err
+	}
+	g.Derive()
+	return &g, nil
 }
 
 // genEffectfulSnapshot draws a conforming world, gives about a quarter of

@@ -231,6 +231,16 @@ func (g *Graph) Node(id string) *Node {
 	return &n
 }
 
+// Edge returns a copy of the edge of the kind from from to to, or nil.
+func (g *Graph) Edge(kind EdgeKind, from, to string) *Edge {
+	e, ok := g.edges[edgeKey{kind, from, to}]
+	if !ok {
+		return nil
+	}
+	e.Attrs = cloneAttrs(e.Attrs)
+	return &e
+}
+
 // Nodes returns copies of all nodes, sorted by identity.
 func (g *Graph) Nodes() []Node {
 	nodes := make([]Node, 0, len(g.nodes))

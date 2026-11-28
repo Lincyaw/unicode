@@ -52,7 +52,9 @@ type BadTree struct {
 	Cause error
 }
 
-func (e BadTree) Error() string { return fmt.Sprintf("cannot write the entry %q of the tree: %v", e.Path, e.Cause) }
+func (e BadTree) Error() string {
+	return fmt.Sprintf("cannot write the entry %q of the tree: %v", e.Path, e.Cause)
+}
 
 func (e BadTree) Unwrap() error { return e.Cause }
 

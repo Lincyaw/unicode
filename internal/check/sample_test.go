@@ -2,7 +2,9 @@ package check
 
 import (
 	"fmt"
+	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"pgregory.net/rapid"
@@ -222,21 +224,64 @@ func genSample() *rapid.Generator[Sample] {
 	return rapid.Custom(func(t *rapid.T) Sample { return Sample{Fragment: newWorld(t).f} })
 }
 
+// deriveConformingSnapshot adds the sample's fragment to a new graph and
+// derives it; a derivation that reports a diagnostic fails, for the sample
+// is drawn to conform.
+//
 //uc:generates check.accepts-conforming-graph.snapshot
-func genConformingSnapshot(sample Sample) *rapid.Generator[*graph.Graph] {
+func deriveConformingSnapshot(sample Sample) (*graph.Graph, error) {
+	return conformingGraph(sample.Fragment)
+}
+
+// conformingGraph adds a fragment to a new graph and derives it, refusing
+// the fragment when the derivation reports a diagnostic.
+func conformingGraph(f graph.Fragment) (*graph.Graph, error) {
 	snapshot := graph.NewGraph()
-	if err := snapshot.AddFragment(sample.Fragment); err != nil {
-		panic(fmt.Sprintf("cannot construct a conforming graph sample: %v", err))
+	if err := snapshot.AddFragment(f); err != nil {
+		return nil, err
 	}
 	if diagnostics := snapshot.Derive(); len(diagnostics) > 0 {
-		panic("cannot derive a conforming graph sample: " + list(diagnostics))
+		return nil, fmt.Errorf("the conforming sample does not derive cleanly:\n%s", list(diagnostics))
 	}
-	return rapid.Just(&snapshot)
+	return &snapshot, nil
 }
 
 //uc:generates check.accepts-conforming-graph.declaredIds
-func genDeclaredIds(snapshot *graph.Graph) *rapid.Generator[[]string] {
-	return rapid.Just(declaredItems(snapshot))
+//uc:generates check.stubs-stay-incomplete.declaredIds
+func deriveDeclaredIds(snapshot *graph.Graph) []string { return declaredItems(snapshot) }
+
+// genStubSource draws one of the code functions of the sample that a checks
+// or generates edge binds.
+//
+//uc:generates check.stubs-stay-incomplete.source
+func genStubSource(sample Sample) *rapid.Generator[string] {
+	var bound []string
+	for _, e := range sample.Fragment.Edges {
+		if (e.Kind == graph.EdgeKindChecks || e.Kind == graph.EdgeKindGenerates) && !slices.Contains(bound, e.From) {
+			bound = append(bound, e.From)
+		}
+	}
+	return rapid.SampledFrom(bound)
+}
+
+// deriveStubSnapshot sets the stub attr of source alone to unfinished, then
+// adds the fragment to a new graph and derives it.
+//
+//uc:generates check.stubs-stay-incomplete.snapshot
+func deriveStubSnapshot(sample Sample, source string, unfinished bool) (*graph.Graph, error) {
+	fragment := graph.Fragment{Edges: slices.Clone(sample.Fragment.Edges)}
+	for _, node := range sample.Fragment.Nodes {
+		if node.Id == source {
+			attrs := maps.Clone(node.Attrs)
+			if attrs == nil {
+				attrs = map[string][]string{}
+			}
+			attrs["stub"] = []string{strconv.FormatBool(unfinished)}
+			node.Attrs = attrs
+		}
+		fragment.Nodes = append(fragment.Nodes, node)
+	}
+	return conformingGraph(fragment)
 }
 
 func newWorld(t *rapid.T) *world {

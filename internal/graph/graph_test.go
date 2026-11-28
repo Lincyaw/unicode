@@ -1,12 +1,10 @@
 package graph
 
 import (
-	"bytes"
-	"cmp"
 	"encoding/json"
 	"maps"
 	"math/rand/v2"
-	"regexp"
+	"reflect"
 	"slices"
 
 	"pgregory.net/rapid"
@@ -68,6 +66,7 @@ func genNodeWith(t *rapid.T, id string) Node {
 		Source:  rapid.SampledFrom(sources).Draw(t, "source"),
 		Origin:  genPosition(t),
 		Summary: genWord().Draw(t, "summary"),
+		Salient: rapid.Bool().Draw(t, "salient"),
 		Attrs:   genAttrs(t, "attrs"),
 	}
 }
@@ -80,11 +79,18 @@ func genNode() *rapid.Generator[Node] {
 // genFragment draws nodes with distinct identities and distinct edges between them.
 //
 //uc:generates graph.encode-ignores-order.content
-//uc:generates graph.compare-with-itself-is-empty.content
-//uc:generates graph.compare-follows-identity.base
-//uc:generates graph.compare-lists-changed-attrs.base
-//uc:generates graph.compare-reverses.base
+//uc:generates graph.snapshot-copies-content.content
+//uc:generates graph.snapshot-json-is-the-record.content
 //uc:generates graph.decode-inverts-encode.content
+//uc:generates graph.decode-is-total.content
+//uc:generates graph.digest-has-sha256-length.content
+//uc:generates graph.compare-with-itself-is-empty.content
+//uc:generates graph.compare-lists-changed-nodes.base
+//uc:generates graph.compare-lists-changed-edges.base
+//uc:generates graph.compare-lists-changed-attrs.base
+//uc:generates graph.compare-balances-attr-values.base
+//uc:generates graph.compare-is-canonical.base
+//uc:generates graph.compare-reverses.base
 func genFragment() *rapid.Generator[Fragment] {
 	return rapid.Custom(func(t *rapid.T) Fragment {
 		var c Fragment
@@ -124,31 +130,42 @@ func genFragment() *rapid.Generator[Fragment] {
 func genComparisonSnapshot() *rapid.Generator[*Graph] {
 	return rapid.Custom(func(t *rapid.T) *Graph {
 		fragment := genFragment().Draw(t, "fragment")
-		snapshot := build(t, fragment.Nodes, fragment.Edges)
-		return &snapshot
+		snapshot, err := graphOf(fragment.Nodes, fragment.Edges)
+		if err != nil {
+			t.Fatalf("AddFragment refused nodes with distinct identities and distinct edges between them: %v", err)
+		}
+		return snapshot
 	})
 }
 
+// deriveContentGraph adds the nodes, then the edges, of content in their
+// order to a new graph.
+//
 //uc:generates graph.compare-with-itself-is-empty.snapshot
-func genSnapshot(content Fragment) *rapid.Generator[*Graph] {
-	snapshot := NewGraph()
-	for _, node := range content.Nodes {
-		if err := snapshot.AddNode(node); err != nil {
-			panic(err)
-		}
-	}
-	for _, edge := range content.Edges {
-		if err := snapshot.AddEdge(edge); err != nil {
-			panic(err)
-		}
-	}
-	return rapid.Just(&snapshot)
+//uc:generates graph.encode-ignores-order.inOrder
+//uc:generates graph.snapshot-copies-content.g
+//uc:generates graph.decode-inverts-encode.g
+//uc:generates graph.digest-has-sha256-length.g
+func deriveContentGraph(content Fragment) (*Graph, error) {
+	return graphOf(content.Nodes, content.Edges)
 }
 
 //uc:generates graph.compare-with-itself-is-empty.reordered
-func genReordered(content Fragment, rotation int) *rapid.Generator[*Graph] {
-	return genSnapshot(Fragment{Nodes: rotate(content.Nodes, rotation), Edges: rotate(content.Edges, rotation)})
+//uc:generates graph.encode-ignores-order.rotated
+func deriveRotatedGraph(content Fragment, rotation int) (*Graph, error) {
+	return graphOf(rotate(content.Nodes, rotation), rotate(content.Edges, rotation))
 }
+
+//uc:generates graph.encode-ignores-order.shuffled
+func deriveShuffledGraph(content Fragment, rotation int) (*Graph, error) {
+	return graphOf(shuffled(content.Nodes, uint64(rotation)), shuffled(content.Edges, uint64(rotation)))
+}
+
+//uc:generates graph.digest-follows-content.a
+func deriveFirstGraph(first Node) (*Graph, error) { return graphOf([]Node{first}, nil) }
+
+//uc:generates graph.digest-follows-content.b
+func deriveSecondGraph(second Node) (*Graph, error) { return graphOf([]Node{second}, nil) }
 
 func rotate[T any](s []T, by int) []T {
 	if len(s) == 0 {
@@ -156,124 +173,6 @@ func rotate[T any](s []T, by int) []T {
 	}
 	by %= len(s)
 	return append(slices.Clone(s[by:]), s[:by]...)
-}
-
-// build adds the nodes, then the edges, in the order given.
-func build(t rapid.TB, nodes []Node, edges []Edge) Graph {
-	g := NewGraph()
-	for _, n := range nodes {
-		if err := g.AddNode(n); err != nil {
-			t.Fatalf("AddNode refused the node %q, whose identity is new: %v", n.Id, err)
-		}
-	}
-	for _, e := range edges {
-		if err := g.AddEdge(e); err != nil {
-			t.Fatalf("AddEdge refused the new edge %s %q %q, whose ends are nodes of the graph: %v", e.Kind, e.From, e.To, err)
-		}
-	}
-	return g
-}
-
-// sameAttrs tells whether a and b have the same keys with the same lists,
-// a nil list being the same as an empty one.
-func sameAttrs(a, b map[string][]string) bool {
-	return maps.EqualFunc(a, b, func(x, y []string) bool { return slices.Equal(x, y) })
-}
-
-// The snapshot as docs/design.md §5.2 describes it, read back.
-type readSnapshot struct {
-	Nodes []struct {
-		Id, Kind, Form, Layer, Source, Summary, Digest string
-		Origin                                         struct{ Path, Line, Column any }
-		Attrs                                          map[string][]string
-	}
-	Edges []struct {
-		Kind, From, To, Source string
-		Origin                 struct{ Path, Line, Column any }
-		Attrs                  map[string][]string
-	}
-}
-
-func sameOrigin(p diag.Position, o struct{ Path, Line, Column any }) bool {
-	return o.Path == p.Path && o.Line == float64(p.Line) && o.Column == float64(p.Column)
-}
-
-//uc:checks graph.encode-ignores-order
-func checkEncodeIgnoresOrder(t rapid.TB, content Fragment, rotation int) {
-	inOrder := build(t, content.Nodes, content.Edges)
-	rotated := build(t, rotate(content.Nodes, rotation), rotate(content.Edges, rotation))
-	snapshot := inOrder.Encode()
-	if other := rotated.Encode(); !bytes.Equal(snapshot, other) {
-		t.Fatalf("the same nodes and edges, added in another order, encode differently\nin order:\n%s\nrotated by %d:\n%s", snapshot, rotation, other)
-	}
-	permuted := build(t, shuffled(content.Nodes, uint64(rotation)), shuffled(content.Edges, uint64(rotation)+1))
-	if other := permuted.Encode(); !bytes.Equal(snapshot, other) {
-		t.Fatalf("the same nodes and edges, added in a shuffled order, encode differently\nin order:\n%s\nshuffled:\n%s", snapshot, other)
-	}
-	var read readSnapshot
-	if err := json.Unmarshal(snapshot, &read); err != nil {
-		t.Fatalf("the snapshot is not JSON: %v\n%s", err, snapshot)
-	}
-	if read.Nodes == nil || read.Edges == nil {
-		t.Fatalf("the snapshot lacks its nodes or its edges list: %s", snapshot)
-	}
-	nodes := slices.SortedFunc(slices.Values(content.Nodes), func(a, b Node) int { return cmp.Compare(a.Id, b.Id) })
-	if len(read.Nodes) != len(nodes) {
-		t.Fatalf("the snapshot holds %d nodes, the graph %d\n%s", len(read.Nodes), len(nodes), snapshot)
-	}
-	for i, n := range nodes {
-		r := read.Nodes[i]
-		switch {
-		case r.Id != n.Id:
-			t.Fatalf("node %d of the snapshot is %q, yet sorted by identity it should be %q", i+1, r.Id, n.Id)
-		case r.Kind != string(n.Kind) || r.Form != n.Form || r.Layer != string(n.Layer) || r.Source != string(n.Source) || r.Summary != n.Summary:
-			t.Fatalf("the snapshot writes the node %q as %+v, not as %+v", n.Id, r, n)
-		case !sameOrigin(n.Origin, r.Origin):
-			t.Fatalf("the snapshot gives the node %q the origin %v, not %v", n.Id, r.Origin, n.Origin)
-		case !sameAttrs(r.Attrs, n.Attrs) || r.Attrs == nil:
-			t.Fatalf("the snapshot gives the node %q the attrs %v, not %v", n.Id, r.Attrs, n.Attrs)
-		case r.Digest != inOrder.Digest(n.Id):
-			t.Fatalf("the snapshot gives the node %q the digest %q, Digest gives %q", n.Id, r.Digest, inOrder.Digest(n.Id))
-		}
-	}
-	edges := slices.SortedFunc(slices.Values(content.Edges), func(a, b Edge) int {
-		return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.From, b.From), cmp.Compare(a.To, b.To))
-	})
-	if len(read.Edges) != len(edges) {
-		t.Fatalf("the snapshot holds %d edges, the graph %d\n%s", len(read.Edges), len(edges), snapshot)
-	}
-	for i, e := range edges {
-		r := read.Edges[i]
-		switch {
-		case r.Kind != string(e.Kind) || r.From != e.From || r.To != e.To:
-			t.Fatalf("edge %d of the snapshot is %s %q %q, yet sorted by kind, start and end it should be %s %q %q", i+1, r.Kind, r.From, r.To, e.Kind, e.From, e.To)
-		case r.Source != string(e.Source) || !sameOrigin(e.Origin, r.Origin) || !sameAttrs(r.Attrs, e.Attrs) || r.Attrs == nil:
-			t.Fatalf("the snapshot writes the edge %s %q %q as %+v, not as %+v", e.Kind, e.From, e.To, r, e)
-		}
-	}
-}
-
-var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
-
-//uc:checks graph.digest-follows-content
-func checkDigestFollowsContent(t rapid.TB, first Node, second Node) {
-	a, b := NewGraph(), NewGraph()
-	if err := a.AddNode(first); err != nil {
-		t.Fatalf("AddNode refused a node in an empty graph: %v", err)
-	}
-	if err := b.AddNode(second); err != nil {
-		t.Fatalf("AddNode refused a node in an empty graph: %v", err)
-	}
-	da, db := a.Digest(first.Id), b.Digest(second.Id)
-	for _, d := range []string{da, db} {
-		if !sha256Hex.MatchString(d) {
-			t.Fatalf("the digest %q of a node of the graph is not a SHA-256 in lower-case hex", d)
-		}
-	}
-	same := first.Kind == second.Kind && first.Form == second.Form && first.Summary == second.Summary && sameAttrs(first.Attrs, second.Attrs)
-	if same && da != db {
-		t.Fatalf("two nodes with the same kind, form, summary and attrs have different digests\nfirst:  %+v\nsecond: %+v", first, second)
-	}
 }
 
 func shuffled[T any](values []T, seed uint64) []T {
@@ -330,4 +229,46 @@ func genSecond(first Node) *rapid.Generator[Node] {
 		}
 		return second
 	})
+}
+
+// attrsJSON is how attrs read back from JSON look when every list is written.
+func attrsJSON(attrs map[string][]string) map[string]any {
+	out := map[string]any{}
+	for k, v := range attrs {
+		values := []any{}
+		for _, x := range v {
+			values = append(values, x)
+		}
+		out[k] = values
+	}
+	return out
+}
+
+func originJSON(p diag.Position) map[string]any {
+	return map[string]any{"path": p.Path, "line": float64(p.Line), "column": float64(p.Column)}
+}
+
+//uc:checks graph.snapshot-json-is-the-record
+func checkSnapshotJsonIsTheRecord(t rapid.TB, content Fragment) {
+	g, err := graphOf(content.Nodes, content.Edges)
+	if err != nil {
+		t.Fatalf("AddFragment refused nodes with distinct identities and distinct edges between them: %v", err)
+	}
+	var got any
+	if err := json.Unmarshal(g.Encode(), &got); err != nil {
+		t.Fatalf("the snapshot that encode wrote is not JSON: %v", err)
+	}
+	record := g.Snapshot()
+	nodes, edges := []any{}, []any{}
+	for _, n := range record.Nodes {
+		nodes = append(nodes, map[string]any{"id": n.Id, "kind": string(n.Kind), "form": n.Form, "layer": string(n.Layer), "source": string(n.Source),
+			"origin": originJSON(n.Origin), "summary": n.Summary, "salient": n.Salient, "digest": n.Digest, "attrs": attrsJSON(n.Attrs)})
+	}
+	for _, e := range record.Edges {
+		edges = append(edges, map[string]any{"kind": string(e.Kind), "from": e.From, "to": e.To, "source": string(e.Source),
+			"origin": originJSON(e.Origin), "attrs": attrsJSON(e.Attrs)})
+	}
+	if want := map[string]any{"nodes": nodes, "edges": edges}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("the JSON that encode wrote is not the snapshot record with its field names as keys and no null\nwrote: %v\nrecord: %v", got, want)
+	}
 }

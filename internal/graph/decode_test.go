@@ -1,37 +1,15 @@
 package graph
 
 import (
-	"bytes"
-	"errors"
+	"slices"
 
 	"pgregory.net/rapid"
 )
 
-//uc:checks graph.decode-inverts-encode
-func checkDecodeInvertsEncode(t rapid.TB, content Fragment, noise []byte) {
-	g := build(t, content.Nodes, content.Edges)
-	snapshot := g.Encode()
-	decoded, err := Decode(snapshot)
-	if err != nil {
-		t.Fatalf("Decode refused the snapshot that Encode wrote: %v\n%s", err, snapshot)
-	}
-	if again := decoded.Encode(); !bytes.Equal(again, snapshot) {
-		t.Fatalf("the graph Decode rebuilt encodes differently from the snapshot it read\nread:\n%s\nencoded again:\n%s", snapshot, again)
-	}
-	// The noise alone, and spliced into the snapshot where its length points.
-	at := len(noise) % (len(snapshot) + 1)
-	spliced := append(append(append([]byte{}, snapshot[:at]...), noise...), snapshot[at:]...)
-	for _, data := range [][]byte{noise, spliced} {
-		if _, err := Decode(data); err != nil && !errors.As(err, new(NotASnapshot)) {
-			t.Fatalf("Decode refused the bytes %q with %T, not with NotASnapshot: %v", data, err, err)
-		}
-	}
-}
-
 // genNoise draws bytes that are often near JSON: brackets, quotes, the
 // snapshot's field names and digits, and now and then any byte.
 //
-//uc:generates graph.decode-inverts-encode.noise
+//uc:generates graph.decode-is-total.noise
 func genNoise() *rapid.Generator[[]byte] {
 	pieces := []string{"{", "}", "[", "]", `"`, ":", ",", " ", "0", "-1", "null", "true", `"nodes"`, `"edges"`, `"id"`, `"a"`, `"attrs"`, `"origin"`}
 	return rapid.Custom(func(t *rapid.T) []byte {
@@ -45,4 +23,21 @@ func genNoise() *rapid.Generator[[]byte] {
 		}
 		return b
 	})
+}
+
+// deriveNoisyData is the noise alone, or the noise spliced into the snapshot
+// of content where its length points.
+//
+//uc:generates graph.decode-is-total.data
+func deriveNoisyData(content Fragment, noise []byte, alone bool) ([]byte, error) {
+	if alone {
+		return slices.Clone(noise), nil
+	}
+	g, err := graphOf(content.Nodes, content.Edges)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := g.Encode()
+	at := len(noise) % (len(snapshot) + 1)
+	return slices.Concat(snapshot[:at], noise, snapshot[at:]), nil
 }

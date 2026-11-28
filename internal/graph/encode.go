@@ -50,63 +50,70 @@ func contentEncoding(n Node) []byte {
 	return b
 }
 
-// The snapshot's JSON: nodes sorted by identity, edges by kind, start and
-// end, attrs by key (encoding/json sorts map keys), every list present.
-type snapshot struct {
-	Nodes []nodeJSON `json:"nodes"`
-	Edges []edgeJSON `json:"edges"`
+// Snapshot is the record form of the snapshot: its JSON keys are its field
+// names in lower camel case, which golangci-lint's tagliatelle keeps so.
+//
+//uc:realizes graph.Snapshot
+type Snapshot struct {
+	Nodes []SnapshotNode `json:"nodes"`
+	Edges []SnapshotEdge `json:"edges"`
 }
 
-type nodeJSON struct {
+// SnapshotNode is a node of the snapshot, with its digest.
+//
+//uc:realizes graph.SnapshotNode
+type SnapshotNode struct {
 	Id      string              `json:"id"`
 	Kind    NodeKind            `json:"kind"`
 	Form    string              `json:"form"`
 	Layer   Layer               `json:"layer"`
 	Source  Source              `json:"source"`
-	Origin  originJSON          `json:"origin"`
+	Origin  diag.Position       `json:"origin"`
 	Summary string              `json:"summary"`
 	Salient bool                `json:"salient"`
 	Digest  string              `json:"digest"`
 	Attrs   map[string][]string `json:"attrs"`
 }
 
-type edgeJSON struct {
+// SnapshotEdge is an edge of the snapshot.
+//
+//uc:realizes graph.SnapshotEdge
+type SnapshotEdge struct {
 	Kind   EdgeKind            `json:"kind"`
 	From   string              `json:"from"`
 	To     string              `json:"to"`
 	Source Source              `json:"source"`
-	Origin originJSON          `json:"origin"`
+	Origin diag.Position       `json:"origin"`
 	Attrs  map[string][]string `json:"attrs"`
 }
 
-type originJSON struct {
-	Path   string `json:"path"`
-	Line   int    `json:"line"`
-	Column int    `json:"column"`
-}
-
-// Encode writes the graph as its JSON snapshot (docs/model.md §8): the same
-// nodes and edges give the same bytes, whatever order they were added in.
-func (g *Graph) Encode() []byte {
-	s := snapshot{Nodes: []nodeJSON{}, Edges: []edgeJSON{}}
+// Snapshot gives the record form of the snapshot: the nodes sorted by
+// identity with their digests, the edges by kind, start and end, every list
+// and attrs map present, so that none encodes as null.
+func (g *Graph) Snapshot() Snapshot {
+	s := Snapshot{Nodes: []SnapshotNode{}, Edges: []SnapshotEdge{}}
 	for _, n := range g.Nodes() {
-		s.Nodes = append(s.Nodes, nodeJSON{
-			Id: n.Id, Kind: n.Kind, Form: n.Form, Layer: n.Layer, Source: n.Source,
-			Origin:  originJSON{n.Origin.Path, n.Origin.Line, n.Origin.Column},
+		s.Nodes = append(s.Nodes, SnapshotNode{
+			Id: n.Id, Kind: n.Kind, Form: n.Form, Layer: n.Layer, Source: n.Source, Origin: n.Origin,
 			Summary: n.Summary, Salient: n.Salient, Digest: g.Digest(n.Id), Attrs: presentAttrs(n.Attrs),
 		})
 	}
 	for _, e := range g.Edges() {
-		s.Edges = append(s.Edges, edgeJSON{
-			Kind: e.Kind, From: e.From, To: e.To, Source: e.Source,
-			Origin: originJSON{e.Origin.Path, e.Origin.Line, e.Origin.Column}, Attrs: presentAttrs(e.Attrs),
+		s.Edges = append(s.Edges, SnapshotEdge{
+			Kind: e.Kind, From: e.From, To: e.To, Source: e.Source, Origin: e.Origin, Attrs: presentAttrs(e.Attrs),
 		})
 	}
+	return s
+}
+
+// Encode writes the graph's Snapshot as JSON (docs/model.md §8): the same
+// nodes and edges give the same bytes, whatever order they were added in.
+func (g *Graph) Encode() []byte {
 	var out bytes.Buffer
 	enc := json.NewEncoder(&out)
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(s); err != nil {
+	if err := enc.Encode(g.Snapshot()); err != nil {
 		// Strings, integers, lists and maps of strings always encode.
 		panic("graph: cannot encode the snapshot: " + err.Error())
 	}
@@ -139,7 +146,7 @@ func (e NotASnapshot) Unwrap() error { return e.Cause }
 //
 //uc:realizes graph.decode
 func Decode(data []byte) (Graph, error) {
-	var s snapshot
+	var s Snapshot
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&s); err != nil {
@@ -151,14 +158,13 @@ func Decode(data []byte) (Graph, error) {
 	g := NewGraph()
 	for _, n := range s.Nodes {
 		node := Node{Id: n.Id, Kind: n.Kind, Form: n.Form, Layer: n.Layer, Source: n.Source,
-			Origin: diag.Position(n.Origin), Summary: n.Summary, Salient: n.Salient, Attrs: n.Attrs}
+			Origin: n.Origin, Summary: n.Summary, Salient: n.Salient, Attrs: n.Attrs}
 		if err := g.AddNode(node); err != nil {
 			return Graph{}, NotASnapshot{Cause: err}
 		}
 	}
 	for _, e := range s.Edges {
-		edge := Edge{Kind: e.Kind, From: e.From, To: e.To, Source: e.Source, Origin: diag.Position(e.Origin), Attrs: e.Attrs}
-		if err := g.AddEdge(edge); err != nil {
+		if err := g.AddEdge(Edge(e)); err != nil {
 			return Graph{}, NotASnapshot{Cause: err}
 		}
 	}
