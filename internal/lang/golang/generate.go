@@ -39,7 +39,19 @@ var contractWorkerRuntime string
 //go:embed alias_runtime.go
 var contractAliasRuntime string
 
+//go:embed process_runtime.go
+var contractProcessRuntime string
+
+// contractRuntimeParts are the runtime files that generated drivers embed
+// after contract_runtime.go, each without its imports.
+func contractRuntimeParts() []string {
+	return []string{contractDoubleRuntime, contractCaseRuntime, contractWorkerRuntime, contractAliasRuntime, contractProcessRuntime}
+}
+
 var _ = ucCandidateWorker
+var _ = ucProcessRunAll
+var _ = ucProcesses
+var _ = ucProcessShards
 var _ = ucEncodedLiteral
 
 var _ lang.Generator = (*Backend)(nil)
@@ -999,57 +1011,42 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 		fmt.Fprintf(&body, "// FuzzUnicode_%x checks %s.\nfunc FuzzUnicode_%x(f *testing.F){f.Fuzz(rapid.MakeFuzz(func(rt *rapid.T){restore:=ucContext(nil,true);defer restore();ucRandom%s(rt,%s())}))}\n", sha256.Sum256([]byte(unit.node.Id)), unit.node.Id, sha256.Sum256([]byte(unit.node.Id)), id, specName)
 	}
 	body.WriteString("func TestUnicodeContracts(t *testing.T){if ucCandidateWorker(t," + c.renderWorkerUnits(file) + "){return}; var selected []string; _=json.Unmarshal([]byte(os.Getenv(\"UNICODE_CONTRACT_IDS\")),&selected); mode:=\"test\";if os.Getenv(\"UNICODE_CONTRACT_RESULTS\")!=\"\" {mode=\"replay\"};if os.Getenv(\"UNICODE_CONTRACT_EXPLORE\")!=\"\"{mode=\"explore\"}; budget,_:=time.ParseDuration(os.Getenv(\"UNICODE_CONTRACT_EXPLORE\")); results:=[]ucRunResult{}; defer func(){if path:=os.Getenv(\"UNICODE_CONTRACT_RESULTS\");path!=\"\"{data,err:=json.Marshal(results);if err!=nil{t.Error(err);return};if err=os.WriteFile(path,data,0600);err!=nil{t.Error(err)}}}();")
+	body.WriteString("if mode==\"test\"&&ucProcesses(){ucProcessRunAll(t,selected,[]ucProcessUnit{")
+	for _, unit := range file.units {
+		// A property with a time budget runs in one process: its percentile is over all its cases.
+		shards := "ucProcessShards"
+		if unit.spec.Within > 0 {
+			shards = "1"
+		}
+		fmt.Fprintf(&body, "{ID:%s,Shards:%s},", strconv.Quote(unit.node.Id), shards)
+	}
+	body.WriteString("});return};")
 	for i, unit := range file.units {
 		fmt.Fprintf(&body, "if len(selected)==0||slices.Contains(selected,%s){t.Run(%s,func(t *testing.T){var result ucRunResult;defer func(){if result.Id==\"\"{result=ucRunResult{Id:%s,Passed:false}};result.Passed=result.Passed&&!t.Failed();results=append(results,result)}();ucDrive%d(t,mode,budget,&result)})};", strconv.Quote(unit.node.Id), strconv.Quote(unit.node.Id), strconv.Quote(unit.node.Id), i)
 	}
 	body.WriteString("}\n")
-	doubleFile, err := parser.ParseFile(token.NewFileSet(), "doubles_runtime.go", contractDoubleRuntime, 0)
-	if err != nil {
-		panic(err)
-	}
-	doubleStart := 0
-	for _, decl := range doubleFile.Decls {
-		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
-			doubleStart = int(gen.End())
+	runtimeSource := contractRuntime
+	var partImports []*ast.ImportSpec
+	for _, part := range contractRuntimeParts() {
+		file, err := parser.ParseFile(token.NewFileSet(), "runtime-part.go", part, 0)
+		if err != nil {
+			panic(err)
 		}
-	}
-	caseFile, err := parser.ParseFile(token.NewFileSet(), "case_runtime.go", contractCaseRuntime, 0)
-	if err != nil {
-		panic(err)
-	}
-	caseStart := 0
-	for _, decl := range caseFile.Decls {
-		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
-			caseStart = int(gen.End())
+		start := 0
+		for _, decl := range file.Decls {
+			if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
+				start = int(gen.End())
+			}
 		}
+		runtimeSource += "\n" + part[start:]
+		partImports = append(partImports, file.Imports...)
 	}
-	workerFile, err := parser.ParseFile(token.NewFileSet(), "worker_runtime.go", contractWorkerRuntime, 0)
-	if err != nil {
-		panic(err)
-	}
-	workerStart := 0
-	for _, decl := range workerFile.Decls {
-		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
-			workerStart = int(gen.End())
-		}
-	}
-	aliasFile, err := parser.ParseFile(token.NewFileSet(), "alias_runtime.go", contractAliasRuntime, 0)
-	if err != nil {
-		panic(err)
-	}
-	aliasStart := 0
-	for _, decl := range aliasFile.Decls {
-		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
-			aliasStart = int(gen.End())
-		}
-	}
-	runtimeSource := contractRuntime + "\n" + contractDoubleRuntime[doubleStart:] + "\n" + contractCaseRuntime[caseStart:] + "\n" + contractWorkerRuntime[workerStart:] + "\n" + contractAliasRuntime[aliasStart:]
 	runtimeFile, err := parser.ParseFile(token.NewFileSet(), "runtime.go", runtimeSource, 0)
 	if err != nil {
 		panic(err)
 	}
 	imports := map[string]string{"testing": "", "os": ""}
-	for _, spec := range append(append([]*ast.ImportSpec{}, runtimeFile.Imports...), append(append(doubleFile.Imports, caseFile.Imports...), append(workerFile.Imports, aliasFile.Imports...)...)...) {
+	for _, spec := range append(append([]*ast.ImportSpec{}, runtimeFile.Imports...), partImports...) {
 		path, _ := strconv.Unquote(spec.Path.Value)
 		imports[path] = ""
 		if spec.Name != nil {

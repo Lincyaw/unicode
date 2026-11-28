@@ -148,3 +148,17 @@ property extraction-cache-follows-changes invariant "随机 Go 模块经内容�
   forall change: CacheChange generated "kind 取 0 至 3，依次是加函数、新增文件、删除测试文件（模块没有测试文件时不改动）和改写 go 版本行，pick 和 value 各取 0 至 1000：pick 按模块中候选的文件或包的个数取余选出一个，value 写进新函数的名称和返回值，也按 3 取余选出 go 版本 1.24、1.25 或 1.26"
   manual "需要写出临时 Go 模块、改动其中的文件，再经缓存和不经缓存各用 go/packages 抽取，表达式不能读写文件"
 }
+
+property split-runs-cover-the-same-cases invariant "普通 go test 下，生成的驱动把一条性质的 N 个随机用例分给 8 与 N 中较小的那个数的子进程，各用不同的种子，各子进程通过的用例数之和是 N，与在一个进程中执行时通过的用例数相同" {
+  about Backend
+  forall checks: int
+  where checks in 1..40
+  manual "需要生成并编译一个 Go 模块的驱动，再拆分和不拆分各运行一次它的测试二进制并读取输出，表达式不能运行程序"
+}
+
+property split-runs-report-failures-alike invariant "性质的每个用例都失败时，拆分到子进程的执行和在一个进程中的执行都失败并报出同一个缩小后的反例，每个子进程的失败报告写明性质、它是第几个子进程和它的种子，按其中 rapid 给出的种子在一个进程中重放得到同一个反例" {
+  about Backend
+  forall checks: int
+  where checks in 1..40
+  manual "需要生成并编译一个 Go 模块的驱动，再拆分、不拆分和按种子各运行一次它的测试二进制并读取输出，表达式不能运行程序"
+}

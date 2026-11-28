@@ -61,7 +61,7 @@ func driverImports(t rapid.TB) driverImporter {
 			return
 		}
 		paths := []string{"testing", "os"}
-		for _, source := range []string{contractCaseRuntime, contractWorkerRuntime, contractAliasRuntime} {
+		for _, source := range contractRuntimeParts() {
 			extra, err := parser.ParseFile(token.NewFileSet(), "runtime-part.go", source, parser.ImportsOnly)
 			if err != nil {
 				driverDependencies.err = err
