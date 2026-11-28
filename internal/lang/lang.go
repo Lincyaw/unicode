@@ -171,6 +171,17 @@ type CaseResult struct {
 	Observations []string          `json:"observations"`
 	Differences  []string          `json:"differences"`
 	Diagnostics  []diag.Diagnostic `json:"diagnostics"`
+	Duration     time.Duration     `json:"duration"`
+	Calls        []CallTime        `json:"calls"`
+}
+
+// CallTime is one call of a design operation that a case made, the call
+// under test or one of a sequence's, and how long it took.
+//
+//uc:realizes lang.CallTime
+type CallTime struct {
+	Op       string        `json:"op"`
+	Duration time.Duration `json:"duration"`
 }
 
 // CandidateEvaluation distinguishes a real result, budget exhaustion and tool errors.

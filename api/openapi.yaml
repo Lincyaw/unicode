@@ -1330,6 +1330,14 @@ components:
           type: string
           description: "How the label writes it: its design name; for a call from a person, with the step's arguments, such as submit(cart)"
       description: An operation an edge carries, as the edge's label names it.
+    Effect:
+      type: string
+      enum:
+        - time
+        - fs
+        - process
+        - network
+      description: 'A kind of effect (docs/model.md §3.1): time or randomness, the file system, processes, the network.'
     Entity:
       type: object
       required:
@@ -1663,6 +1671,10 @@ components:
           allOf:
             - $ref: '#/components/schemas/StepInfo'
           description: 'A step: where it stands in its flow'
+        operation:
+          allOf:
+            - $ref: '#/components/schemas/OperationInfo'
+          description: 'An operation, design or code: its effects and its mean duration'
       description: |-
         One node of the graph: the node of the snapshot (graph.Node with its content hash, as `unicode build` writes it),
         and what the viewer needs to name it, colour its status and link it.
@@ -1778,6 +1790,23 @@ components:
             $ref: '#/components/schemas/Node'
           description: '相关性质: the properties about it'
       description: One operation of a type, as the type's page lists it.
+    OperationInfo:
+      type: object
+      properties:
+        effects:
+          type: array
+          items:
+            $ref: '#/components/schemas/Effect'
+          description: |-
+            Its effects (docs/model.md §9 D8), in the order time, fs, process, network, and empty when it has none. A design
+            operation has those of the code operations that realize it, and none to give when nothing realizes it.
+        meanDuration:
+          type: integer
+          format: int64
+          description: |-
+            A design operation: the mean duration, in nanoseconds, of the calls of it that the current evidence records
+            (docs/model.md §3.5); left out when the evidence records none.
+      description: 'What an operation node carries that other nodes do not: its effects and how long a call of it takes.'
     Outcome:
       type: string
       enum:
@@ -2430,6 +2459,10 @@ components:
           allOf:
             - $ref: '#/components/schemas/StepInfo'
           description: 'A step: where it stands in its flow'
+        operation:
+          allOf:
+            - $ref: '#/components/schemas/OperationInfo'
+          description: 'An operation, design or code: its effects and its mean duration'
         members:
           type: array
           items:

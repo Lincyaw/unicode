@@ -77,6 +77,29 @@ enum EdgeKind {
   covers,
 }
 
+/** A kind of effect (docs/model.md §3.1): time or randomness, the file system, processes, the network. */
+enum Effect {
+  time,
+  fs,
+  process,
+  network,
+}
+
+/** What an operation node carries that other nodes do not: its effects and how long a call of it takes. */
+model OperationInfo {
+  /**
+   * Its effects (docs/model.md §9 D8), in the order time, fs, process, network, and empty when it has none. A design
+   * operation has those of the code operations that realize it, and none to give when nothing realizes it.
+   */
+  effects?: Effect[];
+
+  /**
+   * A design operation: the mean duration, in nanoseconds, of the calls of it that the current evidence records
+   * (docs/model.md §3.5); left out when the evidence records none.
+   */
+  meanDuration?: int64;
+}
+
 /**
  * One node of the graph: the node of the snapshot (graph.Node with its content hash, as `unicode build` writes it),
  * and what the viewer needs to name it, colour its status and link it.
@@ -129,6 +152,9 @@ model Node {
 
   /** A step: where it stands in its flow */
   step?: StepInfo;
+
+  /** An operation, design or code: its effects and its mean duration */
+  operation?: OperationInfo;
 }
 
 /** One edge of the graph: the edge of the snapshot, and its status when it is a declared item or a depends. */

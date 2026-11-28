@@ -226,5 +226,9 @@ func cloneCase(result lang.CaseResult) (lang.CaseResult, error) {
 	result.Observations = append([]string{}, result.Observations...)
 	result.Differences = append([]string{}, result.Differences...)
 	result.Diagnostics = append([]diag.Diagnostic{}, result.Diagnostics...)
+	result.Calls = append([]lang.CallTime{}, result.Calls...)
+	if result.Duration < 0 || slices.ContainsFunc(result.Calls, func(c lang.CallTime) bool { return c.Duration < 0 || c.Op == "" }) {
+		return result, fmt.Errorf("a case's duration and the durations of its calls cannot be negative, and every call names its operation")
+	}
 	return result, nil
 }

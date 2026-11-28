@@ -381,6 +381,10 @@ func (r *measuredRunner) Evaluate(input lang.Input) lang.CandidateEvaluation {
 			candidate.Passed = false
 		}
 		r.durations = append(r.durations, executed.Durations...)
+		candidate.Duration = executed.Elapsed
+		for _, c := range executed.Calls {
+			candidate.Calls = append(candidate.Calls, lang.CallTime{Op: c.Op, Duration: c.Duration})
+		}
 	}
 	out.Result = &candidate
 	return out

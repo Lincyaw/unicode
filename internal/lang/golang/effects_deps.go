@@ -28,8 +28,8 @@ import (
 // functions with their direct effects and the functions of dependency
 // packages they call, is summarized once and kept in the user's cache,
 // keyed by the package, the version of its module and the files the build
-// selects; a module replaced by a directory, which has no version, is keyed
-// by the content of those files instead.
+// selects. A module without a version, such as one replaced by a directory,
+// is summarized again on every extraction.
 
 // packageSummary is what one dependency package gives, by function.
 type packageSummary struct {
@@ -54,10 +54,7 @@ func dependencyEffects(root string, known map[string]*packages.Package) (map[str
 		if !dependency(p) {
 			continue
 		}
-		key, err := summaryKey(p)
-		if err != nil {
-			return nil, err
-		}
+		key := summaryKey(p)
 		keys[path] = key
 		if s, ok := readSummary(key); ok {
 			summaries[path] = s
@@ -99,40 +96,36 @@ func dependencyEffects(root string, known map[string]*packages.Package) (map[str
 	return g.Effects(), nil
 }
 
-// summaryKey names a dependency package's summary in the cache.
-func summaryKey(p *packages.Package) (string, error) {
+// summaryKey names a dependency package's summary in the cache, or is ""
+// for a package of a module without a version, such as one replaced by a
+// directory, whose files may change under the same name.
+func summaryKey(p *packages.Package) string {
+	m := p.Module
+	if m.Replace != nil {
+		m = m.Replace
+	}
+	if m.Version == "" {
+		return ""
+	}
 	h := sha256.New()
 	write := func(s string) { h.Write([]byte(s + "\x00")) }
 	write(effectsRules())
 	write(runtime.Version())
 	write(p.PkgPath)
-	m := p.Module
-	if m.Replace != nil {
-		m = m.Replace
-	}
 	write(m.Path + "@" + m.Version)
 	files := slices.Clone(p.GoFiles)
 	slices.Sort(files)
 	for _, f := range files {
 		write(filepath.Base(f))
-		if m.Version != "" {
-			continue
-		}
-		content, err := os.ReadFile(f)
-		if err != nil {
-			return "", err
-		}
-		sum := sha256.Sum256(content)
-		write(hex.EncodeToString(sum[:]))
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // summaryPath is where the cache keeps the summary of key, or "" when the
 // user has no cache directory.
 func summaryPath(key string) string {
 	dir, err := os.UserCacheDir()
-	if err != nil {
+	if err != nil || key == "" {
 		return ""
 	}
 	return filepath.Join(dir, "unicode", "effects", key+".json")

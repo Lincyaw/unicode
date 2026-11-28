@@ -48,6 +48,10 @@ type ucWorkerResponse struct {
 	Rejected    bool            `json:"rejected"`
 	Diagnostics []ucDiagnostic  `json:"diagnostics"`
 	Durations   []time.Duration `json:"durations"`
+	// Elapsed is how long the case took to execute, and Calls the calls of
+	// design operations it made with how long each took.
+	Elapsed time.Duration `json:"elapsed"`
+	Calls   []ucCallTime  `json:"calls"`
 }
 
 var ucTraceBusinessEnabled bool
@@ -105,6 +109,7 @@ func ucCandidateWorker(t *testing.T, units []ucWorkerUnit) (handled bool) {
 				response.Diagnostics = append(response.Diagnostics, response.Result.Diagnostics...)
 			}
 			response.Durations = append([]time.Duration{}, response.Result.durations...)
+			response.Calls = append([]ucCallTime{}, response.Result.calls...)
 		}
 		encoded, err := json.Marshal(response)
 		if err != nil {
@@ -179,7 +184,9 @@ func ucCandidateWorker(t *testing.T, units []ucWorkerUnit) (handled bool) {
 		defer restore()
 		ucTraceBusinessEnabled = true
 		defer func() { ucTraceBusinessEnabled = false }()
+		started := time.Now()
 		rapid.MakeFuzz(func(rt *rapid.T) { selected.Invoke(rt, spec, values) })(t, ucWorkerBits(ucWireHash(request.Input)))
+		response.Elapsed = time.Since(started)
 		if response.Result.Accepted == 0 && response.Result.Rejected == 0 {
 			response.Result.Infrastructure = true
 			response.Result.Passed = false

@@ -180,6 +180,11 @@ func Attach(g *graph.Graph, reports []lang.RunReport) Attached {
 				caseFresh := sourceFresh && len(matched) > 0
 				detail := textAttrs(map[string]string{"check": candidate.Check, "case": candidate.Id, "inputHash": candidate.InputHash, "snapshot": report.Snapshot, "fresh": strconv.FormatBool(sourceFresh), "caseFresh": strconv.FormatBool(caseFresh), "passed": strconv.FormatBool(candidate.Passed), "rejected": strconv.FormatBool(candidate.Rejected), "reason": candidate.Reason, "at": report.At, "mode": report.Mode})
 				detail["coverage"], detail["trace"] = stringsOf(candidate.Coverage), stringsOf(candidate.Trace)
+				detail["duration"] = []string{strconv.FormatInt(int64(candidate.Duration), 10)}
+				detail["calls"] = []string{}
+				for _, c := range candidate.Calls {
+					detail["calls"] = append(detail["calls"], c.Op+" "+strconv.FormatInt(int64(c.Duration), 10))
+				}
 				detail["observations"], detail["differences"] = slices.Clone(candidate.Observations), slices.Clone(candidate.Differences)
 				applyAttrs(detail, diagnosticAttrs(candidate.Diagnostics))
 				out.Fragment.Nodes = append(out.Fragment.Nodes, graph.Node{Id: caseID, Kind: graph.NodeKindResult, Form: "case", Layer: graph.LayerEvidence, Source: graph.SourceProduced, Origin: at, Attrs: detail})

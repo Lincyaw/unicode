@@ -200,6 +200,30 @@ func (e EdgeKind) Valid() bool {
 	}
 }
 
+// Defines values for Effect.
+const (
+	EffectFs      Effect = "fs"
+	EffectNetwork Effect = "network"
+	EffectProcess Effect = "process"
+	EffectTime    Effect = "time"
+)
+
+// Valid indicates whether the value is a known member of the Effect enum.
+func (e Effect) Valid() bool {
+	switch e {
+	case EffectFs:
+		return true
+	case EffectNetwork:
+		return true
+	case EffectProcess:
+		return true
+	case EffectTime:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Layer.
 const (
 	LayerCode     Layer = "code"
@@ -716,6 +740,9 @@ type EdgeLabel struct {
 	Text string `json:"text"`
 }
 
+// Effect A kind of effect (docs/model.md §3.1): time or randomness, the file system, processes, the network.
+type Effect string
+
 // Entity The page of one node: a view's right pane previews it, and the canvas shows it in full as the node's entity page.
 // The common sections come first; then exactly one section for the node's kind, present when the kind has one.
 type Entity struct {
@@ -901,6 +928,9 @@ type Node struct {
 	// Layer The layer of a node (docs/model.md §1).
 	Layer Layer `json:"layer"`
 
+	// Operation An operation, design or code: its effects and its mean duration
+	Operation *OperationInfo `json:"operation,omitempty"`
+
 	// Origin Where it is written: a design, corpus or code file
 	Origin Position `json:"origin"`
 
@@ -986,6 +1016,17 @@ type OpRow struct {
 
 	// RealizedBy 实现: the functions that realize it
 	RealizedBy []Neighbor `json:"realizedBy"`
+}
+
+// OperationInfo What an operation node carries that other nodes do not: its effects and how long a call of it takes.
+type OperationInfo struct {
+	// Effects Its effects (docs/model.md §9 D8), in the order time, fs, process, network, and empty when it has none. A design
+	// operation has those of the code operations that realize it, and none to give when nothing realizes it.
+	Effects *[]Effect `json:"effects,omitempty"`
+
+	// MeanDuration A design operation: the mean duration, in nanoseconds, of the calls of it that the current evidence records
+	// (docs/model.md §3.5); left out when the evidence records none.
+	MeanDuration *int64 `json:"meanDuration,omitempty"`
 }
 
 // Outcome The result of a check on an input.
@@ -1357,6 +1398,9 @@ type ViewNode struct {
 
 	// Members A type drawn as a card: its fields and enum values, compared with the code
 	Members *[]Member `json:"members,omitempty"`
+
+	// Operation An operation, design or code: its effects and its mean duration
+	Operation *OperationInfo `json:"operation,omitempty"`
 
 	// Origin Where it is written: a design, corpus or code file
 	Origin Position `json:"origin"`

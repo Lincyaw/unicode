@@ -64,7 +64,7 @@ property identities-resolve invariant "成功应答中在属性之外作为节�
   manual "需要在应答的 JSON 中找出全部节点标识再逐个请求，表达式不能解析 JSON"
 }
 
-property queries-agree relation "node、search、slice、impact、views、compare 和 reviews 七个接口的应答与直接调用 query、view、graph.compare 和 review.evaluate（记录取自快照的评审层）的结果有同样的项且次序相同（节点和边，视图另有同样的折叠和隐藏，评审项另有同样的状态、指纹和记录），实体页的评审与 review.evaluate 对该节点给出的相同，标识不存在、参数不合、视图不适用或基准提交读不出时应答是 design.md §7.5.1 规定的拒绝" {
+property queries-agree relation "node、search、slice、impact、views、compare 和 reviews 七个接口的应答与直接调用 query、view、graph.compare 和 review.evaluate（记录取自快照的评审层）的结果有同样的项且次序相同（节点和边，操作节点另有 graph.Graph.effects 给出的效果，视图另有同样的折叠和隐藏，评审项另有同样的状态、指纹和记录），实体页的评审与 review.evaluate 对该节点给出的相同，标识不存在、参数不合、视图不适用或基准提交读不出时应答是 design.md §7.5.1 规定的拒绝" {
   about Server.answer, query.get, query.search, query.slice, query.impact, view.select, graph.compare, review.evaluate, review.recorded
   forall exchange: Exchange generated "一个随机小仓库的图和文件（带零至三条评审记录的评审层，约三分之一的被评节点在评审之后改了摘要），以及对 node、search、slice、impact、views、compare、reviews 和 entity 的一至六个请求：标识约七分之一不存在，参数有时不合，比较的基准约五分之二是 HEAD，其余是读不出的提交，reviews 带零至三个标识、pending 为真、为假或不给，约三分之一带基准 HEAD，约五分之一重复前面的请求"
   manual "需要解码 JSON 应答再与直接调用的结果比较，表达式不能解析 JSON"

@@ -22,7 +22,7 @@ type Extracted record "一次抽取的结果：代码层的节点和边，以及
 
 type Backend interface "一种语言的后端：静态抽取代码层，给出名称映射" {
   op language() -> string "语言的名称，写法与系统文件中的 language 相同"
-  op extract(root: string, srcRoots: list<string>) -> Extracted raises ExtractFailed "抽取源码根目录下的代码层：节点、边，以及方法的候选边（design.md §4）"
+  op extract(root: string, srcRoots: list<string>) -> Extracted raises ExtractFailed "抽取源码根目录下的代码层：节点及其属性（包括每个函数的直接效果）、边，以及方法的候选边（design.md §4）"
   op mapName(role: NameRole, designName: string) -> string "设计中的名称在这种语言中的写法"
 }
 
@@ -88,7 +88,12 @@ type TraceEvent record "由 Go 运行轨迹得到的函数进入、退出、发�
   field detail: string
 }
 
-type CaseResult record "一个输入的最终结果：所属的性质或流程、用例的形式和录制原因、冻结的输入及其哈希、是否通过或被拒绝、覆盖、轨迹、观察、范围外的差异和诊断；缩小反例时的尝试不算作结果" {
+type CallTime record "用例中对一个设计层操作的一次调用：被测调用或调用序列中的一次调用，以及它的耗时" {
+  field op: string
+  field duration: duration
+}
+
+type CaseResult record "一个输入的最终结果：所属的性质或流程、用例的形式和录制原因、冻结的输入及其哈希、是否通过或被拒绝、覆盖、轨迹、观察、范围外的差异、诊断、执行耗时，以及其中每次调用的操作和耗时；缩小反例时的尝试不算作结果" {
   field id: string
   field check: string
   field form: string
@@ -102,6 +107,8 @@ type CaseResult record "一个输入的最终结果：所属的性质或流程�
   field observations: list<string>
   field differences: list<string>
   field diagnostics: list<diag.Diagnostic>
+  field duration: duration
+  field calls: list<CallTime>
 }
 
 type CandidateEvaluation record "一个候选输入的执行结果：预算耗尽时没有结果，检查错误列在 diagnostics 中，与反例分开" {

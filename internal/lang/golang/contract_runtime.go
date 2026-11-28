@@ -92,6 +92,14 @@ type ucRunResult struct {
 	Diagnostics    []ucDiagnostic `json:"diagnostics"`
 	Infrastructure bool           `json:"infrastructure,omitempty"`
 	durations      []time.Duration
+	calls          []ucCallTime
+}
+
+// ucCallTime is one call of a design operation that a case made, the call
+// under test or one of a sequence's, and how long it took.
+type ucCallTime struct {
+	Op       string        `json:"op"`
+	Duration time.Duration `json:"duration"`
 }
 type ucValue struct {
 	Type   string
@@ -117,6 +125,7 @@ type ucOutcome struct {
 	Diagnostics    []ucDiagnostic
 	Differences    []string
 	Duration       time.Duration
+	Calls          []ucCallTime
 }
 type ucIssue struct {
 	code, message string
@@ -1451,6 +1460,7 @@ func ucExecuteSingle(s *ucContract, inputs map[string]reflect.Value, explore boo
 		phase = "call"
 		values := func() []reflect.Value { finish := ucBusinessTrace(); defer finish(); return fn.Call(args) }()
 		out.Duration = time.Since(start)
+		out.Calls = append(out.Calls, ucCallTime{Op: op.Name, Duration: out.Duration})
 		phase = "assertion"
 		env.captureCall(op, values, s.Call, &out)
 		if op.Pure {
@@ -1733,6 +1743,7 @@ func ucCheck(t rapid.TB, s *ucContract, inputs map[string]reflect.Value) {
 		if out.Duration > 0 {
 			ucCurrent.durations = append(ucCurrent.durations, out.Duration)
 		}
+		ucCurrent.calls = append(ucCurrent.calls, out.Calls...)
 		if len(out.Diagnostics) > 0 || len(out.Differences) > 0 {
 			ucCurrent.Passed = false
 		}
@@ -1978,6 +1989,7 @@ func ucExecute(s *ucContract, inputs map[string]reflect.Value, explore bool) (ou
 			prepared = ucExecuteSingle(&step, local, explore)
 		}()
 		out.Duration += prepared.Duration
+		out.Calls = append(out.Calls, prepared.Calls...)
 		out.Infrastructure = out.Infrastructure || prepared.Infrastructure
 		out.Diagnostics = append(out.Diagnostics, prepared.Diagnostics...)
 		out.Differences = append(out.Differences, prepared.Differences...)

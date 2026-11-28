@@ -40,6 +40,11 @@ type state struct {
 	head              WorkingTree
 	records           []review.Record
 	reviewDiagnostics []diag.Diagnostic
+	// effects are the effects of the operations (docs/model.md §9 D8), and
+	// meanDurations the mean durations of the design operations that the
+	// current evidence records calls of, in nanoseconds.
+	effects       map[string][]graph.Effect
+	meanDurations map[string]int64
 	// prepare makes, once for the served snapshot, what every page reads:
 	// inputs, the inputs each view kind takes, by identity (view.Inputs);
 	// evaluated, the review evaluation without a base; typeMembers, the
@@ -110,6 +115,8 @@ func indexed(root string, g graph.Graph) *state {
 			st.codeFiles[n.Origin.Path] = n.Id
 		}
 	}
+	st.effects = g.Effects()
+	st.meanDurations = meanDurations(st.nodes)
 	return st
 }
 
@@ -260,12 +267,35 @@ func (st *state) node(id string) Node {
 	return out
 }
 
-// brief writes a node with its digest, title, status and the nodes it refers to only.
+// brief writes a node with its digest, title, status and the nodes it
+// refers to only; an operation also with its effects and mean duration.
 func (st *state) brief(id string) Node {
 	n := st.nodes[id]
 	return Node{Id: n.Id, Kind: NodeKind(n.Kind), Form: n.Form, Layer: Layer(n.Layer), Source: Source(n.Source),
 		Origin: position(n.Origin), Summary: n.Summary, Salient: n.Salient, Digest: st.g.Digest(id),
-		Attrs: attrs(n.Attrs), Title: st.title(id), Status: st.status(id), Refers: st.refers(id)}
+		Attrs: attrs(n.Attrs), Title: st.title(id), Status: st.status(id), Refers: st.refers(id), Operation: st.operation(id)}
+}
+
+// operation writes what an operation node carries: its effects, unless it
+// is a design operation that nothing realizes, and a design operation's mean
+// duration, when the current evidence records calls of it. Other nodes have
+// none.
+func (st *state) operation(id string) *OperationInfo {
+	if st.nodes[id].Kind != graph.NodeKindOp {
+		return nil
+	}
+	out := &OperationInfo{}
+	if kinds, ok := st.effects[id]; ok {
+		effects := make([]Effect, len(kinds))
+		for i, k := range kinds {
+			effects[i] = Effect(k)
+		}
+		out.Effects = &effects
+	}
+	if d, ok := st.meanDurations[id]; ok {
+		out.MeanDuration = &d
+	}
+	return out
 }
 
 // refers are the nodes the refers edges of id point at, by identity, each once.
