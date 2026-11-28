@@ -1,216 +1,130 @@
 import { clsx } from 'clsx';
-import type { View, ViewNode } from '../../api/types';
+import type { View, ViewEdge, ViewNode } from '../../api/types';
 import { ABOUT, MARKS, SECTIONS, VIEW_NAMES } from '../../terms';
 import { HintedHeading, Tag } from '../../ui/content';
 import { ButtonLink, MarkButton } from '../../ui/controls';
 import { InfoHint } from '../../ui/hint';
-import { ICON_SMALL, Icon } from '../../ui/icons';
+import { Icon } from '../../ui/icons';
 import { Canvas, Placed } from '../canvas/Canvas';
-import { CHIP_HEIGHT, chipWidth } from '../canvas/sizes';
-import { Lines, Marker, type Line } from '../canvas/Edges';
-import { route, type Rect } from '../canvas/layout';
-import { monoWidth } from '../canvas/measure';
+import { LineMarks, Lines, type Line } from '../canvas/Edges';
+import { BADGE_SIDES } from '../canvas/markers';
+import { CHIP_HEIGHT } from '../canvas/sizes';
 import { ViaTag } from '../details/sections';
 import { relative, scopeOf, shortPath, statusOf } from '../marks/format';
-import { Code, FlaskConical, KindIcon, Merge, Split } from '../marks/icons';
+import { Code, FileCode, FlaskConical, KindIcon, Merge, Split } from '../marks/icons';
 import { useLinks, useNodeActions } from '../marks/links';
-import { NodeRef } from '../marks/NodeRef';
 import { NodeChip } from '../marks/NodeChip';
+import { NodeRef } from '../marks/NodeRef';
+import { bindingOf, layOutCode, rowLabel, type Box } from './codeLayout';
 import { edgeKey } from './graphParts';
 import styles from './views.module.css';
 
-const CALLER_GAP = 44;
-const CALLEE_GAP = 72;
-const CALLEE_ROW_GAP = 20;
+const COVERAGE_GAP = 24;
 const COVERAGE_HEIGHT = 84;
-const COUNT_ROOM = 72;
-const PADDING = 12;
-const HEAD = 18;
-const ROW = 30;
-const GAP = 6;
-const INDENT = 16;
-const BINDING_GAP = 24;
-const MIN_WIDTH = 240;
 
-/** A row of a file's box: a type or a function, indented under its type, at its place in the box. */
-interface Row {
-  node: ViewNode;
-  depth: number;
-  rect: Rect;
-}
-
-/** The name a row shows: a method without its type's name, which the row above already gives. */
-function rowLabel(node: ViewNode, depth: number): string {
-  return depth > 0 ? node.title.split('.').at(-1) ?? node.title : node.title;
-}
-
-function bindingOf(node: ViewNode): ViewNode | undefined {
-  return node.bindings?.[0]?.node;
-}
-
-/** A file drawn as a box: its head, then its types and functions, each with what it realizes. */
-interface FileBox {
-  file: ViewNode;
-  rows: Row[];
-  details?: Rect;
-  width: number;
-  height: number;
-}
-
-/** A file's box, laid out with a row for its undrawn detail functions when `details` counts any (only the input's box does). */
-function fileBox(file: ViewNode, details: number): FileBox {
-  const items = (file.contents ?? []).flatMap(node => [{ node, depth: 0 }, ...(node.contents ?? []).filter(child => child.kind === 'op').map(child => ({ node: child, depth: 1 }))]);
-  const widths = items.map(({ node, depth }) => {
-    const bound = bindingOf(node);
-    return depth * INDENT + chipWidth(rowLabel(node, depth)) + (bound ? BINDING_GAP + ICON_SMALL + 4 + monoWidth(bound.title, 12) + 16 : 0);
-  });
-  const width = Math.max(MIN_WIDTH, monoWidth(shortPath(file.title), 12) + 60, ...widths.map(item => item + 2 * PADDING));
-  let y = PADDING + HEAD + GAP + 4;
-  const rows = items.map(({ node, depth }) => {
-    const rect = { x: PADDING + depth * INDENT, y, width: width - 2 * PADDING - depth * INDENT, height: ROW };
-    y += ROW + GAP;
-    return { node, depth, rect };
-  });
-  const detailsRect = details > 0 ? { x: PADDING + INDENT, y, width: 80, height: CHIP_HEIGHT - 8 } : undefined;
-  if (detailsRect) {
-    y += detailsRect.height + GAP;
-  }
-  return { file, rows, details: detailsRect, width, height: y + PADDING - GAP };
-}
-
-/** The head of a file's box, which previews the file. */
-function FileHead({ file }: { file: ViewNode }) {
+/** The head of the input's box, which previews the input. */
+function InputHead({ node }: { node: ViewNode }) {
   return (
-    <MarkButton className={styles.fileHead} {...useNodeActions(file.id)}>
-      <KindIcon node={file} size="tiny" />
-      {shortPath(file.title)}
+    <MarkButton className={styles.fileHead} {...useNodeActions(node.id)}>
+      <KindIcon node={node} size="tiny" />
+      {node.form === 'file' ? shortPath(node.title) : node.title}
     </MarkButton>
   );
 }
 
-/**
- * The code view (Figma 11): a file with its types and functions and what they realize, the files whose functions call
- * them or are called, the components called into (folded, with how many calls), and the cases that cover the file.
- */
-export function CodeView({ view }: { view: View }) {
-  const links = useLinks();
-  const folded = new Set(view.folded);
-  const files = view.nodes.filter(node => node.kind === 'container' && node.form === 'file');
-  const cases = view.nodes.filter(node => node.kind === 'case');
-  const containers = view.nodes.filter(node => folded.has(node.id));
-  const boxesByFile = new Map(files.map(file => [file.id, fileBox(file, file.id === view.input.id ? file.details ?? 0 : 0)]));
-  const owner = new Map<string, string>();
-  for (const box of boxesByFile.values()) {
-    box.rows.forEach(row => owner.set(row.node.id, box.file.id));
-  }
-  containers.forEach(container => (container.contents ?? []).forEach(child => owner.set(child.id, container.id)));
-  containers.forEach(container => owner.set(container.id, container.id));
-  const calls = view.edges.filter(edge => edge.kind === 'calls' || edge.kind === 'reaches');
-  // Files whose functions call into the input stand above it; what it calls stands in a column to its right.
-  const callers = new Set(calls.filter(edge => owner.get(edge.to) === view.input.id).flatMap(edge => owner.get(edge.from) ?? []));
-  callers.delete(view.input.id);
-  const rects = new Map<string, Rect>();
-  let y = 0;
-  for (const id of callers) {
-    const box = boxesByFile.get(id);
-    if (box) {
-      rects.set(id, { x: 0, y, width: box.width, height: box.height });
-      y += box.height + CALLER_GAP;
-    }
-  }
-  const input = boxesByFile.get(view.input.id);
-  const inputTop = y;
-  if (input) {
-    rects.set(view.input.id, { x: 0, y, width: input.width, height: input.height });
-  }
-  const column = (input?.width ?? 0) + CALLEE_GAP;
-  let calleeY = Math.max(0, inputTop - CALLER_GAP);
-  const callees = [
-    ...[...boxesByFile.values()].filter(box => box.file.id !== view.input.id && !callers.has(box.file.id)).map(box => ({ id: box.file.id, width: box.width, height: box.height })),
-    ...containers.map(node => ({ id: node.id, width: chipWidth(node.title), height: CHIP_HEIGHT })),
-  ];
-  for (const box of callees) {
-    rects.set(box.id, { x: column, y: calleeY, width: box.width, height: box.height });
-    calleeY += box.height + CALLEE_ROW_GAP;
-  }
-  const coverageHeight = cases.length > 0 ? COVERAGE_HEIGHT : 0;
-  // A folded component's count stands after its chip.
-  const width = Math.max(0, ...[...rects].map(([id, rect]) => rect.x + rect.width + (folded.has(id) ? COUNT_ROOM : 0)));
-  const height = Math.max(calleeY, inputTop + (input?.height ?? 0) + coverageHeight);
-  const placeOf = (id: string): Rect | undefined => {
-    const box = owner.get(id);
-    const at = box === undefined ? undefined : rects.get(box);
-    if (!at) {
-      return undefined;
-    }
-    if (folded.has(box ?? '')) {
-      return { ...at, width: chipWidth(view.nodes.find(node => node.id === box)?.title ?? '') };
-    }
-    const row = boxesByFile.get(box ?? '')?.rows.find(item => item.node.id === id);
-    return row ? { x: at.x + row.rect.x, y: at.y + row.rect.y, width: chipWidth(rowLabel(row.node, row.depth)), height: row.rect.height } : at;
-  };
-  const routed = calls.flatMap(edge => {
-    const from = placeOf(edge.from);
-    const to = placeOf(edge.to);
-    return from && to ? [{ edge, route: route(from, to, 0, 1, to.x >= from.x + from.width ? 'LR' : 'TB') }] : [];
-  });
-  const lines: Line[] = routed.map(({ edge, route: path }) => ({ id: edgeKey(edge), route: path, tone: edge.kind === 'reaches' ? 'reach' : 'plain', select: edge.kind === 'reaches' ? edgeKey(edge) : undefined }));
-  const inputRect = rects.get(view.input.id);
-  const branches = view.nodes.flatMap(node => [node, ...(node.contents ?? []).flatMap(child => [child, ...(child.contents ?? [])])]).flatMap(node => node.evidence?.branches ?? []);
+/** A box of types and functions, each with the design node it realizes. */
+function FileBox({ box, input, details }: { box: Box; input: boolean; details?: number }) {
   return (
-    <Canvas about={ABOUT.codeView} label={VIEW_NAMES.code} width={width} height={height}>
-      <Lines width={width} height={height} lines={lines} selected={links.selected} onSelect={links.select} />
-      {[...boxesByFile.values()].map(box => {
-        const rect = rects.get(box.file.id);
-        const isInput = box.file.id === view.input.id;
-        return rect && (
-          <Placed key={box.file.id} rect={{ ...rect, height: box.height }}>
-            <div className={clsx(styles.fileBox, isInput && 'loop-edge-still')} aria-current={isInput ? 'true' : undefined}>
-              <FileHead file={box.file} />
-              {box.rows.map(row => {
-                const bound = bindingOf(row.node);
-                return (
-                  <Placed key={row.node.id} rect={row.rect} className={styles.fileRow}>
-                    <NodeChip node={row.node} label={rowLabel(row.node, row.depth)} status={statusOf(row.node)} className={styles.rowChip} />
-                    {bound && (
-                      <NodeRef id={bound.id} className={styles.binding}>
-                        <KindIcon node={bound} size="tiny" />
-                        {relative(bound.id, scopeOf(bound.id))}
-                      </NodeRef>
-                    )}
-                  </Placed>
-                );
-              })}
-              {box.details && (
-                <Placed rect={box.details} className={styles.detailsCount}>
-                  <Icon glyph={Code} size="tiny" />+{box.file.details}
-                  <InfoHint subject={SECTIONS.details}>{ABOUT.details}</InfoHint>
-                </Placed>
-              )}
-            </div>
-          </Placed>
-        );
-      })}
-      {containers.map(node => {
-        const rect = rects.get(node.id);
-        const count = view.edges.find(edge => edge.to === node.id)?.count;
-        return rect && (
-          <Placed key={node.id} rect={{ ...rect, width: chipWidth(node.title) }} className={styles.chipSlot}>
-            <NodeChip node={node} state="folded" />
-            {count !== undefined && (
-              <span className={styles.count}>
-                <Tag><Icon glyph={Merge} size="tiny" />{count}</Tag>
-                <InfoHint subject={MARKS.merged}>{ABOUT.merged}</InfoHint>
-              </span>
+    <div className={clsx(styles.fileBox, input && 'loop-edge-still')} aria-current={input ? 'true' : undefined}>
+      {box.file ? <InputHead node={box.file} /> : <span className={styles.fileHead}><Icon glyph={FileCode} size="tiny" />{shortPath(box.path ?? '')}</span>}
+      {box.rows.map(row => {
+        const bound = bindingOf(row.node);
+        return (
+          <Placed key={row.node.id} rect={row.rect} className={styles.fileRow}>
+            <NodeChip node={row.node} label={rowLabel(row.node, row.depth)} status={statusOf(row.node)} className={styles.rowChip} />
+            {bound && (
+              <NodeRef id={bound.id} className={styles.binding}>
+                <KindIcon node={bound} size="tiny" />
+                {relative(bound.id, scopeOf(bound.id))}
+              </NodeRef>
             )}
           </Placed>
         );
       })}
-      {routed.filter(({ edge }) => edge.kind === 'reaches').map(({ edge, route: path }) => (
-        <Marker key={edgeKey(edge)} at={path.mid}><ViaTag count={edge.attrs.via?.length ?? 0} /></Marker>
-      ))}
-      {input && inputRect && cases.length > 0 && (
-        <Placed rect={{ x: inputRect.x, y: inputRect.y + input.height + 24, width: input.width, height: 48 }} className={styles.coverage}>
+      {box.details && (
+        <Placed rect={box.details} className={styles.detailsCount}>
+          <Icon glyph={Code} size="tiny" />+{details}
+          <InfoHint subject={SECTIONS.details}>{ABOUT.details}</InfoHint>
+        </Placed>
+      )}
+    </div>
+  );
+}
+
+/** How many calls of the graph the drawn edges into or out of a folded component stand for, together. */
+function mergedCount(edges: ViewEdge[], component: string): number | undefined {
+  const counts = edges.filter(edge => (edge.from === component || edge.to === component) && edge.count !== undefined).map(edge => edge.count ?? 0);
+  return counts.length > 0 ? counts.reduce((sum, count) => sum + count, 0) : undefined;
+}
+
+/** A folded component as a chip, centred in the height its lines need, with how many calls its edges stand for. */
+function FoldedChip({ node, count }: { node: ViewNode; count?: number }) {
+  return (
+    <>
+      <NodeChip node={node} state="folded" />
+      {count !== undefined && (
+        <span className={styles.count}>
+          <Tag><Icon glyph={Merge} size="tiny" />{count}</Tag>
+          <InfoHint subject={MARKS.merged}>{ABOUT.merged}</InfoHint>
+        </span>
+      )}
+    </>
+  );
+}
+
+/**
+ * The code view (Figma 11): the input file (or type) with its types and functions and what they realize; the files
+ * whose functions call into it on its left and those it calls on its right, the components called into folded, with
+ * how many calls; and the cases that cover the input (codeLayout.ts).
+ */
+export function CodeView({ view }: { view: View }) {
+  const links = useLinks();
+  const layout = layOutCode(view);
+  const { input } = layout;
+  const lines: Line[] = layout.calls.flatMap(edge => {
+    const path = layout.routes.get(edgeKey(edge));
+    return path ? [{ id: edgeKey(edge), route: path, tone: edge.kind === 'reaches' ? 'reach' as const : 'plain' as const, select: edge.kind === 'reaches' ? edgeKey(edge) : undefined }] : [];
+  });
+  const inputRect = layout.place.get(input) ?? { x: 0, y: 0, width: input.width, height: input.height };
+  const cases = view.nodes.filter(node => node.kind === 'case');
+  const branches = [input.file, ...input.rows.map(row => row.node)].flatMap(node => node?.evidence?.branches ?? []);
+  const height = Math.max(layout.height, inputRect.y + input.height + (cases.length > 0 ? COVERAGE_GAP + COVERAGE_HEIGHT : 0));
+  return (
+    <Canvas about={ABOUT.codeView} label={VIEW_NAMES.code} width={layout.width} height={height}>
+      <Lines width={layout.width} height={height} lines={lines} selected={links.selected} onSelect={links.select} />
+      {layout.boxes.map(box => {
+        const rect = layout.place.get(box);
+        if (!rect) {
+          return null;
+        }
+        if (box.folded) {
+          return (
+            <Placed key={box.key} rect={{ ...rect, y: rect.y + (rect.height - CHIP_HEIGHT) / 2, height: CHIP_HEIGHT }} className={styles.chipSlot}>
+              <FoldedChip node={box.folded} count={mergedCount(layout.calls, box.folded.id)} />
+            </Placed>
+          );
+        }
+        return <Placed key={box.key} rect={rect}><FileBox box={box} input={box === input} details={box === input ? input.file?.details : undefined} /></Placed>;
+      })}
+      <LineMarks
+        marks={layout.calls.filter(edge => edge.kind === 'reaches').flatMap(edge => {
+          const path = layout.routes.get(edgeKey(edge));
+          return path ? [{ id: edgeKey(edge), route: path, sides: BADGE_SIDES, children: <ViaTag count={edge.attrs.via?.length ?? 0} /> }] : [];
+        })}
+        obstacles={layout.obstacles}
+      />
+      {cases.length > 0 && (
+        <Placed rect={{ x: inputRect.x, y: inputRect.y + input.height + COVERAGE_GAP, width: input.width, height: 48 }} className={styles.coverage}>
           <HintedHeading rank="h3" className="t-micro c-muted" title={SECTIONS.coveredBy} about={ABOUT.coveredBy} />
           <span className={styles.coverageChips}>
             {branches.map(branch => <Tag key={branch.label}><Icon glyph={Split} size="tiny" />{branch.label} {branch.cases}</Tag>)}

@@ -43,9 +43,9 @@
 /* A focused line shows the focus ring along it, as an outline does not follow a path: a solid band of the ring's width on each side. */
 .hit:focus-visible { outline: none; stroke: var(--accent-brand); stroke-width: calc(2 * var(--size-border-thick) + var(--size-hairline)); }
 
-/* A marker never takes a click meant for the box under it; only the controls it holds, such as a hint, take clicks. */
-.marker { position: absolute; display: flex; align-items: center; gap: var(--space-1); transform: translate(-50%, -50%); white-space: nowrap; pointer-events: none; }
+/*
+ * A line's label or badge, placed off the boxes and the other marks (markers.ts). It never takes a click meant for what
+ * lies under it; only the controls it holds, such as a reference or a hint, take clicks.
+ */
+.marker { position: absolute; display: flex; align-items: center; gap: var(--space-1); white-space: nowrap; pointer-events: none; }
 .marker :is(a, button) { pointer-events: auto; }
-.marker[data-side="right"] { transform: translate(var(--space-2), -50%); }
-.marker[data-side="left"] { transform: translate(calc(-100% - var(--space-2)), -50%); }
-.marker[data-side="above"] { transform: translate(-50%, calc(-100% - var(--space-1))); }

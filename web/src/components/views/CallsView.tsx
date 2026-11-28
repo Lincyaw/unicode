@@ -5,9 +5,10 @@ import { ButtonLink } from '../../ui/controls';
 import { InfoHint } from '../../ui/hint';
 import { Icon } from '../../ui/icons';
 import { Canvas, Placed } from '../canvas/Canvas';
-import { CHIP_HEIGHT, chipWidth } from '../canvas/sizes';
-import { Lines, Marker, type Line } from '../canvas/Edges';
-import { arrange, route, type Link as LayoutLink, type Rect, type Route } from '../canvas/layout';
+import { CHIP_HEIGHT, chipWidth, countBox } from '../canvas/sizes';
+import { LineMarks, Lines, type Line } from '../canvas/Edges';
+import { BADGE_SIDES } from '../canvas/markers';
+import { arrange, route, routeThrough, type Link as LayoutLink, type Rect, type Route } from '../canvas/layout';
 import { statusOf } from '../marks/format';
 import { ViaTag } from '../details/sections';
 import { ChevronUp, Merge } from '../marks/icons';
@@ -45,15 +46,15 @@ function detailRoute(from: Rect, to: Rect, row: number): Route {
   if (from.y < row && to.y >= row) {
     const x1 = from.x + Math.min(from.width / 3, 48);
     const x2 = to.x + to.width / 2;
-    return { d: `M ${x1} ${from.y + from.height} V ${bus} H ${x2} V ${to.y}`, mid: { x: x2, y: bus } };
+    return routeThrough([{ x: x1, y: from.y + from.height }, { x: x1, y: bus }, { x: x2, y: bus }, { x: x2, y: to.y }], { x: x2, y: bus });
   }
   if (from.y >= row && to.y >= row) {
     const [x1, x2] = to.x >= from.x ? [from.x + from.width, to.x] : [from.x, to.x + to.width];
     const y = from.y + from.height / 2;
-    return { d: `M ${x1} ${y} H ${x2}`, mid: { x: (x1 + x2) / 2, y } };
+    return routeThrough([{ x: x1, y }, { x: x2, y }]);
   }
   const x = from.x + from.width / 2;
-  return { d: `M ${x} ${from.y} V ${to.y + to.height}`, mid: { x, y: (from.y + to.y + to.height) / 2 } };
+  return routeThrough([{ x, y: from.y }, { x, y: to.y + to.height }]);
 }
 
 /**
@@ -116,10 +117,16 @@ export function CallsView({ view }: { view: View }) {
           </Placed>
         );
       })}
-      {view.edges.filter(edge => edge.kind === 'reaches').map(edge => {
-        const path = routes.get(edgeKey(edge));
-        return path && <Marker key={edgeKey(edge)} at={path.mid}><ViaTag count={edge.attrs.via?.length ?? 0} /></Marker>;
-      })}
+      <LineMarks
+        marks={view.edges.filter(edge => edge.kind === 'reaches').flatMap(edge => {
+          const path = routes.get(edgeKey(edge));
+          return path ? [{ id: edgeKey(edge), route: path, sides: BADGE_SIDES, children: <ViaTag count={edge.attrs.via?.length ?? 0} /> }] : [];
+        })}
+        obstacles={[...rects.values(), ...view.nodes.filter(node => folded.has(node.id)).flatMap(node => {
+          const rect = rects.get(node.id);
+          return rect ? [countBox(rect)] : [];
+        })]}
+      />
       {collapse && (
         <Placed rect={{ x: detailStart, y: lowest + CHIP_HEIGHT, width: 120, height: CHIP_HEIGHT }} className={styles.chipSlot}>
           <ButtonLink to={collapse} variant="line" size="small"><Icon glyph={ChevronUp} size="tiny" />{SECTIONS.collapse}</ButtonLink>

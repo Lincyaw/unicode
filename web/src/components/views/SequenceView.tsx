@@ -5,6 +5,7 @@ import { MarkButton } from '../../ui/controls';
 import { ICON_SMALL } from '../../ui/icons';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { Lines, type Line } from '../canvas/Edges';
+import { routeThrough } from '../canvas/layout';
 import { monoWidth } from '../canvas/measure';
 import { chipWidth } from '../canvas/sizes';
 import { messageOf, relative, scopeOf } from '../marks/format';
@@ -158,13 +159,13 @@ export function SequenceView({ view }: { view: View }) {
   const { lanes, marks, activations, height, width } = layout(tree);
   const scope = scopeOf(view.input.id);
   const lines: Line[] = [
-    ...lanes.map((lane): Line => ({ id: `lane ${lane.node.id}`, route: { d: `M ${lane.x} ${HEAD_HEIGHT} V ${height}`, mid: { x: lane.x, y: 0 } }, tone: 'faint', plain: true })),
+    ...lanes.map((lane): Line => ({ id: `lane ${lane.node.id}`, route: routeThrough([{ x: lane.x, y: HEAD_HEIGHT }, { x: lane.x, y: height }]), tone: 'faint', plain: true })),
     ...marks.flatMap((mark): Line[] => {
       switch (mark.kind) {
         case 'message':
-          return [{ id: mark.step.id, route: { d: `M ${mark.from} ${mark.y} H ${mark.to}`, mid: { x: (mark.from + mark.to) / 2, y: mark.y } }, tone: links.selected === mark.step.id ? 'chosen' : 'plain' }];
+          return [{ id: mark.step.id, route: routeThrough([{ x: mark.from, y: mark.y }, { x: mark.to, y: mark.y }]), tone: links.selected === mark.step.id ? 'chosen' : 'plain' }];
         case 'emit':
-          return [{ id: mark.step.id, route: { d: `M ${mark.from} ${mark.y} H ${mark.pill}`, mid: { x: mark.pill, y: mark.y } }, tone: 'event' }];
+          return [{ id: mark.step.id, route: routeThrough([{ x: mark.from, y: mark.y }, { x: mark.pill, y: mark.y }]), tone: 'event' }];
         case 'fragment':
           return [];
       }

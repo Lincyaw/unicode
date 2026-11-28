@@ -1,5 +1,5 @@
-import { calleesOf, callersOf, childrenOf, detailCalleesOf, fileOf, findEdge, incoming, outgoing, ownerOf, raw, realizersOf } from './graph';
-import type { RawEdge, ViewEdge, ViewNode } from './schemaTypes';
+import { calleesOf, callersOf, childrenOf, detailCalleesOf, findEdge, incoming, outgoing, ownerOf, raw, realizersOf } from './graph';
+import type { RawEdge, ViewNode } from './schemaTypes';
 import { Aggregates, focusOf, NotApplicable, viewEdge, viewNode, type Drawing } from './viewKit';
 
 /* The views of the code: calls between salient functions, and a file with what calls into and out of it. */
@@ -96,78 +96,65 @@ export function calls(input: string, expand: string[]): Drawing {
   return { nodes, edges: [...shown.map(each => viewEdge(each)), ...aggregates.edges()], folded, hidden: hiddenContainers.size };
 }
 
-/** The functions of a file or a type: its free functions and its types' methods, salient ones only. */
-function functionsIn(id: string): string[] {
-  return childrenOf(id).flatMap(child => (raw(child).kind === 'op' ? [child] : functionsIn(child))).filter(fn => raw(fn).salient);
+/** What a file or a type contains, at any depth. */
+function within(id: string): string[] {
+  return childrenOf(id).flatMap(child => [child, ...within(child)]);
 }
 
-/** How many detail functions a file or a type holds, nested ones included. */
+/** How many detail functions a file or a type holds, nested ones included, that the view does not draw. */
 function detailCount(id: string, drawn: Set<string>): number {
   return childrenOf(id).reduce((count, child) => count + (raw(child).kind === 'op' && !raw(child).salient && !drawn.has(child) ? 1 : 0) + detailCount(child, drawn), 0);
 }
 
 /**
- * A file (or a code type) with its salient types and functions, the salient functions that call into it and that it
- * calls or reaches, each in its own file, or merged into a folded container, and the cases that cover it.
+ * A file (or a code type) as unicode serve gives it (internal/view's code selection): the input and the salient nodes
+ * it contains, each drawn on its own with the contains edges between them; the salient functions that call into it and
+ * that it calls or reaches, each drawn on its own, or merged into a folded container; and the cases that cover it. The
+ * input and its code types count their undrawn detail functions; a folded container lists its types.
  */
 export function code(input: string, expand: string[]): Drawing {
   const node = raw(input);
   if (node.layer !== 'code' || !(node.form === 'file' || node.kind === 'type')) {
     throw new NotApplicable(`the code view takes a code file or a code type, and ${input} is a ${node.layer} ${node.kind}`);
   }
-  const file = fileOf(input) ?? input;
   const home = ownerOf(input);
   const expanded = new Set(expand);
-  const own = functionsIn(input);
-  const details = new Set(expand.filter(item => own.includes(item)).flatMap(detailCalleesOf));
-  const edges: RawEdge[] = [];
+  const inside = within(input).filter(id => raw(id).salient);
+  const drawn = new Set([input, ...inside]);
+  const edges: RawEdge[] = inside.flatMap(id => incoming(id, 'contains').filter(each => drawn.has(each.from)));
   const aggregates = new Aggregates();
-  const others = new Map<string, string[]>();
-  const foldedContents = new Map<string, string[]>();
-  let hidden = 0;
-  const place = (fn: string, each: RawEdge, from: string, to: string) => {
-    if (own.includes(fn) || details.has(fn)) {
-      edges.push(each);
-      return;
-    }
-    const placement = placementOf(fn, home, expanded);
+  const foldedContainers = new Set<string>();
+  const hiddenContainers = new Set<string>();
+  const place = (fn: string, each: RawEdge) => {
+    const placement = drawn.has(fn) ? 'drawn' : placementOf(fn, home, expanded);
     const owner = ownerOf(fn) ?? '';
     if (placement === 'drawn') {
-      const other = fileOf(fn) ?? fn;
-      others.set(other, [...new Set([...(others.get(other) ?? []), fn])]);
-      edges.push(each);
+      drawn.add(fn);
+      if (!edges.includes(each)) {
+        edges.push(each);
+      }
     } else if (placement === 'folded') {
-      aggregates.add(each, from === fn ? owner : from, to === fn ? owner : to);
-      foldedContents.set(owner, [...new Set([...(foldedContents.get(owner) ?? []), fn])]);
+      aggregates.add(each, each.from === fn ? owner : each.from, each.to === fn ? owner : each.to);
+      foldedContainers.add(owner);
     } else {
-      hidden += 1;
+      hiddenContainers.add(owner);
     }
   };
-  for (const fn of own) {
-    for (const each of calleesOf(fn)) {
-      place(each.to, each, each.from, each.to);
-    }
-    for (const each of callersOf(fn).filter(edge => raw(edge.from).salient)) {
-      place(each.from, each, each.from, each.to);
-    }
-    for (const detail of expand.includes(fn) ? detailCalleesOf(fn) : []) {
-      edges.push(...outgoing(fn, 'calls').filter(each => each.to === detail));
-    }
+  for (const fn of inside.filter(id => raw(id).kind === 'op')) {
+    calleesOf(fn).forEach(each => place(each.to, each));
+    callersOf(fn).filter(each => raw(each.from).salient).forEach(each => place(each.from, each));
   }
-  const covering = [...own, ...details].flatMap(fn => incoming(fn, 'covers'));
-  const cases = [...new Set(covering.map(each => each.from))];
-  const drawnDetails = details;
-  // The input's card: the file, or the type alone, with its types and functions nested as the source nests them.
-  const card = (id: string): ViewNode => viewNode(id, {
-    contents: childrenOf(id).filter(child => raw(child).salient || drawnDetails.has(child)).map(child => (raw(child).kind === 'type' ? card(child) : viewNode(child))),
-    ...(raw(id).form === 'file' || raw(id).kind === 'type' ? { details: detailCount(id, drawnDetails) } : {}),
-  });
+  const covering = inside.flatMap(id => incoming(id, 'covers'));
+  const typesIn = (container: string) => within(container).filter(id => raw(id).kind === 'type');
   const nodes: ViewNode[] = [
-    node.kind === 'type' ? viewNode(file, { contents: [card(input)], details: detailCount(input, drawnDetails) }) : card(input),
-    ...[...others].map(([other, fns]) => viewNode(other, { contents: fns.map(fn => viewNode(fn)), details: detailCount(other, new Set()) })),
-    ...[...foldedContents].map(([container, fns]) => viewNode(container, { contents: fns.map(fn => viewNode(fn)) })),
-    ...cases.map(id => viewNode(id)),
-  ];
-  const viewEdges: ViewEdge[] = [...edges.map(each => viewEdge(each)), ...aggregates.edges(), ...covering.map(each => viewEdge(each))];
-  return { nodes, edges: viewEdges, folded: [...foldedContents.keys()], hidden };
+    ...[...drawn].map(id => (id === input || (raw(id).kind === 'type' && inside.includes(id)) ? viewNode(id, { details: detailCount(id, drawn) }) : viewNode(id))),
+    ...[...foldedContainers].map(container => viewNode(container, { contents: typesIn(container).map(type => viewNode(type)) })),
+    ...[...new Set(covering.map(each => each.from))].map(id => viewNode(id)),
+  ].sort((a, b) => (a.id < b.id ? -1 : 1));
+  return {
+    nodes,
+    edges: [...edges.map(each => viewEdge(each)), ...aggregates.edges(), ...covering.map(each => viewEdge(each))],
+    folded: [...foldedContainers].sort(),
+    hidden: hiddenContainers.size,
+  };
 }

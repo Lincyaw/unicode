@@ -5,7 +5,8 @@ import { ABOUT, NAME_SEPARATOR, VIEW_NAMES } from '../../terms';
 import { MarkButton } from '../../ui/controls';
 import { InfoHint } from '../../ui/hint';
 import { Canvas, Placed } from '../canvas/Canvas';
-import { Lines, Marker, type Line } from '../canvas/Edges';
+import { LineMarks, Lines, type Line, type LineMark } from '../canvas/Edges';
+import { BADGE_SIDES, LABEL_SIDES } from '../canvas/markers';
 import { arrange, routeAll, shifted, type Link, type Rect } from '../canvas/layout';
 import { linesOf, monoWidth, textWidth } from '../canvas/measure';
 import { KindIcon } from '../marks/icons';
@@ -155,6 +156,24 @@ export function C4View({ view, toolbar }: { view: View; toolbar: ReactNode }) {
   });
   const width = Math.max(...[...rects.values()].map(rect => rect.x + rect.width));
   const height = Math.max(...[...rects.values()].map(rect => rect.y + rect.height));
+  // The badges of undeclared dependencies sit on their lines first; each label then keeps to the side its line leans
+  // toward, so the labels of lines leaving one box spread apart, and moves along its line or across it to stay clear.
+  const routed = drawnEdges.flatMap(edge => {
+    const path = routes.get(edgeKey(edge));
+    return path ? [{ edge, path }] : [];
+  });
+  const badges: LineMark[] = routed.filter(({ edge }) => edge.status === 'contradicted')
+    .map(({ edge, path }) => ({ id: edgeKey(edge), route: path, sides: BADGE_SIDES, children: <UndeclaredTag edge={edge} /> }));
+  const labels: LineMark[] = routed.filter(({ edge }) => edge.status !== 'contradicted' && (edge.labels ?? []).length > 0).map(({ edge, path }) => {
+    const from = rects.get(edge.from);
+    const to = rects.get(edge.to);
+    const leansLeft = from !== undefined && to !== undefined && to.x + to.width / 2 < from.x + from.width / 2 - 1;
+    return { id: edgeKey(edge), route: path, sides: leansLeft ? ['left', 'right', 'above', 'below'] : LABEL_SIDES, children: <EdgeLabels edge={edge} /> };
+  });
+  const boxes = [
+    ...view.nodes.filter(node => node !== boundary).flatMap(node => rects.get(node.id) ?? []),
+    ...(boundaryRect ? [{ ...boundaryRect, height: BOUNDARY_HEAD }] : []),
+  ];
   return (
     <Canvas about={ABOUT.c4} label={VIEW_NAMES.c4} width={width} height={height} toolbar={toolbar} footer={view.hidden > 0 ? <HiddenCount hidden={view.hidden} /> : undefined}>
       {boundary && boundaryRect && (
@@ -167,22 +186,7 @@ export function C4View({ view, toolbar }: { view: View; toolbar: ReactNode }) {
         const rect = rects.get(node.id);
         return rect && <Placed key={node.id} rect={rect}><C4Card node={node} /></Placed>;
       })}
-      {drawnEdges.map(edge => {
-        const path = routes.get(edgeKey(edge));
-        if (!path) {
-          return null;
-        }
-        const from = rects.get(edge.from);
-        const to = rects.get(edge.to);
-        const vertical = from !== undefined && to !== undefined && from.x < to.x + to.width && to.x < from.x + from.width;
-        // A label keeps to the side its line leans toward, so the labels of lines leaving one box spread apart.
-        const leans = from !== undefined && to !== undefined && to.x + to.width / 2 < from.x + from.width / 2 - 1 ? 'left' : 'right';
-        return (
-          <Marker key={edgeKey(edge)} at={path.mid} side={edge.status === 'contradicted' ? 'center' : vertical ? leans : 'above'}>
-            {edge.status === 'contradicted' ? <UndeclaredTag edge={edge} /> : <EdgeLabels edge={edge} />}
-          </Marker>
-        );
-      })}
+      <LineMarks marks={[...badges, ...labels]} obstacles={boxes} />
     </Canvas>
   );
 }

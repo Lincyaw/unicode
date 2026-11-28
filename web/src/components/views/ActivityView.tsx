@@ -4,7 +4,7 @@ import type { View, ViewNode } from '../../api/types';
 import { ABOUT, formWord, VIEW_NAMES } from '../../terms';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { Lines, type Line, type LineTone } from '../canvas/Edges';
-import { route, type Rect, type Route } from '../canvas/layout';
+import { route, routeThrough, type Rect, type Route } from '../canvas/layout';
 import { monoWidth } from '../canvas/measure';
 import { messageOf, relative, scopeOf } from '../marks/format';
 import { KindIcon } from '../marks/icons';
@@ -121,7 +121,7 @@ function intoSide(from: Rect, to: Rect): Route {
   const y1 = from.y + from.height / 2;
   const turn = x1 + EVENT_TURN;
   const y2 = to.y + to.height / 2;
-  return { d: `M ${x1} ${y1} H ${turn} V ${y2} H ${to.x}`, mid: { x: turn, y: (y1 + y2) / 2 } };
+  return routeThrough([{ x: x1, y: y1 }, { x: turn, y: y1 }, { x: turn, y: y2 }, { x: to.x, y: y2 }], { x: turn, y: (y1 + y2) / 2 });
 }
 
 /** The step and the event that trigger an async fragment: the event its operation subscribes to, and the step that emits it. */

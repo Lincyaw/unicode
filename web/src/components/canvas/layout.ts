@@ -197,10 +197,44 @@ export function shiftedBends(bends: ReadonlyMap<string, { x: number; y: number }
   return new Map([...bends].map(([id, points]) => [id, points.map(point => ({ x: point.x + dx, y: point.y + dy }))]));
 }
 
-/** A line between two boxes and the point where its label or badge sits. */
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/** A line between two boxes: the corners it runs through, its path, and the point where its label or badge sits. */
 export interface Route {
+  points: Point[];
   d: string;
-  mid: { x: number; y: number };
+  mid: Point;
+}
+
+/** The point half-way along a line through the points. */
+function halfway(points: Point[]): Point {
+  const lengths = points.slice(1).map((point, index) => Math.hypot(point.x - (points[index]?.x ?? point.x), point.y - (points[index]?.y ?? point.y)));
+  let rest = lengths.reduce((sum, length) => sum + length, 0) / 2;
+  for (const [index, length] of lengths.entries()) {
+    const start = points[index];
+    const end = points[index + 1];
+    if (start && end && rest <= length) {
+      const t = length === 0 ? 0 : rest / length;
+      return { x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t };
+    }
+    rest -= length;
+  }
+  return points[0] ?? { x: 0, y: 0 };
+}
+
+/** The line through the points, each joined to the next straight across or down; its label sits at `mid`, by default half-way along. */
+export function routeThrough(points: Point[], mid: Point = halfway(points)): Route {
+  const [first, ...rest] = points;
+  let d = first ? `M ${first.x} ${first.y}` : '';
+  let at = first;
+  for (const point of rest) {
+    d += at && point.x === at.x ? ` V ${point.y}` : at && point.y === at.y ? ` H ${point.x}` : ` L ${point.x} ${point.y}`;
+    at = point;
+  }
+  return { points, d, mid };
 }
 
 /** The least overlap, across the gap, for a line to run straight between two boxes. */
@@ -229,7 +263,9 @@ export function route(from: Rect, to: Rect, slot = 0, slots = 1, direction: Dire
     const y1 = along([from.y, from.y + from.height], slot, slots);
     const y2 = to.y + to.height / 2;
     const xMid = x1 + Math.min((x2 - x1) / 2, 80);
-    return y1 === y2 ? { d: `M ${x1} ${y1} H ${x2}`, mid: { x: (x1 + x2) / 2, y: y1 } } : { d: `M ${x1} ${y1} H ${xMid} V ${y2} H ${x2}`, mid: { x: (xMid + x2) / 2, y: y2 } };
+    return y1 === y2
+      ? routeThrough([{ x: x1, y: y1 }, { x: x2, y: y1 }])
+      : routeThrough([{ x: x1, y: y1 }, { x: xMid, y: y1 }, { x: xMid, y: y2 }, { x: x2, y: y2 }], { x: (xMid + x2) / 2, y: y2 });
   }
   const below = to.y >= from.y + from.height;
   const above = to.y + to.height <= from.y;
@@ -241,60 +277,57 @@ export function route(from: Rect, to: Rect, slot = 0, slots = 1, direction: Dire
     const span = overlap(from.x, from.x + from.width, to.x, to.x + to.width);
     if (span) {
       const x = along(span, slot, slots);
-      return { d: `M ${x} ${y1} V ${y2}`, mid: { x, y: (y1 + y2) / 2 } };
+      return routeThrough([{ x, y: y1 }, { x, y: y2 }]);
     }
     if (right || left) {
       // Leave from the side facing the other box and come down or up into it: one bend.
       const x1 = right ? from.x + from.width : from.x;
       const y = along([from.y, from.y + from.height], slot, slots);
       const x2 = to.x + to.width / 2;
-      return { d: `M ${x1} ${y} H ${x2} V ${y2}`, mid: { x: (x1 + x2) / 2, y } };
+      return routeThrough([{ x: x1, y }, { x: x2, y }, { x: x2, y: y2 }], { x: (x1 + x2) / 2, y });
     }
     const x1 = from.x + from.width / 2;
     const x2 = to.x + to.width / 2;
     const yMid = (y1 + y2) / 2;
-    return { d: `M ${x1} ${y1} V ${yMid} H ${x2} V ${y2}`, mid: { x: (x1 + x2) / 2, y: yMid } };
+    return routeThrough([{ x: x1, y: y1 }, { x: x1, y: yMid }, { x: x2, y: yMid }, { x: x2, y: y2 }], { x: (x1 + x2) / 2, y: yMid });
   }
   const x1 = right ? from.x + from.width : from.x;
   const x2 = right ? to.x : to.x + to.width;
   const span = overlap(from.y, from.y + from.height, to.y, to.y + to.height);
   if (span) {
     const y = along(span, slot, slots);
-    return { d: `M ${x1} ${y} H ${x2}`, mid: { x: (x1 + x2) / 2, y } };
+    return routeThrough([{ x: x1, y }, { x: x2, y }]);
   }
   const y1 = from.y + from.height / 2;
   const y2 = to.y + to.height / 2;
   const xMid = (x1 + x2) / 2;
-  return { d: `M ${x1} ${y1} H ${xMid} V ${y2} H ${x2}`, mid: { x: xMid, y: (y1 + y2) / 2 } };
+  return routeThrough([{ x: x1, y: y1 }, { x: xMid, y: y1 }, { x: xMid, y: y2 }, { x: x2, y: y2 }], { x: xMid, y: (y1 + y2) / 2 });
 }
 
 /**
  * A line down (or up) through the points dagre left between the ranks it crosses, drawn orthogonally: straight down
  * where the points line up, bending half-way between two points where they do not.
  */
-function threaded(from: Rect, to: Rect, through: { x: number; y: number }[]): Route {
+function threaded(from: Rect, to: Rect, through: Point[]): Route {
   const down = to.y >= from.y;
   const clamp = (x: number, rect: Rect) => Math.min(rect.x + rect.width - 8, Math.max(rect.x + 8, x));
   const first = through[0] ?? { x: from.x + from.width / 2, y: from.y };
   const last = through.at(-1) ?? first;
-  const points = [
+  const stops = [
     { x: clamp(first.x, from), y: down ? from.y + from.height : from.y },
     ...through,
     { x: clamp(last.x, to), y: down ? to.y : to.y + to.height },
   ];
-  let d = `M ${points[0]?.x ?? 0} ${points[0]?.y ?? 0}`;
-  for (let index = 1; index < points.length; index++) {
-    const previous = points[index - 1] ?? { x: 0, y: 0 };
-    const point = points[index] ?? previous;
-    if (Math.abs(point.x - previous.x) < 1) {
-      d += ` V ${point.y}`;
-    } else {
-      const middle = (previous.y + point.y) / 2;
-      d += ` V ${middle} H ${point.x} V ${point.y}`;
+  const points: Point[] = stops.slice(0, 1);
+  for (const [index, stop] of stops.slice(1).entries()) {
+    const previous = stops[index] ?? stop;
+    if (Math.abs(stop.x - previous.x) >= 1) {
+      const middle = (previous.y + stop.y) / 2;
+      points.push({ x: previous.x, y: middle }, { x: stop.x, y: middle });
     }
+    points.push(Math.abs(stop.x - previous.x) < 1 ? { x: previous.x, y: stop.y } : stop);
   }
-  const middle = points[Math.floor(points.length / 2)] ?? first;
-  return { d, mid: middle };
+  return routeThrough(points, stops[Math.floor(stops.length / 2)] ?? first);
 }
 
 /** Routes every link between placed boxes, giving parallel links between the same pair their own slots. */

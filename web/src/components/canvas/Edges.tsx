@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
-import type { Route } from './layout';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import type { Rect, Route } from './layout';
+import { placeSpots, type Side } from './markers';
 import styles from './canvas.module.css';
 
 /**
@@ -64,7 +65,48 @@ export function Lines({ width, height, lines, selected, onSelect }: {
   );
 }
 
-/** A label or badge placed at a point of the drawing: centred on it, beside it to the right or left, or above it. */
-export function Marker({ at, side = 'center', children }: { at: { x: number; y: number }; side?: 'center' | 'right' | 'left' | 'above'; children: ReactNode }) {
-  return <div className={styles.marker} data-side={side} style={{ left: at.x, top: at.y }}>{children}</div>;
+/** A label or badge of a line: what it shows, and the sides of the line it accepts, the preferred first. */
+export interface LineMark {
+  id: string;
+  route: Route;
+  sides: readonly Side[];
+  children: ReactNode;
+}
+
+/**
+ * The labels and badges of a drawing's lines, each placed where it covers none of the boxes (`obstacles`) and no other
+ * mark (markers.ts). They are measured as drawn, then placed before the drawing shows.
+ */
+export function LineMarks({ marks, obstacles }: { marks: LineMark[]; obstacles: Rect[] }) {
+  const elements = useRef(new Map<string, HTMLDivElement>());
+  const [sizes, setSizes] = useState(new Map<string, { width: number; height: number }>());
+  useLayoutEffect(() => {
+    const measured = new Map([...elements.current].map(([id, element]) => [id, { width: element.offsetWidth, height: element.offsetHeight }]));
+    setSizes(known => {
+      const same = measured.size === known.size && [...measured].every(([id, size]) => known.get(id)?.width === size.width && known.get(id)?.height === size.height);
+      return same ? known : measured;
+    });
+  }, [marks]);
+  const places = placeSpots(marks.flatMap(mark => {
+    const size = sizes.get(mark.id);
+    return size ? [{ id: mark.id, route: mark.route, sides: mark.sides, ...size }] : [];
+  }), obstacles);
+  return marks.map(mark => {
+    const place = places.get(mark.id);
+    return (
+      <div
+        key={mark.id}
+        ref={element => {
+          if (element) {
+            elements.current.set(mark.id, element);
+          } else {
+            elements.current.delete(mark.id);
+          }
+        }}
+        className={styles.marker} style={place ? { left: place.x, top: place.y } : { left: mark.route.mid.x, top: mark.route.mid.y, visibility: 'hidden' }}
+      >
+        {mark.children}
+      </div>
+    );
+  });
 }

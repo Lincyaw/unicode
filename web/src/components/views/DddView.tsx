@@ -4,7 +4,8 @@ import { Tag } from '../../ui/content';
 import { Canvas, Placed } from '../canvas/Canvas';
 import { ContainerBox, FoldedCard } from '../canvas/cards';
 import { CARD_WIDTH, CHIP_HEIGHT, chipWidth, CONTAINER_HEAD, CONTAINER_PADDING, foldedHeight } from '../canvas/sizes';
-import { Lines, Marker, type Line } from '../canvas/Edges';
+import { LineMarks, Lines, type Line } from '../canvas/Edges';
+import { BADGE_SIDES } from '../canvas/markers';
 import { arrange, routeAll, shifted, shiftedBends, TIGHT, type Link, type Rect } from '../canvas/layout';
 import { textWidth } from '../canvas/measure';
 import { useLinks } from '../marks/links';
@@ -93,10 +94,13 @@ export function DddView({ view: answer }: { view: View }) {
           </Placed>
         );
       })}
-      {view.edges.filter(edge => edge.status === 'contradicted').map(edge => {
-        const route = routes.get(edgeKey(edge));
-        return route && <Marker key={edgeKey(edge)} at={route.mid}><UndeclaredTag edge={edge} /></Marker>;
-      })}
+      <LineMarks
+        marks={view.edges.filter(edge => edge.status === 'contradicted').flatMap(edge => {
+          const route = routes.get(edgeKey(edge));
+          return route ? [{ id: edgeKey(edge), route, sides: BADGE_SIDES, children: <UndeclaredTag edge={edge} /> }] : [];
+        })}
+        obstacles={[...rects.values()]}
+      />
     </Canvas>
   );
 }
