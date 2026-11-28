@@ -72,8 +72,9 @@ function tagWidth(digits: number): number {
 }
 
 /**
- * The mark a call carries on its line (CallMark), if any, at about the size the page draws it: how many detail
- * functions a reaches edge passes, and how many calls a merged edge stands for.
+ * The size of the mark a call carries on its line, if any: how many detail functions a reaches edge passes, and how many
+ * calls a merged edge stands for, each a tag, side by side. CallMark draws the mark at this size, and the layouts reserve
+ * this room for it.
  */
 export function markOf(edge: ViewEdge): { width: number; height: number } | undefined {
   const tags = [

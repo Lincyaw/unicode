@@ -459,7 +459,6 @@ export const CONTROLS = {
 export const MARKS = {
   status: '状态',
   hidden: '未画出的组件',
-  merged: '合并的边',
 } as const;
 
 /** The explanations behind the ⓘ marks; the pages show data only (CLAUDE.md principle 10). */
@@ -468,7 +467,6 @@ export const ABOUT = {
   statusLegend: '圆点表示声明项与代码比较的状态：绿色为已验证，黄色为缺失，空心为骨架，红色为不一致。',
   hidden: '未画出的工具与基础服务组件的个数，以及指向它们的依赖。',
   undeclared: '实际存在、但设计中没有声明的依赖；计数是其中的导入与调用。',
-  merged: '指向折叠组件的边合并为一条，计数是它代表的边数。',
   reachesCount: '经过的细节函数的个数。',
   card: (node: { kind: NodeKind; form: string; layer: string }, place: string) => [kindWord(node.kind, node.form, node.layer), formWord(node), place].filter(part => part !== undefined).join(' · '),
   trail: '从视图进入实体页时经过的节点，依次排列。',
