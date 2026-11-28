@@ -519,7 +519,7 @@ func sameView(t rapid.TB, s *Server, req Request, resp Response, g *graph.Graph)
 	nodes := make([]Node, len(got.Nodes))
 	for i, n := range got.Nodes {
 		nodes[i] = Node{Id: n.Id, Kind: n.Kind, Form: n.Form, Layer: n.Layer, Source: n.Source, Origin: n.Origin, Summary: n.Summary,
-			Salient: n.Salient, Digest: n.Digest, Attrs: n.Attrs}
+			Salient: n.Salient, Digest: n.Digest, Attrs: n.Attrs, Operation: n.Operation}
 	}
 	edges := make([]Edge, len(got.Edges))
 	for i, e := range got.Edges {
