@@ -501,6 +501,7 @@ type Chain struct {
 //uc:generates graph.exercises-paths-are-shortest.sample
 //uc:generates graph.exercises-paths-are-ordered.sample
 //uc:generates graph.reaches-covers-planted-chains.sample
+//uc:generates graph.reaches-via-is-in-identity-order.sample
 func genDeriveSample() *rapid.Generator[DeriveSample] {
 	return rapid.Custom(func(t *rapid.T) DeriveSample {
 		s := newSampler(t)
@@ -674,8 +675,8 @@ func checkReachesCoversDetailChains(t rapid.TB, sample DeriveSample) {
 		if !ok {
 			t.Fatalf("Derive joined %s to %s by reaches, but no chain of detail functions leads from one to the other", e.From, e.To)
 		}
-		if got := e.Attrs["via"]; !slices.Equal(got, via) {
-			t.Fatalf("the reaches edge from %s to %s lists via %q, but the detail functions on its chains, in identity order, are %q", e.From, e.To, got, via)
+		if got := slices.Sorted(slices.Values(e.Attrs["via"])); !slices.Equal(got, via) {
+			t.Fatalf("the reaches edge from %s to %s lists via %q, but the detail functions on its chains are %q", e.From, e.To, got, via)
 		}
 		delete(want, key)
 	}
@@ -709,6 +710,20 @@ func checkExercisesPathsAreOrdered(t rapid.TB, sample DeriveSample) {
 			if c.Kind == EdgeKindCalls && c.To == x.To && c.From < last && caller != nil && len(caller.Attrs["path"]) == len(path)-1 {
 				t.Fatalf("the path %q of exercises(%s, %s) ends in %s, but %s, as near to %s and with a smaller identity, also calls %s", path, x.From, x.To, last, c.From, x.From, x.To)
 			}
+		}
+	}
+}
+
+//uc:checks graph.reaches-via-is-in-identity-order
+func checkReachesViaIsInIdentityOrder(t rapid.TB, sample DeriveSample) {
+	g, err := fragmentGraph(sample.Fragment.Nodes, sample.Fragment.Edges)
+	if err != nil {
+		t.Fatalf("AddFragment refused a fragment whose nodes are distinct and whose edges start at its nodes: %v", err)
+	}
+	g.Derive()
+	for _, e := range g.Edges() {
+		if e.Kind == EdgeKindReaches && !slices.IsSorted(e.Attrs["via"]) {
+			t.Fatalf("the reaches edge from %s to %s lists via %q, not in identity order", e.From, e.To, e.Attrs["via"])
 		}
 	}
 }

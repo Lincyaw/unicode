@@ -25,7 +25,7 @@ type Received record "plan-dispatches-configured-languages 中后端替身收到
 
 op plan(root: string, g: graph.Graph, backends: list<lang.Backend>) -> lang.Generation "对 g 的系统文件中配置的每种语言，调用 backends 中有生成能力的后端，用 merge 合并它们的生成计划和后端重复、缺少生成能力的诊断；缺少实现的代码或谓词不妨碍生成"
 
-op merge(generations: list<lang.Generation>) -> lang.Generation pure "把几份生成计划合并成一份：文件按路径、内容和 createOnly 排序，诊断按位置、诊断码、subject、原因和修正排序，同一路径每多一个文件另报一条 gen.duplicate-path"
+op merge(generations: list<lang.Generation>) -> lang.Generation pure "把几份生成计划合并成一份，结果与它们的次序无关，同一路径每多一个文件另报一条 gen.duplicate-path"
 
 op write(root: string, edits: list<lang.Edit>) -> list<diag.Diagnostic> "先检查 edits 的全部路径、重复目标、符号链接和生成标记，再逐个文件原子写入：只改写带生成标记的文件，createOnly 的文件只在不存在时创建，多个文件之间不保证同时成功"
 

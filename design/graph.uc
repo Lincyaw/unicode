@@ -110,8 +110,8 @@ type Graph object "一张图：节点按标识索引，边按种类、起点和�
   op addFragment(fragment: Fragment) raises DuplicateNode, DuplicateEdge, DanglingEdge "加入一组节点和边，先节点后边；绑定边和方法的候选边（design.md §4）的终点还不在图中时先暂存，推导时再加入"
   op derive() -> list<diag.Diagnostic> "按 model.md §9 推导边和显著性，并把终点仍不在图中的暂存绑定边报为 graph.unresolved-binding"
   op node(id: string) -> optional<Node> pure "按标识取一个节点"
-  op nodes() -> list<Node> pure "全部节点，按标识排序"
-  op edges() -> list<Edge> pure "全部边，按种类、起点、终点排序"
+  op nodes() -> list<Node> pure "全部节点"
+  op edges() -> list<Edge> pure "全部边"
   op edge(kind: EdgeKind, from: string, to: string) -> optional<Edge> pure "按种类、起点和终点取一条边"
   op digest(id: string) -> string pure "节点自身内容的 SHA-256：种类、形式、摘要和属性的规范编码，不含子节点"
   op snapshot() -> Snapshot pure "快照的记录形式：各字段取自节点和边，节点另带 digest 给出的内容哈希，次序与节点和边加入的次序无关"
@@ -477,10 +477,16 @@ property reaches-covers-planted-chains postcondition "推导之后，画出的�
   ensure all(c in sample.chains: c.from != c.to and snapshot.node(c.from).salient and snapshot.node(c.to).salient and snapshot.edge(EdgeKind.calls, c.from, c.to) == none implies snapshot.edge(EdgeKind.reaches, c.from, c.to) != none and all(h in c.via: h in snapshot.edge(EdgeKind.reaches, c.from, c.to).attrs["via"]))
 }
 
-property reaches-covers-detail-chains invariant "推导得出 reaches(f, g) 当且仅当 f 和 g 是不同的显著的函数、f 不直接调用 g、f 经一个或多个细节函数调用 g，via 按标识的次序恰列出这些调用链上的每个细节函数" {
+property reaches-covers-detail-chains invariant "推导得出 reaches(f, g) 当且仅当 f 和 g 是不同的显著的函数、f 不直接调用 g、f 经一个或多个细节函数调用 g，via 恰含这些调用链上的每个细节函数，不计次序" {
   about Graph.derive
   forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
   manual "需要求出细节函数之间调用的传递闭包，表达式没有递归或不定次的迭代"
+}
+
+property reaches-via-is-in-identity-order invariant "推导之后，每条 reaches 边的 via 按标识的次序排列" {
+  about Graph.derive
+  forall sample: DeriveSample generated "一张随机的小图：系统下零至四个可嵌套的组件，各有自己的目录（嵌套的组件在上级的目录之下），各带零至二个路径模式，取自 **、目录/**（机会加倍）、目录/*.go、目录/z.go 和不合写法的目录/[，有时有外部系统，组件和外部系统下有类型和操作，组件有时带含嵌套步骤的流程和带具名观察的性质；代码层的文件是各组件目录中的 x.go、y.go（以 z.go 为模式的组件另有 z.go）和目录之外的 e/x.go，各以一半机会出现，约四分之一是生成文件，另有包、结构体和接口类型及其方法、函数、调用和导入，类型、方法和函数的绑定有的指向不存在或种类不符的节点，类型的绑定附带方法的候选边，没有绑定的类型有时也带指向某个设计层类型的操作的候选边，有外部系统时约一半另有一个实现它的操作的函数及对这个函数的一次调用，约四分之三另有一条从一个函数经一至两个新的没有绑定的函数到另一个函数的调用链（两端尽量取带绑定的函数）且约一半另有两端之间的直接调用，有性质或流程时约一半另有一个检查其中之一的谓词，经长短不同的两条路径和一样短的两条路径调用同一文件中的几个新函数，有的代码类型和函数的出处另指一个文件，并附上画出时就定下的事实：各代码文件按它所在的目录和各模式的写法被哪些组件匹配，各设计层容器和外部系统的深度，每个不合写法的模式所在的容器，终点不在片段中的绑定边的诊断对象及其出处，各代码类型和函数所在的文件、源文件和包含它的各级容器，外部系统的各操作所属的外部系统，每条函数间的调用边和导入边连同它在 depends 属性中的写法（起点、一个空格、终点），以及画出的调用链"
+  manual "需要按位置取列表的元素，表达式没有列表的位置访问"
 }
 
 property derive-ignores-order postcondition "同一个片段的节点和边以原来的和轮换后的次序加入两张图，两张图推导之后编码出的快照相同" {

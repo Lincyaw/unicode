@@ -409,7 +409,7 @@
 | D4 | 由性质验证 | `graph.traces-follow-realizations`、`graph.derive-adds-only-defined-edges` |
 | D5 | 由性质验证 | `graph.exercises-close-over-calls`、`graph.exercises-paths-lead-to-predicates`、`graph.exercises-paths-are-shortest`、`graph.exercises-paths-are-ordered`、`graph.derive-adds-only-defined-edges` |
 | D6 | 由性质验证 | `graph.design-nodes-are-salient`、`graph.code-salience-follows-bindings`、`graph.container-salience-follows-elements`、`lang.golang.extracts-generated-module` |
-| D7 | 由性质验证 | `graph.reaches-joins-salient-functions`、`graph.reaches-covers-detail-chains`、`graph.reaches-covers-planted-chains`、`graph.derive-adds-only-defined-edges` |
+| D7 | 由性质验证 | `graph.reaches-joins-salient-functions`、`graph.reaches-covers-detail-chains`、`graph.reaches-via-is-in-identity-order`、`graph.reaches-covers-planted-chains`、`graph.derive-adds-only-defined-edges` |
 | D8 | 由性质验证 | `graph.effects-follow-calls`、`graph.effects-read-the-graph`、`graph.dispatch-finds-implementations` |
 | 1 | `design.unresolved-reference`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
 | 2 | `design.duplicate-name` | `design.rejects-broken-design` |
