@@ -8,6 +8,7 @@ type Backend object "Go 的后端：用 go/packages 和 go/types 静态抽取，
   implements lang.Generator
   implements lang.GenerationExtractor
   implements lang.Runner
+  op extract(root: string, srcRoots: list<string>) -> lang.Extracted raises lang.ExtractFailed "抽取源码根目录下的 Go 代码层：节点及其属性（包括每个函数的直接效果）、边，以及方法的候选边（design.md §4）"
   op run(plan: lang.RunPlan) -> lang.RunReport "核对 plan.root 中的生成文件后回放，或在 plan.explore 时长内探索，返回每条性质和流程的结论"
 }
 
@@ -85,6 +86,12 @@ type DerivedOutcome enum "derived-state-is-removed 的输入：一个用例的�
 type BuiltState record "derived-state-is-removed 的观察：派生函数记下的目录数，以及其中仍然存在的目录数" {
   field recorded: int
   field remaining: int
+}
+
+type EffectModule record "extracts-direct-effects 的输入：一个 Go 模块和它依赖的一个模块的文件、源码根目录，以及模块中每个函数和方法应有的直接效果" {
+  field files: map<string, string>
+  field roots: list<string>
+  field expected: map<string, list<string>>
 }
 
 op newBackend() -> Backend "创建 Go 后端"
@@ -231,4 +238,16 @@ property derived-template-skips-self-naming-state invariant "派生函数建出�
   about Backend
   forall module: Module generated "一个随机的 Go 模块：一至三个包，各有一至两个源码文件，可有内部测试文件和外部测试包，含零至六个类型及其方法、零至五个函数、按测试命名的函数、调用、作为值引用的函数和方法（函数名、方法值和方法表达式，包括接口的方法）、导入、嵌入、实现接口的类型、零至三个包级变量和 //uc: 绑定；部分绑定和生成标记故意写错，部分方法的签名与接口只差一个类型，部分声明只在排版和注释上与另一个不同，另有不成节点的声明"
   manual "需要经生成驱动的派生运行时两次算出建出目录的派生输入并数派生函数被调用的次数，表达式不能读写文件"
+}
+
+property extracts-direct-effects postcondition "抽取 root 中的模块没有诊断，抽取出的操作恰是 module.expected 中的那些，每个操作带 directEffects 当且仅当 module.expected 给它非空的效果，带的效果种类与 module.expected 中的相同" {
+  about Backend.extract
+  forall backend: Backend
+  forall module: EffectModule generated "位于根目录、源码根目录恰为 . 的模块 example.test/m 和它依赖并以目录 dep 替换的模块 example.test/dep 的文件，依赖模块有未导出的辅助函数、保存函数字面量的包级变量和一至三个导出函数（各调用零至两个标准库函数，可能调用辅助函数、该变量的函数和更早的导出函数），本模块有接口 Doer、类型 Impl 的方法 Do、保存函数字面量的包级变量和一至四个函数（各在函数体和其中的函数字面量中各调用零至两个标准库函数，可能调用依赖模块的一个导出函数、该变量的函数、本模块的一个函数和经 Doer 调用的 Do），标准库的调用取自表中每一行的函数和方法、经 net.Conn 调用的方法和表外的同包函数，以及按这些调用逐个函数算出的、含抽象方法 Doer.Do 在内的每个操作的直接效果"
+  forall root: string generated "把 module.files 写进的新目录的路径"
+  call backend.extract(root, module.roots)
+  ensure size(result.diagnostics) == 0
+  ensure all(id in module.expected: any(n in result.fragment.nodes: n.id == id))
+  ensure all(n in result.fragment.nodes: n.kind == graph.NodeKind.op implies n.id in module.expected and (size(module.expected[n.id]) > 0) == ("directEffects" in n.attrs))
+  ensure all(n in result.fragment.nodes: "directEffects" in n.attrs implies n.id in module.expected and n.attrs["directEffects"] == module.expected[n.id])
 }
