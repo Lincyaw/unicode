@@ -1,172 +1,173 @@
 package design
 
 import (
-	"bytes"
-	"fmt"
 	"maps"
-	"reflect"
 	"regexp"
 	"slices"
 	"strings"
 
 	"pgregory.net/rapid"
 
-	"github.com/lincyaw/unicode/internal/diag"
+	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/syntax"
 )
 
-// parseAll parses the files in the order of paths; every generated file parses.
-func parseAll(t rapid.TB, files map[string]string, paths []string) []syntax.File {
-	var out []syntax.File
-	for _, p := range paths {
-		kind, err := syntax.KindOf(p)
+// This file turns the designs the generators write as text into the inputs
+// of the properties of loadSources: sources ordered by path, edges as
+// records, and the number of lines of each file.
+
+// sourcesOf returns the files as sources, ordered by path, each of the kind
+// its path gives. Every path a generator writes is a design or corpus file.
+func sourcesOf(files map[string]string) []syntax.Source {
+	var out []syntax.Source
+	for _, path := range slices.Sorted(maps.Keys(files)) {
+		kind, err := syntax.KindOf(path)
 		if err != nil {
-			t.Fatalf("setup failed: the generated path %s is not a design or corpus file: %v", p, err)
+			panic("a generator wrote " + path + ", which is not a design or corpus file")
 		}
-		parsed := syntax.Parse(p, kind, []byte(files[p]))
-		if len(parsed.Diagnostics) > 0 {
-			t.Fatalf("setup failed: the generated file %s does not parse:%s\n%s", p, listDiagnostics(parsed.Diagnostics), files[p])
-		}
-		out = append(out, *parsed.File)
+		out = append(out, syntax.Source{Path: path, Kind: kind, Text: []byte(files[path])})
 	}
 	return out
 }
 
-func listDiagnostics(ds []diag.Diagnostic) string {
-	var b strings.Builder
-	for _, d := range ds {
-		fmt.Fprintf(&b, "\n  %s:%d:%d: %s: %s", d.Position.Path, d.Position.Line, d.Position.Column, d.Code, d.Message)
+// edgeRef reads an edge written `kind from to`; identities hold no spaces.
+func edgeRef(key string) EdgeRef {
+	parts := strings.Split(key, " ")
+	if len(parts) != 3 {
+		panic("an edge is written `kind from to`, not " + key)
 	}
-	return b.String()
+	return EdgeRef{Kind: graph.EdgeKind(parts[0]), From: parts[1], To: parts[2]}
 }
 
-func dump(files map[string]string) string {
-	var b strings.Builder
-	for _, p := range slices.Sorted(maps.Keys(files)) {
-		fmt.Fprintf(&b, "--- %s\n%s", p, files[p])
+func edgeRefs(keys []string) []EdgeRef {
+	out := []EdgeRef{}
+	for _, key := range keys {
+		out = append(out, edgeRef(key))
 	}
-	return b.String()
+	return out
 }
 
-// difference lists what one sorted list has and the other lacks.
-func difference(got, want []string) (missing, extra []string) {
-	for _, w := range want {
-		if !slices.Contains(got, w) {
-			missing = append(missing, w)
-		}
+// lineCounts gives each file's number of lines: one more than its newlines.
+func lineCounts(files map[string]string) map[string]int {
+	out := map[string]int{}
+	for path, text := range files {
+		out[path] = strings.Count(text, "\n") + 1
 	}
-	for _, g := range got {
-		if !slices.Contains(want, g) {
-			extra = append(extra, g)
-		}
-	}
-	return missing, extra
+	return out
 }
 
-//uc:checks design.accepts-valid-design
-func checkAcceptsValidDesign(t rapid.TB, sample Sample) {
-	loaded := Load(parseAll(t, sample.Files, slices.Sorted(maps.Keys(sample.Files))))
-	if len(loaded.Diagnostics) > 0 {
-		t.Fatalf("Load gave diagnostics for a valid design:%s\n%s", listDiagnostics(loaded.Diagnostics), dump(sample.Files))
+// renaming gives some names of a fixture other names.
+type renaming map[string]string
+
+// drawRenaming draws for each name one of its candidates. The candidates of
+// different names are disjoint, so the names stay distinct.
+func drawRenaming(t *rapid.T, candidates map[string][]string) renaming {
+	r := renaming{}
+	for _, name := range slices.Sorted(maps.Keys(candidates)) {
+		r[name] = rapid.SampledFrom(candidates[name]).Draw(t, "name for "+name)
 	}
-	var nodes, edges []string
-	for _, n := range loaded.Graph.Nodes() {
-		nodes = append(nodes, n.Id)
-	}
-	for _, e := range loaded.Graph.Edges() {
-		edges = append(edges, string(e.Kind)+" "+e.From+" "+e.To)
-	}
-	if missing, extra := difference(nodes, sample.Nodes); len(missing)+len(extra) > 0 {
-		t.Fatalf("the graph's nodes are not those the design declares\nmissing: %v\nextra: %v\n%s", missing, extra, dump(sample.Files))
-	}
-	if missing, extra := difference(edges, sample.Edges); len(missing)+len(extra) > 0 {
-		t.Fatalf("the graph's edges are not those the design declares\nmissing: %v\nextra: %v\n%s", missing, extra, dump(sample.Files))
-	}
-	if len(nodes) != len(sample.Nodes) || len(edges) != len(sample.Edges) {
-		t.Fatalf("the design declares %d nodes and %d edges, the graph holds %d and %d", len(sample.Nodes), len(sample.Edges), len(nodes), len(edges))
-	}
-	if len(sample.Attrs) == 0 {
-		t.Fatalf("setup failed: the sample lists the attributes of no node, not even the system's")
-	}
-	for _, id := range slices.Sorted(maps.Keys(sample.Attrs)) {
-		want, got := sample.Attrs[id], loaded.Graph.Node(id).Attrs
-		if !maps.EqualFunc(got, want, slices.Equal) {
-			t.Fatalf("the node %s has other attributes than the design gives it\ngot: %v\nwant: %v\n%s", id, got, want, dump(sample.Files))
-		}
-	}
-	for _, edge := range loaded.Graph.Edges() {
-		key := string(edge.Kind) + " " + edge.From + " " + edge.To
-		if want, ok := sample.EdgeAttrs[key]; ok && !maps.EqualFunc(edge.Attrs, want, slices.Equal) {
-			t.Fatalf("the edge %s has other attributes than the design gives it\ngot: %v\nwant: %v\n%s", key, edge.Attrs, want, dump(sample.Files))
-		}
-	}
+	return r
 }
 
-var designCode = regexp.MustCompile(`^design\.[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+var wordPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*`)
 
-// wellFormed checks that every diagnostic has a code of the form
-// design.<kebab-name>, a cause, a fix, and a position in one of the files.
-func wellFormed(t rapid.TB, ds []diag.Diagnostic, files map[string]string) {
-	for _, d := range ds {
-		_, inFiles := files[d.Position.Path]
-		switch {
-		case !designCode.MatchString(d.Code):
-			t.Fatalf("the code %q is not of the form design.<kebab-name>", d.Code)
-		case d.Message == "" || d.Fix == "" || d.Subject == "":
-			t.Fatalf("the diagnostic %s lacks its subject, cause or fix: %+v", d.Code, d)
-		case d.Position.Line < 1 || d.Position.Column < 1:
-			t.Fatalf("the diagnostic %s stands at %d:%d, which is no position", d.Code, d.Position.Line, d.Position.Column)
-		case !inFiles && d.Code != "design.missing-system-file":
-			t.Fatalf("the diagnostic %s names the path %s, which is not one of the files", d.Code, d.Position.Path)
-		case inFiles && d.Position.Line > strings.Count(files[d.Position.Path], "\n")+1:
-			t.Fatalf("the diagnostic %s stands on line %d, past the end of %s", d.Code, d.Position.Line, d.Position.Path)
+// apply renames every whole word of s, a name possibly in kebab case, that r renames.
+func (r renaming) apply(s string) string {
+	return wordPattern.ReplaceAllStringFunc(s, func(word string) string {
+		if renamed, ok := r[word]; ok {
+			return renamed
 		}
-	}
-}
-
-//uc:checks design.rejects-broken-design
-func checkRejectsBrokenDesign(t rapid.TB, broken Broken) {
-	loaded := Load(parseAll(t, broken.Files, slices.Sorted(maps.Keys(broken.Files))))
-	wellFormed(t, loaded.Diagnostics, broken.Files)
-	found := slices.ContainsFunc(loaded.Diagnostics, func(d diag.Diagnostic) bool {
-		return d.Code == broken.Code && d.Position.Path == broken.Path && d.Position.Line == broken.Line
+		return word
 	})
-	if !found {
-		t.Fatalf("a change that breaks %s at %s:%d got no such diagnostic there; Load gave:%s\n%s",
-			broken.Code, broken.Path, broken.Line, listDiagnostics(loaded.Diagnostics), dump(broken.Files))
-	}
 }
 
-// genFiles draws the files of a valid design, or of one broken in one place.
+// files renames the names in the paths and texts of files.
+func (r renaming) files(files map[string]string) map[string]string {
+	out := map[string]string{}
+	for path, text := range files {
+		out[r.apply(path)] = r.apply(text)
+	}
+	return out
+}
+
+// attrs renames the names in the identities and values of attributes.
+func (r renaming) attrs(attrs map[string]map[string][]string) map[string]map[string][]string {
+	out := map[string]map[string][]string{}
+	for id, byKey := range attrs {
+		renamed := map[string][]string{}
+		for key, values := range byKey {
+			for _, v := range values {
+				renamed[key] = append(renamed[key], r.apply(v))
+			}
+		}
+		out[r.apply(id)] = renamed
+	}
+	return out
+}
+
+// broken renames the names of a broken design.
+func (r renaming) broken(b brokenFiles) brokenFiles {
+	b.files, b.path, b.subject = r.files(b.files), r.apply(b.path), r.apply(b.subject)
+	absent := map[string][]string{}
+	for id, keys := range b.absent {
+		absent[r.apply(id)] = keys
+	}
+	b.absent = absent
+	return b
+}
+
+// genSources draws the sources of a valid design, of one broken in one
+// place, of a valid design with an @ line inserted into one to three of its
+// files, which then do not parse, or of a valid design with one of its
+// component files copied to a new path, whose declarations then clash with
+// the original's; a design without component files gets the @ lines.
 //
-//uc:generates design.load-ignores-file-order.files
-func genFiles() *rapid.Generator[map[string]string] {
-	return rapid.Custom(func(t *rapid.T) map[string]string {
-		if rapid.Bool().Draw(t, "valid") {
-			return genSample().Draw(t, "sample").Files
+//uc:generates design.load-ignores-file-order.sources
+func genSources() *rapid.Generator[[]syntax.Source] {
+	return rapid.Custom(func(t *rapid.T) []syntax.Source {
+		switch rapid.IntRange(0, 3).Draw(t, "sources") {
+		case 0:
+			return genSample().Draw(t, "sample").Sources
+		case 1:
+			return genBroken().Draw(t, "broken").Sources
 		}
-		return genBroken().Draw(t, "broken").Files
+		files := designFixture(t).files
+		paths := slices.Sorted(maps.Keys(files))
+		var components []string
+		for _, path := range paths {
+			if kind, _ := syntax.KindOf(path); kind == syntax.FileKindComponent {
+				components = append(components, path)
+			}
+		}
+		if len(components) == 0 || rapid.Bool().Draw(t, "unparsable") {
+			for _, path := range rapid.SliceOfNDistinct(rapid.SampledFrom(paths), 1, 3, rapid.ID[string]).Draw(t, "unparsable files") {
+				lines := strings.SplitAfter(files[path], "\n")
+				at := rapid.IntRange(0, len(lines)-1).Draw(t, "line")
+				files[path] = strings.Join(slices.Insert(lines, at, "@\n"), "")
+			}
+			return sourcesOf(files)
+		}
+		copied := rapid.SampledFrom(components).Draw(t, "copied")
+		target := "design/copy.uc"
+		for files[target] != "" {
+			target = strings.TrimSuffix(target, ".uc") + "x.uc"
+		}
+		files[target] = files[copied]
+		return sourcesOf(files)
 	})
 }
 
-func rotate[T any](s []T, by int) []T {
-	if len(s) == 0 {
-		return s
-	}
-	by %= len(s)
-	return append(slices.Clone(s[by:]), s[:by]...)
+// genReordered draws a permutation of sources.
+//
+//uc:generates design.load-ignores-file-order.reordered
+func genReordered(sources []syntax.Source) *rapid.Generator[[]syntax.Source] {
+	return rapid.Permutation(sources)
 }
 
-//uc:checks design.load-ignores-file-order
-func checkLoadIgnoresFileOrder(t rapid.TB, files map[string]string, rotation int) {
-	paths := slices.Sorted(maps.Keys(files))
-	sorted := Load(parseAll(t, files, paths))
-	rotated := Load(parseAll(t, files, rotate(paths, rotation)))
-	if a, b := sorted.Graph.Encode(), rotated.Graph.Encode(); !bytes.Equal(a, b) {
-		t.Fatalf("the files in another order load into another snapshot (rotated by %d)\nsorted:\n%s\nrotated:\n%s", rotation, a, b)
-	}
-	if !reflect.DeepEqual(sorted.Diagnostics, rotated.Diagnostics) {
-		t.Fatalf("the files in another order get other diagnostics (rotated by %d)\nsorted:%s\nrotated:%s",
-			rotation, listDiagnostics(sorted.Diagnostics), listDiagnostics(rotated.Diagnostics))
-	}
+// genDescribed draws an input of one of the five properties whose designs
+// are broken in one place, each a fifth of the time.
+//
+//uc:generates design.diagnostics-are-described.broken
+func genDescribed() *rapid.Generator[Broken] {
+	return rapid.OneOf(genBroken(), genBrokenContract(), genBrokenReplies(), genBrokenInheritance(), genBrokenCodec())
 }

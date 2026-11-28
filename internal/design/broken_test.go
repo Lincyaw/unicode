@@ -1,6 +1,7 @@
 package design
 
 import (
+	"maps"
 	"reflect"
 	"slices"
 	"strconv"
@@ -17,15 +18,44 @@ import (
 // sample_test.go), and marks the node of the tree whose line the diagnostic
 // must stand on.
 
-// Broken is a valid design changed in one place to break one constraint: the
-// files, the path and line of the change, and the code of its diagnostic.
+// Broken is a valid design changed in one place to break one constraint: its
+// sources, the number of lines of each, the codes of the diagnostics it must
+// get and the file they stand in, the line and subject they must have when
+// these are given, and the attributes the change leaves off its nodes.
 //
 //uc:realizes design.Broken
 type Broken struct {
-	Files map[string]string
-	Path  string
-	Line  int
-	Code  string
+	Sources []syntax.Source
+	Lines   map[string]int
+	Codes   []string
+	Path    string
+	Line    *int
+	Subject *string
+	Absent  map[string][]string
+}
+
+// brokenFiles is a broken design as text; a line of 0 and an empty subject
+// are not given.
+type brokenFiles struct {
+	files   map[string]string
+	codes   []string
+	path    string
+	line    int
+	subject string
+	absent  map[string][]string
+}
+
+// broken is the input of the properties of a broken design.
+func (b brokenFiles) broken() Broken {
+	out := Broken{Sources: sourcesOf(b.files), Lines: lineCounts(b.files), Codes: slices.Clone(b.codes), Path: b.path, Absent: map[string][]string{}}
+	if b.line != 0 {
+		out.Line = &b.line
+	}
+	if b.subject != "" {
+		out.Subject = &b.subject
+	}
+	maps.Copy(out.Absent, b.absent)
+	return out
 }
 
 // breakage changes a rich design and returns the path of the file and the
@@ -590,25 +620,22 @@ func genBroken() *rapid.Generator[Broken] {
 		}
 	})
 	return rapid.Custom(func(t *rapid.T) Broken {
-		if rapid.IntRange(0, 2).Draw(t, "contract") == 0 {
-			return brokenContractFixture(t)
-		}
 		d := newDesign(t, true)
 		code := rapid.SampledFrom(codes).Draw(t, "code")
 		path, mark := breakages[code](d)
-		files := d.sample().Files
+		files := d.sample().files
 		line := 1
 		if mark != nil {
 			kind, err := syntax.KindOf(path)
 			parsed := syntax.Parse(path, kind, []byte(files[path]))
 			if err != nil || parsed.File == nil {
-				t.Fatalf("setup failed: breaking %s left %s unparsable:%s\n%s", code, path, listDiagnostics(parsed.Diagnostics), files[path])
+				t.Fatalf("setup failed: breaking %s left %s unparsable: %v\n%s", code, path, parsed.Diagnostics, files[path])
 			}
 			var ok bool
 			if line, ok = lineOf(reflect.ValueOf(d.files[path]), reflect.ValueOf(parsed.File), mark); !ok {
 				t.Fatalf("setup failed: the changed node of %s is not in the tree of %s", code, path)
 			}
 		}
-		return Broken{Files: files, Path: path, Line: line, Code: code}
+		return brokenFiles{files: files, codes: []string{code}, path: path, line: line}.broken()
 	})
 }

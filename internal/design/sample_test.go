@@ -10,6 +10,7 @@ import (
 
 	"pgregory.net/rapid"
 
+	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/syntax"
 )
 
@@ -20,16 +21,67 @@ import (
 // by docs/language.md §4.1, dependencies follow `uses`, and cases fit their
 // symbols' types and limits.
 
-// Sample is a valid set of design and corpus files, with the nodes and edges
-// they declare, and the attributes of the nodes it lists, by identity.
+// Sample is a valid set of design and corpus sources, with the identities of
+// every node and edge they declare, and all the attributes of the nodes and
+// edges it lists.
 //
 //uc:realizes design.Sample
 type Sample struct {
-	Files     map[string]string
+	Sources   []syntax.Source
 	Nodes     []string
-	Edges     []string
+	Edges     []EdgeRef
 	Attrs     map[string]map[string][]string
-	EdgeAttrs map[string]map[string][]string
+	EdgeAttrs []EdgeAttrs
+}
+
+// EdgeRef is the kind and the ends of an edge.
+//
+//uc:realizes design.EdgeRef
+type EdgeRef struct {
+	Kind graph.EdgeKind
+	From string
+	To   string
+}
+
+// EdgeAttrs is an edge with all the attributes it should have.
+//
+//uc:realizes design.EdgeAttrs
+type EdgeAttrs struct {
+	Kind  graph.EdgeKind
+	From  string
+	To    string
+	Attrs map[string][]string
+}
+
+// Expected is a valid set of sources, the values some attributes of some of
+// their nodes should have, and edges the graph should hold.
+//
+//uc:realizes design.Expected
+type Expected struct {
+	Sources []syntax.Source
+	Attrs   map[string]map[string][]string
+	Edges   []EdgeRef
+}
+
+// designFiles is a valid design as text: its files by path, the nodes and
+// edges (`kind from to`) they declare, and the attributes of the nodes and
+// edges it lists.
+type designFiles struct {
+	files     map[string]string
+	nodes     []string
+	edges     []string
+	attrs     map[string]map[string][]string
+	edgeAttrs map[string]map[string][]string
+}
+
+// sample is the input of the properties of a valid design.
+func (f designFiles) sample() Sample {
+	edgeAttrs := []EdgeAttrs{}
+	for _, key := range slices.Sorted(maps.Keys(f.edgeAttrs)) {
+		ref := edgeRef(key)
+		edgeAttrs = append(edgeAttrs, EdgeAttrs{Kind: ref.Kind, From: ref.From, To: ref.To, Attrs: f.edgeAttrs[key]})
+	}
+	return Sample{Sources: sourcesOf(f.files), Nodes: slices.Clone(f.nodes), Edges: edgeRefs(f.edges), Attrs: f.attrs, EdgeAttrs: edgeAttrs}
 }
 
 // gNode is one declared node of the model.
@@ -303,19 +355,21 @@ func count(d *designer, label string, low, high int) int {
 // genSample draws a valid design: a system file, a tree of components with
 // types, operations, flows and properties, and corpus files.
 //
-//uc:generates design.exploration-prunes-recorded-inputs.sample
 //uc:generates design.accepts-valid-design.sample
 func genSample() *rapid.Generator[Sample] {
-	return rapid.Custom(func(t *rapid.T) Sample {
-		if rapid.IntRange(0, 2).Draw(t, "contract") == 0 {
-			if rapid.Bool().Draw(t, "returned value") {
-				return resultContractFixture(t)
-			}
-			return contractFixture(t)
+	return rapid.Custom(func(t *rapid.T) Sample { return designFixture(t).sample() })
+}
+
+// designFixture draws a valid design: a third of the time a black-box
+// contract, otherwise a design of genSample's random model.
+func designFixture(t *rapid.T) designFiles {
+	if rapid.IntRange(0, 2).Draw(t, "contract") == 0 {
+		if rapid.Bool().Draw(t, "returned value") {
+			return resultContractFixture(t)
 		}
-		d := newDesign(t, rapid.Bool().Draw(t, "rich"))
-		return d.sample()
-	})
+		return contractFixture(t)
+	}
+	return newDesign(t, rapid.Bool().Draw(t, "rich")).sample()
 }
 
 func newDesign(t *rapid.T, rich bool) *designer {
@@ -336,7 +390,7 @@ func newDesign(t *rapid.T, rich bool) *designer {
 
 // sample prints every file in the canonical format. Of the attributes, it
 // lists the system's: its notations and its roots (docs/design.md §5.2).
-func (d *designer) sample() Sample {
+func (d *designer) sample() designFiles {
 	files := map[string]string{}
 	for path, f := range d.files {
 		files[path] = string(f.Print())
@@ -366,7 +420,7 @@ func (d *designer) sample() Sample {
 		}
 		attrs[flow.id] = expected
 	}
-	return Sample{Files: files, Nodes: slices.Clone(d.nodes), Edges: slices.Clone(d.edges), Attrs: attrs}
+	return designFiles{files: files, nodes: slices.Clone(d.nodes), edges: slices.Clone(d.edges), attrs: attrs}
 }
 
 func (d *designer) file(path string, kind syntax.FileKind) *syntax.File {

@@ -2,17 +2,17 @@ package design
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"strconv"
 	"strings"
 
 	"pgregory.net/rapid"
-
-	"github.com/lincyaw/unicode/internal/diag"
-	"github.com/lincyaw/unicode/internal/graph"
 )
 
+// codecProgram writes a component whose type Box declares a codec and whose
+// property gives an encoded case value derived from value, changed by
+// variant: 0 is valid, with an int representation for odd values and a
+// record one for even values; every other variant breaks one rule of
+// docs/language.md §5.3.1 and comes with the code it must get.
 func codecProgram(value, variant int) (string, string) {
 	source := `component model "Codec fixture" {
   focus core
@@ -93,59 +93,33 @@ property supplied invariant "A decoded value is checked at runtime" {
 	return source, code
 }
 
-//uc:checks design.codecs-are-typed
-func checkCodecsAreTyped(t rapid.TB, value, variant int) {
-	checkCodecFiniteRepresentations(t, value)
-	source, expected := codecProgram(value, variant)
-	files := map[string]string{"design/system.uc": "system example \"Codec fixture\"\n", "design/model.uc": source}
-	loaded := Load(parseAll(t, files, slices.Sorted(maps.Keys(files))))
-	wellFormed(t, loaded.Diagnostics, files)
-	if expected != "" {
-		if !slices.ContainsFunc(loaded.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == expected && d.Position.Path == "design/model.uc" }) {
-			t.Fatalf("codec variant %d did not report %s: %v\n%s", variant, expected, loaded.Diagnostics, source)
-		}
-		return
-	}
-	if len(loaded.Diagnostics) != 0 {
-		t.Fatalf("a valid codec or a deferred decoded limit was rejected: %v\n%s", loaded.Diagnostics, source)
-	}
-	if node := loaded.Graph.Node("model.Box"); node == nil || !slices.Equal(node.Attrs["codec"], []string{"model.Box.encode", "model.decode"}) {
-		t.Fatalf("the codec did not retain its absolute encoder and free decoder: %+v", node)
-	}
-	representation := "int"
-	if value%2 == 0 {
-		representation = "model.Repr"
-	}
-	if node := loaded.Graph.Node("model.Box"); !slices.Equal(node.Attrs["codecType"], []string{representation}) {
-		t.Fatalf("the codec representation type is not canonical: %+v", node)
-	}
-	for _, target := range []string{"model.Box.encode", "model.decode"} {
-		if !slices.ContainsFunc(loaded.Graph.Edges(), func(edge graph.Edge) bool {
-			return edge.Kind == graph.EdgeKindRefers && edge.From == "model.Box" && edge.To == target
-		}) {
-			t.Fatalf("the codec has no refers edge to %s", target)
-		}
-	}
+// codecFiles are the system file and the component of a codec fixture.
+func codecFiles(component string) map[string]string {
+	return map[string]string{"design/system.uc": "system example \"Codec fixture\"\n", "design/model.uc": component}
 }
 
-func checkCodecFiniteRepresentations(t rapid.TB, value int) {
-	for _, representation := range []struct {
-		name, fields, declarations string
-		finite                     bool
-	}{
-		{"required self cycle", "field next: Repr", "", false},
-		{"required indirect cycle", "field next: Link", `type Link record "An indirect link" {
-  field next: Repr
-}`, false},
-		{"optional termination", "field next: optional<Repr>", "", true},
-		{"list termination", "field next: list<Repr>", "", true},
-		{"set termination", "field next: set<Repr>", "", true},
-		{"map termination", "field next: map<string, Repr>", "", true},
-		{"codec termination", `codec encode, decodeRepr
-  field next: Repr
-  op encode() -> int pure`, "op decodeRepr(value: int) -> Repr", true},
-	} {
-		source := fmt.Sprintf(`component model "Codec fixture" {
+// representation is a representation type of Box's codec, which a codec may
+// use when it is finite: when every required field ends in a value that
+// does not lead back to it.
+type representation struct {
+	name, fields, declarations string
+	finite                     bool
+}
+
+var representations = []representation{
+	{"required self cycle", "field next: Repr", "", false},
+	{"required indirect cycle", "field next: Link", "type Link record \"An indirect link\" {\n  field next: Repr\n}", false},
+	{"optional termination", "field next: optional<Repr>", "", true},
+	{"list termination", "field next: list<Repr>", "", true},
+	{"set termination", "field next: set<Repr>", "", true},
+	{"map termination", "field next: map<string, Repr>", "", true},
+	{"codec termination", "codec encode, decodeRepr\n  field next: Repr\n  op encode() -> int pure", "op decodeRepr(value: int) -> Repr", true},
+}
+
+// representationSource writes a component whose Box encodes into Repr, of
+// the representation r; value only appears in Repr's summary.
+func representationSource(value int, r representation) string {
+	return fmt.Sprintf(`component model "Codec fixture" {
   focus core
   paths "*.go"
 }
@@ -162,26 +136,87 @@ type Box object "A private value" {
 %s
 
 op decode(value: Repr) -> Box
-`, value, representation.fields, representation.declarations)
-		files := map[string]string{"design/system.uc": "system example \"Codec fixture\"\n", "design/model.uc": source}
-		loaded := Load(parseAll(t, files, slices.Sorted(maps.Keys(files))))
-		wellFormed(t, loaded.Diagnostics, files)
-		if !representation.finite {
-			if !slices.ContainsFunc(loaded.Diagnostics, func(d diag.Diagnostic) bool {
-				return d.Code == "design.invalid-codec" && d.Position.Path == "design/model.uc"
-			}) {
-				t.Fatalf("%s was accepted as a finite codec representation: %v\n%s", representation.name, loaded.Diagnostics, source)
-			}
-			if node := loaded.Graph.Node("model.Box"); len(node.Attrs["codecType"]) != 0 {
-				t.Fatalf("%s retained a valid codec representation: %+v", representation.name, node)
-			}
-			continue
-		}
-		if len(loaded.Diagnostics) != 0 {
-			t.Fatalf("%s rejected a finite codec representation: %v\n%s", representation.name, loaded.Diagnostics, source)
-		}
-		if node := loaded.Graph.Node("model.Box"); !slices.Equal(node.Attrs["codecType"], []string{"model.Repr"}) {
-			t.Fatalf("%s lost its canonical codec representation: %+v", representation.name, node)
-		}
+`, value, r.fields, r.declarations)
+}
+
+// codecNames are the names of the codec fixtures and the names each may take instead.
+var codecNames = map[string][]string{
+	"model":       {"model", "codecs", "wire"},
+	"DecodeError": {"DecodeError", "BadInput", "Malformed"},
+	"Box":         {"Box", "Cell", "Capsule"},
+	"encode":      {"encode", "pack", "toWire"},
+	"decode":      {"decode", "unpack", "fromWire"},
+	"Repr":        {"Repr", "Shape", "Layout"},
+	"supplied":    {"supplied", "given", "fixed"},
+	"input":       {"input", "sample", "probe"},
+	"restore":     {"restore", "rebuild", "revive"},
+	"Child":       {"Child", "Sub", "Heir"},
+	"Other":       {"Other", "Second", "Alt"},
+	"decodeOther": {"decodeOther", "unpackOther", "readOther"},
+	"decodeRepr":  {"decodeRepr", "unpackRepr", "readRepr"},
+	"Link":        {"Link", "Hop", "Chain"},
+	"next":        {"next", "after", "tail"},
+	"amount":      {"amount", "total", "units"},
+}
+
+// codecExpected is the input of valid-codecs-load for files: Box's encoder
+// and decoder, its representation type, and its edges to the two operations.
+func codecExpected(r renaming, files map[string]string, representation string) Expected {
+	return Expected{
+		Sources: sourcesOf(r.files(files)),
+		Attrs:   r.attrs(map[string]map[string][]string{"model.Box": {"codec": {"model.Box.encode", "model.decode"}, "codecType": {representation}}}),
+		Edges:   []EdgeRef{{Kind: "refers", From: r.apply("model.Box"), To: r.apply("model.Box.encode")}, {Kind: "refers", From: r.apply("model.Box"), To: r.apply("model.decode")}},
 	}
+}
+
+// genValidCodecs draws a valid codec under drawn names: half the time the
+// valid variant of codecProgram, half the time Box encoding into one of the
+// five finite representations.
+//
+//uc:generates design.valid-codecs-load.expected
+func genValidCodecs() *rapid.Generator[Expected] {
+	return rapid.Custom(func(t *rapid.T) Expected {
+		value := rapid.IntRange(-1000, 1000).Draw(t, "value")
+		if rapid.Bool().Draw(t, "representation") {
+			var finite []representation
+			for _, r := range representations {
+				if r.finite {
+					finite = append(finite, r)
+				}
+			}
+			r := rapid.SampledFrom(finite).Draw(t, "finite")
+			return codecExpected(drawRenaming(t, codecNames), codecFiles(representationSource(value, r)), "model.Repr")
+		}
+		source, _ := codecProgram(value, 0)
+		representation := "int"
+		if value%2 == 0 {
+			representation = "model.Repr"
+		}
+		return codecExpected(drawRenaming(t, codecNames), codecFiles(source), representation)
+	})
+}
+
+// genBrokenCodec draws a broken codec under drawn names: half the time one
+// of the fourteen invalid variants of codecProgram, half the time Box
+// encoding into one of the two representations that lead back to themselves
+// through required fields, which leaves Box without a codecType.
+//
+//uc:generates design.codecs-are-typed.broken
+func genBrokenCodec() *rapid.Generator[Broken] {
+	return rapid.Custom(func(t *rapid.T) Broken {
+		value := rapid.IntRange(-1000, 1000).Draw(t, "value")
+		if rapid.Bool().Draw(t, "representation") {
+			var cycles []representation
+			for _, r := range representations {
+				if !r.finite {
+					cycles = append(cycles, r)
+				}
+			}
+			r := rapid.SampledFrom(cycles).Draw(t, "cycle")
+			return drawRenaming(t, codecNames).broken(brokenFiles{files: codecFiles(representationSource(value, r)), codes: []string{"design.invalid-codec"},
+				path: "design/model.uc", absent: map[string][]string{"model.Box": {"codecType"}}}).broken()
+		}
+		source, code := codecProgram(value, rapid.IntRange(1, 14).Draw(t, "variant"))
+		return drawRenaming(t, codecNames).broken(brokenFiles{files: codecFiles(source), codes: []string{code}, path: "design/model.uc"}).broken()
+	})
 }

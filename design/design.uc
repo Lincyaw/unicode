@@ -15,29 +15,48 @@ type Explored record "loadForExploration 的结果：载入的设计层，丢弃
   field orphaned: list<string>
 }
 
-type Sample record "accepts-valid-design、contract-graph-is-declared、returned-value-contract-is-declared 和 exploration-prunes-recorded-inputs 的输入：一组合法的设计文件和录制文件，载入后应得的节点标识和边，以及部分节点和边应有的属性；边写成种类、起点和终点以空格相连" {
-  field files: map<string, string>
+type EdgeRef record "accepts-valid-design、contract-graph-is-declared、returned-value-contract-is-declared、inheritance-members-are-resolved 和 valid-codecs-load 的输入：一条边的种类、起点和终点" {
+  field kind: graph.EdgeKind
+  field from: string
+  field to: string
+}
+
+type EdgeAttrs record "accepts-valid-design、contract-graph-is-declared 和 returned-value-contract-is-declared 的输入：一条边的种类、起点、终点和它应有的全部属性" {
+  field kind: graph.EdgeKind
+  field from: string
+  field to: string
+  field attrs: map<string, list<string>>
+}
+
+type Sample record "accepts-valid-design、contract-graph-is-declared 和 returned-value-contract-is-declared 的输入：一组合法的源文件，载入后应得的全部节点标识和边，以及部分节点和边应有的全部属性" {
+  field sources: list<syntax.Source>
   field nodes: list<string>
-  field edges: list<string>
+  field edges: list<EdgeRef>
   field attrs: map<string, map<string, list<string>>>
-  field edgeAttrs: map<string, map<string, list<string>>>
+  field edgeAttrs: list<EdgeAttrs>
 }
 
-type Broken record "rejects-broken-design 和 contract-rejects-invalid-relations 的输入：一组做了一处违规改动的合法文件，改动所在的路径和行，以及应当得到的诊断码" {
-  field files: map<string, string>
+type Expected record "inheritance-members-are-resolved 和 valid-codecs-load 的输入：一组合法的源文件，部分节点的部分属性应有的值，以及图中必须有的边" {
+  field sources: list<syntax.Source>
+  field attrs: map<string, map<string, list<string>>>
+  field edges: list<EdgeRef>
+}
+
+type Broken record "rejects-broken-design、contract-rejects-invalid-relations、reply-scripts-are-typed、inheritance-rejects-invalid-members、codecs-are-typed 和 diagnostics-are-described 的输入：一组做了一处违规改动的源文件，各文件的行数，应当得到的诊断码和它们所在的文件，给出时须相符的行和 subject，以及节点不应有的属性" {
+  field sources: list<syntax.Source>
+  field lines: map<string, int>
+  field codes: list<string>
   field path: string
-  field line: int
+  field line: optional<int>
+  field subject: optional<string>
+  field absent: map<string, list<string>>
+}
+
+type Exploration record "exploration-keeps-valid-recordings、exploration-discards-stale-recordings、exploration-isolates-orphaned-corpus 和 exploration-keeps-corpus-errors 的输入：一组源文件 sources，加入一个录制用例或录制文件 target 之前的源文件 base，以及载入 sources 时应报的诊断码 code" {
+  field sources: list<syntax.Source>
+  field base: list<syntax.Source>
+  field target: string
   field code: string
-}
-
-type ReplySample record "reply-scripts-are-typed 的输入：默认应答脚本的项数 count，以及在固定的设计上做哪一种改动 variant" {
-  field count: int
-  field variant: int
-}
-
-type InheritanceSample record "inheritance-members-are-resolved 的输入：父类型字段的值 value，以及子类型是否另声明同名的字段和操作来遮蔽父类型的 overridden" {
-  field value: int
-  field overridden: bool
 }
 
 op loadForExploration(files: list<syntax.File>) -> Explored "供 unicode test --explore 载入设计：丢弃不再合乎符号的类型和限定的录制用例，忽略目标已不存在的录制文件，其余错误照常给出诊断"
@@ -48,67 +67,171 @@ op loadSources(sources: list<syntax.Source>) -> Loaded pure "解析 sources 中�
 
 op loadSourcesForExploration(sources: list<syntax.Source>) -> Explored pure "与 loadSources 一样解析 sources 中的每个源文件，再把没有诊断的语法树交给 loadForExploration；诊断是各文件的解析诊断和载入诊断"
 
-property accepts-valid-design invariant "合法的设计载入后没有诊断，图中的节点和边恰是 sample 列出的那些，标识按 model.md §7 写出，sample 列出属性的节点和边也恰有这些属性" {
-  about load
-  forall sample: Sample generated "一组随机的合法文件：约三分之一是 contract-graph-is-declared 或 returned-value-contract-is-declared 的黑盒契约，其余是系统文件、至多三层的组件文件和录制文件，含各种形式的类型、操作、流程、步骤、性质、限定和用例，名称约四分之一取关键字，满足只需设计就能判断的全部约束"
-  manual "需要把源文本解析成语法树再载入，表达式不能解析文本"
+property accepts-valid-design postcondition "合法的设计载入后没有诊断，图中的节点恰是 sample.nodes 列出的标识，边恰是 sample.edges 不重复地列出的种类、起点和终点，sample.attrs 和 sample.edgeAttrs 列出的节点和边恰有列出的属性" {
+  about loadSources
+  forall sample: Sample generated "一组随机的合法源文件：约三分之一是 contract-graph-is-declared 或 returned-value-contract-is-declared 的黑盒契约，其余是系统文件、至多三层的组件文件和录制文件，含各种形式的类型、操作、流程、步骤、性质、限定和用例，名称约四分之一取关键字，满足只需设计就能判断的全部约束；附全部节点和边，以及系统和每个流程的属性，契约另附性质、具名观察和子句引用的边的属性"
+  call loadSources(sample.sources)
+  ensure size(result.diagnostics) == 0
+  ensure all(id in sample.nodes: result.graph.node(id) != none)
+  ensure all(n in result.graph.nodes(): n.id in sample.nodes)
+  ensure all(x in sample.edges: count(y in sample.edges: y == x) == 1)
+  ensure size(result.graph.edges()) == size(sample.edges)
+  ensure all(e in result.graph.edges(): any(x in sample.edges: x.kind == e.kind and x.from == e.from and x.to == e.to))
+  ensure all(id in sample.attrs: result.graph.node(id).attrs == sample.attrs[id])
+  ensure all(x in sample.edgeAttrs: any(e in result.graph.edges(): e.kind == x.kind and e.from == x.from and e.to == x.to and e.attrs == x.attrs))
 }
 
-property rejects-broken-design invariant "合法的设计做一处违反某条约束的改动之后，载入在改动所在的文件和行给出这条约束的诊断，并且每条诊断都有 design.<名称> 形式的诊断码、subject、原因和修正，除 design.missing-system-file 外都位于给出的文件之内" {
-  about load
-  forall broken: Broken generated "一组含固定骨架的随机合法文件，等概率取三十四个诊断码之一，多在骨架上做一处违反对应约束的改动，附改动所在的路径、行和诊断码；约三分之一改用 contract-rejects-invalid-relations 的改动"
-  manual "需要把源文本解析成语法树再载入，表达式不能解析文本"
+property rejects-broken-design postcondition "合法的设计做一处违反某条约束的改动之后，载入在改动所在的文件给出这条约束的诊断码，给出行或 subject 时诊断的行或 subject 也相符" {
+  about loadSources
+  forall broken: Broken generated "一组含固定骨架的随机合法源文件，取三十四个诊断码之一，在骨架上做一处违反对应约束的改动；附各文件的行数，以及改动所在的文件和行"
+  call loadSources(broken.sources)
+  ensure all(c in broken.codes: any(d in result.diagnostics: d.code == c and d.position.path == broken.path and (broken.line == none or d.position.line == broken.line) and (broken.subject == none or d.subject == broken.subject)))
 }
 
-property load-ignores-file-order relation "同一组文件按路径排序和把排序结果轮转 rotation 位之后各载入一次，得到的设计层的图编码相同、诊断相同" {
-  about load
-  forall files: map<string, string> generated "一组随机的文件：一半是 accepts-valid-design 取的合法设计，一半是 rejects-broken-design 取的带一处违规改动的设计，两者都约有三分之一是黑盒契约"
-  forall rotation: int
-  where rotation in 0..1000
-  manual "需要把同一组文件排成两种次序的列表各载入一次，表达式不能构造列表的排列"
+property diagnostics-are-described postcondition "载入做了一处违规改动的设计时，loadSources 和 loadSourcesForExploration 给出的每条诊断都有 subject、原因和修正，行列不小于 1，除 design.missing-system-file 外都位于给出的某个文件中、行不超过这个文件的行数" {
+  about loadSources, loadSourcesForExploration
+  forall broken: Broken generated "rejects-broken-design、contract-rejects-invalid-relations、reply-scripts-are-typed、inheritance-rejects-invalid-members 和 codecs-are-typed 五者之一的输入"
+  call loadSources(broken.sources)
+  ensure all(d in result.diagnostics: size(d.subject) > 0 and size(d.message) > 0 and size(d.fix) > 0 and d.position.line >= 1 and d.position.column >= 1)
+  ensure all(d in result.diagnostics: d.code == "design.missing-system-file" or d.position.path in broken.lines and d.position.line <= broken.lines[d.position.path])
+  ensure all(d in loadSourcesForExploration(broken.sources).loaded.diagnostics: size(d.subject) > 0 and size(d.message) > 0 and size(d.fix) > 0 and d.position.line >= 1 and d.position.column >= 1)
+  ensure all(d in loadSourcesForExploration(broken.sources).loaded.diagnostics: d.code == "design.missing-system-file" or d.position.path in broken.lines and d.position.line <= broken.lines[d.position.path])
 }
 
-property contract-graph-is-declared invariant "合法的黑盒契约载入后没有诊断，节点和边恰是列出的那些，性质的 symbols、limits、observe、requires、changes、call 和 ensure 属性逐条保留子句，具名观察成为带 type 和 inputs 的 observation 节点，子句引用的类型和操作成为带 clauses 属性的 refers 边，子句访问了字段时边另带 paths 属性" {
-  about load
-  forall sample: Sample generated "一个固定的系统文件和一个含完整黑盒契约的组件文件：组件名称取 domain0 至 domain9999，金额区间的下界取 1 至 100、上界取下界至 1000，契约有直接观察路径、具名观察、两条前提、两条变化路径和六条 ensure，附预期的节点、边和属性"
-  manual "谓词复用 accepts-valid-design 的手写谓词，它需要把源文本解析成语法树，表达式不能解析文本"
+property load-ignores-file-order relation "同一组源文件换一种次序载入，得到的图编码和诊断都相同" {
+  about loadSources
+  forall sources: list<syntax.Source> generated "一组随机的源文件：accepts-valid-design 取的合法设计，rejects-broken-design 取的带一处违规改动的设计，在一至三个文件的随机一行之前插入 @ 而不能解析的合法设计，或者把一个组件文件复制到 design/copy.uc（已有时在 copy 后补 x）的合法设计，没有组件文件的合法设计总是插入 @"
+  forall reordered: list<syntax.Source> generated "sources 的一个随机排列"
+  ensure loadSources(reordered).graph.encode() == loadSources(sources).graph.encode()
+  ensure loadSources(reordered).diagnostics == loadSources(sources).diagnostics
 }
 
-property returned-value-contract-is-declared invariant "ensure 访问被测调用返回值 result 的字段和纯操作的黑盒契约载入后没有诊断，节点和边恰是列出的那些，性质的 symbols、call 和 ensure 属性保留子句，result 上访问的类型和操作成为带 clauses 属性的 refers 边，访问的字段记在 paths 属性中" {
-  about load
-  forall sample: Sample generated "一个固定的系统文件和一个组件文件，组件名称取 result0 至 result9999，其中的黑盒契约调用 make，并在 ensure 中访问 result.amount() 和 result.value，附预期的节点、边和属性"
-  manual "谓词复用 accepts-valid-design 的手写谓词，它需要把源文本解析成语法树，表达式不能解析文本"
+property contract-graph-is-declared postcondition "合法的黑盒契约载入后没有诊断，节点恰是列出的标识，边恰是不重复地列出的种类、起点和终点，性质的 symbols、limits、observe、requires、changes、call 和 ensure 属性逐条保留子句，具名观察成为带 type 和 inputs 的 observation 节点，子句引用的类型和操作成为带 clauses 属性的 refers 边，子句访问了字段时边另带 paths 属性" {
+  about loadSources
+  forall sample: Sample generated "一个系统文件和一个含黑盒契约的组件文件：组件名称取 domain0 至 domain9999，类型、字段、操作、符号、具名观察和性质的名称各从三四个候选中取，金额区间的下界取 1 至 100、上界取下界至 1000，两条前提和六条 ensure 各自或留或去（ensure 至少留一条）、次序随机；附按留下的子句写出的节点、边和属性"
+  call loadSources(sample.sources)
+  ensure size(result.diagnostics) == 0
+  ensure all(id in sample.nodes: result.graph.node(id) != none)
+  ensure all(n in result.graph.nodes(): n.id in sample.nodes)
+  ensure all(x in sample.edges: count(y in sample.edges: y == x) == 1)
+  ensure size(result.graph.edges()) == size(sample.edges)
+  ensure all(e in result.graph.edges(): any(x in sample.edges: x.kind == e.kind and x.from == e.from and x.to == e.to))
+  ensure all(id in sample.attrs: result.graph.node(id).attrs == sample.attrs[id])
+  ensure all(x in sample.edgeAttrs: any(e in result.graph.edges(): e.kind == x.kind and e.from == x.from and e.to == x.to and e.attrs == x.attrs))
 }
 
-property contract-rejects-invalid-relations invariant "黑盒契约的前提、变化路径、具名观察、about、调用序列或表达式有一处不合规则时，载入在出错的文件和行给出对应的诊断，并且每条诊断都有 design.<名称> 形式的诊断码、subject、原因、修正和文件内的位置" {
-  about load
-  forall broken: Broken generated "一条固定的黑盒契约做十三种文本替换之一：前提类型不符或用到 result，changes 改成观察范围之外的路径，具名观察的 from 列出未声明或重复的符号、观察类型是调用，about 不含被测的操作，多一个调用序列，被测调用的实参类型不符，ensure 调用非纯操作、对整数取下标、误用 old 或约束变量与符号同名；附应得的诊断码和行，about 与调用序列的改动落在 call 一行"
-  manual "谓词复用 rejects-broken-design 的手写谓词，它需要把源文本解析成语法树，表达式不能解析文本"
+property returned-value-contract-is-declared postcondition "ensure 访问被测调用返回值 result 的字段和纯操作的黑盒契约载入后没有诊断，节点恰是列出的标识，边恰是不重复地列出的种类、起点和终点，性质的 symbols、call 和 ensure 属性保留子句，result 上访问的类型和操作成为带 clauses 属性的 refers 边，访问的字段记在 paths 属性中" {
+  about loadSources
+  forall sample: Sample generated "一个系统文件和一个组件文件：组件名称取 result0 至 result9999，类型、字段、纯操作、被测操作、符号和性质的名称各从三个候选中取，黑盒契约调用被测操作，访问 result 上的纯操作和访问 result 的字段的两条 ensure 各自或留或去（至少留一条）、次序随机；附预期的节点、边和属性"
+  call loadSources(sample.sources)
+  ensure size(result.diagnostics) == 0
+  ensure all(id in sample.nodes: result.graph.node(id) != none)
+  ensure all(n in result.graph.nodes(): n.id in sample.nodes)
+  ensure all(x in sample.edges: count(y in sample.edges: y == x) == 1)
+  ensure size(result.graph.edges()) == size(sample.edges)
+  ensure all(e in result.graph.edges(): any(x in sample.edges: x.kind == e.kind and x.from == e.from and x.to == e.to))
+  ensure all(id in sample.attrs: result.graph.node(id).attrs == sample.attrs[id])
+  ensure all(x in sample.edgeAttrs: any(e in result.graph.edges(): e.kind == x.kind and e.from == x.from and e.to == x.to and e.attrs == x.attrs))
 }
 
-property reply-scripts-are-typed invariant "应答脚本合乎 model.md §10 第 23、26 条时载入没有诊断，有一处不合时载入给出 design.invalid-replies-type 或 design.value-type-mismatch，每条诊断都有 design.<名称> 形式的诊断码、subject、原因、修正和文件内的位置" {
-  about load
-  forall sample: ReplySample generated "一至五项应答的脚本，在固定的设计上做十三种改动之一：不改或改用子类型的错误（这两种合法），或者目标不是外部系统的操作、脚本为空、返回值或错误不合、缺字段、同一目标两个脚本、replies 嵌在 list 或操作签名中、接口字段缺操作或应答类型不合、一项同时有 returns 和 raises"
-  manual "需要按改动拼出设计文件的文本再解析和载入，表达式不能构造或解析文本"
+property contract-rejects-invalid-relations postcondition "黑盒契约的前提、变化路径、具名观察、about、调用序列或表达式有一处不合规则时，载入在出错的文件给出对应的诊断码，给出行或 subject 时诊断的行或 subject 也相符" {
+  about loadSources
+  forall broken: Broken generated "与 contract-graph-is-declared 取法相同、留下第一条前提和 ensure result 等于金额并把它们排在最前的黑盒契约，做十三种改动之一：前提类型不符或用到 result，changes 改成观察范围之外的路径，具名观察的 from 列出未声明或重复的符号、观察类型是调用，about 不含被测的操作，多一个调用序列，被测调用的实参类型不符，ensure 调用非纯操作、对整数取下标、误用 old 或约束变量与符号同名；附组件文件、应得的诊断码和行，about 与调用序列的改动落在 call 一行"
+  call loadSources(broken.sources)
+  ensure all(c in broken.codes: any(d in result.diagnostics: d.code == c and d.position.path == broken.path and (broken.line == none or d.position.line == broken.line) and (broken.subject == none or d.subject == broken.subject)))
 }
 
-property inheritance-members-are-resolved invariant "继承的字段和操作按 language.md §4.4 的查找规则解析：在表达式、限定、用例和调用序列中都能访问，子类型的同名成员遮蔽父类型的，调用序列引用类型时以这个类型为接收者、引用操作时以声明操作的类型为接收者，用例给出记录的值时必须含继承的字段，继承对象类型的枚举和接口不暴露字段，图中类型的 fields 属性只列自己声明的字段，每条诊断都有 design.<名称> 形式的诊断码、subject、原因、修正和文件内的位置" {
-  about load
-  forall sample: InheritanceSample generated "父类型字段的值取 -20 至 20 的任意整数，overridden 决定子类型是否另声明同名的字段和操作来遮蔽父类型的"
-  manual "需要按 sample 拼出设计文件的文本再解析和载入，表达式不能构造或解析文本"
+property valid-reply-scripts-load postcondition "成功应答和声明错误的子类型的应答、接口字段各操作的应答都合乎类型时，载入没有诊断" {
+  about loadSources
+  forall sources: list<syntax.Source> generated "一个系统文件（外部系统的操作、错误和错误的子类型）和一个组件文件（接口、带接口字段的记录和一条带用例的性质），用例给出一至五项成功应答的脚本，或一项错误的子类型带字段的应答，组件、类型、操作、符号、字段和用例的名称各从三个候选中取"
+  call loadSources(sources)
+  ensure size(result.diagnostics) == 0
 }
 
-property codecs-are-typed invariant "codec 载入成 codec 属性中编码和解码操作的引用、codecType 属性中的表示类型和指向这两个操作的 refers 边，经 optional、list、set、map 或另一个 codec 终止的表示被接受，encoded(v) 按表示类型检查，签名不对、重复、用于接口、操作没有声明、没有 codec 却用 encoded、表示类型经必填字段或 codec 循环依赖、靠继承得到 codec 时载入给出诊断，解码后的限定不在载入时检查，每条诊断都有 design.<名称> 形式的诊断码、subject、原因、修正和文件内的位置" {
-  about load
-  forall value: int
-  forall variant: int
-  where value in -1000..1000
-  where variant in 0..14
-  manual "需要按 value 和 variant 拼出含 codec 的设计文件再载入，表达式不能构造或解析文本"
+property reply-scripts-are-typed postcondition "应答脚本有一处不合 model.md §10 第 23、26 条时，载入在出错的文件给出 design.invalid-replies-type 或 design.value-type-mismatch，给出行或 subject 时诊断的行或 subject 也相符" {
+  about loadSources
+  forall broken: Broken generated "与 valid-reply-scripts-load 取法相同的设计做十一种改动之一：目标不是外部系统的操作，脚本为空，返回值类型不合，抛出未声明的错误，错误缺字段，同一目标两个脚本，replies 嵌在 list 中或用作操作的参数，接口字段某个操作的应答类型不合或缺少，一项同时有 returns 和 raises；附组件文件和应得的诊断码，不给行和 subject"
+  call loadSources(broken.sources)
+  ensure all(c in broken.codes: any(d in result.diagnostics: d.code == c and d.position.path == broken.path and (broken.line == none or d.position.line == broken.line) and (broken.subject == none or d.subject == broken.subject)))
 }
 
-property exploration-prunes-recorded-inputs invariant "loadForExploration 丢弃不再合乎设计的录制用例、忽略目标不存在或不是性质或流程的录制文件并保留合法的录制用例，所得的图与不含这些录制时 load 的图相同，声明的用例、重复的录制用例名、放错路径的录制文件和其他设计错误照常给出诊断，而 load 对丢弃的录制用例和忽略的文件仍报错，两种载入都不改动语法树，每条诊断都有 design.<名称> 形式的诊断码、subject、原因、修正和文件内的位置" {
-  about load, loadForExploration
-  forall sample: Sample generated "与 accepts-valid-design 的 sample 取值相同：一组随机的合法文件，约三分之一是黑盒契约，其余是系统文件、至多三层的组件文件和录制文件，录制用例都合乎设计"
-  manual "需要在语法树上增删和改写录制用例，再打印成文件载入，表达式不能构造或打印语法树"
+property inheritance-members-are-resolved postcondition "继承的字段和操作在表达式、限定、用例和调用序列中都能访问时载入没有诊断，类型的 fields 属性只列自己声明的字段，类型引用的调用序列在 symbols 属性中保留这个类型，被测调用的 refers 边指向实际声明的操作，子类型的同名操作遮蔽父类型的" {
+  about loadSources
+  forall expected: Expected generated "一个系统文件和一个组件文件：子类型继承父类型的字段和操作，父类型字段的值取 -20 至 20 的整数，子类型或另声明同名的字段和操作来遮蔽父类型的、或不声明，两条性质在表达式、限定、用例和调用序列中访问继承的成员，组件、类型、字段、操作、符号、用例和性质的名称各从三个候选中取；附两个类型的 fields 属性、调用序列性质的 symbols 属性，以及被测调用指向实际声明的操作的 refers 边"
+  call loadSources(expected.sources)
+  ensure size(result.diagnostics) == 0
+  ensure all(id in expected.attrs: all(k in expected.attrs[id]: result.graph.node(id).attrs[k] == expected.attrs[id][k]))
+  ensure all(x in expected.edges: any(e in result.graph.edges(): e.kind == x.kind and e.from == x.from and e.to == x.to))
+}
+
+property inheritance-rejects-invalid-members postcondition "用例给出的记录缺继承的字段、继承对象类型的枚举或接口的字段被访问、操作引用的调用序列以子类型为接收者时，载入在出错的文件给出对应的全部诊断码，给出行或 subject 时诊断的行或 subject 也相符" {
+  about loadSources
+  forall broken: Broken generated "与 inheritance-members-are-resolved 取法相同的设计做三种改动之一：记录用例去掉一个继承的字段，应得 design.value-type-mismatch，或者加一个继承父类型的枚举或接口并在一条新性质的限定和 ensure 中访问它继承的字段，应得 subject 为这条性质的 design.invalid-limit-path 和 design.expression-type，或者调用序列改为引用父类型的操作，应得 design.invalid-call-sequence；附组件文件，不给行"
+  call loadSources(broken.sources)
+  ensure all(c in broken.codes: any(d in result.diagnostics: d.code == c and d.position.path == broken.path and (broken.line == none or d.position.line == broken.line) and (broken.subject == none or d.subject == broken.subject)))
+}
+
+property valid-codecs-load postcondition "codec 的签名合乎 language.md §5.3.1、表示经 optional、list、set、map 或另一个 codec 终止时载入没有诊断，类型的 codec 属性列出编码和解码操作，codecType 属性是表示类型，类型有指向这两个操作的 refers 边" {
+  about loadSources
+  forall expected: Expected generated "一个系统文件和一个组件文件，其中的类型声明合法的 codec：或者编码成 int（值为奇数时）或记录（值为偶数时）并带 encoded 用例，值取 -1000 至 1000，或者编码成一个记录，它的字段经 optional、list、set、map 或另一个 codec 回到自身，组件、类型、操作、字段和用例的名称各从三个候选中取；附类型的 codec、codecType 属性和指向编码、解码操作的两条 refers 边"
+  call loadSources(expected.sources)
+  ensure size(result.diagnostics) == 0
+  ensure all(id in expected.attrs: all(k in expected.attrs[id]: result.graph.node(id).attrs[k] == expected.attrs[id][k]))
+  ensure all(x in expected.edges: any(e in result.graph.edges(): e.kind == x.kind and e.from == x.from and e.to == x.to))
+}
+
+property codecs-are-typed postcondition "codec 的签名不对、重复、用于接口、操作没有声明、没有 codec 却用 encoded、表示类型经必填字段或另一个 codec 回到自身、靠继承得到 codec 时，载入在出错的文件给出对应的诊断码，给出行或 subject 时诊断的行或 subject 也相符，broken.absent 列出的节点属性不存在或为空" {
+  about loadSources
+  forall broken: Broken generated "与 valid-codecs-load 取法相同的设计做一处改动：十四种之一（codec 重复、用于接口、编码操作没有声明、带参数、不是纯操作或声明了错误、解码操作的参数或返回类型不符、解码操作是方法、编码成自身、没有 codec 却用 encoded、encoded 的值类型不符、子类型靠继承得到 codec、经另一个 codec 回到自身），或者表示类型经必填字段直接或间接回到自身；附组件文件和应得的诊断码，后一种另要求类型没有 codecType 属性"
+  call loadSources(broken.sources)
+  ensure all(c in broken.codes: any(d in result.diagnostics: d.code == c and d.position.path == broken.path and (broken.line == none or d.position.line == broken.line) and (broken.subject == none or d.subject == broken.subject)))
+  ensure all(id in broken.absent: all(k in broken.absent[id]: not k in result.graph.node(id).attrs or size(result.graph.node(id).attrs[k]) == 0))
+}
+
+property exploration-keeps-valid-recordings postcondition "录制用例都合乎设计时，探索载入和 loadSources 都没有诊断，探索载入不丢弃录制用例、不列出孤立的录制文件，两者的图编码相同，图中有加入的录制用例 target" {
+  about loadSourcesForExploration, loadSources
+  forall sample: Exploration generated "accepts-valid-design 取的合法设计，加一个录制边界组件（一个类型、一个操作和一条整数符号限定在 0 至 10、带一个声明的用例的性质）和它的录制文件（一个录制用例），用例的值取 0 至 10；录制文件再加一个合法的录制用例作为 target，base 是加入 target 之前的源文件"
+  call loadSourcesForExploration(sample.sources)
+  ensure size(result.loaded.diagnostics) == 0 and size(result.discarded) == 0 and size(result.orphaned) == 0
+  ensure size(loadSources(sample.sources).diagnostics) == 0
+  ensure result.loaded.graph.encode() == loadSources(sample.sources).graph.encode()
+  ensure result.loaded.graph.node(sample.target) != none
+}
+
+property exploration-discards-stale-recordings postcondition "加入的录制用例 target 不再合乎设计时，loadSources 对它给出诊断码 code，探索载入没有诊断和孤立的录制文件，恰丢弃 target，图中没有 target，图编码与载入 base 的相同" {
+  about loadSourcesForExploration, loadSources
+  forall sample: Exploration generated "与 exploration-keeps-valid-recordings 相同地加入录制边界，再加一个不合设计的录制用例作为 target：多一个未知符号、缺值、重复的值、字符串值，或 -1000 至 -1、11 至 1000 的越界值；code 是对应的诊断码，base 是加入 target 之前的源文件"
+  call loadSourcesForExploration(sample.sources)
+  ensure any(d in loadSources(sample.sources).diagnostics: d.code == sample.code and d.subject == sample.target)
+  ensure size(result.loaded.diagnostics) == 0 and size(result.orphaned) == 0
+  ensure size(result.discarded) == 1 and sample.target in result.discarded
+  ensure result.loaded.graph.node(sample.target) == none
+  ensure result.loaded.graph.encode() == loadSources(sample.base).graph.encode()
+}
+
+property exploration-isolates-orphaned-corpus postcondition "录制文件 target 指向的性质或流程不存在时，loadSources 有诊断，探索载入没有诊断，不丢弃录制用例，恰把 target 列为孤立的录制文件，图编码与载入 base 的相同" {
+  about loadSourcesForExploration, loadSources
+  forall sample: Exploration generated "与 exploration-keeps-valid-recordings 相同地加入录制边界，再按指向的标识在新路径 target 加一个录制文件，它指向不存在的标识或录制边界组件中的类型；base 是加入它之前的源文件"
+  call loadSourcesForExploration(sample.sources)
+  ensure size(loadSources(sample.sources).diagnostics) > 0
+  ensure size(result.loaded.diagnostics) == 0 and size(result.discarded) == 0
+  ensure size(result.orphaned) == 1 and sample.target in result.orphaned
+  ensure result.loaded.graph.encode() == loadSources(sample.base).graph.encode()
+}
+
+property exploration-keeps-corpus-errors postcondition "录制文件放错路径或录制用例重名时，探索载入照常给出诊断码 code，不丢弃录制用例，也不列出孤立的录制文件" {
+  about loadSourcesForExploration
+  forall sample: Exploration generated "与 exploration-keeps-valid-recordings 相同地加入录制边界，再在 corpus/wrong-location.uc 加一个指向不存在的标识或类型的录制文件（code 为 design.corpus-path-mismatch），或在录制文件中重复已有的录制用例（code 为 design.duplicate-name）"
+  call loadSourcesForExploration(sample.sources)
+  ensure any(d in result.loaded.diagnostics: d.code == sample.code)
+  ensure size(result.discarded) == 0 and size(result.orphaned) == 0
+}
+
+property exploration-keeps-design-errors postcondition "设计中声明的用例超出限定或 about 引用不存在时，loadSources 和探索载入都有诊断，探索载入不丢弃录制用例，也不列出孤立的录制文件" {
+  about loadSourcesForExploration, loadSources
+  forall sources: list<syntax.Source> generated "与 exploration-keeps-valid-recordings 相同地加入录制边界，再把声明的用例的值改为限定之外的 11，或在性质的 about 中加一个不存在的操作"
+  call loadSourcesForExploration(sources)
+  ensure size(loadSources(sources).diagnostics) > 0
+  ensure size(result.loaded.diagnostics) > 0
+  ensure size(result.discarded) == 0 and size(result.orphaned) == 0
 }
