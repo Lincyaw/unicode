@@ -711,7 +711,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
   2. 运行 `unicode test --since DEPLOYED --traffic`，`DEPLOYED` 是正在运行的版本构建所在的提交，即它的运行记录和采集的调用中记下的提交。采集的调用回放为用例，版本差分以它们为输入比较 `DEPLOYED` 与要部署的版本；有不通过的结论时退出码为 11，差分有不同时为 10。
   3. 运行 `unicode gen --check`，再以 `go build -tags unicode_monitor` 构建要部署的程序；运行时由 `UNICODE_MONITOR_RATE`、`UNICODE_MONITOR_TRAFFIC`、`UNICODE_MONITOR_DIR`、`UNICODE_MONITOR_KEY` 和 OpenTelemetry 的 `OTEL_*` 环境变量配置（§6.6）。
 - **改写与输出**：改写在 POSIX 上是原子的（Windows 上不保证原子），并保留文件的权限，失败时不留下临时文件；写入或输出失败时退出码为 1。`cli.not-canonical` 的位置是与规范格式第一处不同的字节。`--help` 写到标准输出，退出码为 0。JSON 缩进两个空格。带 `--format json` 时，诊断是数据，写在标准输出的 JSON 中，标准错误只放日志；文本模式下，诊断写到标准错误，标准输出只列出改写了的或不是规范格式的文件。
-- **诊断的 JSON**：`{code, subject, path, line, column, message, fix}`。`code` 是稳定的诊断码，写作 `<组件>.<短横线名称>`，例如 `syntax.unexpected-token`；每条约束有一个或几个，修正办法不同的子规则各用一个。`subject` 是出错的节点、边或文件；`syntax` 和 `cli` 的诊断，`subject` 是文件的路径。
+- **诊断的 JSON**：`{code, subject, path, line, column, message, fix}`，即线上记录 `diag.Flat` 的字段。`code` 是稳定的诊断码，写作 `<组件>.<短横线名称>`，例如 `syntax.unexpected-token`；每条约束有一个或几个，修正办法不同的子规则各用一个。`subject` 是出错的节点、边或文件；`syntax` 和 `cli` 的诊断，`subject` 是文件的路径。
 - **生成的 JSON**：与 `lang.Generation` 同形，为 `{edits: [{path, content, createOnly}], diagnostics: [...]}`；`content` 是 UTF-8 源码字符串，不是字节的 base64。`--dry-run` 返回同样的生成计划，不写文件。有诊断时 `gen` 不写入任何文件；没有诊断时，文本模式只列出生成文件的路径。目标已有文件而没有生成标记时是冲突，退出码为 5。
 - **运行的 JSON**：与 `lang.RunReport` 同形，为 `{version, snapshot, commit, dirty, at, venue, mode, results: [{id, passed, accepted, rejected, observations, differences, diagnostics, cases, codeTotal?, branchTotal?, errorTotal?}], diagnostics}`；`venue` 是执行场合（[model.md](model.md) §3.5），`unicode test` 写 `test`。运行时的运行记录（§6.6）与它同形，`venue` 为 `runtime`，没有 `snapshot` 和 `mode`，`accepted` 是适用的调用数，结论另有 `outsideDomain`（各项为不成立的限定或前提 `clause` 和次数 `calls`）、`clauses`（各项为子句 `clause` 和判定的次数 `judged`）、`p95`（以纳秒计）和流程的 `traces`，`cases` 只有反例；cases 保存逐输入的冻结模型值、inputHash、覆盖、轨迹、耗时及结果，数组为空时也输出 `[]`。外层的 `diagnostics` 列出不属于任何一条结论的诊断：工具失败、检查错误（[language.md](language.md) E15）和结果写入失败，有这样的诊断时退出码为 10；工具链不存在仍为 7。外层没有诊断而有 `passed = false` 的结论时退出码为 11，该结论的 `diagnostics` 指出不成立的 `ensure` 或范围外的差异。观察失败可以另列在相关的结论中，但外层的 `diagnostics` 中必须也有。命令输出和 `.unicode/results.json` 均使用小驼峰字段，所有层级的诊断都使用上面的扁平 JSON 形状；`diag.Diagnostic` 的 JSON 编解码统一写成此形状。
 - **诊断码与规则**：违反规则的诊断码按规则列在 [language.md](language.md) 和 [model.md](model.md) 的附录 B 中。不属于任何规则的诊断码如下：
@@ -796,7 +796,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 
 ## 10 工具链对自己的验证
 
-- **静态检查**：`gofmt`、`go vet`、`golangci-lint`，以及 `unicode fmt --check` 和 `unicode check`。`make rule-check`（`scripts/rulecodes.py`）检查每条规则在 [language.md](language.md) 或 [model.md](model.md) 的附录 B 中有一行，这两张表与 §8 的表合起来恰好列出代码中的全部诊断码。M2 之前，组件之间的导入由 golangci-lint 的 depguard 检查；M2 起改由 `unicode check` 按设计中的 `uses` 检查。
+- **静态检查**：`gofmt`、`go vet`、`golangci-lint`，以及 `unicode fmt --check` 和 `unicode check`。golangci-lint 的 tagliatelle 要求每个 JSON 键是它的 Go 字段名的小驼峰写法，`unicode check` 又要求实现设计记录的 Go 类型有设计的每个字段（[model.md](model.md) §10 第 18 条），所以实现设计记录的线上记录（如 `diag.Flat`）以设计的字段名为键。`make rule-check`（`scripts/rulecodes.py`）检查每条规则在 [language.md](language.md) 或 [model.md](model.md) 的附录 B 中有一行，这两张表与 §8 的表合起来恰好列出代码中的全部诊断码。M2 之前，组件之间的导入由 golangci-lint 的 depguard 检查；M2 起改由 `unicode check` 按设计中的 `uses` 检查。
 - **性质**（M1 时写成带符号的 `property`，M4 起由工具链自己生成驱动）：
   1. `fmt` 幂等。
   2. 规范格式打印之后再解析，得到同一棵语法树。

@@ -4,7 +4,15 @@ linters:
   default: standard
   enable:
     - depguard
+    - tagliatelle
   settings:
+    # Every JSON key is its Go field's name in lower camel case, so a wire
+    # record realizing a design record has the design's field names as keys.
+    tagliatelle:
+      case:
+        use-field-name: true
+        rules:
+          json: goCamel
     depguard:
       rules:
         diag:
