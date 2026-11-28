@@ -273,6 +273,10 @@ func MeanDurations(g *graph.Graph) map[string]int {
 			latest[first(n.Attrs["check"])] = t
 		}
 	}
+	// attach writes at from a report whose time it checked to be canonical,
+	// and each call as "<op> <ns>"; an evidence node that does not parse so
+	// was not written by attach, which reports what it refuses
+	// (evidence.invalid-report), and gives no mean.
 	total, count := map[string]int{}, map[string]int{}
 	for _, n := range nodes {
 		if t, ok := at(n); !ok || !fresh(n, "case") || !t.Equal(latest[first(n.Attrs["check"])]) {

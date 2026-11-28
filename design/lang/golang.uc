@@ -81,9 +81,10 @@ type DerivedOutcome enum "derived-state-is-removed 的输入：一个用例的�
   value underivable
 }
 
-type BuiltState record "derived-state-is-removed 的观察：派生函数记下的目录数，以及其中仍然存在的目录数" {
+type BuiltState record "derived-state-is-removed 和 derived-inputs-are-recomputed 的观察：派生函数记下的目录数、其中仍然存在的目录数，以及它每次被调用时的 mode 的十进制文本" {
   field recorded: int
   field remaining: int
+  field modes: list<string>
 }
 
 type EffectModule record "extracts-direct-effects 的输入：一个 Go 模块和它依赖的一个模块的文件、源码根目录，以及模块中每个函数和方法应有的直接效果" {
@@ -204,16 +205,31 @@ property split-failures-replay-by-seed invariant "一条性质在奇数输入上
   manual "需要生成并编译一个 Go 模块的驱动，再拆分执行并按 rapid 给出的种子重放它的测试二进制，读取输出，表达式不能运行程序"
 }
 
-property derived-state-is-removed postcondition "Go 后端回放一条派生函数建出目录的性质之后，派生函数记下了目录，记下的目录都已删除，不论用例通过、失败、被前提拒绝、panic 还是派生函数出错；有派生函数出错的用例时，运行报告的诊断中有 lang.golang.derivation-failed" {
+property derived-state-is-removed postcondition "Go 后端回放或探索一条派生函数建出目录的性质之后，派生函数记下了目录，记下的目录都已删除，不论用例通过、失败、被前提拒绝、panic 还是派生函数出错" {
   about lang.Runner.run
   forall backend: Backend
   forall outcomes: list<DerivedOutcome>
-  forall plan: lang.RunPlan generated "把一个 Go 模块写进新目录、生成驱动并建图得到的运行输入：模块中的一条性质带派生输入，派生函数新建一个目录并把它的路径记在模块根目录的 built.txt 中，outcomes 的每一项是这条性质的一个声明的用例，按其结局使用例通过、失败、被前提拒绝、在被测调用中 panic，或者使派生函数记下目录之后返回错误"
+  forall explore: bool
+  forall plan: lang.RunPlan generated "把一个 Go 模块写进新目录、生成驱动并建图得到的运行输入：模块中的一条性质有整数符号 mode 和派生输入 dir，派生函数新建一个目录并把它的路径记在模块根目录的 built.txt 中，outcomes 的每一项是这条性质的一个声明的用例，按其结局使 mode 为 0 时通过、为 1 时失败、为 2 时被前提拒绝、为 3 时在被测调用中 panic、为 4 时派生函数记下目录之后返回错误，explore 为真时在回放之后探索 200 毫秒"
   where outcomes size 1..5
   observe built: BuiltState from plan
   changes built
   call backend.run(plan)
   ensure built.recorded > 0 and built.remaining == 0
+}
+
+property derived-inputs-are-recomputed postcondition "Go 后端回放或探索一条带派生输入的性质时，用例冻结的输入中没有派生输入，每个用例的 mode 都在这次运行中调用过派生函数（同一次运行中 mode 相同的用例可以复制它建出的模板），派生函数出错的用例使运行报告的诊断中有 lang.golang.derivation-failed" {
+  about lang.Runner.run
+  forall backend: Backend
+  forall outcomes: list<DerivedOutcome>
+  forall explore: bool
+  forall plan: lang.RunPlan generated "与 derived-state-is-removed 的 plan 相同"
+  where outcomes size 1..5
+  observe built: BuiltState from plan
+  changes built
+  call backend.run(plan)
+  ensure all(r in result.results: all(c in r.cases: not "dir" in c.input.values))
+  ensure all(r in result.results: all(c in r.cases: "mode" in c.input.values implies c.input.values["mode"].text in built.modes))
   ensure DerivedOutcome.underivable in outcomes implies any(d in result.diagnostics: d.code == "lang.golang.derivation-failed")
 }
 
@@ -245,6 +261,7 @@ property records-call-durations postcondition "Go 后端回放一条性质时，
   about lang.Runner.run
   forall backend: Backend
   forall outcomes: list<DerivedOutcome>
+  forall explore: bool
   forall plan: lang.RunPlan generated "与 derived-state-is-removed 的 plan 相同"
   where outcomes size 1..5
   call backend.run(plan)

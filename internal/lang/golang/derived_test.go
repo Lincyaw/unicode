@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
@@ -28,12 +29,14 @@ const (
 )
 
 // BuiltState is what the derived-input module's derivation recorded: the
-// directories it made, and how many of them still exist.
+// directories it made, how many of them still exist, and the mode of each
+// call.
 //
 //uc:realizes lang.golang.BuiltState
 type BuiltState struct {
 	Recorded  int
 	Remaining int
+	Modes     []string
 }
 
 // derivedModes gives each outcome the mode its case passes to the module:
@@ -45,15 +48,17 @@ var derivedModes = map[DerivedOutcome]int{
 
 // deriveCleanupPlan writes a Go module into a new directory: a function
 // Probe, and a property demo.cleans on it whose derived input dir is made by
-// a derivation that creates a directory and records its path in built.txt
+// a derivation that creates a directory and records its mode and path in built.txt
 // at the module's root, the working directory of the drivers Backend.run
 // starts, so that the module names no directory of its own and its state
 // template can move. Each outcome is one declared case. It generates the
-// module's drivers and gives the plan that replays demo.cleans.
+// module's drivers and gives the plan that replays demo.cleans, and then
+// explores it for 200 ms when explore holds.
 //
 //uc:generates lang.golang.derived-state-is-removed.plan
 //uc:generates lang.golang.records-call-durations.plan
-func deriveCleanupPlan(outcomes []DerivedOutcome) (lang.RunPlan, error) {
+//uc:generates lang.golang.derived-inputs-are-recomputed.plan
+func deriveCleanupPlan(outcomes []DerivedOutcome, explore bool) (lang.RunPlan, error) {
 	root, err := os.MkdirTemp("", "derived-module-")
 	if err != nil {
 		return lang.RunPlan{}, err
@@ -66,12 +71,12 @@ func deriveCleanupPlan(outcomes []DerivedOutcome) (lang.RunPlan, error) {
 		"go.mod":       "module example.test/derived\n\ngo 1.26.2\n\nrequire pgregory.net/rapid v1.3.0\n",
 		"go.sum":       string(sum),
 		"src/probe.go": "package probe\n\n//uc:realizes demo.probe\nfunc Probe(mode int) bool {\n\tif mode == 3 {\n\t\tpanic(\"probe panics\")\n\t}\n\treturn mode != 1\n}\n",
-		"src/derive_test.go": "package probe\n\nimport (\n\t\"errors\"\n\t\"os\"\n)\n\n" +
+		"src/derive_test.go": "package probe\n\nimport (\n\t\"errors\"\n\t\"fmt\"\n\t\"os\"\n)\n\n" +
 			"//uc:generates demo.cleans.dir\nfunc deriveDir(mode int) (string, error) {\n" +
 			"\tdir, err := os.MkdirTemp(\"\", \"built-\")\n\tif err != nil {\n\t\treturn \"\", err\n\t}\n" +
 			"\tf, err := os.OpenFile(\"built.txt\", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)\n" +
 			"\tif err != nil {\n\t\treturn \"\", err\n\t}\n\tdefer f.Close()\n" +
-			"\tif _, err := f.WriteString(dir + \"\\n\"); err != nil {\n\t\treturn \"\", err\n\t}\n" +
+			"\tif _, err := fmt.Fprintf(f, \"%d %s\\n\", mode, dir); err != nil {\n\t\treturn \"\", err\n\t}\n" +
 			"\tif mode == 4 {\n\t\treturn \"\", errors.New(\"the derivation refuses mode 4\")\n\t}\n\treturn dir, nil\n}\n",
 	}
 	for name, content := range files {
@@ -96,7 +101,11 @@ func deriveCleanupPlan(outcomes []DerivedOutcome) (lang.RunPlan, error) {
 			return lang.RunPlan{}, err
 		}
 	}
-	return lang.RunPlan{Root: root, Roots: []string{"src"}, Graph: &g, Ids: []string{"demo.cleans"}}, nil
+	plan := lang.RunPlan{Root: root, Roots: []string{"src"}, Graph: &g, Ids: []string{"demo.cleans"}}
+	if explore {
+		plan.Explore = 200 * time.Millisecond
+	}
+	return plan, nil
 }
 
 // derivedGraph is the derived-input module's design, its declared cases
@@ -136,8 +145,8 @@ func derivedGraph(root string, outcomes []DerivedOutcome) (graph.Graph, error) {
 	return g, nil
 }
 
-// observeBuilt reads the directories the module's derivation recorded in
-// built.txt, and counts those that still exist.
+// observeBuilt reads the modes and directories the module's derivation
+// recorded in built.txt, and counts the directories that still exist.
 //
 //uc:observes lang.golang.derived-state-is-removed.built
 func observeBuilt(plan lang.RunPlan) (BuiltState, error) {
@@ -152,11 +161,16 @@ func observeBuilt(plan lang.RunPlan) (BuiltState, error) {
 	var state BuiltState
 	lines := bufio.NewScanner(f)
 	for lines.Scan() {
-		dir := strings.TrimSpace(lines.Text())
-		if dir == "" {
+		line := strings.TrimSpace(lines.Text())
+		if line == "" {
 			continue
 		}
+		mode, dir, ok := strings.Cut(line, " ")
+		if !ok {
+			return BuiltState{}, fmt.Errorf("built.txt has a line without a mode and a directory: %q", line)
+		}
 		state.Recorded++
+		state.Modes = append(state.Modes, mode)
 		if _, err := os.Stat(dir); err == nil {
 			state.Remaining++
 		} else if !errors.Is(err, fs.ErrNotExist) {
@@ -165,3 +179,9 @@ func observeBuilt(plan lang.RunPlan) (BuiltState, error) {
 	}
 	return state, lines.Err()
 }
+
+// observeRecomputed reads built.txt as observeBuilt does, for the
+// recomputation property.
+//
+//uc:observes lang.golang.derived-inputs-are-recomputed.built
+func observeRecomputed(plan lang.RunPlan) (BuiltState, error) { return observeBuilt(plan) }
