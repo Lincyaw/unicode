@@ -104,9 +104,10 @@
   | 单次调用契约 | 一次调用的输出与它的输入 | 带 `call` 的 `postcondition`；纯操作也可以写成不带调用序列的 `invariant`，在 `ensure` 中调用它 |
   | 不变式 | 在每个调用序列上都成立的陈述 | 带调用序列符号的 `invariant` 或 `transition` |
   | 变形关系 | f(x) 与 f(T(x)) 之间，T 是输入的变换 | `relation`，T(x) 写成派生输入 |
-  | 差分 | 两个实现，或同一实现的两个版本，对同一输入给出相同的输出 | `relation` |
+  | 差分 | 两个实现，或同一实现的两个版本，对同一输入给出相同的输出 | `relation`；同一操作的两个版本之间、两种语言的实现之间由工具链推出 |
 
   性质至多有一个被测调用，表达式只调用纯操作（[language.md](language.md) §4.4），所以手写的变形关系和差分以纯操作为 f。
+- **推出的关系**不写成性质，由工具链对每个适用的操作检查：纯操作的确定性（第 32 条）、codec 的往返（[language.md](language.md) §5.3.1）、`set` 和 `map` 的元素次序不影响输出（第 41 条）、版本差分（第 42 条）和实现差分（第 43 条）。驱动怎样生成和运行它们见 [design.md](design.md) §6.5。
 - **符号** x 有名称和设计中的类型 type(x)。性质的陈述对符号的每一组取值都成立。
 - type(x) = `call<R1, …, Rk>` 时，x 的一个值是对 R1, …, Rk 中某个操作的一次调用，带全部实参；Ri 是类型时指它的全部可见操作，包括继承操作；成员按本类型优先、再沿 `extends` 解析。关于一串调用的性质写成 `forall steps: list<call<Stock>>`；检查时先检查一次陈述，再依次执行这些调用，每一步之后检查陈述（[language.md](language.md) §4.4 E13）。
 - **陈述**是性质或流程的全部 `ensure` 表达式，连同性质的 `call` 子句和 `within` 的时长；类型规则和检查步骤见 [language.md](language.md) §4.4。流程的被测调用是它的第一个步骤。不能写成表达式的性质改带 `manual`，称为**人工性质**，由手写的谓词检查。需要环境准备的流程同样写 `manual` 和理由，称为**人工流程**；其余的流程称为**自动流程**。
@@ -298,7 +299,7 @@
     6. `observes` 指向具名观察，每个观察适配器是自由函数，恰带一个 `observes` 绑定；
     7. 安装器是自由函数，恰指向一个外部系统直接提供的操作；每个目标至多一个安装器，它所在的文件与该操作的客户端归属于同一个 `uses` 该外部系统的容器。Go 安装器接收与客户端完全同签名的函数，返回清理函数；安装器还是骨架时，该外部操作为 `stub`。
     8. `publishes` 指向事件，发布函数是具体的自由函数或方法，参数恰为该事件且没有返回值；发布函数所在的容器与事件之间满足允许的依赖，每个函数至多一个 `publishes` 绑定。
-16. 【状态】每个类型和每个操作，包括外部系统的，都恰被一个代码层元素实现。没有时为 `missing`；实现操作的函数是骨架时为 `stub`。
+16. 【状态】每个类型和每个操作，包括外部系统的，都至少被一个代码层元素实现，同一种语言中至多一个。没有时为 `missing`；实现操作的函数是骨架时为 `stub`。
 17. 若 realizes(x, n)，则 x 所在的文件归属于 container(n)。n 属于外部系统 X 时，x 所在的文件归属于某个 `uses` X 的容器。
 18. 【状态】若 realizes(x, n)，则下列各项都成立，否则 n 为 `contradicted`：
     1. x 的名称是 n 的名称的映射（[design.md](design.md) §4）；
@@ -357,6 +358,14 @@
 
 40. 用例恰好不给派生输入赋值：给派生输入赋值，或者不给不是派生输入的生成的符号赋值，都是错误。派生函数没有 `time` 效果（D8），因此同样的前置符号总算出同样的派生输入。
 
+**推出的关系**
+
+下面三条中，一次调用的**输出**是它的返回值或错误的数据、调用后接收者和实参的模型值，以及被测调用的调用后观察值，按 [language.md](language.md) E5 比较。
+
+41. 【状态】`set` 和 `map` 的元素次序不影响输出：被测调用或表达式中的纯操作调用，输入中含有 `set` 或 `map` 时，把其中每个 `set` 和 `map` 换一种元素次序重新构造输入、再调用一次，两次的输出相同；否则该操作为 `contradicted`。纯操作的这一次调用就是第 32 条的第二次调用。
+42. 版本差分：对比较基准和工作区（`unicode test --since`），设计层操作 o 的设计在两边相同、而实现 o 的代码不同时，o 在两边对同样的输入给出同样的输出。o 的设计是 o 本身、它的签名沿 `refers` 逐层引用的类型，以及以 o 为 `about` 的性质和流程及其用例；实现 o 的代码不同，是指实现 o 的代码层操作和按 D8 从它可达的函数中，有内容哈希或所在文件的 `globals` 不同的。
+43. 实现差分：设计层操作 o 在两种语言中各有实现时，两个实现对同样的输入给出同样的输出。
+
 ## 附录 A 理由
 
 - **来源。** 声明是意图，抽取是事实，推导把二者连起来。§10 的约束比较意图与事实，结果写在声明项的状态上。
@@ -401,7 +410,7 @@
 | 13 | `design.undeclared-dependency`、`check.undeclared-dependency` | `design.rejects-broken-design`、`check.rejects-broken-graph` |
 | 14 | `check.undeclared-dependency` | `check.rejects-broken-graph` |
 | 15 | `lang.golang.missing-binding-id`、`lang.golang.invalid-binding-id`、`lang.golang.misplaced-binding`、`lang.golang.duplicate-binding`、`graph.unresolved-binding`、`check.wrong-binding-kind`、`check.multiple-checks`、`check.multiple-observes`、`check.multiple-substitutes`、`check.substitute-signature`、`check.substitute-outside-container`、`check.not-generated-symbol`、`check.method-binding`、`check.multiple-publications`、`check.publisher-signature`、`check.publisher-outside-container` | `lang.golang.extracts-generated-module`、`graph.derive-matches-definition`、`check.rejects-broken-graph` |
-| 16 | `check.unrealized`、`check.multiple-realizations` | `check.rejects-broken-graph` |
+| 16 | `check.unrealized`、`check.multiple-realizations`；按语言分别计数待做：实现差分 | `check.rejects-broken-graph` |
 | 17 | `check.realization-outside-container` | `check.rejects-broken-graph` |
 | 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value` | `check.rejects-broken-graph` |
 | 19 | `check.missing-implements`、`check.missing-extends` | `check.rejects-broken-graph` |
@@ -426,3 +435,6 @@
 | 38 | `design.invalid-codec`、`design.value-type-mismatch`、`lang.golang.input-codec-failed` | `design.codecs-are-typed`、`evidence.recordings-are-replayable` |
 | 39 | 待做：效果推导之后由 `check` 报 check.effect-in-pure-op | — |
 | 40 | 待做：派生输入和效果推导之后由 `check` 报 check.derived-input-value、check.missing-generated-value 和 check.nondeterministic-derivation | — |
+| 41 | 待做：Go 驱动换次序再调用，不同时报 lang.golang.order-dependence | — |
+| 42 | 待做：`unicode test --since` 的版本差分，不同时报 run.undeclared-change | — |
+| 43 | 待做：M5，两种语言的驱动执行同一批输入，不同时报 run.implementations-differ | — |
