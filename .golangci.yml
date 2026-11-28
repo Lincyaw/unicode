@@ -184,9 +184,10 @@ linters:
           allow:
             - github.com/lincyaw/unicode/internal/graph
             - github.com/lincyaw/unicode/internal/diag
+            - github.com/lincyaw/unicode/internal/repo
           deny:
             - pkg: github.com/lincyaw/unicode/internal
-              desc: "组件 review 只能依赖 graph、diag（design/review.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
+              desc: "组件 review 只能依赖 graph、diag、repo（design/review.uc 的 uses）；要依赖别的组件，先改设计中的 uses"
 
 formatters:
   enable:

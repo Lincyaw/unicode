@@ -2,247 +2,352 @@ package review
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
-	"runtime"
 	"slices"
 	"strings"
 	"time"
 
 	"pgregory.net/rapid"
 
-	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
+	"github.com/lincyaw/unicode/internal/repo"
 )
 
-//uc:checks review.records-preserve-history
-func checkRecordsPreserveHistory(t rapid.TB, sample Sample) {
-	root, err := os.MkdirTemp("", "unicode-review-")
-	if err != nil {
-		t.Fatal(err)
+// WriteSample is a graph with an optional base, the requests written to the
+// store first, the request written after them, whether that request repeats
+// the last earlier request about its target, and the code it should get.
+//
+//uc:realizes review.WriteSample
+type WriteSample struct {
+	Graph   *graph.Graph
+	Base    *graph.Graph
+	History []Request
+	Request Request
+	Repeat  bool
+	Code    string
+}
+
+// LatestSample is a graph, no base, records about some of its targets, and
+// the latest record of each of those targets.
+//
+//uc:realizes review.LatestSample
+type LatestSample struct {
+	Graph   *graph.Graph
+	Base    *graph.Graph
+	Records []Record
+	Latest  []Record
+}
+
+// requestTargets are the targets a request may name: the current candidates
+// of the sample's graph and the targets its comparison removes.
+func requestTargets(s Sample) []Target {
+	targets := sortedOracleTargets(oracleTargets(s.Graph))
+	for _, target := range s.Targets {
+		if target.Removed {
+			targets = append(targets, target)
+		}
 	}
-	defer func() { _ = os.RemoveAll(root) }()
-	if empty := Read(root); len(empty.Records) != 0 || len(empty.Diagnostics) != 0 {
-		t.Fatalf("missing store is not empty: %+v", empty)
+	return targets
+}
+
+func drawRequest(t *rapid.T, targets []Target) Request {
+	commit := ""
+	if rapid.Bool().Draw(t, "committed") {
+		commit = rapid.StringOfN(rapid.RuneFrom([]rune("0123456789abcdef")), 40, 40, -1).Draw(t, "commit")
 	}
-	if len(sample.Targets) == 0 {
-		return
+	return Request{
+		Target:   rapid.SampledFrom(targets).Draw(t, "target"),
+		Reviewer: rapid.SampledFrom([]string{"reviewer", "张三", "review-bot"}).Draw(t, "reviewer"),
+		Decision: rapid.SampledFrom([]string{"approved", "changes-requested"}).Draw(t, "decision"),
+		Comment:  rapid.SampledFrom([]string{"", "looks right", "字段名与代码一致 ✅"}).Draw(t, "comment"),
+		Commit:   commit,
+		Dirty:    rapid.Bool().Draw(t, "dirty"),
 	}
-	target := sample.Targets[0]
-	request := Request{Target: target, Reviewer: "reviewer", Decision: "approved", Comment: "first review"}
-	written := Write(root, sample.Graph, sample.Base, request)
-	if written.Record == nil || len(written.Diagnostics) > 0 {
-		t.Fatalf("cannot write a legal review: %+v", written)
+}
+
+// drawWriteSample draws a sample's graph and base, earlier requests and a
+// request; repeat makes the request the last earlier one.
+func drawWriteSample(t *rapid.T, repeat bool) WriteSample {
+	s := genSample().Draw(t, "sample")
+	targets := requestTargets(s)
+	out := WriteSample{Graph: s.Graph, Base: s.Base}
+	least := 0
+	if repeat {
+		least = 1
 	}
-	first := *written.Record
-	path := filepath.Join(root, recordPath(first.Id))
-	bytes, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
+	for range rapid.IntRange(least, 4).Draw(t, "history") {
+		out.History = append(out.History, drawRequest(t, targets))
 	}
-	duplicate := Write(root, sample.Graph, sample.Base, request)
-	if duplicate.Record == nil || *duplicate.Record != first || len(duplicate.Diagnostics) > 0 {
-		t.Fatalf("same review request created another record: %+v", duplicate)
-	}
-	request.Comment = "second independent review"
-	second := Write(root, sample.Graph, sample.Base, request)
-	if second.Record == nil || second.Record.Id == first.Id || len(second.Diagnostics) > 0 {
-		t.Fatalf("distinct review did not preserve another record: %+v", second)
-	}
-	loaded := Read(root)
-	if len(loaded.Diagnostics) > 0 || len(loaded.Records) != 2 || !slices.Contains(loaded.Records, first) || !slices.Contains(loaded.Records, *second.Record) {
-		t.Fatalf("records were lost or changed: %+v", loaded)
-	}
-	expectedLatest := first
-	if firstAt, firstErr := time.Parse(time.RFC3339Nano, first.At); firstErr != nil {
-		t.Fatal(firstErr)
+	if repeat {
+		out.Request = out.History[len(out.History)-1]
 	} else {
-		secondAt, secondErr := time.Parse(time.RFC3339Nano, second.Record.At)
-		if secondErr != nil {
-			t.Fatal(secondErr)
-		}
-		if secondAt.After(firstAt) || secondAt.Equal(firstAt) && second.Record.Id > first.Id {
-			expectedLatest = *second.Record
-		}
+		out.Request = drawRequest(t, targets)
 	}
-	evaluation := Evaluate(sample.Graph, sample.Base, loaded.Records)
-	if !slices.ContainsFunc(evaluation.Items, func(item Item) bool {
-		return item.Target == target && item.Record != nil && *item.Record == expectedLatest
-	}) {
-		t.Fatalf("the latest matching review was not selected: %+v", evaluation)
-	}
-	currentBytes, err := os.ReadFile(path)
-	if err != nil || string(currentBytes) != string(bytes) {
-		t.Fatalf("another write changed immutable record %s: %v", first.Id, err)
-	}
-	for range 2 {
-		if again := Read(root); !reflect.DeepEqual(again, loaded) {
-			t.Fatalf("reading the store changed its records: %+v", again)
+	for _, earlier := range slices.Backward(out.History) {
+		if earlier.Target == out.Request.Target {
+			out.Repeat = earlier == out.Request
+			break
 		}
 	}
-	attached := Attach(sample.Graph, loaded.Records)
-	if len(attached.Diagnostics) > 0 || len(attached.Fragment.Nodes) != 2 {
-		t.Fatalf("record projection lost history: %+v", attached)
+	return out
+}
+
+//uc:generates review.write-records-the-request.sample
+//uc:generates review.write-stores-the-record.sample
+//uc:generates review.write-keeps-history.sample
+//uc:generates review.write-adds-a-new-record.sample
+//uc:generates review.read-is-repeatable.sample
+func genWriteSample() *rapid.Generator[WriteSample] {
+	return rapid.Custom(func(t *rapid.T) WriteSample { return drawWriteSample(t, false) })
+}
+
+//uc:generates review.write-is-idempotent.sample
+//uc:generates review.read-rejects-corrupt-records.sample
+//uc:generates review.read-rejects-symlinks.sample
+//uc:generates review.write-rejects-symlinks.sample
+//uc:generates review.read-diagnostics-are-described.sample
+func genRepeatSample() *rapid.Generator[WriteSample] {
+	return rapid.Custom(func(t *rapid.T) WriteSample { return drawWriteSample(t, true) })
+}
+
+// genInvalidSample breaks the request in one of six ways, with the code each
+// way should get.
+//
+//uc:generates review.write-rejects-invalid-requests.sample
+//uc:generates review.write-diagnostics-are-described.sample
+func genInvalidSample() *rapid.Generator[WriteSample] {
+	return rapid.Custom(func(t *rapid.T) WriteSample {
+		sample := drawWriteSample(t, false)
+		sample.Repeat = false
+		switch rapid.IntRange(0, 5).Draw(t, "invalid") {
+		case 0:
+			sample.Request.Reviewer, sample.Code = " ", "review.invalid-reviewer"
+		case 1:
+			sample.Request.Decision, sample.Code = "unknown", "review.invalid-decision"
+		case 2:
+			sample.Request.Target, sample.Code = Target{Node: "unknown"}, "review.unknown-target"
+		case 3:
+			sample.Request.Target, sample.Code = Target{Node: "domain", EdgeKind: "calls", From: "domain", To: "domain"}, "review.invalid-target"
+		case 4:
+			sample.Request.ExpectedDigest, sample.Code = "xyz", "review.invalid-record"
+		default:
+			sample.Request.ExpectedDigest, sample.Code = strings.Repeat("0", 64), "review.stale-target"
+		}
+		return sample
+	})
+}
+
+// writeHistory writes the sample's earlier requests into the store at dir.
+func writeHistory(dir string, sample WriteSample) error {
+	for _, request := range sample.History {
+		if written := Write(dir, sample.Graph, sample.Base, request); written.Record == nil || len(written.Diagnostics) > 0 {
+			return fmt.Errorf("a valid earlier request was refused: %v", written.Diagnostics)
+		}
 	}
-	joined := sampleBuild(t, append(sample.Graph.Nodes(), attached.Fragment.Nodes...), append(sample.Graph.Edges(), attached.Fragment.Edges...))
-	if graph.InputDigest(joined) != graph.InputDigest(sample.Graph) {
-		t.Fatal("attaching reviews changed the execution input digest")
+	return nil
+}
+
+//uc:generates review.write-records-the-request.dir
+//uc:generates review.write-stores-the-record.dir
+//uc:generates review.write-keeps-history.dir
+//uc:generates review.write-adds-a-new-record.dir
+//uc:generates review.write-is-idempotent.dir
+//uc:generates review.read-is-repeatable.dir
+//uc:generates review.write-rejects-invalid-requests.dir
+//uc:generates review.write-diagnostics-are-described.dir
+func deriveHistoryDir(sample WriteSample) (string, error) {
+	dir, err := repo.Materialize(repo.Tree{})
+	if err != nil {
+		return "", err
 	}
-	request.ExpectedDigest = strings.Repeat("0", 64)
-	stale := Write(root, sample.Graph, sample.Base, request)
-	checkDiagnostic(t, stale.Diagnostics, "review.stale-target")
-	if stale.Record != nil || !reflect.DeepEqual(Read(root), loaded) {
-		t.Fatal("an outdated expectation changed the store")
+	return dir, writeHistory(dir, sample)
+}
+
+// firstRecord is the name of the record file whose name sorts first.
+func firstRecord(reviews string) (string, error) {
+	entries, err := os.ReadDir(reviews)
+	if err != nil {
+		return "", err
 	}
-	request.ExpectedDigest = ""
-	request.Reviewer = " "
-	checkDiagnostic(t, Write(root, sample.Graph, sample.Base, request).Diagnostics, "review.invalid-reviewer")
-	request.Reviewer = "reviewer"
-	request.Decision = "unknown"
-	checkDiagnostic(t, Write(root, sample.Graph, sample.Base, request).Diagnostics, "review.invalid-decision")
-	request.Decision = "approved"
-	request.Target = Target{Node: "unknown"}
-	checkDiagnostic(t, Write(root, sample.Graph, sample.Base, request).Diagnostics, "review.unknown-target")
-	request.Target = Target{Node: "domain", EdgeKind: "calls", From: "domain", To: "domain"}
-	checkDiagnostic(t, Write(root, sample.Graph, sample.Base, request).Diagnostics, "review.invalid-target")
-	historyRoot := filepath.Join(root, "alternating")
-	if err := os.Mkdir(historyRoot, 0o755); err != nil {
-		t.Fatal(err)
+	if len(entries) == 0 {
+		return "", fmt.Errorf("the store at %s holds no record", reviews)
 	}
-	comment := "review of " + targetSubject(target)
-	history := []Record{}
-	for _, step := range []struct{ decision, comment string }{
-		{"approved", comment},
-		{"changes-requested", comment},
-		{"approved", comment},
-		{"approved", comment + " changed"},
-		{"approved", comment},
-	} {
-		nextRequest := Request{Target: target, Reviewer: "reviewer", Decision: step.decision, Comment: step.comment}
-		next := Write(historyRoot, sample.Graph, sample.Base, nextRequest)
-		if next.Record == nil || len(next.Diagnostics) != 0 {
-			t.Fatalf("alternating review failed: %+v", next)
+	return entries[0].Name(), nil
+}
+
+// deriveDamagedDir writes the earlier requests, then adds a record of
+// version 42 (damage 0), adds a field to the first record (1), or adds a
+// repeated comment key at its start (2).
+//
+//uc:generates review.read-rejects-corrupt-records.dir
+//uc:generates review.read-diagnostics-are-described.dir
+func deriveDamagedDir(sample WriteSample, damage int) (string, error) {
+	dir, err := deriveHistoryDir(sample)
+	if err != nil {
+		return "", err
+	}
+	reviews := filepath.Join(dir, ".unicode", "reviews")
+	if damage == 0 {
+		if err := os.MkdirAll(reviews, 0o755); err != nil {
+			return "", err
 		}
-		if slices.ContainsFunc(history, func(record Record) bool { return record.Id == next.Record.Id }) {
-			t.Fatalf("a changed review reused old history: %+v", next)
+		return dir, os.WriteFile(filepath.Join(reviews, strings.Repeat("0", 64)+".json"), []byte(`{"version":42}`), 0o644)
+	}
+	name, err := firstRecord(reviews)
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(reviews, name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	if damage == 1 {
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal(data, &object); err != nil {
+			return "", err
 		}
-		if len(history) > 0 && next.Record.At == history[len(history)-1].At {
-			t.Fatal("a changed review reused the previous event time")
+		object["unexpected"] = json.RawMessage("true")
+		if data, err = json.Marshal(object); err != nil {
+			return "", err
 		}
-		history = append(history, *next.Record)
-		repeated := Write(historyRoot, sample.Graph, sample.Base, nextRequest)
-		if repeated.Record == nil || *repeated.Record != *next.Record || len(repeated.Diagnostics) != 0 {
-			t.Fatalf("the latest identical review was not idempotent: %+v", repeated)
+	} else {
+		data = append([]byte(`{"comment":"ignored",`), data[1:]...)
+	}
+	return dir, os.WriteFile(path, data, 0o644)
+}
+
+// deriveLinkedDir writes the earlier requests into dir/store, then links a
+// record file to the first record, or makes dir/repo/.unicode a link to the
+// store's.
+//
+//uc:generates review.read-rejects-symlinks.dir
+//uc:generates review.write-rejects-symlinks.dir
+func deriveLinkedDir(sample WriteSample, linkRecord bool) (string, error) {
+	dir, err := repo.Materialize(repo.Tree{})
+	if err != nil {
+		return "", err
+	}
+	store := filepath.Join(dir, "store")
+	if err := os.Mkdir(store, 0o755); err != nil {
+		return "", err
+	}
+	if err := writeHistory(store, sample); err != nil {
+		return "", err
+	}
+	if linkRecord {
+		reviews := filepath.Join(store, ".unicode", "reviews")
+		name, err := firstRecord(reviews)
+		if err != nil {
+			return "", err
 		}
-		historyRead := Read(historyRoot)
-		if len(historyRead.Diagnostics) != 0 || len(historyRead.Records) != len(history) {
-			t.Fatalf("alternating review lost history: %+v", historyRead)
+		return dir, os.Symlink(name, filepath.Join(reviews, strings.Repeat("1", 64)+".json"))
+	}
+	if err := os.Mkdir(filepath.Join(dir, "repo"), 0o755); err != nil {
+		return "", err
+	}
+	return dir, os.Symlink(filepath.Join("..", "store", ".unicode"), filepath.Join(dir, "repo", ".unicode"))
+}
+
+//uc:generates review.read-rejects-symlinks.root
+//uc:generates review.write-rejects-symlinks.root
+func deriveLinkedRoot(dir string, linkRecord bool) string {
+	if linkRecord {
+		return filepath.Join(dir, "store")
+	}
+	return filepath.Join(dir, "repo")
+}
+
+// genEmptyStoreTree draws, with even chances, an empty tree, a tree with only
+// .unicode, or a tree with only design/system.uc.
+//
+//uc:generates review.read-is-empty-without-store.tree
+func genEmptyStoreTree() *rapid.Generator[repo.Tree] {
+	return rapid.Custom(func(t *rapid.T) repo.Tree {
+		dir := repo.Entry{Kind: repo.EntryKindDir, Mode: 0o755}
+		switch rapid.IntRange(0, 2).Draw(t, "store") {
+		case 0:
+			return repo.Tree{Entries: map[string]repo.Entry{}}
+		case 1:
+			return repo.Tree{Entries: map[string]repo.Entry{".unicode": dir}}
 		}
-		for _, recorded := range history {
-			if !slices.Contains(historyRead.Records, recorded) {
-				t.Fatalf("a historical record changed: %+v", recorded)
+		return repo.Tree{Entries: map[string]repo.Entry{"design": dir, "design/system.uc": {Kind: repo.EntryKindFile, Content: []byte("system s\n"), Mode: 0o644}}}
+	})
+}
+
+//uc:generates review.read-is-empty-without-store.dir
+func deriveTreeDir(tree repo.Tree) (string, error) { return repo.Materialize(tree) }
+
+// The observation adapters read the store or the tree under dir, each for
+// one named observation (docs/model.md §10 rule 15).
+
+//uc:observes review.write-records-the-request.stored
+func observeRecordedStore(dir string) Loaded { return Read(dir) }
+
+//uc:observes review.write-stores-the-record.stored
+func observeStoredStore(dir string) Loaded { return Read(dir) }
+
+//uc:observes review.write-adds-a-new-record.stored
+func observeAddedStore(dir string) Loaded { return Read(dir) }
+
+//uc:observes review.write-is-idempotent.stored
+func observeRepeatedStore(dir string) Loaded { return Read(dir) }
+
+//uc:observes review.read-is-repeatable.stored
+func observeReadStore(dir string) Loaded { return Read(dir) }
+
+//uc:observes review.write-keeps-history.files
+func observeHistoryTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes review.write-is-idempotent.files
+func observeRepeatedTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes review.read-is-repeatable.files
+func observeReadTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes review.write-rejects-invalid-requests.files
+func observeRejectedTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes review.read-rejects-corrupt-records.files
+func observeDamagedTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes review.read-rejects-symlinks.files
+func observeLinkedReadTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes review.write-rejects-symlinks.files
+func observeLinkedWriteTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+// genLatestSample draws records about one to three current targets of the
+// sample graph, at one of three instants of 2026-11-27 each, and the latest
+// record of each target: the latest instant, the greatest identity among
+// records of one instant.
+//
+//uc:generates review.evaluation-picks-latest.sample
+func genLatestSample() *rapid.Generator[LatestSample] {
+	return rapid.Custom(func(t *rapid.T) LatestSample {
+		g := sampleGraph(t, rapid.IntRange(-20, 20).Draw(t, "value"))
+		targets := rapid.SliceOfNDistinct(rapid.SampledFrom(sortedOracleTargets(oracleTargets(g))), 1, 3, targetKey).Draw(t, "targets")
+		instants := []string{"2026-11-27T10:00:00Z", "2026-11-27T10:00:00.5Z", "2026-11-27T10:00:01Z"}
+		out := LatestSample{Graph: g, Records: []Record{}, Latest: []Record{}}
+		for _, target := range targets {
+			var latest Record
+			for i := range rapid.IntRange(1, 4).Draw(t, "records") {
+				r := Record{Version: 1, Reviewer: rapid.SampledFrom([]string{"reviewer", "张三", "review-bot"}).Draw(t, "reviewer"),
+					At: rapid.SampledFrom(instants).Draw(t, "at"), Snapshot: graph.InputDigest(g), Target: target,
+					Digest: indexContent(g).item(target, nil).Digest, Decision: rapid.SampledFrom([]string{"approved", "changes-requested"}).Draw(t, "decision"),
+					Comment: rapid.SampledFrom([]string{"", "looks right", "字段名与代码一致 ✅"}).Draw(t, "comment")}
+				r.Id = recordId(r)
+				out.Records = append(out.Records, r)
+				at, _ := time.Parse(time.RFC3339Nano, r.At)
+				was, _ := time.Parse(time.RFC3339Nano, latest.At)
+				if i == 0 || at.After(was) || at.Equal(was) && r.Id > latest.Id {
+					latest = r
+				}
 			}
+			out.Latest = append(out.Latest, latest)
 		}
-		historyEvaluation := Evaluate(sample.Graph, sample.Base, historyRead.Records)
-		if len(historyEvaluation.Diagnostics) != 0 || !slices.ContainsFunc(historyEvaluation.Items, func(item Item) bool {
-			return item.Target == target && item.Record != nil && *item.Record == *next.Record
-		}) {
-			t.Fatalf("the restored decision or comment did not become current: %+v", historyEvaluation)
-		}
-	}
-	parallelRoot := filepath.Join(root, "parallel")
-	if err := os.Mkdir(parallelRoot, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	replies := make(chan Written, 2)
-	for _, comment := range []string{"parallel first", "parallel second"} {
-		go func() {
-			replies <- Write(parallelRoot, sample.Graph, sample.Base, Request{Target: target, Reviewer: "reviewer", Decision: "approved", Comment: comment})
-		}()
-	}
-	parallel := []Record{}
-	for range 2 {
-		response := <-replies
-		if response.Record == nil || len(response.Diagnostics) != 0 {
-			t.Fatalf("parallel review failed: %+v", response)
-		}
-		parallel = append(parallel, *response.Record)
-	}
-	parallelRead := Read(parallelRoot)
-	if len(parallelRead.Diagnostics) != 0 || len(parallelRead.Records) != 2 || !slices.Contains(parallelRead.Records, parallel[0]) || !slices.Contains(parallelRead.Records, parallel[1]) {
-		t.Fatalf("parallel writers lost history: %+v", parallelRead)
-	}
-	corrupt := filepath.Join(root, ".unicode", "reviews", strings.Repeat("0", 64)+".json")
-	if err := os.WriteFile(corrupt, []byte("{\"version\":42}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	checkDiagnostic(t, Read(root).Diagnostics, "review.invalid-record")
-	if err := os.Remove(corrupt); err != nil {
-		t.Fatal(err)
-	}
-	var object map[string]json.RawMessage
-	if err := json.Unmarshal(bytes, &object); err != nil {
-		t.Fatal(err)
-	}
-	object["unexpected"] = json.RawMessage("true")
-	changed, err := json.Marshal(object)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(corrupt, changed, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	checkDiagnostic(t, Read(root).Diagnostics, "review.invalid-record")
-	if err := os.Remove(corrupt); err != nil {
-		t.Fatal(err)
-	}
-	duplicated := append([]byte("{\"comment\":\"ignored\","), bytes[1:]...)
-	if err := os.WriteFile(path, duplicated, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	checkDiagnostic(t, Read(root).Diagnostics, "review.invalid-record")
-	if err := os.WriteFile(path, bytes, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	link := filepath.Join(root, ".unicode", "reviews", strings.Repeat("1", 64)+".json")
-	if reviewSymlink(t, path, link) {
-		checkDiagnostic(t, Read(root).Diagnostics, "review.symlink")
-		if err := os.Remove(link); err != nil {
-			t.Fatal(err)
-		}
-	}
-	outside, err := os.MkdirTemp("", "unicode-review-outside-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.RemoveAll(outside) }()
-	if reviewSymlink(t, filepath.Join(root, ".unicode"), filepath.Join(outside, ".unicode")) {
-		checkDiagnostic(t, Read(outside).Diagnostics, "review.symlink")
-		request.Target = target
-		checkDiagnostic(t, Write(outside, sample.Graph, sample.Base, request).Diagnostics, "review.symlink")
-	}
-}
-
-func checkDiagnostic(t rapid.TB, diagnostics []diag.Diagnostic, code string) {
-	if !slices.ContainsFunc(diagnostics, func(d diag.Diagnostic) bool { return d.Code == code }) {
-		t.Fatalf("missing diagnostic %s: %+v", code, diagnostics)
-	}
-	for _, d := range diagnostics {
-		if d.Code == "" || d.Position.Path == "" || d.Position.Line < 1 || d.Position.Column < 1 || d.Message == "" || d.Fix == "" {
-			t.Fatalf("incomplete review diagnostic: %+v", d)
-		}
-	}
-}
-
-// Unprivileged Windows processes may lack permission to create symlinks.
-func reviewSymlink(t rapid.TB, target, path string) bool {
-	if err := os.Symlink(target, path); err != nil {
-		if runtime.GOOS != "windows" {
-			t.Fatal(err)
-		}
-		t.Logf("symlink creation is unavailable to this Windows process: %v", err)
-		return false
-	}
-	return true
+		return out
+	})
 }

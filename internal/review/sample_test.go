@@ -42,8 +42,8 @@ type sampleRecord struct {
 }
 
 //uc:generates review.evaluation-follows-content.sample
-//uc:generates review.records-preserve-history.sample
 //uc:generates review.recorded-inverts-attach.sample
+//uc:generates review.attach-keeps-input-digest.sample
 func genSample() *rapid.Generator[Sample] {
 	return rapid.Custom(func(t *rapid.T) Sample {
 		value := rapid.IntRange(-20, 20).Draw(t, "value")
@@ -360,6 +360,7 @@ func drawRecord(t *rapid.T, targets []Target) Record {
 // the sample's graph.
 //
 //uc:generates review.recorded-inverts-attach.records
+//uc:generates review.attach-keeps-input-digest.records
 func genRecords(sample Sample) *rapid.Generator[[]Record] {
 	targets := sortedOracleTargets(oracleTargets(sample.Graph))
 	return rapid.Custom(func(t *rapid.T) []Record {
@@ -371,21 +372,30 @@ func genRecords(sample Sample) *rapid.Generator[[]Record] {
 	})
 }
 
-// genProjected is the sample's graph without its review layer, as a build
-// has it before attaching, with the review layer that Attach projects from
-// records.
+// deriveBare is the sample's graph without its review layer, as a build has
+// it before attaching.
+//
+//uc:generates review.attach-keeps-input-digest.bare
+func deriveBare(sample Sample) (*graph.Graph, error) {
+	bare := withoutReviews(sample.Graph)
+	return &bare, nil
+}
+
+// deriveProjected is the sample's graph without its review layer, with the
+// review layer that Attach projects from records.
 //
 //uc:generates review.recorded-inverts-attach.projected
-func genProjected(sample Sample, records []Record) *rapid.Generator[*graph.Graph] {
+//uc:generates review.attach-keeps-input-digest.projected
+func deriveProjected(sample Sample, records []Record) (*graph.Graph, error) {
 	projected := withoutReviews(sample.Graph)
 	attached := Attach(&projected, records)
 	if len(attached.Diagnostics) > 0 {
-		panic(fmt.Sprintf("cannot attach records that are valid by construction: %v", attached.Diagnostics))
+		return nil, fmt.Errorf("cannot attach records that are valid by construction: %v", attached.Diagnostics)
 	}
 	if err := projected.AddFragment(attached.Fragment); err != nil {
-		panic(err)
+		return nil, err
 	}
-	return rapid.Just(&projected)
+	return &projected, nil
 }
 
 // genMalformed draws a small graph with the review layer of one to six valid
