@@ -635,7 +635,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 | 代码：进出的调用（11） | `/views/code` | calls、reaches 边（一端都在输入中）；reaches 边的 `attrs.via` 和合并的边的 `count`，标在各自的线上；另一端的函数按 `file` 分组，组的标题是指向该文件的链接，折叠的组件各是一项；只调用输入的组在左，被输入调用的组在右，一组中既有调用输入的、又有被输入调用的函数时，整组在右；页面不展开代码视图，地址带 `expand` 时报地址错误 |
 | 覆盖到它的用例（11 的画布，02、09 的右栏） | `/views/code`、`/entity` | covers 边及其起点的用例；`coveredBy`、`evidence.branches`（M6） |
 | C4：层级切换、人、组件、外部系统、带操作名的边（12） | `/views/c4` | `level`；`nodes`；边的 `labels`，各项的 `op` 和 `text` |
-| 实体页：标题、标签、出处（05、06） | `/entity` | `node` 的 `title`、`status`、`attrs.labels`、`origin`；`realizedBy` 中代码元素的 `origin` |
+| 实体页：标题、标签、出处（05、06） | `/entity` | `node` 的 `title`、`status`、`attrs.labels`、`origin`，代码元素的出处所在的文件 `code.file`；`realizedBy` 中代码元素的 `origin` |
 | 实体页：字段表（05） | `/entity` | `type.members` 的 `type`、`codeType`、`refers`、`status` |
 | 实体页：操作表（05） | `/entity` | `type.ops` 的 `op`、`realizedBy`、`properties` |
 | 实体页：被引用、引用（05、07、08） | `/entity` | `type.referredBy`、`type.refers` |
@@ -657,7 +657,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 | 用例预览：取值、来源、历史、覆盖的函数（03） | `/entity` | `node.attrs.values`、`node.attrs.reason`；`evidence.history`、`case.covers`（M6） |
 | 证据的执行场合（03） | `/views/property`、`/entity` | `evidence.history` 各项的 `venue`（M8） |
 | 性质和流程：运行时的证据（03、06） | `/views/property`、`/entity` | `evidence.runtime`：`commit`、`from`、`to`、`applicable`、`outsideDomain`（各项 `clause`、`calls`）、`clauses`（各项 `clause`、`judged`）、`counterexamples`（各项 `inputHash`、`clause`、`values`、`at`）、`p95`、`traces`；只有性质和流程节点才有（M8） |
-| 函数预览：实现、位置、签名、调用方、被调用方、细节函数（11） | `/entity` | `node.bindings`、`node.origin`；`code.declaration`、`code.callers`、`code.callees`、`code.details` |
+| 函数预览：实现、位置、签名、调用方、被调用方、细节函数（11） | `/entity` | `node.bindings`、`node.origin`、`code.file`；`code.declaration`、`code.callers`、`code.callees`、`code.details` |
 | reaches 预览：经过的细节函数、终点、相关步骤、展开（04） | `/edge` | `nodes`、`toNode`、`steps`、`views` |
 
 ### 7.6 评审记录

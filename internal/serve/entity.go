@@ -527,6 +527,10 @@ func (p *page) codeDetail(id string) *CodeDetail {
 		owner := p.node(owners[0])
 		detail.Owner = &owner
 	}
+	if file := st.codeFiles[st.nodes[id].Origin.Path]; file != "" && file != id {
+		node := p.node(file)
+		detail.File = &node
+	}
 	for _, c := range st.targets(id, graph.EdgeKindCalls) {
 		if st.nodes[c].Kind == graph.NodeKindOp && !st.nodes[c].Salient {
 			detail.Details = append(detail.Details, p.node(c))

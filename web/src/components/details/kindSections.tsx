@@ -3,7 +3,7 @@ import { ABOUT, CASE_SOURCES, DIAGNOSTIC_WORDS, EDGE_KINDS, HISTORY, SECTIONS } 
 import { Tag } from '../../ui/content';
 import { ButtonLink } from '../../ui/controls';
 import { Icon } from '../../ui/icons';
-import { fileOf, opLine, placeOf, relative, scopeOf, shortPath, stepLine, stepName, typeParts } from '../marks/format';
+import { opLine, placeOf, relative, scopeOf, shortPath, stepLine, stepName, typeParts } from '../marks/format';
 import { ArrowRight, Check, FileCode, FlaskConical, KindIcon, Play, Split, TriangleAlert, X } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { NodeLink } from '../marks/NodeLink';
@@ -388,7 +388,7 @@ export function CodeSections({ entity }: { entity: Entity }) {
   const links = useLinks();
   const { node } = entity;
   const detail = entity.code;
-  const file = fileOf(entity);
+  const file = detail?.file;
   const bindings = node.bindings ?? [];
   return (
     <>

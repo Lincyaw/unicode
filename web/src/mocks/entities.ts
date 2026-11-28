@@ -1,7 +1,7 @@
 import { nodeChangeOf } from './compare';
 import { declarationLine, declarationOf } from './excerpts';
 import {
-  ancestorsOf, calleesOf, callersOf, childrenOf, designContainerOf, detailCalleesOf, diagnosticsAbout, evidenceOf, findEdge, flowOf, full,
+  ancestorsOf, calleesOf, callersOf, childrenOf, designContainerOf, detailCalleesOf, diagnosticsAbout, evidenceOf, fileOf, findEdge, flowOf, full,
   incoming, membersOf, neighbor, outgoing, ownerOf, parentOf, plain, raw, realizersOf, senderOf, stepsOf, subjectsOf, SYSTEM_ID, targetOf,
 } from './graph';
 import type { Entity, FlowSteps, Neighbor, Node, RawEdge, Revision, ViewKind, ViewRequest } from './schemaTypes';
@@ -290,8 +290,10 @@ export function entityOf(id: string, base?: Revision): Omit<Entity, 'tabs'> {
     entity.case = { covers: outgoing(id, 'covers').map(each => neighbor(id, each, each.to)) };
   } else if (node.layer === 'code') {
     const owner = node.form === 'file' ? incoming(id, 'owns')[0]?.from : undefined;
+    const file = node.form === 'file' ? undefined : fileOf(id);
     entity.code = {
       ...(owner ? { owner: plain(owner) } : {}),
+      ...(file ? { file: plain(file) } : {}),
       contents: list(childrenOf(id)).map(plain),
       callers: node.kind === 'op' ? callersOf(id).map(each => neighbor(id, each, each.from)) : [],
       callees: node.kind === 'op' ? calleesOf(id).map(each => neighbor(id, each, each.to)) : [],

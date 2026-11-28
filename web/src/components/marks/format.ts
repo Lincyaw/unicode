@@ -1,5 +1,5 @@
 import { REVIEW_DECISIONS } from '../../terms';
-import type { Entity, Node, Review, StepInfo } from '../../api/types';
+import type { Node, Review, StepInfo } from '../../api/types';
 
 /*
  * How identities and signatures read on a page. The graph writes every reference from the root (docs/design.md §5.2);
@@ -121,11 +121,6 @@ export function stepLine(step: Pick<Node, 'id' | 'form' | 'attrs'> & { step?: St
 /** What a step calls or emits, as a message on a lifeline or a box of an activity reads: `reserve(items)`. */
 export function messageOf(step: Pick<Node, 'form' | 'attrs'> & { step?: StepInfo }): string {
   return `${step.step?.target?.title ?? ''}(${argsOf(step)})`;
-}
-
-/** The code file a code element is declared in, among its ancestors; none for a design node or a file itself. */
-export function fileOf(entity: Pick<Entity, 'ancestors'>): Node | undefined {
-  return entity.ancestors.findLast(ancestor => ancestor.layer === 'code' && ancestor.kind === 'container' && ancestor.form === 'file');
 }
 
 /** The last segment of a path, or of a code identity's dotted name. */

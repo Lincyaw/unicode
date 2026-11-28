@@ -10,7 +10,7 @@ import table from '../../ui/table.module.css';
 import { CaseSections, CheckedSections, CodeSections, ContainerSections, EventSections, StepSections } from '../details/kindSections';
 import { DiagnosticTag, NodeRow, Section, SignaturePanel, SourcePanel, ViaTag } from '../details/sections';
 import { NodeLink } from '../marks/NodeLink';
-import { displayName, fileOf, opLine, placeOf, relative, scopeOf, statusOf, stepLine } from '../marks/format';
+import { displayName, opLine, placeOf, relative, scopeOf, statusOf, stepLine } from '../marks/format';
 import { ArrowRight, ArrowUpRight, Code, FileCode, KindIcon } from '../marks/icons';
 import { useLinks } from '../marks/links';
 import { NodeChip } from '../marks/NodeChip';
@@ -26,7 +26,7 @@ import styles from './entity.module.css';
 function Head({ entity }: { entity: Entity }) {
   const { node } = entity;
   const realized = entity.realizedBy[0]?.node;
-  const file = fileOf(entity);
+  const file = entity.code?.file;
   return (
     <header className={styles.head}>
       <div className={styles.identity}>
@@ -105,7 +105,7 @@ function OpsTable({ entity }: { entity: Entity }) {
         </div>
         {ops.map(row => (
           <div key={row.op.id} className={clsx(table.row, styles.bodyRow)} role="row">
-            <span role="cell"><NodeLink node={row.op} label={opLine(row.op)} className={styles.plainLink} /></span>
+            <span role="cell" className={styles.cellLinks}><NodeLink node={row.op} label={opLine(row.op)} className={styles.plainLink} /></span>
             <span role="cell" className={styles.cellLinks}>
               {row.realizedBy.map(({ node }) => <NodeLink key={node.id} node={node} label={<><Icon glyph={Code} size="tiny" />{node.title} · {placeOf(node.origin)}</>} className={styles.iconLink} />)}
             </span>

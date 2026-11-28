@@ -565,6 +565,10 @@ type CodeDetail struct {
 	// Details 细节函数: the detail functions it calls directly
 	Details []Node `json:"details"`
 
+	// File A package, a type or a function: the code file it is written in, the file node whose path is its origin's; a
+	// method's can be another file than its receiver type's
+	File *Node `json:"file,omitempty"`
+
 	// Owner A file: the design container that owns it
 	Owner *Node `json:"owner,omitempty"`
 }

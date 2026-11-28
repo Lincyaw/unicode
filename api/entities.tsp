@@ -234,6 +234,12 @@ model CodeDetail {
   /** A file: the design container that owns it */
   owner?: Node;
 
+  /**
+   * A package, a type or a function: the code file it is written in, the file node whose path is its origin's; a
+   * method's can be another file than its receiver type's
+   */
+  file?: Node;
+
   /** A file: its types and functions; a type: its methods */
   contents: Node[];
 
