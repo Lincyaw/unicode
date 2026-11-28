@@ -93,7 +93,11 @@ func dependencyEffects(root string, known map[string]*packages.Package) (map[str
 			}
 		}
 	}
-	return g.Effects(), nil
+	out := map[string][]graph.Effect{}
+	for id, r := range g.Effects() {
+		out[id] = r.Effects
+	}
+	return out, nil
 }
 
 // summaryKey names a dependency package's summary in the cache, or is ""

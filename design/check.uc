@@ -4,9 +4,10 @@ component check "在推导过的图上检查需要代码才能判断的约束（
   uses graph, diag
 }
 
-type Checked record "检查的结果：诊断，以及每个声明项的状态" {
+type Checked record "检查的结果：诊断、每个声明项的状态，以及检查第 39 条时求出的每个操作的效果（graph.Graph.effects）" {
   field diagnostics: list<diag.Diagnostic>
   field statuses: map<string, graph.Status>
+  field effects: map<string, graph.OperationEffects>
 }
 
 type Sample record "accepts-conforming-graph 和 stubs-stay-incomplete 的输入：一张合乎约束、尚未推导的图，含设计层和代码层" {
@@ -67,6 +68,6 @@ property reports-effects-in-pure-ops postcondition "conform 报出 check.effect-
   about conform
   forall snapshot: graph.Graph generated "与 accepts-conforming-graph 相同的随机图，每个具体函数和方法约四分之一带随机的非空直接效果，推导过"
   call conform(snapshot)
-  ensure all(id in snapshot.effects(): "pure" in snapshot.node(id).attrs and size(snapshot.effects()[id]) > 0 implies any(d in result.diagnostics: d.code == "check.effect-in-pure-op" and d.subject == id) and result.statuses[id] == graph.Status.contradicted)
-  ensure all(d in result.diagnostics: d.code == "check.effect-in-pure-op" implies d.subject in snapshot.effects() and size(snapshot.effects()[d.subject]) > 0 and "pure" in snapshot.node(d.subject).attrs)
+  ensure all(id in snapshot.effects(): "pure" in snapshot.node(id).attrs and size(snapshot.effects()[id].effects) > 0 implies any(d in result.diagnostics: d.code == "check.effect-in-pure-op" and d.subject == id) and result.statuses[id] == graph.Status.contradicted)
+  ensure all(d in result.diagnostics: d.code == "check.effect-in-pure-op" implies d.subject in snapshot.effects() and size(snapshot.effects()[d.subject].effects) > 0 and "pure" in snapshot.node(d.subject).attrs)
 }

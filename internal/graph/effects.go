@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"cmp"
 	"slices"
 )
 
@@ -16,16 +17,72 @@ const (
 	EffectNetwork Effect = "network"
 )
 
-// effectOrder is the order a set of effects is written in: the order of the
+// EffectOrder is the order a set of effects is written in: the order of the
 // enum (docs/design.md §5.2).
-var effectOrder = []Effect{EffectTime, EffectFs, EffectProcess, EffectNetwork}
+var EffectOrder = []Effect{EffectTime, EffectFs, EffectProcess, EffectNetwork}
 
-// effectSet holds a set of effects, one bit for each in effectOrder.
+// EffectWitness is where an operation's effect of one kind comes from
+// (docs/model.md §9 D8): from its own direct effects, with rank 0 and no
+// via, or from its successor via, whose rank for the kind is one less.
+//
+//uc:realizes graph.EffectWitness
+type EffectWitness struct {
+	Kind Effect
+	Via  string
+	Rank int
+}
+
+// OperationEffects is what D8 gives one operation: its direct effects, its
+// successors, its effects, and a witness for each of them.
+//
+//uc:realizes graph.OperationEffects
+type OperationEffects struct {
+	Direct     []Effect
+	Successors []string
+	Effects    []Effect
+	Witnesses  []EffectWitness
+}
+
+// Effects gives every code operation, and every design operation that a code
+// operation realizes, its effects (docs/model.md §9 D8). A code operation's
+// successors are the code operations it calls and, for an interface's
+// abstract method, the same-named method of each code type that implements
+// the interface, its own or the nearest one it gets from the types it
+// embeds; a design operation's are the code operations that realize it. An
+// operation has an effect of a kind when the kind is among its direct
+// effects, or when one of its successors has it; its witness is the
+// successor nearest to a direct effect of the kind, the first by identity
+// among equals. A design operation that nothing realizes has none to give,
+// and is left out.
+func (g *Graph) Effects() map[string]OperationEffects {
+	e := newEffectGraph(g, true)
+	out := map[string]OperationEffects{}
+	for _, id := range e.ops {
+		r := OperationEffects{Direct: e.direct[id].list(), Successors: slices.Clone(e.next[id]), Effects: []Effect{}, Witnesses: []EffectWitness{}}
+		for _, k := range EffectOrder {
+			if w, ok := e.witness[k][id]; ok {
+				r.Effects = append(r.Effects, k)
+				r.Witnesses = append(r.Witnesses, w)
+			}
+		}
+		out[id] = r
+	}
+	return out
+}
+
+// Dispatch lists the methods a call of the interface's abstract method id
+// may run, by identity: the same-named method of each code type that
+// implements the interface, its own or, failing those, the nearest that it
+// gets from the types it embeds, as Go selects them. Any other operation
+// has none.
+func (g *Graph) Dispatch(id string) []string { return newEffectGraph(g, false).dispatch(id) }
+
+// effectSet holds a set of effects, one bit for each in EffectOrder.
 type effectSet uint8
 
 func effectsOf(kinds []string) effectSet {
 	var s effectSet
-	for i, e := range effectOrder {
+	for i, e := range EffectOrder {
 		if slices.Contains(kinds, string(e)) {
 			s |= 1 << i
 		}
@@ -35,7 +92,7 @@ func effectsOf(kinds []string) effectSet {
 
 func (s effectSet) list() []Effect {
 	out := []Effect{}
-	for i, e := range effectOrder {
+	for i, e := range EffectOrder {
 		if s&(1<<i) != 0 {
 			out = append(out, e)
 		}
@@ -43,179 +100,156 @@ func (s effectSet) list() []Effect {
 	return out
 }
 
-// Effects gives every code operation, and every design operation that a code
-// operation realizes, its effects (docs/model.md §9 D8). A code operation's
-// are the direct effects of the functions it reaches along calls, itself
-// included; a call of an interface's abstract method reaches the same-named
-// method of each code type that implements the interface, its own or the
-// nearest one it gets from the types it embeds. A design operation's are
-// those of the code operations that realize it. A design operation that
-// nothing realizes has none to give, and is left out.
-func (g *Graph) Effects() map[string][]Effect {
-	e := newEffectGraph(g)
-	out := map[string][]Effect{}
-	for _, f := range e.functions {
-		out[f] = e.of(f).list()
-	}
-	for _, n := range g.nodes {
-		if n.Layer != LayerDesign || n.Kind != NodeKindOp {
-			continue
-		}
-		var s effectSet
-		realized := false
-		for _, r := range e.realizers[n.Id] {
-			realized = true
-			s |= e.of(r)
-		}
-		if realized {
-			out[n.Id] = s.list()
-		}
-	}
-	return out
-}
-
-// effectGraph is the code operations with the functions a call of each may
-// run: what it calls and, for an abstract method, its dispatch.
+// effectGraph is the operations with their successors and direct effects,
+// and, by kind, the witness of every operation that has the kind.
 type effectGraph struct {
-	functions []string
-	next      map[string][]string
-	direct    map[string]effectSet
-	realizers map[string][]string
-	// The strongly connected components share their effects: comp names each
-	// function's, reached holds each component's, once computed.
-	comp    map[string]int
-	reached []effectSet
+	g            *Graph
+	ops          []string
+	next         map[string][]string
+	direct       map[string]effectSet
+	children     map[string][]string
+	parent       map[string]string
+	implementers map[string][]string
+	embeds       map[string][]string
+	witness      map[Effect]map[string]EffectWitness
 }
 
-func newEffectGraph(g *Graph) *effectGraph {
-	e := &effectGraph{next: map[string][]string{}, direct: map[string]effectSet{}, realizers: map[string][]string{}}
-	isCode := func(id string, kind NodeKind) bool {
-		n, ok := g.nodes[id]
-		return ok && n.Layer == LayerCode && n.Kind == kind
-	}
-	children := map[string][]string{}
-	parent := map[string]string{}
-	implementers := map[string][]string{}
-	embeds := map[string][]string{}
+// newEffectGraph indexes g; it finds the operations' successors and
+// witnesses only when full, since dispatch needs neither.
+func newEffectGraph(g *Graph, full bool) *effectGraph {
+	e := &effectGraph{g: g, next: map[string][]string{}, direct: map[string]effectSet{}, children: map[string][]string{},
+		parent: map[string]string{}, implementers: map[string][]string{}, embeds: map[string][]string{}}
+	realizers := map[string][]string{}
 	for _, edge := range g.Edges() {
 		switch {
-		case edge.Kind == EdgeKindCalls && isCode(edge.From, NodeKindOp) && isCode(edge.To, NodeKindOp):
+		case edge.Kind == EdgeKindCalls && e.code(edge.From, NodeKindOp) && e.code(edge.To, NodeKindOp):
 			e.next[edge.From] = append(e.next[edge.From], edge.To)
 		case edge.Kind == EdgeKindContains:
-			children[edge.From] = append(children[edge.From], edge.To)
-			parent[edge.To] = edge.From
-		case edge.Kind == EdgeKindImplements && isCode(edge.From, NodeKindType) && isCode(edge.To, NodeKindType):
-			implementers[edge.To] = append(implementers[edge.To], edge.From)
-		case edge.Kind == EdgeKindExtends && isCode(edge.From, NodeKindType) && isCode(edge.To, NodeKindType):
-			embeds[edge.From] = append(embeds[edge.From], edge.To)
-		case edge.Kind == EdgeKindRealizes && isCode(edge.From, NodeKindOp):
-			e.realizers[edge.To] = append(e.realizers[edge.To], edge.From)
+			e.children[edge.From] = append(e.children[edge.From], edge.To)
+			e.parent[edge.To] = edge.From
+		case edge.Kind == EdgeKindImplements && e.code(edge.From, NodeKindType) && e.code(edge.To, NodeKindType):
+			e.implementers[edge.To] = append(e.implementers[edge.To], edge.From)
+		case edge.Kind == EdgeKindExtends && e.code(edge.From, NodeKindType) && e.code(edge.To, NodeKindType):
+			e.embeds[edge.From] = append(e.embeds[edge.From], edge.To)
+		case edge.Kind == EdgeKindRealizes && e.code(edge.From, NodeKindOp):
+			realizers[edge.To] = append(realizers[edge.To], edge.From)
 		}
 	}
-	name := func(id string) string {
-		if v := g.nodes[id].Attrs["name"]; len(v) > 0 {
-			return v[0]
-		}
-		return ""
-	}
-	// methodNamed lists the methods named m of a code type: its own or,
-	// failing those, the nearest it gets from the types it embeds.
-	methodNamed := func(t, m string) []string {
-		seen := map[string]bool{t: true}
-		for level := []string{t}; len(level) > 0; {
-			var out, deeper []string
-			for _, x := range level {
-				for _, c := range children[x] {
-					if isCode(c, NodeKindOp) && name(c) == m {
-						out = append(out, c)
-					}
-				}
-				for _, y := range embeds[x] {
-					if !seen[y] {
-						seen[y] = true
-						deeper = append(deeper, y)
-					}
-				}
-			}
-			if len(out) > 0 {
-				return out
-			}
-			level = deeper
-		}
-		return nil
+	if !full {
+		return e
 	}
 	for id, n := range g.nodes {
-		if n.Layer != LayerCode || n.Kind != NodeKindOp {
-			continue
-		}
-		e.functions = append(e.functions, id)
-		e.direct[id] = effectsOf(n.Attrs["directEffects"])
-		if n.Form == "abstract" {
-			for _, t := range implementers[parent[id]] {
-				e.next[id] = append(e.next[id], methodNamed(t, name(id))...)
-			}
+		switch {
+		case n.Layer == LayerCode && n.Kind == NodeKindOp:
+			e.ops = append(e.ops, id)
+			e.direct[id] = effectsOf(n.Attrs["directEffects"])
+		case n.Layer == LayerDesign && n.Kind == NodeKindOp && len(realizers[id]) > 0:
+			e.ops = append(e.ops, id)
+			e.next[id] = realizers[id]
 		}
 	}
-	slices.Sort(e.functions)
-	e.components()
+	slices.Sort(e.ops)
+	for _, id := range e.ops {
+		e.next[id] = append(e.next[id], e.dispatch(id)...)
+		slices.Sort(e.next[id])
+		e.next[id] = slices.Compact(e.next[id])
+	}
+	e.witnesses()
 	return e
 }
 
-// components finds the strongly connected components of the functions along
-// next (Tarjan), and gives each the effects of its members and of every
-// component it reaches; Tarjan closes a component only after those it
-// reaches.
-func (e *effectGraph) components() {
-	e.comp = map[string]int{}
-	index := map[string]int{}
-	low := map[string]int{}
-	onStack := map[string]bool{}
-	var stack []string
-	var visit func(f string)
-	visit = func(f string) {
-		index[f], low[f] = len(index), len(index)
-		stack = append(stack, f)
-		onStack[f] = true
-		for _, g := range e.next[f] {
-			if _, seen := index[g]; !seen {
-				visit(g)
-				low[f] = min(low[f], low[g])
-			} else if onStack[g] {
-				low[f] = min(low[f], index[g])
+func (e *effectGraph) code(id string, kind NodeKind) bool {
+	n, ok := e.g.nodes[id]
+	return ok && n.Layer == LayerCode && n.Kind == kind
+}
+
+func (e *effectGraph) name(id string) string {
+	if v := e.g.nodes[id].Attrs["name"]; len(v) > 0 {
+		return v[0]
+	}
+	return ""
+}
+
+func (e *effectGraph) dispatch(id string) []string {
+	n, ok := e.g.nodes[id]
+	if !ok || n.Layer != LayerCode || n.Form != "abstract" {
+		return nil
+	}
+	var out []string
+	for _, t := range e.implementers[e.parent[id]] {
+		out = append(out, e.methodNamed(t, e.name(id))...)
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// methodNamed lists the methods named m of a code type: its own or, failing
+// those, the nearest it gets from the types it embeds.
+func (e *effectGraph) methodNamed(t, m string) []string {
+	seen := map[string]bool{t: true}
+	for level := []string{t}; len(level) > 0; {
+		var out, deeper []string
+		for _, x := range level {
+			for _, c := range e.children[x] {
+				if e.code(c, NodeKindOp) && e.name(c) == m {
+					out = append(out, c)
+				}
 			}
-		}
-		if low[f] != index[f] {
-			return
-		}
-		c := len(e.reached)
-		var s effectSet
-		var members []string
-		for {
-			top := stack[len(stack)-1]
-			stack = stack[:len(stack)-1]
-			onStack[top] = false
-			e.comp[top] = c
-			members = append(members, top)
-			s |= e.direct[top]
-			if top == f {
-				break
-			}
-		}
-		e.reached = append(e.reached, 0)
-		for _, m := range members {
-			for _, g := range e.next[m] {
-				if d, ok := e.comp[g]; ok && d != c {
-					s |= e.reached[d]
+			for _, y := range e.embeds[x] {
+				if !seen[y] {
+					seen[y] = true
+					deeper = append(deeper, y)
 				}
 			}
 		}
-		e.reached[c] = s
-	}
-	for _, f := range e.functions {
-		if _, seen := index[f]; !seen {
-			visit(f)
+		if len(out) > 0 {
+			return out
 		}
+		level = deeper
 	}
+	return nil
 }
 
-func (e *effectGraph) of(f string) effectSet { return e.reached[e.comp[f]] }
+// witnesses finds, for each kind, the operations that have it by a search
+// backwards from those that have it directly: an operation reached in round
+// r has rank r, and its witness is the successor of rank r-1 that reached
+// it first, the first by identity among them.
+func (e *effectGraph) witnesses() {
+	before := map[string][]string{}
+	for _, id := range e.ops {
+		for _, s := range e.next[id] {
+			before[s] = append(before[s], id)
+		}
+	}
+	e.witness = map[Effect]map[string]EffectWitness{}
+	for i, k := range EffectOrder {
+		found := map[string]EffectWitness{}
+		var frontier []string
+		for _, id := range e.ops {
+			if e.direct[id]&(1<<i) != 0 {
+				found[id] = EffectWitness{Kind: k, Rank: 0}
+				frontier = append(frontier, id)
+			}
+		}
+		for rank := 1; len(frontier) > 0; rank++ {
+			reached := map[string]string{}
+			for _, s := range frontier {
+				for _, p := range before[s] {
+					if _, done := found[p]; done {
+						continue
+					}
+					if via, ok := reached[p]; !ok || cmp.Less(s, via) {
+						reached[p] = s
+					}
+				}
+			}
+			frontier = frontier[:0]
+			for p, via := range reached {
+				found[p] = EffectWitness{Kind: k, Via: via, Rank: rank}
+				frontier = append(frontier, p)
+			}
+			slices.Sort(frontier)
+		}
+		e.witness[k] = found
+	}
+}

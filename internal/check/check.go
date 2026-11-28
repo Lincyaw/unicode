@@ -17,6 +17,7 @@ import (
 type Checked struct {
 	Diagnostics []diag.Diagnostic
 	Statuses    map[string]graph.Status
+	Effects     map[string]graph.OperationEffects
 }
 
 // Conform checks, on a derived graph, the constraints that need the code
@@ -31,6 +32,7 @@ type Checked struct {
 //uc:realizes check.conform
 func Conform(g *graph.Graph) Checked {
 	c := newChecker(g)
+	c.effects = g.Effects()
 	c.ownership()
 	c.dependencies()
 	c.bindings()
@@ -42,13 +44,13 @@ func Conform(g *graph.Graph) Checked {
 	c.drivers()
 	c.steps()
 	c.runtimeEvidence()
-	c.purity(g.Effects())
+	c.purity()
 	slices.SortFunc(c.diags, func(a, b diag.Diagnostic) int {
 		return cmp.Or(cmp.Compare(a.Position.Path, b.Position.Path), cmp.Compare(a.Position.Line, b.Position.Line),
 			cmp.Compare(a.Position.Column, b.Position.Column), cmp.Compare(a.Code, b.Code),
 			cmp.Compare(a.Subject, b.Subject), cmp.Compare(a.Message, b.Message))
 	})
-	return Checked{Diagnostics: c.diags, Statuses: c.statuses}
+	return Checked{Diagnostics: c.diags, Statuses: c.statuses, Effects: c.effects}
 }
 
 // checker indexes a graph's nodes and edges for the constraints, and collects
@@ -61,6 +63,7 @@ type checker struct {
 	parent   map[string]string
 	children map[string][]string
 	reach    map[string]map[string]bool
+	effects  map[string]graph.OperationEffects // D8 of the graph (docs/model.md §9)
 	diags    []diag.Diagnostic
 	statuses map[string]graph.Status
 }

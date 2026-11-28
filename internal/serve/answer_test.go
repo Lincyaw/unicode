@@ -211,9 +211,9 @@ func sameNode(got Node, g *graph.Graph, id string) string {
 		// An operation carries the effects graph.Graph.Effects gives it, and
 		// the mean duration evidence.MeanDurations gives it.
 		want.Operation = &OperationInfo{}
-		if kinds, ok := g.Effects()[id]; ok {
+		if result, ok := g.Effects()[id]; ok {
 			effects := []Effect{}
-			for _, k := range kinds {
+			for _, k := range result.Effects {
 				effects = append(effects, Effect(k))
 			}
 			want.Operation.Effects = &effects

@@ -44,7 +44,7 @@ type state struct {
 	// effects are the effects of the operations (docs/model.md §9 D8), and
 	// meanDurations the mean durations of the design operations that the
 	// current evidence records calls of, in nanoseconds.
-	effects       map[string][]graph.Effect
+	effects       map[string]graph.OperationEffects
 	meanDurations map[string]int
 	// prepare makes, once for the served snapshot, what every page reads:
 	// inputs, the inputs each view kind takes, by identity (view.Inputs);
@@ -83,6 +83,7 @@ func load(root, path string, builtAt time.Time) (*state, error) {
 		return nil, Unreadable{Path: path, Cause: err}
 	}
 	st.checked = check.Conform(&st.g)
+	st.effects = st.checked.Effects
 	recorded := review.Recorded(&st.g)
 	st.records, st.reviewDiagnostics = recorded.Records, recorded.Diagnostics
 	st.checked.Diagnostics = append(st.checked.Diagnostics, recorded.Diagnostics...)
@@ -116,7 +117,6 @@ func indexed(root string, g graph.Graph) *state {
 			st.codeFiles[n.Origin.Path] = n.Id
 		}
 	}
-	st.effects = g.Effects()
 	st.meanDurations = evidence.MeanDurations(&g)
 	return st
 }
@@ -286,9 +286,9 @@ func (st *state) operation(id string) *OperationInfo {
 		return nil
 	}
 	out := &OperationInfo{}
-	if kinds, ok := st.effects[id]; ok {
-		effects := make([]Effect, len(kinds))
-		for i, k := range kinds {
+	if result, ok := st.effects[id]; ok {
+		effects := make([]Effect, len(result.Effects))
+		for i, k := range result.Effects {
 			effects[i] = Effect(k)
 		}
 		out.Effects = &effects

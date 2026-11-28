@@ -200,17 +200,13 @@ func (c *checker) context(step string) (functions []string, what string, checked
 }
 
 // dispatch lists the functions that a call of fn may run: fn itself, or for
-// an interface's abstract method, the same-named method of each code type
-// that implements the interface.
+// an interface's abstract method, the methods graph's dispatch gives (its
+// successors in D8).
 func (c *checker) dispatch(fn string) []string {
 	if !c.is(fn, graph.LayerCode, graph.NodeKindOp, "abstract") {
 		return []string{fn}
 	}
-	var out []string
-	for _, t := range c.implementers(c.parent[fn]) {
-		out = append(out, c.methodNamed(t, c.attr(fn, "name"))...)
-	}
-	return out
+	return c.effects[fn].Successors
 }
 
 // implementers lists the code types that implement the code interface i.
@@ -259,26 +255,6 @@ func (c *checker) methodsOf(t string) []string {
 		}
 	}
 	return out
-}
-
-// methodNamed lists the methods named name that a code type has, its own or,
-// failing those, the nearest that it gets from the types it embeds, as Go
-// selects them.
-func (c *checker) methodNamed(t, name string) []string {
-	for _, level := range c.embedded(t) {
-		var out []string
-		for _, x := range level {
-			for _, m := range c.children[x] {
-				if c.isFunction(m) && c.attr(m, "name") == name {
-					out = append(out, m)
-				}
-			}
-		}
-		if len(out) > 0 {
-			return out
-		}
-	}
-	return nil
 }
 
 func (c *checker) sender(step string) string {

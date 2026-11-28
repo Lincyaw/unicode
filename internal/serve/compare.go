@@ -47,6 +47,7 @@ func (s *Server) compare(st *state, rev string) (*compared, error) {
 			return
 		}
 		entry.st = indexed(st.root, g)
+		entry.st.effects = g.Effects()
 	})
 	if entry.err != nil {
 		return nil, entry.err

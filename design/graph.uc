@@ -114,7 +114,8 @@ type Graph object "一张图：节点按标识索引，边按种类、起点和�
   op edges() -> list<Edge> pure "全部边，按种类、起点、终点排序"
   op digest(id: string) -> string pure "节点自身内容的 SHA-256：种类、形式、摘要和属性的规范编码，不含子节点"
   op encode() -> bytes pure "编码成确定的 JSON 快照（model.md §8）"
-  op effects() -> map<string, list<Effect>> pure "按 model.md §9 D8 求出的效果：每个代码层操作和每个有实现的设计层操作的标识，对应它的效果种类，按 time、fs、process、network 的次序，没有效果时为空的列表"
+  op effects() -> map<string, OperationEffects> pure "按 model.md §9 D8 求出的效果：每个代码层操作和每个有实现的设计层操作的标识，对应它的直接效果、后继、效果和每个效果种类的来历，种类按 time、fs、process、network 的次序"
+  op dispatch(id: string) -> list<string> pure "调用接口的抽象方法 id 时可能执行的方法：实现该接口的每个代码层类型自己的同名方法，没有时取它经嵌入得到的最近的同名方法，按标识排序；其他操作没有"
 }
 
 type Fragment record "可以整体加入图中的一组节点和边，例如一种语言的后端抽取出的代码层" {
@@ -157,9 +158,23 @@ type Comparison record "两张图的差别：新增、删除和修改的节点�
   field edges: list<EdgeChange>
 }
 
-type EffectSample record "effects-follow-calls 的输入：一张推导过的图，以及按 model.md §9 D8 的定义直接算出的每个操作的效果" {
+type EffectWitness record "一个操作的一个效果种类的来历（model.md §9 D8）：via 为空、rank 为零时这个种类是操作自己的直接效果，否则它来自后继 via，via 的这个种类的 rank 更小" {
+  field kind: Effect
+  field via: string
+  field rank: int
+}
+
+type OperationEffects record "effects 给一个操作的结果：直接效果、后继（代码层操作是它调用的代码层操作和接口分派的目标，设计层操作是实现它的代码层操作）、效果，以及每个效果种类的来历" {
+  field direct: list<Effect>
+  field successors: list<string>
+  field effects: list<Effect>
+  field witnesses: list<EffectWitness>
+}
+
+type EffectSample record "effects-follow-calls、effects-read-the-graph 和 dispatch-finds-implementations 的输入：一张推导过的图，生成它时给每个代码层操作写下的直接效果，以及其中的一个抽象方法" {
   field snapshot: Graph
-  field expected: map<string, list<Effect>>
+  field direct: map<string, list<Effect>>
+  field abstract: string
 }
 
 type FingerprintSample record "fingerprints-separate-inputs-and-artifacts 的输入：一张图，加上运行产物的同一张图，移动了一处源位置的同一张图，以及一条边、改了出处和来源的这条边和改了属性的这条边" {
@@ -262,9 +277,32 @@ property fingerprints-separate-inputs-and-artifacts postcondition "执行输入�
   ensure edgeDigest(sample.edge) != edgeDigest(sample.changedEdge)
 }
 
-property effects-follow-calls postcondition "effects 给出的每个操作的效果，与按 model.md §9 D8 的定义直接算出的 sample.expected 相同" {
+property effects-follow-calls postcondition "effects 给出的结果合乎 D8 的定义：每个操作的效果含它的直接效果和它的每个后继的效果，每个效果种类恰有一个来历，来历或者是 rank 为零的直接效果，或者是有这个种类且 rank 更小的后继" {
   about Graph.effects
-  forall sample: EffectSample generated "derive-matches-definition 那样的随机图另加零至六条边（各有一半机会是从结构体到接口的实现接口边或结构体之间的继承边），每个具体函数和方法约一半带随机的非空直接效果，推导过，以及沿 calls、从被调用的抽象方法到实现该接口的结构体自己的或最近继承来的同名方法、从设计层操作到实现它的代码层操作逐个函数求出的效果"
+  forall sample: EffectSample generated "derive-matches-definition 那样的随机图另加零至六条边（各有一半机会是从结构体到接口的实现接口边或结构体之间的继承边），每个具体函数和方法约一半带随机的非空直接效果，推导过，direct 记下每个代码层操作带的直接效果（没有时为空），abstract 是图中随机的一个抽象方法，没有时为空串"
   call sample.snapshot.effects()
-  ensure result == sample.expected
+  ensure all(id in result: all(k in result[id].direct: k in result[id].effects))
+  ensure all(id in result: all(s in result[id].successors: s in result implies all(k in result[s].effects: k in result[id].effects)))
+  ensure all(id in result: size(result[id].witnesses) == size(result[id].effects) and all(k in result[id].effects: count(w in result[id].witnesses: w.kind == k) == 1))
+  ensure all(id in result: all(w in result[id].witnesses: w.via == "" and w.rank == 0 and w.kind in result[id].direct or w.via in result[id].successors and w.via in result and any(v in result[w.via].witnesses: v.kind == w.kind and v.rank < w.rank)))
+}
+
+property effects-read-the-graph postcondition "effects 给每个代码层操作的直接效果是生成图时写下的，给设计层操作的直接效果为空，后继含图中操作之间每条 calls 边的终点、每条 realizes 边的起点和 dispatch 给抽象方法的方法，每个后继都来自这样的边或者是抽象方法的同名方法" {
+  about Graph.effects, Graph.dispatch
+  forall sample: EffectSample generated "与 effects-follow-calls 的 sample 相同"
+  call sample.snapshot.effects()
+  ensure all(id in sample.direct: id in result and result[id].direct == sample.direct[id])
+  ensure all(id in result: id in sample.direct or size(result[id].direct) == 0)
+  ensure all(e in sample.snapshot.edges(): e.kind == EdgeKind.calls and e.from in result and e.to in result implies e.to in result[e.from].successors)
+  ensure all(e in sample.snapshot.edges(): e.kind == EdgeKind.realizes and e.from in result and e.to in result implies e.from in result[e.to].successors)
+  ensure all(id in result: all(m in sample.snapshot.dispatch(id): m in result[id].successors))
+  ensure all(id in result: all(s in result[id].successors: any(e in sample.snapshot.edges(): e.kind == EdgeKind.calls and e.from == id and e.to == s) or any(e in sample.snapshot.edges(): e.kind == EdgeKind.realizes and e.from == s and e.to == id) or s in sample.snapshot.dispatch(id)))
+}
+
+property dispatch-finds-implementations postcondition "dispatch 给抽象方法的每个方法都与它同名，实现该接口的类型自己有同名方法时这个方法在其中" {
+  about Graph.dispatch
+  forall sample: EffectSample generated "与 effects-follow-calls 的 sample 相同"
+  call sample.snapshot.dispatch(sample.abstract)
+  ensure all(m in result: sample.snapshot.node(m).attrs["name"] == sample.snapshot.node(sample.abstract).attrs["name"])
+  ensure all(i in sample.snapshot.edges(): i.kind == EdgeKind.implements and any(c in sample.snapshot.edges(): c.kind == EdgeKind.contains and c.from == i.to and c.to == sample.abstract) implies all(c in sample.snapshot.edges(): c.kind == EdgeKind.contains and c.from == i.from and sample.snapshot.node(c.to).kind == NodeKind.op and sample.snapshot.node(c.to).attrs["name"] == sample.snapshot.node(sample.abstract).attrs["name"] implies c.to in result))
 }
