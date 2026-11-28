@@ -1,4 +1,4 @@
-import { ancestorsOf, childrenOf, diagnosticsAbout, evidenceOf, full, membersOf, raw, subjectsOf, withStatus } from './graph';
+import { ancestorsOf, childrenOf, diagnosticsAbout, evidenceOf, fileOf, full, membersOf, raw, subjectsOf, withStatus } from './graph';
 import type { C4Level, ClassLayer, EdgeLabel, RawEdge, View, ViewEdge, ViewKind, ViewNode } from './schemaTypes';
 
 /* What every view shares: drawing a node or an edge, folding, and putting the answer together. */
@@ -12,9 +12,12 @@ export class NotFound extends Error {}
 /** The labels of the DDD notation that apply to types (docs/model.md §5); an event is a domain event without one. */
 export const DDD_TYPE_LABELS = ['aggregate', 'entity', 'value', 'domain-service', 'repository', 'factory'];
 
+/** A node a view draws; a code type or function with the file it is declared in, as unicode serve gives it. */
 export function viewNode(id: string, extras: Partial<ViewNode> = {}): ViewNode {
   const evidence = evidenceOf(id);
-  return { ...full(id), ...(evidence ? { evidence } : {}), ...extras };
+  const node = raw(id);
+  const file = node.layer === 'code' && (node.kind === 'type' || node.kind === 'op') ? fileOf(id) : undefined;
+  return { ...full(id), ...(evidence ? { evidence } : {}), ...(file ? { file } : {}), ...extras };
 }
 
 export function viewEdge(each: RawEdge, extras: Partial<ViewEdge> = {}): ViewEdge {

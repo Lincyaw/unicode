@@ -1,12 +1,13 @@
 import { clsx } from 'clsx';
+import type { ReactNode } from 'react';
 import type { View, ViewEdge, ViewNode } from '../../api/types';
-import { ABOUT, MARKS, SECTIONS, VIEW_NAMES } from '../../terms';
+import { ABOUT, SECTIONS, VIEW_NAMES } from '../../terms';
 import { HintedHeading, Tag } from '../../ui/content';
 import { ButtonLink, MarkButton } from '../../ui/controls';
 import { InfoHint } from '../../ui/hint';
 import { Icon } from '../../ui/icons';
 import { Canvas, Placed } from '../canvas/Canvas';
-import { LineMarks, Lines, type Line } from '../canvas/Edges';
+import { LineMarks, Lines, type Line, type LineMark } from '../canvas/Edges';
 import { BADGE_SIDES } from '../canvas/markers';
 import { CHIP_HEIGHT } from '../canvas/sizes';
 import { ViaTag } from '../details/sections';
@@ -22,21 +23,22 @@ import styles from './views.module.css';
 const COVERAGE_GAP = 24;
 const COVERAGE_HEIGHT = 84;
 
-/** The head of the input's box, which previews the input. */
-function InputHead({ node }: { node: ViewNode }) {
-  return (
-    <MarkButton className={styles.fileHead} {...useNodeActions(node.id)}>
-      <KindIcon node={node} size="tiny" />
-      {node.form === 'file' ? shortPath(node.title) : node.title}
-    </MarkButton>
-  );
+/** The head of a box: the input, or the file of the other functions; a click previews it, a double click enters it. */
+function BoxHead({ id, children }: { id: string; children: ReactNode }) {
+  return <MarkButton className={styles.fileHead} {...useNodeActions(id)}>{children}</MarkButton>;
 }
 
 /** A box of types and functions, each with the design node it realizes. */
-function FileBox({ box, input, details }: { box: Box; input: boolean; details?: number }) {
+function FileBox({ box, details }: { box: Box; details?: number }) {
   return (
-    <div className={clsx(styles.fileBox, input && 'loop-edge-still')} aria-current={input ? 'true' : undefined}>
-      {box.file ? <InputHead node={box.file} /> : <span className={styles.fileHead}><Icon glyph={FileCode} size="tiny" />{shortPath(box.path ?? '')}</span>}
+    <div className={clsx(styles.fileBox, box.input && 'loop-edge-still')} aria-current={box.input ? 'true' : undefined}>
+      {box.input && (
+        <BoxHead id={box.input.id}>
+          <KindIcon node={box.input} size="tiny" />
+          {box.input.form === 'file' ? shortPath(box.input.title) : box.input.title}
+        </BoxHead>
+      )}
+      {box.file && <BoxHead id={box.file.id}><Icon glyph={FileCode} size="tiny" />{shortPath(box.file.path)}</BoxHead>}
       {box.rows.map(row => {
         const bound = bindingOf(row.node);
         return (
@@ -61,68 +63,56 @@ function FileBox({ box, input, details }: { box: Box; input: boolean; details?: 
   );
 }
 
-/** How many calls of the graph the drawn edges into or out of a folded component stand for, together. */
-function mergedCount(edges: ViewEdge[], component: string): number | undefined {
-  const counts = edges.filter(edge => (edge.from === component || edge.to === component) && edge.count !== undefined).map(edge => edge.count ?? 0);
-  return counts.length > 0 ? counts.reduce((sum, count) => sum + count, 0) : undefined;
-}
-
-/** A folded component as a chip, centred in the height its lines need, with how many calls its edges stand for. */
-function FoldedChip({ node, count }: { node: ViewNode; count?: number }) {
+/** What a line carries on it: how many detail functions a reaches edge passes, and how many calls a merged edge stands for. */
+function CallMark({ edge }: { edge: ViewEdge }) {
   return (
     <>
-      <NodeChip node={node} state="folded" />
-      {count !== undefined && (
-        <span className={styles.count}>
-          <Tag><Icon glyph={Merge} size="tiny" />{count}</Tag>
-          <InfoHint subject={MARKS.merged}>{ABOUT.merged}</InfoHint>
-        </span>
-      )}
+      {edge.kind === 'reaches' && <ViaTag count={edge.attrs.via?.length ?? 0} />}
+      {edge.count !== undefined && <Tag><Icon glyph={Merge} size="tiny" />{edge.count}</Tag>}
     </>
   );
 }
 
 /**
  * The code view (Figma 11): the input file (or type) with its types and functions and what they realize; the files
- * whose functions call into it on its left and those it calls on its right, the components called into folded, with
- * how many calls; and the cases that cover the input (codeLayout.ts).
+ * whose functions call into it on its left and those it calls on its right, each headed by a link to the file; the
+ * components called into, folded; and the cases that cover the input (codeLayout.ts). A reaches line carries how many
+ * detail functions it passes, a merged line how many calls it stands for.
  */
 export function CodeView({ view }: { view: View }) {
   const links = useLinks();
   const layout = layOutCode(view);
-  const { input } = layout;
-  const lines: Line[] = layout.calls.flatMap(edge => {
+  const { input, inputNode } = layout;
+  const routeOf = (edge: ViewEdge) => {
     const path = layout.routes.get(edgeKey(edge));
-    return path ? [{ id: edgeKey(edge), route: path, tone: edge.kind === 'reaches' ? 'reach' as const : 'plain' as const, select: edge.kind === 'reaches' ? edgeKey(edge) : undefined }] : [];
-  });
-  const inputRect = layout.place.get(input) ?? { x: 0, y: 0, width: input.width, height: input.height };
+    if (!path) {
+      throw new Error(`the code view laid out no line for ${edgeKey(edge)}`);
+    }
+    return path;
+  };
+  const lines: Line[] = layout.calls.map(edge => ({
+    id: edgeKey(edge), route: routeOf(edge), tone: edge.kind === 'reaches' ? 'reach' : 'plain', select: edge.kind === 'reaches' ? edgeKey(edge) : undefined,
+  }));
+  const marks: LineMark[] = layout.calls.filter(edge => edge.kind === 'reaches' || edge.count !== undefined)
+    .map(edge => ({ id: edgeKey(edge), route: routeOf(edge), sides: BADGE_SIDES, children: <CallMark edge={edge} /> }));
+  const inputRect = layout.boxes[0]?.rect;
+  if (!inputRect) {
+    throw new Error('the code view laid out no box for its input');
+  }
   const cases = view.nodes.filter(node => node.kind === 'case');
-  const branches = [input.file, ...input.rows.map(row => row.node)].flatMap(node => node?.evidence?.branches ?? []);
+  const branches = [inputNode, ...input.rows.map(row => row.node)].flatMap((node: ViewNode) => node.evidence?.branches ?? []);
   const height = Math.max(layout.height, inputRect.y + input.height + (cases.length > 0 ? COVERAGE_GAP + COVERAGE_HEIGHT : 0));
   return (
     <Canvas about={ABOUT.codeView} label={VIEW_NAMES.code} width={layout.width} height={height}>
       <Lines width={layout.width} height={height} lines={lines} selected={links.selected} onSelect={links.select} />
-      {layout.boxes.map(box => {
-        const rect = layout.place.get(box);
-        if (!rect) {
-          return null;
-        }
-        if (box.folded) {
-          return (
-            <Placed key={box.key} rect={{ ...rect, y: rect.y + (rect.height - CHIP_HEIGHT) / 2, height: CHIP_HEIGHT }} className={styles.chipSlot}>
-              <FoldedChip node={box.folded} count={mergedCount(layout.calls, box.folded.id)} />
-            </Placed>
-          );
-        }
-        return <Placed key={box.key} rect={rect}><FileBox box={box} input={box === input} details={box === input ? input.file?.details : undefined} /></Placed>;
-      })}
-      <LineMarks
-        marks={layout.calls.filter(edge => edge.kind === 'reaches').flatMap(edge => {
-          const path = layout.routes.get(edgeKey(edge));
-          return path ? [{ id: edgeKey(edge), route: path, sides: BADGE_SIDES, children: <ViaTag count={edge.attrs.via?.length ?? 0} /> }] : [];
-        })}
-        obstacles={layout.obstacles}
-      />
+      {layout.boxes.map(({ box, rect }) => (box.folded
+        ? (
+          <Placed key={box.key} rect={{ ...rect, y: rect.y + (rect.height - CHIP_HEIGHT) / 2, height: CHIP_HEIGHT }} className={styles.chipSlot}>
+            <NodeChip node={box.folded} state="folded" />
+          </Placed>
+        )
+        : <Placed key={box.key} rect={rect}><FileBox box={box} details={box.input?.details} /></Placed>))}
+      <LineMarks marks={marks} obstacles={layout.boxes.map(({ rect }) => rect)} />
       {cases.length > 0 && (
         <Placed rect={{ x: inputRect.x, y: inputRect.y + input.height + COVERAGE_GAP, width: input.width, height: 48 }} className={styles.coverage}>
           <HintedHeading rank="h3" className="t-micro c-muted" title={SECTIONS.coveredBy} about={ABOUT.coveredBy} />

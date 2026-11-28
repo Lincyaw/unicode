@@ -1,4 +1,4 @@
-import { calleesOf, callersOf, childrenOf, detailCalleesOf, findEdge, incoming, outgoing, ownerOf, raw, realizersOf } from './graph';
+import { calleesOf, childrenOf, detailCalleesOf, findEdge, incoming, outgoing, ownerOf, raw, realizersOf } from './graph';
 import type { RawEdge, ViewNode } from './schemaTypes';
 import { Aggregates, focusOf, NotApplicable, viewEdge, viewNode, type Drawing } from './viewKit';
 
@@ -101,16 +101,53 @@ function within(id: string): string[] {
   return childrenOf(id).flatMap(child => [child, ...within(child)]);
 }
 
-/** How many detail functions a file or a type holds, nested ones included, that the view does not draw. */
-function detailCount(id: string, drawn: Set<string>): number {
-  return childrenOf(id).reduce((count, child) => count + (raw(child).kind === 'op' && !raw(child).salient && !drawn.has(child) ? 1 : 0) + detailCount(child, drawn), 0);
+/** How many detail functions a file or a type holds directly that the view does not draw. */
+function detailCount(id: string, drawn: ReadonlySet<string>): number {
+  return childrenOf(id).filter(child => raw(child).kind === 'op' && !raw(child).salient && !drawn.has(child)).length;
+}
+
+/** The detail functions reached from a function along calls (forward) or reaching it (backward), through details only. */
+function detailClosure(start: string, forward: boolean): Set<string> {
+  const found = new Set<string>();
+  const queue = [start];
+  for (let at = queue.shift(); at !== undefined; at = queue.shift()) {
+    const next = forward ? outgoing(at, 'calls').map(each => each.to) : incoming(at, 'calls').map(each => each.from);
+    for (const id of next.filter(item => raw(item).kind === 'op' && !raw(item).salient && !found.has(item))) {
+      found.add(id);
+      queue.push(id);
+    }
+  }
+  return found;
+}
+
+/** What expanding x reveals, as internal/view's reveal: the direct detail callees of a drawn salient function, or the details on a drawn reaches edge's paths. */
+function revealed(x: string, drawn: ReadonlySet<string>): { nodes: string[]; edges: RawEdge[] } {
+  const [verb, from, to] = x.split(' ');
+  if (verb === 'reaches' && from !== undefined && to !== undefined) {
+    if (!drawn.has(from) || !drawn.has(to) || findEdge('reaches', from, to) === undefined) {
+      return { nodes: [], edges: [] };
+    }
+    const after = detailClosure(from, true);
+    const before = detailClosure(to, false);
+    const on = (id: string) => after.has(id) && before.has(id);
+    const nodes = [...after].filter(on).sort();
+    const edges = [from, ...nodes].flatMap(id => outgoing(id, 'calls')).filter(each => (each.to === to || on(each.to)) && (on(each.from) || on(each.to)));
+    return { nodes, edges };
+  }
+  if (!drawn.has(x) || raw(x).kind !== 'op' || !raw(x).salient) {
+    return { nodes: [], edges: [] };
+  }
+  const nodes = detailCalleesOf(x);
+  return { nodes, edges: outgoing(x, 'calls').filter(each => nodes.includes(each.to)) };
 }
 
 /**
- * A file (or a code type) as unicode serve gives it (internal/view's code selection): the input and the salient nodes
- * it contains, each drawn on its own with the contains edges between them; the salient functions that call into it and
- * that it calls or reaches, each drawn on its own, or merged into a folded container; and the cases that cover it. The
- * input and its code types count their undrawn detail functions; a folded container lists its types.
+ * A file (or a code type) as unicode serve gives it (internal/view's code selection and folding): the input and the
+ * salient nodes it contains, each drawn on its own; the salient functions at the other end of a calls or reaches edge
+ * of anything it contains, each drawn on its own, or merged into a folded container; the cases that cover it; and what
+ * an expansion reveals. Of the calls and reaches edges between them it draws those with an end in the input, merging
+ * the ones into a folded container; the input and its code types count their undrawn detail functions, and a folded
+ * container lists its types.
  */
 export function code(input: string, expand: string[]): Drawing {
   const node = raw(input);
@@ -119,42 +156,55 @@ export function code(input: string, expand: string[]): Drawing {
   }
   const home = ownerOf(input);
   const expanded = new Set(expand);
-  const inside = within(input).filter(id => raw(id).salient);
-  const drawn = new Set([input, ...inside]);
-  const edges: RawEdge[] = inside.flatMap(id => incoming(id, 'contains').filter(each => drawn.has(each.from)));
-  const aggregates = new Aggregates();
-  const foldedContainers = new Set<string>();
+  const contents = [input, ...within(input)];
+  const inside = new Set(contents);
+  const drawn = new Set(contents.filter(id => id === input || raw(id).salient));
+  const into = new Map<string, string>();
   const hiddenContainers = new Set<string>();
-  const place = (fn: string, each: RawEdge) => {
-    const placement = drawn.has(fn) ? 'drawn' : placementOf(fn, home, expanded);
-    const owner = ownerOf(fn) ?? '';
+  const place = (id: string) => {
+    if (drawn.has(id) || into.has(id)) {
+      return;
+    }
+    const placement = placementOf(id, home, expanded);
+    const owner = ownerOf(id) ?? '';
     if (placement === 'drawn') {
-      drawn.add(fn);
-      if (!edges.includes(each)) {
-        edges.push(each);
-      }
+      drawn.add(id);
     } else if (placement === 'folded') {
-      aggregates.add(each, each.from === fn ? owner : each.from, each.to === fn ? owner : each.to);
-      foldedContainers.add(owner);
+      into.set(id, owner);
     } else {
       hiddenContainers.add(owner);
     }
   };
-  for (const fn of inside.filter(id => raw(id).kind === 'op')) {
-    calleesOf(fn).forEach(each => place(each.to, each));
-    callersOf(fn).filter(each => raw(each.from).salient).forEach(each => place(each.from, each));
+  for (const id of contents) {
+    [...outgoing(id), ...incoming(id)].filter(each => each.kind === 'calls' || each.kind === 'reaches')
+      .map(each => (each.from === id ? each.to : each.from)).filter(other => raw(other).salient).forEach(place);
+    incoming(id, 'covers').forEach(each => drawn.add(each.from));
   }
-  const covering = inside.flatMap(id => incoming(id, 'covers'));
-  const typesIn = (container: string) => within(container).filter(id => raw(id).kind === 'type');
+  const shown = expand.map(x => revealed(x, drawn));
+  shown.flatMap(item => item.nodes).forEach(place);
+  const revealedEdges = new Set(shown.flatMap(item => item.edges));
+  const stand = (id: string) => (drawn.has(id) ? id : into.get(id) ?? '');
+  const edges: RawEdge[] = [];
+  const aggregates = new Aggregates();
+  const kinds = ['contains', 'calls', 'reaches', 'covers'];
+  for (const each of [...drawn, ...into.keys()].flatMap(id => outgoing(id))) {
+    const [from, to] = [stand(each.from), stand(each.to)];
+    const picked = kinds.includes(each.kind) && (!['calls', 'reaches'].includes(each.kind) || inside.has(each.from) || inside.has(each.to));
+    if (from === '' || to === '' || (!picked && !revealedEdges.has(each)) || (from === to && (from !== each.from || to !== each.to))) {
+      continue;
+    }
+    if (from === each.from && to === each.to) {
+      edges.push(each);
+    } else {
+      aggregates.add(each, from, to);
+    }
+  }
+  const foldedContainers = [...new Set(into.values())].sort();
+  const typesIn = (container: string) => within(container).filter(id => raw(id).kind === 'type').sort();
+  const counted = (id: string) => raw(id).layer === 'code' && (raw(id).kind === 'type' || raw(id).form === 'file');
   const nodes: ViewNode[] = [
-    ...[...drawn].map(id => (id === input || (raw(id).kind === 'type' && inside.includes(id)) ? viewNode(id, { details: detailCount(id, drawn) }) : viewNode(id))),
-    ...[...foldedContainers].map(container => viewNode(container, { contents: typesIn(container).map(type => viewNode(type)) })),
-    ...[...new Set(covering.map(each => each.from))].map(id => viewNode(id)),
+    ...[...drawn].map(id => (counted(id) ? viewNode(id, { details: detailCount(id, drawn) }) : viewNode(id))),
+    ...foldedContainers.map(container => viewNode(container, { contents: typesIn(container).map(type => viewNode(type)) })),
   ].sort((a, b) => (a.id < b.id ? -1 : 1));
-  return {
-    nodes,
-    edges: [...edges.map(each => viewEdge(each)), ...aggregates.edges(), ...covering.map(each => viewEdge(each))],
-    folded: [...foldedContainers].sort(),
-    hidden: hiddenContainers.size,
-  };
+  return { nodes, edges: [...edges.map(each => viewEdge(each)), ...aggregates.edges()], folded: foldedContainers, hidden: hiddenContainers.size };
 }
