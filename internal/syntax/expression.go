@@ -35,7 +35,7 @@ type ExprParsed struct {
 //
 //uc:realizes syntax.parseExpr
 func ParseExpr(path, text string) ExprParsed {
-	at := locator{path: path, src: []byte(text)}
+	at := newLocator(path, []byte(text))
 	if ds := forbidden(at); len(ds) != 0 {
 		return ExprParsed{Diagnostics: ds}
 	}
@@ -288,28 +288,48 @@ func precedence(e *Expr) int {
 }
 
 func expressionText(e *Expr, parent int) string {
+	var b strings.Builder
+	writeExpression(&b, e, parent)
+	return b.String()
+}
+
+// writeExpression writes e into b, bracketed when its precedence is below
+// parent's. Writing into one builder keeps a long expression linear, where
+// joining the texts of the children would copy them once per level.
+func writeExpression(b *strings.Builder, e *Expr, parent int) {
 	if e == nil {
-		return ""
+		return
 	}
 	p := precedence(e)
-	var out string
+	if p < parent {
+		b.WriteString("(")
+		defer b.WriteString(")")
+	}
 	switch e.Kind {
 	case "number", "bool", "name":
-		out = e.Text
+		b.WriteString(e.Text)
 	case "string":
-		out = quote(e.Text)
+		b.WriteString(quote(e.Text))
 	case "none":
-		out = "none"
+		b.WriteString("none")
 	case "field":
-		out = expressionText(e.Children[0], 8) + "." + e.Text
+		writeExpression(b, e.Children[0], 8)
+		b.WriteString("." + e.Text)
 	case "index":
-		out = expressionText(e.Children[0], 8) + "[" + ExprText(e.Children[1]) + "]"
+		writeExpression(b, e.Children[0], 8)
+		b.WriteString("[")
+		writeExpression(b, e.Children[1], 0)
+		b.WriteString("]")
 	case "call":
-		args := make([]string, len(e.Children)-1)
+		writeExpression(b, e.Children[0], 8)
+		b.WriteString("(")
 		for i, arg := range e.Children[1:] {
-			args[i] = ExprText(arg)
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			writeExpression(b, arg, 0)
 		}
-		out = expressionText(e.Children[0], 8) + "(" + strings.Join(args, ", ") + ")"
+		b.WriteString(")")
 	case "binary":
 		left, right := p, p+1
 		if e.Text == "implies" {
@@ -317,20 +337,25 @@ func expressionText(e *Expr, parent int) string {
 		} else if p == 5 {
 			left = p + 1
 		}
-		out = expressionText(e.Children[0], left) + " " + e.Text + " " + expressionText(e.Children[1], right)
+		writeExpression(b, e.Children[0], left)
+		b.WriteString(" " + e.Text + " ")
+		writeExpression(b, e.Children[1], right)
 	case "unary":
-		out = "not " + expressionText(e.Children[0], p)
+		b.WriteString("not ")
+		writeExpression(b, e.Children[0], p)
 	case "old":
-		out = "old(" + ExprText(e.Children[0]) + ")"
+		b.WriteString("old(")
+		writeExpression(b, e.Children[0], 0)
+		b.WriteString(")")
 	case "raised", "failure":
-		out = e.Kind + "(" + e.Text + ")"
+		b.WriteString(e.Kind + "(" + e.Text + ")")
 	case "all", "any", "count", "sum":
-		out = e.Kind + "(" + e.Text + " in " + ExprText(e.Children[0]) + ": " + ExprText(e.Children[1]) + ")"
+		b.WriteString(e.Kind + "(" + e.Text + " in ")
+		writeExpression(b, e.Children[0], 0)
+		b.WriteString(": ")
+		writeExpression(b, e.Children[1], 0)
+		b.WriteString(")")
 	}
-	if p < parent {
-		return "(" + out + ")"
-	}
-	return out
 }
 
 var expressionWords = []string{"implies", "or", "and", "not", "in", "old", "raised", "failure", "result", "all", "any", "count", "sum", "size"}
@@ -348,17 +373,7 @@ func (c *checker) expression(e *Expr) {
 		c.expressionName(e.Text, e.Pos)
 	}
 	if e.Kind == "binary" {
-		var operator *lexer.Token
-		for _, t := range c.at.tokens(e.Children[0].Pos.Offset) {
-			if t.Pos.Offset >= e.Children[1].Pos.Offset {
-				break
-			}
-			if t.Value == e.Text {
-				token := t
-				operator = &token
-			}
-		}
-		if operator != nil {
+		if operator, ok := c.at.operator(e); ok {
 			at := operator.Pos.Offset
 			end := at + len(operator.Value)
 			if at == 0 || end == len(c.at.src) || c.at.src[at-1] != ' ' || c.at.src[end] != ' ' {
@@ -369,6 +384,21 @@ func (c *checker) expression(e *Expr) {
 	for _, child := range e.Children {
 		c.expression(child)
 	}
+}
+
+// operator finds the token of the binary expression e's operator: the last
+// token spelled like it that starts at or after the left operand and before
+// the right operand, on the left operand's line. It searches back from the
+// right operand, so it passes only the brackets between the two.
+func (l locator) operator(e *Expr) (lexer.Token, bool) {
+	ts := l.tokens(e.Children[0].Pos.Offset)
+	right, _ := slices.BinarySearchFunc(ts, e.Children[1].Pos.Offset, func(t lexer.Token, offset int) int { return cmp.Compare(t.Pos.Offset, offset) })
+	for i := right - 1; i >= 0; i-- {
+		if ts[i].Value == e.Text {
+			return ts[i], true
+		}
+	}
+	return lexer.Token{}, false
 }
 
 func (c *checker) expressionName(name string, pos lexer.Position) {

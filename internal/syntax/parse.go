@@ -2,6 +2,7 @@ package syntax
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"reflect"
@@ -30,7 +31,7 @@ type Parsed struct {
 //
 //uc:realizes syntax.parse
 func Parse(path string, kind FileKind, src []byte) Parsed {
-	at := locator{path: path, src: src}
+	at := newLocator(path, src)
 	if diags := forbidden(at); len(diags) > 0 {
 		return Parsed{Diagnostics: diags}
 	}
@@ -54,18 +55,46 @@ func Parse(path string, kind FileKind, src []byte) Parsed {
 type locator struct {
 	path string
 	src  []byte
+	// starts are the offsets where the lines start, in order.
+	starts []int
+	// lines holds the tokens of each line lexed so far, by the offset where
+	// the line starts, so that a line is lexed once however many tokens of it
+	// the checker looks for.
+	lines map[int]lineTokens
+}
+
+func newLocator(path string, src []byte) locator {
+	starts := []int{0}
+	for i, b := range src {
+		if b == '\n' {
+			starts = append(starts, i+1)
+		}
+	}
+	return locator{path: path, src: src, starts: starts, lines: map[int]lineTokens{}}
+}
+
+// lineStart is where the line that holds offset starts.
+func (l locator) lineStart(offset int) int {
+	i, found := slices.BinarySearch(l.starts, offset)
+	if !found {
+		i--
+	}
+	return l.starts[i]
 }
 
 func (l locator) diagnostic(offset int, code, message, fix string) diag.Diagnostic {
 	offset = min(max(offset, 0), len(l.src))
-	lineStart := bytes.LastIndexByte(l.src[:offset], '\n') + 1
+	line, found := slices.BinarySearch(l.starts, offset)
+	if !found {
+		line--
+	}
 	return diag.Diagnostic{
 		Code:    code,
 		Subject: l.path,
 		Position: diag.Position{
 			Path:   l.path,
-			Line:   bytes.Count(l.src[:offset], []byte{'\n'}) + 1,
-			Column: offset - lineStart + 1,
+			Line:   line + 1,
+			Column: offset - l.starts[line] + 1,
 		},
 		Message: message,
 		Fix:     fix,
@@ -323,12 +352,27 @@ type lineTokens []lexer.Token
 
 // line lexes the line that holds offset; its tokens keep their offsets in the file.
 func (l locator) line(offset int) lineTokens {
-	return l.tokens(bytes.LastIndexByte(l.src[:min(offset, len(l.src))], '\n') + 1)
+	return l.tokens(l.lineStart(min(offset, len(l.src))))
 }
 
-// tokens lexes from start, a token's boundary, to the end of its line.
+// tokens gives the tokens from start, a token's boundary, to the end of its
+// line. It lexes the whole line once and keeps it, so that looking up many
+// tokens of a long line costs the length of the line, not its square.
 func (l locator) tokens(start int) lineTokens {
 	start = min(start, len(l.src))
+	lineStart := l.lineStart(start)
+	ts, ok := l.lines[lineStart]
+	if !ok {
+		ts = l.lex(lineStart)
+		l.lines[lineStart] = ts
+	}
+	i, _ := slices.BinarySearchFunc(ts, start, func(t lexer.Token, offset int) int { return cmp.Compare(t.Pos.Offset, offset) })
+	return ts[i:]
+}
+
+// lex lexes from start, a line's start, to the end of the line, without white
+// space; the tokens keep their offsets in the file.
+func (l locator) lex(start int) lineTokens {
 	end := bytes.IndexByte(l.src[start:], '\n')
 	if end < 0 {
 		end = len(l.src) - start

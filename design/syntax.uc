@@ -232,6 +232,14 @@ property parse-result-is-described postcondition "parse 的结果合乎输入：
   }
 }
 
+property long-lines-parse-within-budget postcondition "一个组件文件中一条 ensure 写成一行 10 000 至 20 000 字节的合法表达式时，parse 没有诊断，占用的处理器时间不超过 within 的时长" {
+  about parse
+  forall source: Source generated "一个组件文件，路径与 format-is-stable 的组件文件取法相同，其中唯一一条性质的 ensure 写成一行：八至十六条 expression-format-is-stable 取的随机表达式依次循环、以 and 连接，直到这一行不短于从 10 000 至 20 000 中取的字节数"
+  call parse(source.path, source.kind, source.text)
+  within "500ms"
+  ensure size(result.diagnostics) == 0
+}
+
 property expression-text-is-stable postcondition "parseExpr 解析成功时，exprText 的结果再经 parseExpr 和 exprText 得到同一段文本，失败时每条诊断都在输入路径上、行列不小于 1、原因和修正都不为空" {
   about parseExpr, exprText
   forall path: string

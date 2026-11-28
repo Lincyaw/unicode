@@ -91,6 +91,26 @@ func genExprText() *rapid.Generator[string] {
 	return rapid.Custom(func(t *rapid.T) string { return bracketed(genExprTree(t, 3)) })
 }
 
+// genLongSource draws a component file whose one property's ensure is one
+// line of at least a drawn 10 000 to 20 000 bytes: eight to sixteen drawn
+// expressions, repeated in turn and joined with and.
+//
+//uc:generates syntax.long-lines-parse-within-budget.source
+func genLongSource() *rapid.Generator[Source] {
+	return rapid.Custom(func(t *rapid.T) Source {
+		terms := rapid.SliceOfN(genExprText(), 8, 16).Draw(t, "terms")
+		length := rapid.IntRange(10000, 20000).Draw(t, "length")
+		var line strings.Builder
+		for i := 0; line.Len() < length; i++ {
+			if i > 0 {
+				line.WriteString(" and ")
+			}
+			line.WriteString(terms[i%len(terms)])
+		}
+		return Source{Path: genPathOf(t, FileKindComponent), Kind: FileKindComponent, Text: []byte(expressionFile(line.String()))}
+	})
+}
+
 // newBroken is a broken file of kind at a path drawn for its kind.
 func newBroken(t *rapid.T, kind FileKind, text string, line, column int, code string) Broken {
 	return Broken{Kind: kind, Path: genPathOf(t, kind), Text: []byte(text), Line: line, Column: column, Code: code}

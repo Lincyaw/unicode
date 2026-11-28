@@ -55,12 +55,22 @@ func (d byteColumns) Lex(filename string, r io.Reader) (lexer.Lexer, error) {
 type byteColumnLexer struct {
 	lexer.Lexer
 	src []byte
+	// lineStart is where the line of the last token starts, and scanned how
+	// far the source has been searched for line ends: tokens come in order,
+	// so each byte is searched once however long its line is.
+	lineStart, scanned int
 }
 
 func (l *byteColumnLexer) Next() (lexer.Token, error) {
 	t, err := l.Lexer.Next()
 	off := min(t.Pos.Offset, len(l.src))
-	t.Pos.Column = off - bytes.LastIndexByte(l.src[:off], '\n')
+	if off < l.scanned {
+		l.lineStart = bytes.LastIndexByte(l.src[:off], '\n') + 1
+	} else if i := bytes.LastIndexByte(l.src[l.scanned:off], '\n'); i >= 0 {
+		l.lineStart = l.scanned + i + 1
+	}
+	l.scanned = off
+	t.Pos.Column = off - l.lineStart + 1
 	return t, err
 }
 
