@@ -43,7 +43,7 @@
 | --- | --- | --- | --- |
 | `container` | `system`（根，恰有一个）、`component` | `package`、`file` | 名称、摘要、关注度、标签；设计层另有拥有的路径，代码层另有语言和路径 |
 | `type` | `object`、`record`、`interface`、`enum`、`error`、`event` | 各语言的命名类型，例如 `class`、`struct`、`interface` | 名称、摘要、标签、字段、枚举值 |
-| `op` | `op` | `func`、`method`、`abstract`（接口中声明的方法） | 名称、摘要、签名、订阅的事件；设计层另有是否为纯操作，代码层另有测试类别、是否为骨架 |
+| `op` | `op` | `func`、`method`、`abstract`（接口中声明的方法） | 名称、摘要、签名、订阅的事件；设计层另有是否为纯操作，代码层另有测试类别、是否为骨架、直接效果 |
 | `actor` | `person`、`external` | — | 名称、摘要 |
 | `flow` | `flow` | — | 名称、摘要、符号、限定；陈述（`within`、`ensure`） |
 | `step` | `call`、`send`、`emit`、`async`、`alt`、`opt`、`loop`、`on` | — | 序号、分支标签、实参 |
@@ -69,6 +69,7 @@
 - `actor`：`person` 是人，只能发起调用；`external` 是外部系统，可以包含 `type` 和 `op`，描述本系统用到的接口。外部系统的类型和操作由本仓库中的客户端代码实现。
 - 关注度 focus(c) ∈ {core, support, utility}，是设计层 `container` 的属性，只影响视图（[design.md](design.md) §7.2）。
 - 代码层 `op`：签名是语言无关的归一化形式（[design.md](design.md) §4）；测试类别 testKind ∈ {none, example, property, fuzz}，由后端按该语言的测试约定判定；骨架指函数体恰为 `gen` 生成的占位标记。
+- **效果种类**有四种：`time`（时间或随机数）、`fs`（文件系统）、`process`（进程）和 `network`（网络）。代码层 `op` 的**直接效果** directEffects 是它的函数体直接调用的标准库函数所属的效果种类的集合，函数与种类的对应由语言后端给出（[design.md](design.md) §4）。操作的效果由直接效果沿调用推导（§9 D8）。
 
 ### 3.2 流程
 
@@ -230,7 +231,7 @@
 
 ## 9 推导规则
 
-以下各条定义推导出的边和显著性。
+以下各条定义推导出的边、显著性和效果。
 
 - **D1 `owns`**：owns(c, f) 当且仅当 f 是代码层的文件，c 是路径模式匹配 f 的设计层容器中最深的一个。
 - **D2 方法的 `realizes`**：若 realizes(t′, t)，t 的操作为 o，t′ 中有名为 map(o) 的方法 m（名称映射见 [design.md](design.md) §4），则 realizes(m, o)。接口中声明的方法也是 `op` 节点，形式为 `abstract`；经由接口的调用，其 `calls` 边指向它。
@@ -242,6 +243,7 @@
   2. 代码层的类型和函数是显著的，当且仅当它实现设计节点（包括按 D2 实现操作的方法），或带 `checks`、`generates`、`observes`、`substitutes`、`publishes` 绑定；但 `gen` 产生的生成文件中的元素都是细节。
   3. 代码层的文件和包是显著的，当且仅当它含有显著的元素。
 - **D7 `reaches`**：对显著的函数 f 和 g，reaches(f, g) 当且仅当存在 f → h1 → … → hk → g 的 `calls` 路径，k ≥ 1，且 h1, …, hk 都是细节。属性列出每条这样的路径上的 h1, …, hk。f 直接调用 g 时只有 `calls`，没有 `reaches`。
+- **D8 效果**：代码层操作 f 的效果 eff(f) 是 directEffects(g) 的并，g 取 f 本身和从 f 沿 `calls` 可达的每个函数；经由接口的调用，另从被调用的 `abstract` 方法到实现该接口的各代码层类型中的同名方法。设计层操作 o 的效果是实现它的代码层操作的效果；o 没有实现时，它的效果不确定。eff(f) 为空时，称 f 没有效果。
 
 ## 10 约束
 
@@ -335,6 +337,10 @@
 37. 【状态】与当前执行输入哈希相符的反例使所属性质或流程为 `contradicted`；检查错误（[language.md](language.md) E15）不算反例。当前证据中的纯性违规也使实际操作为 `contradicted`，旧证据不改变当前状态。
 38. codec 的编码、解码操作满足 [language.md](language.md) §5.3.1 的签名与有限表示规则；`encoded(v)` 恰用于声明 codec 的类型，v 合乎其表示类型。
 
+**效果**
+
+39. 【状态】声明为 `pure` 的操作没有效果：实现它的代码层操作的效果（D8）为空；否则该操作为 `contradicted`。
+
 ## 附录 A 理由
 
 - **来源。** 声明是意图，抽取是事实，推导把二者连起来。§10 的约束比较意图与事实，结果写在声明项的状态上。
@@ -362,6 +368,7 @@
 | D5 | 由性质验证 | `graph.derive-matches-definition` |
 | D6 | 由性质验证 | `graph.derive-matches-definition`、`lang.golang.extracts-generated-module` |
 | D7 | 由性质验证 | `graph.derive-matches-definition` |
+| D8 | 待做：Go 后端抽取直接效果，图按 D8 推导效果 | — |
 | 1 | `design.unresolved-reference`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
 | 2 | `design.duplicate-name` | `design.rejects-broken-design` |
 | 3 | `design.missing-system-file`、`design.missing-parent` | `design.rejects-broken-design` |
@@ -400,3 +407,4 @@
 | 36 | 由性质验证：评审指纹决定观察适配器变化后的待审状态 | `review.evaluation-follows-content` |
 | 37 | `check.runtime-counterexample`、`check.runtime-purity-violation` | `evidence.attachment-preserves-input-identity`、`evidence.recordings-are-replayable` |
 | 38 | `design.invalid-codec`、`design.value-type-mismatch`、`lang.golang.input-codec-failed` | `design.codecs-are-typed`、`evidence.recordings-are-replayable` |
+| 39 | 待做：效果推导之后由 `check` 报 check.effect-in-pure-op | — |

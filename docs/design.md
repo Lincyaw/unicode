@@ -104,6 +104,15 @@ type Runner interface {
 
 - **抽取**：后端读出 `container`、`type`、`op` 节点，以及 `contains`、`imports`、`calls`、`refers`、`extends`、`implements` 边。它同时读出代码中的绑定，写成 `realizes`、`checks`、`generates` 和 `observes` 边；绑定的写法不合格式时，给出诊断。带 `realizes` 绑定的类型，它的每个方法按反向的名称映射（例如 Go 的 `Submit` 对应 `submit`）得到一条到 `<类型的标识>.<操作名>` 的 `realizes` 边，来源为推导，称为**方法的候选边**；推导时，终点不存在的候选边被丢掉，那些方法是细节。代码层 `op` 的 `signature` 属性按下面的类型映射归一化成设计的写法，引用写成从根起的标识，与设计层的签名直接按字符串比较。后端产出的是代码层的图片段，格式与快照相同。
 - **Go 后端**：在进程内用 `golang.org/x/tools/go/packages` 和 `go/types` 解析源码和类型。调用按静态类型解析，接口方法的调用解析到接口的方法。不在调用位置上的函数和方法引用（函数名、方法表达式 `T.M`、方法值 `x.M`）也算作调用，调用位置是引用的位置：引用得到的函数值可能被调用，这是可能的调用，与经由接口的分派一样取宽；对接口方法的引用指向接口的方法。调用和引用都属于能执行它们的函数：写在函数体中的，包括其中的函数字面量，属于这个函数；写在包级变量的初始值中的（例如函数字面量、按种类取函数的表，或 `var f = g`），属于引用了这个变量的每个函数，并经由初始值中引用的其他包级变量传递，位置仍是它在初始值中的位置。初始值中函数字面量之外的调用在包初始化时就执行，不属于任何函数，它调用的函数也不算被引用。`implements` 按 Go 方法集的类型身份判断，参数名和返回值名不参与比较；包的测试变体仍按同一包路径识别类型，有符号性、整数宽度与可变参数等真实类型差异保留。抽取包括 `_test.go` 文件：谓词、生成器和只供它们使用的类型都在其中，它们的绑定照常读取。
+- **效果**：Go 后端为每个代码层操作记下直接效果（[model.md](model.md) §3.1），即它的函数体（包括其中的函数字面量）直接调用的、下表所列的标准库函数和方法所属的效果种类；表外的标准库函数不算效果。`graph` 按 [model.md](model.md) §9 D8 沿调用求出每个操作的效果。Python 后端的对应表属于 M5。
+
+  | 效果种类 | 直接调用的标准库函数和方法 |
+  | --- | --- |
+  | `time` | `time` 的 `Now`、`Since`、`Until`、`Sleep`、`After`、`AfterFunc`、`Tick`、`NewTimer`、`NewTicker` 和 `Timer`、`Ticker` 的方法；`math/rand`、`math/rand/v2`、`crypto/rand` 的全部函数和方法 |
+  | `fs` | `os` 的函数和方法，下面 `process` 一行所列的，以及 `Expand`、`IsExist`、`IsNotExist`、`IsPathSeparator`、`IsPermission`、`IsTimeout`、`NewSyscallError`、`SameFile` 和 `LinkError`、`SyscallError` 的方法除外；`path/filepath` 的 `Abs`、`EvalSymlinks`、`Glob`、`Walk`、`WalkDir`；`io/ioutil` 的全部函数 |
+  | `process` | `os/exec`、`os/signal` 的全部函数和方法；`os` 中读写进程及其环境的 `StartProcess`、`FindProcess`、`Exit`、`Executable`、`Hostname`、`Getpagesize`、`Getpid`、`Getppid`、`Getuid`、`Geteuid`、`Getgid`、`Getegid`、`Getgroups`、`Getenv`、`LookupEnv`、`Setenv`、`Unsetenv`、`Clearenv`、`Environ`、`ExpandEnv`、`TempDir`、`UserHomeDir`、`UserCacheDir`、`UserConfigDir` 和 `Process`、`ProcessState` 的方法；读写标准流的 `fmt.Print`、`fmt.Printf`、`fmt.Println`、`fmt.Scan`、`fmt.Scanf`、`fmt.Scanln`，以及 `log`、`log/slog` 的包级函数 |
+  | `network` | `net` 中以 `Dial`、`Listen`、`Lookup` 开头的函数，`Dialer`、`ListenConfig`、`Resolver` 的方法，以及 `net` 中实现 `Conn`、`PacketConn` 或 `Listener` 的类型的方法；`net/http` 的 `Get`、`Head`、`Post`、`PostForm`、`ListenAndServe`、`ListenAndServeTLS`、`Serve`、`ServeTLS` 和 `Client`、`Server`、`Transport` 的方法；`crypto/tls` 的 `Dial`、`DialWithDialer`、`Listen` 和 `Conn`、`Dialer` 的方法；`net/rpc`、`net/smtp` 的全部函数和方法 |
+
 - **Python 后端**：工具链内嵌一个只用标准库的抽取脚本，以 `python3 -I` 运行。脚本用 `ast` 解析源码，把图片段以 JSON 写到标准输出。调用按名称和导入关系解析，解析不到的调用不成边，只计数。生成在 Go 中按模板完成。
 - **运行**：后端用该语言的测试工具运行生成的驱动。Go 按 §6.4 编译一次带 atomic 覆盖的二进制，每个输入独立执行并减去准备基线，读取真实基本块 profile；覆盖范围是谓词沿 `exercises` 可达的生产函数，不含生成文件和谓词本身。Python 的 `sys.monitoring` 接入属于 M5。
 - **测试类别**：Go 中，`func FuzzX(f *testing.F)` 为 `fuzz`，调用了 `rapid.Check` 的 `TestX` 为 `property`，其余 `TestX` 为 `example`。Python 中，带 `hypothesis.given` 的测试为 `property`，用 `atheris` 的为 `fuzz`。后端据此找出生成文件之外的测试函数（[model.md](model.md) §10 第 21 条）。
@@ -183,7 +192,7 @@ type Runner interface {
 | --- | --- |
 | container（`package`、`file`） | `language`、`path`（文件的路径，或包的导入路径）；带生成标记的文件另带 `generated: true`；文件另带 `globals`（不是节点的顶层声明的 SHA-256，按源码次序） |
 | type | `name`、`fields`（每项 `名称: 类型`；未导出的字段是细节，不列出）、`values`、`declaration`（类型参数和定义的规范形式 SHA-256，不含类型名或方法体） |
-| op（`func`、`method`、`abstract`） | `name`（带 `checks` 绑定的谓词写作它检查的性质或流程的名称）、`signature`、`testKind`、`stub`、`body`（函数体规范形式的 SHA-256，无函数体时省略）、`declaration`（具体操作的原生声明头的 SHA-256，包含接收者、原生签名及泛型约束） |
+| op（`func`、`method`、`abstract`） | `name`（带 `checks` 绑定的谓词写作它检查的性质或流程的名称）、`signature`、`testKind`、`stub`、`body`（函数体规范形式的 SHA-256，无函数体时省略）、`declaration`（具体操作的原生声明头的 SHA-256，包含接收者、原生签名及泛型约束）、`directEffects`（直接效果，按 `time`、`fs`、`process`、`network` 的次序） |
 
 `body` 和 `declaration` 让内容哈希含有实际的代码。Go 按语法树编码，依次记录节点类型与字段，位置只记有无，忽略注释；SHA-256 写成小写十六进制。声明头不含函数体，接口抽象操作没有原生声明头。
 
@@ -197,7 +206,7 @@ type Runner interface {
 
 ### 5.3 需要代码才能判断的约束（M2）
 
-`check` 在推导过的图上检查以下各项，诊断码写作 `check.<短横线名称>`，并给出每个声明项的状态：[model.md](model.md) §10 的第 12、14 至 20、22、34 条，以及第 24 条中"每个生成的符号恰有一个 `generates` 绑定"的一半。第 21 条对 Go 启用：实际声明文件没有生成标记（§6.2）时，测试入口报 `check.handwritten-test`；谓词和生成器不属于测试入口。Python 的驱动生成与本项检查在 M5 交付。第 28 条由 `unicode gen --check` 核对生成计划，并进入 `make check`；运行前仍核对将执行的生成文件。推导由 `graph` 完成，路径模式用 doublestar 匹配。
+`check` 在推导过的图上检查以下各项，诊断码写作 `check.<短横线名称>`，并给出每个声明项的状态：[model.md](model.md) §10 的第 12、14 至 20、22、34、39 条，以及第 24 条中"每个生成的符号恰有一个 `generates` 绑定"的一半。第 21 条对 Go 启用：实际声明文件没有生成标记（§6.2）时，测试入口报 `check.handwritten-test`；谓词和生成器不属于测试入口。Python 的驱动生成与本项检查在 M5 交付。第 28 条由 `unicode gen --check` 核对生成计划，并进入 `make check`；运行前仍核对将执行的生成文件。推导由 `graph` 完成，路径模式用 doublestar 匹配。
 
 M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通过。
 
@@ -441,7 +450,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 | 边的种类 `realizes`、`checks`、`generates`、`observes`、`substitutes`、`publishes`、`owns`、`depends`、`traces`、`exercises`、`reaches`、`covers` | 实现、检查、生成、观察、替身、发布函数、归属、依赖、代码追溯、可达、经由细节函数的调用、覆盖 |
 | 变更中的属性（§5.2 的键）`focus`、`labels`、`paths`、`notations`、`roots`、`language`、`path`、`fields`、`values`、`signature`、`pure` | 关注级别、标签、路径、记法、根目录、语言、路径、字段、取值、签名、纯操作 |
 | 变更中的属性 `symbols`、`limits`、`call`、`within`、`ensure`、`manual`、`requires`、`observe`、`changes`、`type`、`inputs` | 符号、限定、被测调用、时限、断言、人工性质的原因、前提、观察范围、允许变化的范围、观察类型、输入 |
-| 变更中的属性 `index`、`label`、`args`、`reason`、`name`、`declaration`、`testKind`、`stub`、`body`、`generated`、`globals` | 序号、分支标签、实参、录制原因、名称、声明、测试类别、骨架、函数体、生成、顶层声明 |
+| 变更中的属性 `index`、`label`、`args`、`reason`、`name`、`declaration`、`testKind`、`stub`、`body`、`generated`、`globals`、`directEffects` | 序号、分支标签、实参、录制原因、名称、声明、测试类别、骨架、函数体、生成、顶层声明、直接效果 |
 | 变更中的属性 `codec`、`codecType` | 编解码操作、可回放表示类型 |
 | 合并成一条的边；未画出的工具组件 | 合并的边；未画出的组件 |
 
