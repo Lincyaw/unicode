@@ -48,10 +48,15 @@ func (p *measuredProgram) prepareTool(ctx context.Context) error {
 	if runtime.GOOS == "windows" {
 		p.tool += ".exe"
 	}
-	cache := sharedCache()
+	cache, err := sharedCache()
+	if err != nil {
+		return err
+	}
 	key, keyed := coverToolKey(p.root)
-	if keyed && cache.copyEntry(kind, key, p.tool) {
-		return nil
+	if keyed {
+		if hit, err := cache.getFile(kind, key, p.tool); err != nil || hit {
+			return err
+		}
 	}
 	path := filepath.Join(p.temp, "cover-overlay.go")
 	if err := os.WriteFile(path, []byte(coverToolSource), 0600); err != nil {

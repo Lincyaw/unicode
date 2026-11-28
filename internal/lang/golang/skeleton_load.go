@@ -2,6 +2,7 @@ package golang
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -15,6 +16,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"golang.org/x/mod/modfile"
@@ -31,12 +33,23 @@ func loadWithSkeletons(plan lang.GenPlan, edits []lang.Edit) (loaded, error) {
 	return loadPlannedGo(plan, edits, true)
 }
 
-// checkPlannedGo tells whether the code loads once edits are written. A
-// success is kept in the content cache under the inputs of the load with
-// the edits in place, so the same planned code is type-checked once
-// (docs/design.md §6.3); the paths of the edits are checked every time.
+// checkPlannedGo tells whether the code loads once edits are written,
+// through the shared content cache.
 func checkPlannedGo(plan lang.GenPlan, edits []lang.Edit) error {
-	const kind = cachePlanned
+	cache, err := sharedCache()
+	if err != nil {
+		return err
+	}
+	return cache.plannedLoads(plan, edits)
+}
+
+// plannedLoads tells whether the code loads once edits are written. A
+// success is kept under the inputs of the load with the edits in place
+// (goInputKey), with the files the load reads, the imports of the edits
+// included (readInputs), so the same planned code is type-checked once
+// (docs/design.md §6.3); the paths of the edits are checked every time.
+func (c contentCache) plannedLoads(plan lang.GenPlan, edits []lang.Edit) error {
+	const kind, loads = cachePlanned, "loads"
 	abs, err := filepath.Abs(plan.Root)
 	if err != nil {
 		return err
@@ -45,21 +58,49 @@ func checkPlannedGo(plan lang.GenPlan, edits []lang.Edit) error {
 		return err
 	}
 	overlay := make(map[string][]byte, len(edits))
+	var imports []string
 	for _, edit := range edits {
 		overlay[filepath.Join(abs, filepath.FromSlash(edit.Path))] = edit.Content
-	}
-	cache := sharedCache()
-	key, keyed := goInputKey(abs, plan.Roots, "planned-generation", overlay)
-	if keyed {
-		if _, hit := cache.get(kind, key); hit {
-			return nil
+		if file, err := parser.ParseFile(token.NewFileSet(), edit.Path, edit.Content, parser.ImportsOnly); err == nil {
+			for _, spec := range file.Imports {
+				if path, err := strconv.Unquote(spec.Path.Value); err == nil && !slices.Contains(imports, path) {
+					imports = append(imports, path)
+				}
+			}
 		}
 	}
-	if _, err := loadPlannedGo(plan, edits, false); err != nil {
+	key, keyed := goInputKey(abs, plan.Roots, "planned-generation", overlay)
+	if c.dir == "" || !keyed {
+		_, err := loadPlannedGo(plan, edits, false)
 		return err
 	}
-	if after, ok := goInputKey(abs, plan.Roots, "planned-generation", overlay); keyed && ok && after == key {
-		cache.put(kind, key, []byte("loads\n"))
+	value, hit, err := c.getChecked(kind, key, abs)
+	if err != nil {
+		return err
+	}
+	if hit {
+		var answer string
+		if err := json.Unmarshal(value, &answer); err != nil || answer != loads {
+			return c.corrupt(c.entryPath(kind, key), fmt.Errorf("it holds %s instead of %q", value, loads))
+		}
+		return nil
+	}
+	// The inputs are listed while the load runs; both only read.
+	listed := make(chan inputSet, 1)
+	go func() {
+		inputs, err := readInputs(abs, plan.Roots, true, imports)
+		if err != nil {
+			inputs = nil
+		}
+		listed <- inputs
+	}()
+	_, err = loadPlannedGo(plan, edits, false)
+	inputs := <-listed
+	if err != nil {
+		return err
+	}
+	if after, ok := goInputKey(abs, plan.Roots, "planned-generation", overlay); ok && inputs != nil && after == key && inputs.current(abs) {
+		c.putChecked(kind, key, inputs, loads)
 	}
 	return nil
 }

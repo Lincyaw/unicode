@@ -1,13 +1,19 @@
 package golang
 
 import (
+	"bytes"
+	"cmp"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,20 +23,33 @@ import (
 )
 
 // The content cache of docs/design.md §6.3 keeps what an expensive step
-// computed from its inputs, under the SHA-256 of a key that holds the
-// content of every input. Equal inputs read the entry instead of computing
-// it again; any change of an input changes the key. Entries are written
-// atomically, so processes running at the same time share the cache; an
-// entry that cannot be read is a miss.
+// computed, under the SHA-256 of a key that holds the content of its inputs.
+// Equal inputs read the entry instead of computing it again. Entries are
+// written atomically, so processes running at the same time share the
+// cache. An entry that exists but cannot be read is an error that names it,
+// never a silent miss.
 //
-// UNICODE_CACHE names the cache's directory; "off" turns the cache off. By
-// default it is unicode/ in the user's cache directory.
+// The API, for every step of this backend that caches:
+//
+//   - sharedCache() is the cache: the directory UNICODE_CACHE names, or
+//     unicode/ in the user's cache directory; UNICODE_CACHE=off turns it off.
+//   - get and put read and write an entry of bytes. A kind is a subdirectory;
+//     a new kind is added to cacheKinds so that trim looks after it.
+//   - getChecked and putChecked read and write an entry together with the
+//     files it was computed from (an inputSet); a read checks those files
+//     again and answers a miss when any of them changed.
+//   - getFile and putFile copy a file, keeping its permission bits.
+//
+// A cache that cannot be written only loses the entry.
 
 const (
 	// cacheTrimInterval is how often a process removes stale entries.
 	cacheTrimInterval = 24 * time.Hour
 	// cacheUnused is how long an entry stays without being read.
 	cacheUnused = 5 * 24 * time.Hour
+	// cacheLimit bounds the bytes of this backend's entries; trim removes the
+	// least recently read beyond it.
+	cacheLimit = 512 << 20
 	// cacheTouchInterval keeps reads from rewriting an entry's time on every hit.
 	cacheTouchInterval = time.Hour
 )
@@ -50,21 +69,21 @@ var cacheKinds = []string{cacheExtraction, cachePlanned, cacheTool}
 // turned off.
 type contentCache struct{ dir string }
 
-var sharedCache = sync.OnceValue(func() contentCache {
+var sharedCache = sync.OnceValues(func() (contentCache, error) {
 	dir := os.Getenv("UNICODE_CACHE")
 	if dir == "off" {
-		return contentCache{}
+		return contentCache{}, nil
 	}
 	if dir == "" {
 		base, err := os.UserCacheDir()
 		if err != nil {
-			return contentCache{}
+			return contentCache{}, fmt.Errorf("no directory for the content cache: %w; set UNICODE_CACHE to a directory, or to off", err)
 		}
 		dir = filepath.Join(base, "unicode")
 	}
 	c := contentCache{dir: dir}
 	c.trim(time.Now())
-	return c
+	return c, nil
 })
 
 // entryPath is where the entry of kind for key lives.
@@ -75,24 +94,23 @@ func (c contentCache) entryPath(kind, key string) string {
 }
 
 // get reads the entry of kind for key.
-func (c contentCache) get(kind, key string) ([]byte, bool) {
+func (c contentCache) get(kind, key string) ([]byte, bool, error) {
 	if c.dir == "" {
-		return nil, false
+		return nil, false, nil
 	}
 	path := c.entryPath(kind, key)
 	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, false, nil
+	}
 	if err != nil {
-		return nil, false
+		return nil, false, c.corrupt(path, err)
 	}
-	if info, err := os.Stat(path); err == nil && time.Since(info.ModTime()) > cacheTouchInterval {
-		now := time.Now()
-		_ = os.Chtimes(path, now, now)
-	}
-	return data, true
+	c.touch(path)
+	return data, true, nil
 }
 
-// put writes the entry of kind for key. A cache that cannot be written only
-// loses the entry: the result it holds is computed again next time.
+// put writes the entry of kind for key.
 func (c contentCache) put(kind, key string, data []byte) {
 	if c.dir == "" {
 		return
@@ -102,6 +120,86 @@ func (c contentCache) put(kind, key string, data []byte) {
 		return
 	}
 	_ = maybe.WriteFile(path, data, 0o644)
+}
+
+// checkedEntry is an entry with the files it was computed from, stored as
+// gzip-compressed JSON.
+type checkedEntry struct {
+	Inputs inputSet        `json:"inputs"`
+	Value  json.RawMessage `json:"value"`
+}
+
+// getChecked reads the entry of kind for key and checks its input set
+// against root: a changed input is a miss.
+func (c contentCache) getChecked(kind, key, root string) (json.RawMessage, bool, error) {
+	data, hit, err := c.get(kind, key)
+	if err != nil || !hit {
+		return nil, false, err
+	}
+	var entry checkedEntry
+	zipped, err := gzip.NewReader(bytes.NewReader(data))
+	if err == nil {
+		err = json.NewDecoder(zipped).Decode(&entry)
+	}
+	if err != nil || entry.Inputs == nil || entry.Value == nil {
+		return nil, false, c.corrupt(c.entryPath(kind, key), cmp.Or(err, errors.New("it lacks its inputs or its value")))
+	}
+	if !entry.Inputs.current(root) {
+		return nil, false, nil
+	}
+	return entry.Value, true, nil
+}
+
+// putChecked writes value as the entry of kind for key, with its inputs.
+func (c contentCache) putChecked(kind, key string, inputs inputSet, value any) {
+	if c.dir == "" {
+		return
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return
+	}
+	var out bytes.Buffer
+	zipped, err := gzip.NewWriterLevel(&out, gzip.BestSpeed)
+	if err != nil {
+		return
+	}
+	if json.NewEncoder(zipped).Encode(checkedEntry{Inputs: inputs, Value: encoded}) != nil || zipped.Close() != nil {
+		return
+	}
+	c.put(kind, key, out.Bytes())
+}
+
+// getFile copies the entry of kind for key to target with the entry's
+// permission bits, and tells whether there was one.
+func (c contentCache) getFile(kind, key, target string) (bool, error) {
+	if c.dir == "" {
+		return false, nil
+	}
+	path := c.entryPath(kind, key)
+	in, err := os.Open(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, c.corrupt(path, err)
+	}
+	defer func() { _ = in.Close() }()
+	info, err := in.Stat()
+	if err != nil {
+		return false, c.corrupt(path, err)
+	}
+	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+	if err != nil {
+		return false, err
+	}
+	_, copyErr := io.Copy(out, in)
+	if closeErr := out.Close(); copyErr != nil || closeErr != nil {
+		_ = os.Remove(target)
+		return false, c.corrupt(path, cmp.Or(copyErr, closeErr))
+	}
+	c.touch(path)
+	return true, nil
 }
 
 // putFile copies the file at source into the entry of kind for key, keeping
@@ -125,41 +223,22 @@ func (c contentCache) putFile(kind, key, source string) {
 	_ = maybe.WriteFile(path, data, info.Mode().Perm())
 }
 
-// copyEntry copies the entry of kind for key to target with the entry's
-// permission bits, and tells whether there was one.
-func (c contentCache) copyEntry(kind, key, target string) bool {
-	if c.dir == "" {
-		return false
-	}
-	path := c.entryPath(kind, key)
-	in, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer func() { _ = in.Close() }()
-	info, err := in.Stat()
-	if err != nil {
-		return false
-	}
-	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
-	if err != nil {
-		return false
-	}
-	_, copyErr := io.Copy(out, in)
-	if closeErr := out.Close(); copyErr != nil || closeErr != nil {
-		_ = os.Remove(target)
-		return false
-	}
-	if time.Since(info.ModTime()) > cacheTouchInterval {
+// corrupt is the error for an entry that exists but cannot be read.
+func (c contentCache) corrupt(path string, err error) error {
+	return fmt.Errorf("the content cache entry %s cannot be read: %v; delete it, or the cache directory %s", path, err, c.dir)
+}
+
+// touch marks the entry at path as read, at most once every cacheTouchInterval.
+func (c contentCache) touch(path string) {
+	if info, err := os.Stat(path); err == nil && time.Since(info.ModTime()) > cacheTouchInterval {
 		now := time.Now()
 		_ = os.Chtimes(path, now, now)
 	}
-	return true
 }
 
 // trim removes this backend's entries that no process has read for
-// cacheUnused, at most once every cacheTrimInterval; go-trim.txt holds when
-// it last did.
+// cacheUnused, then the least recently read ones beyond cacheLimit bytes,
+// at most once every cacheTrimInterval; go-trim.txt holds when it last did.
 func (c contentCache) trim(now time.Time) {
 	marker := filepath.Join(c.dir, "go-trim.txt")
 	if data, err := os.ReadFile(marker); err == nil {
@@ -173,21 +252,44 @@ func (c contentCache) trim(now time.Time) {
 	if err := maybe.WriteFile(marker, []byte(strconv.FormatInt(now.Unix(), 10)+"\n"), 0o644); err != nil {
 		return
 	}
+	type entry struct {
+		path string
+		size int64
+		read time.Time
+	}
+	var kept []entry
+	var total int64
 	for _, kind := range cacheKinds {
-		_ = filepath.WalkDir(filepath.Join(c.dir, kind), func(path string, entry fs.DirEntry, err error) error {
+		_ = filepath.WalkDir(filepath.Join(c.dir, kind), func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				if errors.Is(err, fs.ErrNotExist) {
 					return nil
 				}
 				return err
 			}
-			if entry.IsDir() {
+			if d.IsDir() {
 				return nil
 			}
-			if info, err := entry.Info(); err == nil && now.Sub(info.ModTime()) > cacheUnused {
-				_ = os.Remove(path)
+			info, err := d.Info()
+			if err != nil {
+				return nil
 			}
+			if now.Sub(info.ModTime()) > cacheUnused {
+				_ = os.Remove(path)
+				return nil
+			}
+			kept = append(kept, entry{path, info.Size(), info.ModTime()})
+			total += info.Size()
 			return nil
 		})
+	}
+	slices.SortFunc(kept, func(a, b entry) int { return a.read.Compare(b.read) })
+	for _, e := range kept {
+		if total <= cacheLimit {
+			break
+		}
+		if os.Remove(e.path) == nil {
+			total -= e.size
+		}
 	}
 }

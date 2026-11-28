@@ -1,8 +1,6 @@
 package golang
 
 import (
-	"bytes"
-	"compress/gzip"
 	"encoding/json"
 
 	"github.com/lincyaw/unicode/internal/diag"
@@ -13,37 +11,63 @@ import (
 // cachedExtraction extracts the code under the source roots through the
 // shared content cache.
 func cachedExtraction(root string, srcRoots []string, forGeneration bool) (lang.Extracted, error) {
-	extracted, _, err := sharedCache().extraction(root, srcRoots, forGeneration)
+	cache, err := sharedCache()
+	if err != nil {
+		return lang.Extracted{}, err
+	}
+	extracted, _, err := cache.extraction(root, srcRoots, forGeneration)
 	return extracted, err
 }
 
 // extraction extracts the code under the source roots, reading the result
 // from the cache when the inputs of the load are those of an earlier
 // extraction in the same mode (docs/design.md §6.3), and tells whether it
-// did. Only extractions that succeed are kept; the key is taken again after
-// the load and the result kept only if no input changed meanwhile.
+// did. The entry is found by goInputKey and answered only while the files
+// the load read (readInputs) are unchanged. Only extractions that succeed
+// are kept, and only when neither the key nor those files changed during
+// the load.
 func (c contentCache) extraction(root string, srcRoots []string, forGeneration bool) (lang.Extracted, bool, error) {
 	const kind = cacheExtraction
 	mode := "extract"
 	if forGeneration {
 		mode = "extract-for-generation"
 	}
-	key, keyed := goInputKey(root, srcRoots, mode, nil)
-	if keyed {
-		if data, hit := c.get(kind, key); hit {
-			if extracted, err := decodeExtraction(data); err == nil {
-				return extracted, true, nil
-			}
-		}
-	}
-	extracted, err := freshExtraction(root, srcRoots, forGeneration)
-	if err != nil || !keyed {
+	if c.dir == "" {
+		extracted, err := freshExtraction(root, srcRoots, forGeneration)
 		return extracted, false, err
 	}
-	if after, ok := goInputKey(root, srcRoots, mode, nil); ok && after == key {
-		if data, err := encodeExtraction(extracted); err == nil {
-			c.put(kind, key, data)
+	key, keyed := goInputKey(root, srcRoots, mode, nil)
+	if !keyed {
+		extracted, err := freshExtraction(root, srcRoots, forGeneration)
+		return extracted, false, err
+	}
+	value, hit, err := c.getChecked(kind, key, root)
+	if err != nil {
+		return lang.Extracted{}, false, err
+	}
+	if hit {
+		extracted, err := decodeExtraction(value)
+		if err != nil {
+			return lang.Extracted{}, false, c.corrupt(c.entryPath(kind, key), err)
 		}
+		return extracted, true, nil
+	}
+	// The inputs are listed while the load runs; both only read.
+	listed := make(chan inputSet, 1)
+	go func() {
+		inputs, err := readInputs(root, srcRoots, forGeneration, nil)
+		if err != nil {
+			inputs = nil
+		}
+		listed <- inputs
+	}()
+	extracted, err := freshExtraction(root, srcRoots, forGeneration)
+	inputs := <-listed
+	if err != nil || inputs == nil {
+		return extracted, false, err
+	}
+	if after, ok := goInputKey(root, srcRoots, mode, nil); ok && after == key && inputs.current(root) {
+		c.putChecked(kind, key, inputs, encodeExtraction(extracted))
 	}
 	return extracted, false, nil
 }
@@ -97,34 +121,18 @@ type cachedDiagnostic struct {
 	Fix      string
 }
 
-// encodeExtraction writes an extraction as gzip-compressed JSON, about a
-// tenth of its plain size.
-func encodeExtraction(x lang.Extracted) ([]byte, error) {
-	var out bytes.Buffer
-	zipped, err := gzip.NewWriterLevel(&out, gzip.BestSpeed)
-	if err != nil {
-		return nil, err
-	}
-	if err := json.NewEncoder(zipped).Encode(cachedExtracted{
+// encodeExtraction is the cached form of an extraction.
+func encodeExtraction(x lang.Extracted) cachedExtracted {
+	return cachedExtracted{
 		Nodes:       convertAll(x.Fragment.Nodes, func(n graph.Node) cachedNode { return cachedNode(n) }),
 		Edges:       convertAll(x.Fragment.Edges, func(e graph.Edge) cachedEdge { return cachedEdge(e) }),
 		Diagnostics: convertAll(x.Diagnostics, func(d diag.Diagnostic) cachedDiagnostic { return cachedDiagnostic(d) }),
-	}); err != nil {
-		return nil, err
 	}
-	if err := zipped.Close(); err != nil {
-		return nil, err
-	}
-	return out.Bytes(), nil
 }
 
 func decodeExtraction(data []byte) (lang.Extracted, error) {
-	zipped, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return lang.Extracted{}, err
-	}
 	var c cachedExtracted
-	if err := json.NewDecoder(zipped).Decode(&c); err != nil {
+	if err := json.Unmarshal(data, &c); err != nil {
 		return lang.Extracted{}, err
 	}
 	return lang.Extracted{

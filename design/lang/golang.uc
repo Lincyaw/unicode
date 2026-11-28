@@ -67,7 +67,7 @@ type MeasurementSample record "measured-execution-keeps-real-evidence 的输入�
   field variant: int
 }
 
-type CacheChange record "extraction-cache-follows-changes 的输入：改动的种类 kind、在模块的包或文件中选哪一个的序号 pick，以及写进改动的常数 value" {
+type CacheChange record "extraction-cache-follows-changes 和 planned-check-cache-follows-changes 的输入：改动的种类 kind、选出改动所在的包的序号 pick，以及写进改动的常数 value" {
   field kind: int
   field pick: int
   field value: int
@@ -142,11 +142,19 @@ property extraction-cache-hits-moved-module invariant "随机 Go 模块经内容
   manual "需要在两个临时目录写出同一个 Go 模块，经缓存和不经缓存各用 go/packages 抽取，表达式不能读写文件"
 }
 
-property extraction-cache-follows-changes invariant "随机 Go 模块经内容缓存抽取之后，在一个源码文件末尾加一个函数、在一个包中新增一个源码文件、删除一个测试文件或把 go.mod 的 go 版本行改成 1.24、1.25 或 1.26，再经缓存抽取得到的节点、边和诊断与不经缓存抽取的完全相同" {
+property extraction-cache-follows-changes invariant "随机 Go 模块经内容缓存做一次普通的或供生成用的抽取，做 change 所说的改动之后再经缓存做同一种抽取，它失败当且仅当不经缓存的同一种抽取失败，成功时节点、边和诊断与之完全相同" {
   about Backend
-  forall module: Module generated "一个随机的 Go 模块：一至三个包，各有一至两个源码文件，可有内部测试文件和外部测试包，含零至六个类型及其方法、零至五个函数、按测试命名的函数、调用、导入、嵌入、实现接口的类型、零至三个包级变量和 //uc: 绑定；部分绑定和生成标记故意写错，部分方法的签名与接口只差一个类型，部分声明只在排版和注释上与另一个不同，另有不成节点的声明"
-  forall change: CacheChange generated "kind 取 0 至 3，依次是加函数、新增文件、删除测试文件（模块没有测试文件时不改动）和改写 go 版本行，pick 和 value 各取 0 至 1000：pick 按模块中候选的文件或包的个数取余选出一个，value 写进新函数的名称和返回值，也按 3 取余选出 go 版本 1.24、1.25 或 1.26"
-  manual "需要写出临时 Go 模块、改动其中的文件，再经缓存和不经缓存各用 go/packages 抽取，表达式不能读写文件"
+  forall module: Module generated "一个随机的 Go 模块：一至三个包，各有一至两个源码文件，可有内部测试文件和外部测试包，含零至六个类型及其方法、零至五个函数、按测试命名的函数、调用、作为值引用的函数和方法（函数名、方法值和方法表达式，包括接口的方法）、导入、嵌入、实现接口的类型、零至三个包级变量和 //uc: 绑定；部分绑定和生成标记故意写错，部分方法的签名与接口只差一个类型，部分声明只在排版和注释上与另一个不同，另有不成节点的声明"
+  forall change: CacheChange generated "kind 取 0 至 9，依次是在源码文件末尾加函数、在包中新增源码文件、删除测试文件（模块没有测试文件时不改动）、改写 go.mod 的 go 版本行、删除包嵌入的文件、给放在根目录旁经 replace 引入的 rapid 替身中的 TB 改名、给 go.mod 之下根目录旁的兄弟包的函数改名、给经根目录中的目录链接引入的 rapid 替身中的 TB 改名、设 GOFLAGS=-tags=uccacheprobe 引入有类型错误的文件，以及设 GOARCH=386 引入有类型错误的文件；pick 和 value 各取 0 至 1000，pick 按源码文件的个数取余选出改动所在的包，value 写进新函数的名称和返回值，也按 3 取余选出 go 版本 1.24、1.25 或 1.26"
+  forall forGeneration: bool
+  manual "需要写出临时 Go 模块、改动其中的文件或 go 命令的环境，再经缓存和不经缓存各用 go/packages 抽取，表达式不能读写文件"
+}
+
+property planned-check-cache-follows-changes invariant "随机 Go 模块经内容缓存检查一个计划写入的源码文件能否载入，做 change 所说的改动之后再经缓存检查同一个文件，它报错当且仅当不经缓存载入计划的代码报错" {
+  about Backend
+  forall module: Module generated "一个随机的 Go 模块：一至三个包，各有一至两个源码文件，可有内部测试文件和外部测试包，含零至六个类型及其方法、零至五个函数、按测试命名的函数、调用、作为值引用的函数和方法（函数名、方法值和方法表达式，包括接口的方法）、导入、嵌入、实现接口的类型、零至三个包级变量和 //uc: 绑定；部分绑定和生成标记故意写错，部分方法的签名与接口只差一个类型，部分声明只在排版和注释上与另一个不同，另有不成节点的声明"
+  forall change: CacheChange generated "kind 取 0 至 9，依次是在源码文件末尾加函数、在包中新增源码文件、删除测试文件（模块没有测试文件时不改动）、改写 go.mod 的 go 版本行、删除包嵌入的文件、给放在根目录旁经 replace 引入的 rapid 替身中的 TB 改名、给 go.mod 之下根目录旁的兄弟包的函数改名、给经根目录中的目录链接引入的 rapid 替身中的 TB 改名、设 GOFLAGS=-tags=uccacheprobe 引入有类型错误的文件，以及设 GOARCH=386 引入有类型错误的文件；pick 和 value 各取 0 至 1000，pick 按源码文件的个数取余选出改动所在的包，value 写进新函数的名称和返回值，也按 3 取余选出 go 版本 1.24、1.25 或 1.26"
+  manual "需要写出临时 Go 模块、改动其中的文件或 go 命令的环境，再经缓存和不经缓存各载入计划的代码，表达式不能读写文件"
 }
 
 property split-runs-cover-the-same-cases invariant "普通 go test 下，生成的驱动把一条性质的 N 个随机用例分给 8 与 N 中较小的那个数的子进程，各用不同的种子，各子进程通过的用例数之和是 N，与在一个进程中执行时通过的用例数相同" {
