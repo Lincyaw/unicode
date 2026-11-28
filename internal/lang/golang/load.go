@@ -89,8 +89,15 @@ func loadPackagesOverlay(root string, srcRoots []string, forGeneration bool, ext
 		if cfg.Overlay == nil {
 			cfg.Overlay = map[string][]byte{}
 		}
+		monitored := false
 		for name, content := range extra {
 			cfg.Overlay[name] = content
+			monitored = monitored || filepath.Base(name) == monitorFileName
+		}
+		// Planned monitor files are type-checked as the monitored build
+		// compiles them, with their build constraint satisfied.
+		if monitored {
+			cfg.BuildFlags = append(cfg.BuildFlags, "-tags="+monitorBuildTag)
 		}
 	}
 	all, err := packages.Load(cfg, patterns...)
@@ -145,7 +152,7 @@ func generatedTestOverlay(root string, srcRoots []string) (map[string][]byte, er
 				}
 				return nil
 			}
-			if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), "_test.go") {
+			if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), "_test.go") && entry.Name() != monitorFileName {
 				return nil
 			}
 			source, err := os.ReadFile(name)

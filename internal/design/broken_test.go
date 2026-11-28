@@ -274,6 +274,12 @@ var breakages = map[string]breakage{
 		return d.skel.top.file, label
 	},
 	"design.label-not-allowed": func(d *designer) (string, any) {
+		if rapid.Bool().Draw(d.t, "sensitive container?") {
+			label := &syntax.Label{Name: "sensitive"}
+			c := d.skel.top.component
+			c.Lines = slices.Insert(c.Lines, 0, syntax.ComponentLine(label))
+			return d.skel.top.file, label
+		}
 		if !slices.Contains(d.notations, "ddd") {
 			f := d.files[systemPath]
 			f.Decls = slices.Insert(f.Decls, 1, syntax.Decl(&syntax.NotationDecl{Name: "ddd"}))

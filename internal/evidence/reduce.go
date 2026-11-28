@@ -57,7 +57,7 @@ func Reduce(cases []lang.CaseResult, limit int) Reduction {
 	unique := map[string]lang.CaseResult{}
 	check := ""
 	for _, input := range cases {
-		result, err := cloneCase(input)
+		result, err := cloneCase(input, false)
 		if err != nil {
 			return fail("evidence.invalid-input", err.Error(), "provide a complete frozen input and its matching canonical digest")
 		}

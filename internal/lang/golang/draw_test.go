@@ -51,9 +51,23 @@ func (w *world) drawExpr(from *gfile, depth int) *gexpr {
 	}
 }
 
+// contextExpr is context.Context.
+func contextExpr() *gexpr {
+	return &gexpr{kind: "ext", ext: [3]string{"context", "context", "Context"}}
+}
+
 func (w *world) drawSig(from *gfile, name string) *gsig {
 	sig := &gsig{pkg: from.pkg, name: name}
 	unnamed := rapid.IntRange(0, 5).Draw(w.t, "unnamed") == 0
+	// A leading context.Context carries the call's trace, which the
+	// normalized signature leaves out (docs/design.md §4).
+	if rapid.IntRange(0, 4).Draw(w.t, "context") == 0 {
+		p := gparam{typ: contextExpr()}
+		if !unnamed {
+			p.name = w.fresh("ctx", false)
+		}
+		sig.params = append(sig.params, p)
+	}
 	for range rapid.IntRange(0, 3).Draw(w.t, "params") {
 		p := gparam{typ: w.drawExpr(from, 0)}
 		if !unnamed {

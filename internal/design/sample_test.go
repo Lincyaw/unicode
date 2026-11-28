@@ -615,6 +615,10 @@ func (d *designer) newType(parent *gNode, form string) *gNode {
 		for _, l := range d.labels(typeLabels) {
 			t.typeDecl.Lines = append(t.typeDecl.Lines, &syntax.Label{Name: syntax.Kebab(l)})
 		}
+		// sensitive is the toolchain's own label, allowed on any type without a notation.
+		if rapid.IntRange(0, 5).Draw(d.t, "sensitive") == 0 {
+			t.typeDecl.Lines = append(t.typeDecl.Lines, &syntax.Label{Name: "sensitive"})
+		}
 	}
 	if form == "enum" {
 		for range count(d, "values", 1, 3) {

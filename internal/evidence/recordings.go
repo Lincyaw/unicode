@@ -188,7 +188,7 @@ func Recordings(root string, g *graph.Graph, cases []lang.CaseResult) Recording 
 	}
 	groups := map[string][]lang.CaseResult{}
 	for _, source := range cases {
-		result, err := cloneCase(source)
+		result, err := cloneCase(source, false)
 		if err != nil {
 			return fail("evidence.invalid-input", source.Check, err.Error(), "provide complete frozen inputs with matching canonical digests")
 		}

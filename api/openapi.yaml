@@ -995,6 +995,30 @@ components:
         - design
         - code
       description: "The layer the class view draws: the design's types, or the code types that realize them."
+    ClauseCalls:
+      type: object
+      required:
+        - clause
+        - calls
+      properties:
+        clause:
+          type: string
+        calls:
+          type: integer
+          format: int32
+      description: 'M8: a limit or precondition that real calls broke, such as where#1 or requires#1, and on how many calls.'
+    ClauseJudged:
+      type: object
+      required:
+        - clause
+        - judged
+      properties:
+        clause:
+          type: string
+        judged:
+          type: integer
+          format: int32
+      description: 'M8: a clause of the statement, such as ensure#2, and how many real calls judged it.'
     ClosedTab:
       type: string
       enum:
@@ -1501,6 +1525,10 @@ components:
           items:
             $ref: '#/components/schemas/BranchCount'
           description: 'A step or a function: the covering cases by branch'
+        runtime:
+          allOf:
+            - $ref: '#/components/schemas/RuntimeEvidence'
+          description: 'M8, a property or a flow: its current runtime evidence'
       description: 'M6 (drivers M4): what runs have shown about a node. Every field is absent until the graph holds evidence.'
     FlowDetail:
       type: object
@@ -1598,6 +1626,41 @@ components:
         - field
         - value
       description: Whether a member of a type is a field or an enum value.
+    ModelValue:
+      type: object
+      required:
+        - kind
+        - text
+        - items
+        - entries
+      properties:
+        kind:
+          type: string
+          description: The kind, such as int, string, record, list or redacted; it decides whether text, items or entries hold it
+        text:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelValue'
+          nullable: true
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelValueEntry'
+          nullable: true
+      description: 'M8: a model value in the canonical encoding of docs/design.md §6.4; a value of a sensitive type is redacted.'
+    ModelValueEntry:
+      type: object
+      required:
+        - key
+        - value
+      properties:
+        key:
+          $ref: '#/components/schemas/ModelValue'
+        value:
+          $ref: '#/components/schemas/ModelValue'
+      description: 'M8: one entry of a record, a map or a call value.'
     Neighbor:
       type: object
       required:
@@ -2039,6 +2102,7 @@ components:
         - at
         - mode
         - outcome
+        - venue
       properties:
         commit:
           type: string
@@ -2050,7 +2114,83 @@ components:
           $ref: '#/components/schemas/DriverMode'
         outcome:
           $ref: '#/components/schemas/Outcome'
+        venue:
+          allOf:
+            - $ref: '#/components/schemas/Venue'
+          description: 'M8: where it ran'
       description: 'M6: one result of a case in one run.'
+    RuntimeCounterexample:
+      type: object
+      required:
+        - inputHash
+        - clause
+        - values
+        - at
+      properties:
+        inputHash:
+          type: string
+          description: The hash of its input, as frozen and redacted
+        clause:
+          type: string
+          description: 'The clause that does not hold: ensure#n, or changes, raises or call'
+        values:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ModelValue'
+          description: "Its input: each symbol's model value, redacted where its type is sensitive"
+        at:
+          type: string
+          format: date-time
+          description: When the call began
+      description: 'M8: a real call that contradicts a property or flow.'
+    RuntimeEvidence:
+      type: object
+      required:
+        - commit
+        - from
+        - to
+        - applicable
+        - outsideDomain
+        - clauses
+        - counterexamples
+      properties:
+        commit:
+          type: string
+          description: The commit the monitored program was built from
+        from:
+          type: string
+          format: date-time
+          description: The record period
+        to:
+          type: string
+          format: date-time
+        applicable:
+          type: integer
+          format: int32
+          description: '适用的调用: the real calls whose input the property applies to and that were judged'
+        outsideDomain:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClauseCalls'
+          description: '域外调用: by the limit or precondition that did not hold'
+        clauses:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClauseJudged'
+          description: '判定次数: how many times each clause was judged'
+        counterexamples:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeCounterexample'
+        p95:
+          type: integer
+          format: int64
+          description: '第 95 百分位耗时, in nanoseconds: only of a property or flow with within'
+        traces:
+          type: integer
+          format: int32
+          description: '核对的轨迹: only of a flow'
+      description: 'M8: the current runtime evidence of a property or flow: one record period of a monitored program.'
     Slice:
       type: object
       required:
@@ -2278,6 +2418,12 @@ components:
             $ref: '#/components/schemas/Node'
           description: 'An error: the on steps that handle it'
       description: The sections of a type's page.
+    Venue:
+      type: string
+      enum:
+        - test
+        - runtime
+      description: 'M8: where a check ran (docs/model.md §3.5): in a test, or in a monitored program on real calls.'
     View:
       type: object
       required:

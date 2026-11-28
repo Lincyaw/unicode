@@ -35,11 +35,12 @@ type ucWorkerUnit struct {
 	Cases  []ucWorkerCase
 }
 type ucWorkerRequest struct {
-	Trial bool        `json:"trial"`
-	Mode  string      `json:"mode"`
-	Check string      `json:"check"`
-	Seed  string      `json:"seed"`
-	Input ucWireInput `json:"input"`
+	Trial   bool        `json:"trial"`
+	Traffic bool        `json:"traffic"`
+	Mode    string      `json:"mode"`
+	Check   string      `json:"check"`
+	Seed    string      `json:"seed"`
+	Input   ucWireInput `json:"input"`
 }
 type ucWorkerResponse struct {
 	Cases       []ucReplayCase  `json:"cases"`
@@ -175,6 +176,12 @@ func ucCandidateWorker(t *testing.T, units []ucWorkerUnit) (handled bool) {
 			panic(*drawIssue)
 		}
 	case "prepare", "execute":
+		ucRedactedDraw = func(target reflect.Type, model string, s *ucContract, digest string) reflect.Value {
+			var out reflect.Value
+			rapid.MakeFuzz(func(rt *rapid.T) { out = ucDraw(rt, target, model, s.Types, nil, "redacted", 0) })(t, ucWorkerBits(digest))
+			return out
+		}
+		defer func() { ucRedactedDraw = nil }()
 		values := selected.Derive(spec, ucThawInputs(request.Input, selected.Types, spec))
 		response.Input = request.Input
 		if request.Mode == "prepare" {
@@ -182,8 +189,8 @@ func ucCandidateWorker(t *testing.T, units []ucWorkerUnit) (handled bool) {
 		}
 		restore := ucContext(&response.Result, true)
 		defer restore()
-		ucTraceBusinessEnabled = true
-		defer func() { ucTraceBusinessEnabled = false }()
+		ucTraceBusinessEnabled, ucTraffic = true, request.Traffic
+		defer func() { ucTraceBusinessEnabled, ucTraffic = false, false }()
 		started := time.Now()
 		rapid.MakeFuzz(func(rt *rapid.T) { selected.Invoke(rt, spec, values) })(t, ucWorkerBits(ucWireHash(request.Input)))
 		response.Elapsed = time.Since(started)

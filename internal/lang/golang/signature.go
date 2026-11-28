@@ -77,12 +77,18 @@ func (x *extraction) namedType(t *types.Named) string {
 }
 
 // signature writes a function's parameters and results as the design writes
-// an operation's: `(name: type, …) -> type raises error`.
+// an operation's: `(name: type, …) -> type raises error`. A first parameter
+// of type context.Context is left out: it carries the call's trace, not an
+// input of the operation (docs/design.md §4).
 func (x *extraction) signature(sig *types.Signature) string {
 	var b strings.Builder
 	b.WriteString("(")
-	for i := range sig.Params().Len() {
-		if i > 0 {
+	start := 0
+	if sig.Params().Len() > 0 && isContext(sig.Params().At(0).Type()) {
+		start = 1
+	}
+	for i := start; i < sig.Params().Len(); i++ {
+		if i > start {
 			b.WriteString(", ")
 		}
 		v := sig.Params().At(i)

@@ -10,7 +10,7 @@ type ExecuteSample record "execute-follows-language-roots 的输入：一张图�
   field reports: map<string, lang.RunReport>
 }
 
-op execute(root: string, g: graph.Graph, backends: list<lang.Backend>, ids: list<string>, explore: duration, record: bool) -> lang.RunReport "对系统文件中配置的每种语言，调用 backends 中有运行能力的后端运行 ids 中的性质和流程（为空时运行全部），explore 为零时只回放、否则在这段时间内探索，record 为真时写回录制文件，合并逐输入的结论并附上执行输入哈希和仓库的提交信息，交给 evidence 保存成不可变的运行记录和最新的 results.json"
+op execute(root: string, g: graph.Graph, backends: list<lang.Backend>, ids: list<string>, explore: duration, record: bool, traffic: map<string, list<lang.Input>>) -> lang.RunReport "对系统文件中配置的每种语言，调用 backends 中有运行能力的后端运行 ids 中的性质和流程（为空时运行全部），explore 为零时只回放、否则在这段时间内探索，record 为真时写回录制文件，traffic 中各性质或流程的采集的调用的输入另作回放的输入，合并逐输入的结论并附上执行输入哈希和仓库的提交信息，交给 evidence 保存成不可变的运行记录和最新的 results.json"
 
 property execute-follows-language-roots invariant "execute 只为有选中目标的已配置语言各调用一次后端，传入仓库根目录、同一张图、这种语言的源码根目录、排好序的目标标识和 explore，按标识合并的结论与后端报告一致，返回的报告原样写入 results.json；有未知目标时给出诊断且不调用后端，缺少运行能力、重复的后端或后端漏报结论时也给出诊断" {
   about execute

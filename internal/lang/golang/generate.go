@@ -149,6 +149,7 @@ func (b *Backend) Generate(plan lang.GenPlan) lang.Generation {
 		}
 	}
 	files := map[string]*contractFile{}
+	units := map[string]*contractUnit{}
 	for _, n := range plan.Graph.Nodes() {
 		if n.Layer != graph.LayerDesign || (n.Kind != graph.NodeKindProperty && n.Kind != graph.NodeKindFlow) {
 			continue
@@ -157,6 +158,7 @@ func (b *Backend) Generate(plan lang.GenPlan) lang.Generation {
 		if unit == nil {
 			continue
 		}
+		units[n.Id] = unit
 		key := unit.pkg.PkgPath
 		if files[key] == nil {
 			files[key] = &contractFile{pkg: unit.pkg, imports: map[string]string{}}
@@ -176,8 +178,19 @@ func (b *Backend) Generate(plan lang.GenPlan) lang.Generation {
 		outputs[path] = true
 		generation.Edits = append(generation.Edits, lang.Edit{Path: path, Content: content})
 	}
-	// Owned tests no longer emitted by this plan retain only their package and
-	// build constraints, so removed or moved contracts cannot leave live drivers.
+	monitors := c.monitorFiles(units)
+	for _, key := range slices.Sorted(maps.Keys(monitors)) {
+		content := c.renderMonitor(monitors[key])
+		if content == nil {
+			continue
+		}
+		path := filepath.ToSlash(filepath.Join(filepath.Dir(c.positionFile(monitors[key].file.pkg)), monitorFileName))
+		outputs[path] = true
+		generation.Edits = append(generation.Edits, lang.Edit{Path: path, Content: content})
+	}
+	// Owned tests and monitor files no longer emitted by this plan retain only
+	// their package and build constraints, so removed or moved contracts
+	// cannot leave live drivers or judges.
 	overlay, err := generatedTestOverlay(c.loaded.root, plan.Roots)
 	if err != nil {
 		return lang.Generation{Diagnostics: append(c.diagnostics, runDiagnostic("lang.golang.generate-failed", err.Error(), "make owned generated tests readable before generation"))}
@@ -443,7 +456,7 @@ func ucSignature(text string) ([]ucSymbol, string, []string) {
 }
 func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 	unit := &contractUnit{node: n, generators: map[string]*types.Func{}, generatorArgs: map[string][]string{}, limits: n.Attrs["limits"]}
-	unit.spec = ucContract{ID: n.Id, Path: n.Origin.Path, Line: n.Origin.Line, Column: n.Origin.Column, Types: map[string]ucType{}, Operations: map[string]ucOperation{}}
+	unit.spec = ucContract{ID: n.Id, Path: n.Origin.Path, Line: n.Origin.Line, Column: n.Origin.Column, Types: map[string]ucType{}, Operations: map[string]ucOperation{}, Limits: n.Attrs["limits"]}
 	for _, text := range n.Attrs["symbols"] {
 		name, t, _ := strings.Cut(text, ": ")
 		t = strings.TrimSuffix(t, " generated")
@@ -819,6 +832,124 @@ func (c *contractCompiler) valueLiteral(value syntax.Value, t string, pkg *packa
 	}
 	return "", fmt.Errorf("the case value has an unsupported form")
 }
+
+// renderSpec writes the function specName that builds a unit's contract: its
+// JSON, and the Go functions, error types, codecs and, for a test driver, the
+// observation adapters, call carriers and doubles the JSON cannot hold. A
+// monitor file's contract has no adapters, carriers or doubles: a monitored
+// call reads no named observation, and its inputs are real values.
+func (c *contractCompiler) renderSpec(body *strings.Builder, file *contractFile, unit *contractUnit, specName string, monitored bool) {
+	raw, _ := json.Marshal(unit.spec)
+	fmt.Fprintf(body, "func %s() *ucContract { var s ucContract; if err := json.Unmarshal([]byte(%s), &s); err != nil { panic(err) }; ", specName, strconv.Quote(string(raw)))
+	usedOps := map[string]bool{}
+	usedErrors := map[string]bool{}
+	expressions := append(append([]*ucExpr{}, unit.spec.Requires...), unit.spec.Ensures...)
+	expressions = append(expressions, unit.spec.Call)
+	for _, expr := range expressions {
+		ucWalk(expr, func(e *ucExpr) {
+			if e.Kind == "call" {
+				name := ucName(e.Children[0])
+				if _, ok := unit.spec.Operations[name]; !ok && e.Children[0].Kind == "field" {
+					env := ucEnvironment{spec: &unit.spec, values: map[string]ucValue{}}
+					for _, symbol := range unit.spec.Symbols {
+						env.values[symbol.Name] = ucValue{Type: symbol.Type}
+					}
+					for _, observer := range unit.spec.Observers {
+						env.values[observer.Name] = ucValue{Type: observer.Type}
+					}
+					receiverType := env.typeOf(e.Children[0].Children[0], nil)
+					if kind, args := ucSplitType(receiverType); kind == "optional" {
+						receiverType = args[0]
+					}
+					if operation, ok := ucOperationFor(&unit.spec, receiverType, e.Children[0].Text); ok {
+						name = operation.Name
+					} else {
+						name = receiverType + "." + e.Children[0].Text
+					}
+				}
+				usedOps[name] = true
+			}
+			if e.Kind == "raised" || e.Kind == "failure" {
+				usedErrors[e.Text] = true
+			}
+		})
+	}
+	for _, ty := range unit.spec.Types {
+		for _, op := range ty.Calls {
+			usedOps[op.Name] = true
+		}
+	}
+	for op := range usedOps {
+		for _, errType := range unit.spec.Operations[op].Raises {
+			usedErrors[errType] = true
+		}
+	}
+	for id, ty := range unit.spec.Types {
+		if ty.Form != "error" {
+			continue
+		}
+		for _, parent := range ucAncestors(unit.spec.Types, id) {
+			if usedErrors[parent] {
+				usedErrors[id] = true
+				break
+			}
+		}
+	}
+	for _, key := range slices.Sorted(maps.Keys(unit.spec.Operations)) {
+		if !usedOps[key] {
+			continue
+		}
+		op := unit.spec.Operations[key]
+		d, ok := c.bound(graph.EdgeKindRealizes, key)
+		if !ok {
+			continue
+		}
+		fn, ok := d.obj.(*types.Func)
+		if !ok || fn.Signature().Recv() != nil {
+			continue
+		}
+		selector := c.qualify(fn, file.pkg, file.imports)
+		if selector == "" {
+			continue
+		}
+		fmt.Fprintf(body, "{ op := s.Operations[%s]; op.Function = reflect.ValueOf(%s); s.Operations[%s] = op };", strconv.Quote(op.Name), selector, strconv.Quote(op.Name))
+	}
+	body.WriteString("s.ErrorTypes = map[string]reflect.Type{};")
+	errorInterface := types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
+	for _, key := range slices.Sorted(maps.Keys(unit.spec.Types)) {
+		if unit.spec.Types[key].Form != "error" || !usedErrors[key] {
+			continue
+		}
+		d, ok := c.bound(graph.EdgeKindRealizes, key)
+		if !ok {
+			continue
+		}
+		selector := c.qualify(d.obj, file.pkg, file.imports)
+		if selector == "" {
+			continue
+		}
+		typ := d.obj.Type()
+		if !types.Implements(typ, errorInterface) {
+			typ = types.NewPointer(typ)
+			selector = "*" + selector
+		}
+		if !types.Implements(typ, errorInterface) {
+			continue
+		}
+		fmt.Fprintf(body, "s.ErrorTypes[%s]=reflect.TypeFor[%s]();", strconv.Quote(key), selector)
+	}
+	c.renderCodecs(body, file, unit)
+	if !monitored {
+		for i, o := range unit.spec.Observers {
+			d, _ := c.bound(graph.EdgeKindObserves, unit.node.Id+"."+o.Name)
+			fmt.Fprintf(body, "s.Observers[%d].Read=reflect.ValueOf(%s);", i, c.qualify(d.obj, file.pkg, file.imports))
+		}
+		c.renderCallSpec(body, file, unit)
+		c.renderDoubleSpec(body, file, unit)
+	}
+	body.WriteString("return &s }\n")
+}
+
 func (c *contractCompiler) render(file *contractFile) []byte {
 	c.literalImports = file.imports
 	c.foreignNames, c.foreignOriginal = map[string]string{}, map[string]string{}
@@ -829,113 +960,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 	for index, unit := range file.units {
 		id := strconv.Itoa(index)
 		specName := "ucSpec" + id
-		raw, _ := json.Marshal(unit.spec)
-		fmt.Fprintf(&body, "func %s() *ucContract { var s ucContract; if err := json.Unmarshal([]byte(%s), &s); err != nil { panic(err) }; ", specName, strconv.Quote(string(raw)))
-		usedOps := map[string]bool{}
-		usedErrors := map[string]bool{}
-		expressions := append(append([]*ucExpr{}, unit.spec.Requires...), unit.spec.Ensures...)
-		expressions = append(expressions, unit.spec.Call)
-		for _, expr := range expressions {
-			ucWalk(expr, func(e *ucExpr) {
-				if e.Kind == "call" {
-					name := ucName(e.Children[0])
-					if _, ok := unit.spec.Operations[name]; !ok && e.Children[0].Kind == "field" {
-						env := ucEnvironment{spec: &unit.spec, values: map[string]ucValue{}}
-						for _, symbol := range unit.spec.Symbols {
-							env.values[symbol.Name] = ucValue{Type: symbol.Type}
-						}
-						for _, observer := range unit.spec.Observers {
-							env.values[observer.Name] = ucValue{Type: observer.Type}
-						}
-						receiverType := env.typeOf(e.Children[0].Children[0], nil)
-						if kind, args := ucSplitType(receiverType); kind == "optional" {
-							receiverType = args[0]
-						}
-						if operation, ok := ucOperationFor(&unit.spec, receiverType, e.Children[0].Text); ok {
-							name = operation.Name
-						} else {
-							name = receiverType + "." + e.Children[0].Text
-						}
-					}
-					usedOps[name] = true
-				}
-				if e.Kind == "raised" || e.Kind == "failure" {
-					usedErrors[e.Text] = true
-				}
-			})
-		}
-		for _, ty := range unit.spec.Types {
-			for _, op := range ty.Calls {
-				usedOps[op.Name] = true
-			}
-		}
-		for op := range usedOps {
-			for _, errType := range unit.spec.Operations[op].Raises {
-				usedErrors[errType] = true
-			}
-		}
-		for id, ty := range unit.spec.Types {
-			if ty.Form != "error" {
-				continue
-			}
-			for _, parent := range ucAncestors(unit.spec.Types, id) {
-				if usedErrors[parent] {
-					usedErrors[id] = true
-					break
-				}
-			}
-		}
-		for _, key := range slices.Sorted(maps.Keys(unit.spec.Operations)) {
-			if !usedOps[key] {
-				continue
-			}
-			op := unit.spec.Operations[key]
-			d, ok := c.bound(graph.EdgeKindRealizes, key)
-			if !ok {
-				continue
-			}
-			fn, ok := d.obj.(*types.Func)
-			if !ok || fn.Signature().Recv() != nil {
-				continue
-			}
-			selector := c.qualify(fn, file.pkg, file.imports)
-			if selector == "" {
-				continue
-			}
-			fmt.Fprintf(&body, "{ op := s.Operations[%s]; op.Function = reflect.ValueOf(%s); s.Operations[%s] = op };", strconv.Quote(op.Name), selector, strconv.Quote(op.Name))
-		}
-		body.WriteString("s.ErrorTypes = map[string]reflect.Type{};")
-		errorInterface := types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
-		for _, key := range slices.Sorted(maps.Keys(unit.spec.Types)) {
-			if unit.spec.Types[key].Form != "error" || !usedErrors[key] {
-				continue
-			}
-			d, ok := c.bound(graph.EdgeKindRealizes, key)
-			if !ok {
-				continue
-			}
-			selector := c.qualify(d.obj, file.pkg, file.imports)
-			if selector == "" {
-				continue
-			}
-			typ := d.obj.Type()
-			if !types.Implements(typ, errorInterface) {
-				typ = types.NewPointer(typ)
-				selector = "*" + selector
-			}
-			if !types.Implements(typ, errorInterface) {
-				continue
-			}
-			fmt.Fprintf(&body, "s.ErrorTypes[%s]=reflect.TypeFor[%s]();", strconv.Quote(key), selector)
-		}
-		for i, o := range unit.spec.Observers {
-			d, _ := c.bound(graph.EdgeKindObserves, unit.node.Id+"."+o.Name)
-			fmt.Fprintf(&body, "s.Observers[%d].Read=reflect.ValueOf(%s);", i, c.qualify(d.obj, file.pkg, file.imports))
-		}
-		c.renderCodecs(&body, file, unit)
-		c.renderCallSpec(&body, file, unit)
-		c.renderDoubleSpec(&body, file, unit)
-		body.WriteString("return &s }\n")
+		c.renderSpec(&body, file, unit, specName, false)
 		predicate := ""
 		if unit.predicate != nil {
 			predicate = c.qualify(unit.predicate, file.pkg, file.imports)

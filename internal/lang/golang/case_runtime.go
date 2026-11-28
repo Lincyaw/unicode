@@ -452,6 +452,10 @@ func ucWireEntries(v ucWireValue) map[string]ucWireValue {
 	}
 	return out
 }
+
+// ucRedactedDraw draws the value that replaces a redacted one, from its digest.
+var ucRedactedDraw func(target reflect.Type, model string, s *ucContract, digest string) reflect.Value
+
 func ucThawValue(w ucWireValue, target reflect.Type, model string, s *ucContract, depth int) reflect.Value {
 	if depth > 128 {
 		ucFail("lang.golang.input-outside-domain", "a recorded input exceeds the finite model depth", nil)
@@ -467,6 +471,14 @@ func ucThawValue(w ucWireValue, target reflect.Type, model string, s *ucContract
 			return out
 		}
 		return ucThawValue(w, target, args[0], s, depth+1)
+	}
+	if w.Kind == "redacted" {
+		// A value a monitored program redacted is replayed as the value the
+		// type's generator draws from its digest (docs/design.md §6.6).
+		if ucRedactedDraw == nil {
+			ucFail("lang.golang.input-outside-domain", "a redacted value is replayed only by a candidate worker", nil)
+		}
+		return ucWireAdapt(ucRedactedDraw(target, model, s, w.Text), target)
 	}
 	if codec, ok := s.Codecs[model]; ok {
 		if w.Kind != "encoded" || len(w.Items) != 1 {

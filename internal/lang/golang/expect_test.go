@@ -578,7 +578,10 @@ func (x *expectation) design(e *gexpr) string {
 
 func (x *expectation) signature(sig *gsig) string {
 	var params []string
-	for _, p := range sig.params {
+	for i, p := range sig.params {
+		if i == 0 && p.typ.kind == "ext" && p.typ.ext == contextExpr().ext {
+			continue
+		}
 		params = append(params, cmp.Or(p.name, "_")+": "+x.design(p.typ))
 	}
 	out := "(" + strings.Join(params, ", ") + ")"

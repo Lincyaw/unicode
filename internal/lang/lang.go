@@ -103,6 +103,9 @@ type RunPlan struct {
 	Explore      time.Duration `json:"explore"`
 	Explorations int           `json:"explorations"`
 	Record       bool          `json:"record"`
+	// Traffic gives, by property or flow, the inputs unicode test --traffic
+	// takes from collected calls (docs/language.md E29).
+	Traffic map[string][]Input `json:"traffic"`
 }
 
 // Exploring tells whether the plan explores generated inputs.
@@ -179,6 +182,11 @@ type CaseResult struct {
 	Diagnostics  []diag.Diagnostic `json:"diagnostics"`
 	Duration     int               `json:"duration"` // nanoseconds
 	Calls        []CallTime        `json:"calls"`
+	// Clause is the clause, limit or precondition that does not hold: of a
+	// runtime counterexample, or of a collected call outside the domain.
+	Clause string `json:"clause,omitempty"`
+	// At is when the call of a runtime counterexample began.
+	At string `json:"at,omitempty"`
 }
 
 // CallTime is one call of a design operation that a case made, the call
@@ -206,24 +214,52 @@ type CandidateRunner interface {
 	Evaluate(input Input) CandidateEvaluation
 }
 
+// ClauseCalls is a limit or precondition that did not hold, and on how many
+// calls.
+//
+//uc:realizes lang.ClauseCalls
+type ClauseCalls struct {
+	Clause string `json:"clause"`
+	Calls  int    `json:"calls"`
+}
+
+// ClauseJudged is a clause, and how many times it was judged.
+//
+//uc:realizes lang.ClauseJudged
+type ClauseJudged struct {
+	Clause string `json:"clause"`
+	Judged int    `json:"judged"`
+}
+
 // RunResult records one check's effective inputs, observations and failures.
+// A runtime result counts its applicable calls as accepted and adds the calls
+// outside the domain, how many times each clause was judged, the 95th
+// percentile of the durations, in nanoseconds, and the traces checked.
 //
 //uc:realizes lang.RunResult
 type RunResult struct {
-	Id           string            `json:"id"`
-	Passed       bool              `json:"passed"`
-	Accepted     int               `json:"accepted"`
-	Rejected     int               `json:"rejected"`
-	Observations []string          `json:"observations"`
-	Differences  []string          `json:"differences"`
-	Diagnostics  []diag.Diagnostic `json:"diagnostics"`
-	Cases        []CaseResult      `json:"cases"`
-	CodeTotal    int               `json:"codeTotal,omitempty"`
-	BranchTotal  int               `json:"branchTotal,omitempty"`
-	ErrorTotal   int               `json:"errorTotal,omitempty"`
+	Id            string            `json:"id"`
+	Passed        bool              `json:"passed"`
+	Accepted      int               `json:"accepted"`
+	Rejected      int               `json:"rejected"`
+	Observations  []string          `json:"observations"`
+	Differences   []string          `json:"differences"`
+	Diagnostics   []diag.Diagnostic `json:"diagnostics"`
+	Cases         []CaseResult      `json:"cases"`
+	CodeTotal     int               `json:"codeTotal,omitempty"`
+	BranchTotal   int               `json:"branchTotal,omitempty"`
+	ErrorTotal    int               `json:"errorTotal,omitempty"`
+	OutsideDomain []ClauseCalls     `json:"outsideDomain,omitempty"`
+	Clauses       []ClauseJudged    `json:"clauses,omitempty"`
+	P95           int               `json:"p95,omitempty"`
+	Traces        int               `json:"traces,omitempty"`
 }
 
-// RunReport combines check results and toolchain diagnostics.
+// RunReport combines check results and toolchain diagnostics. Venue is where
+// the checks ran (docs/model.md §3.5): test, written by unicode test, or
+// runtime, written by a monitored program, whose record has no snapshot and
+// no mode and adds From, the start of its record period. A report without a
+// venue was written by unicode test.
 //
 //uc:realizes lang.RunReport
 type RunReport struct {
@@ -235,7 +271,15 @@ type RunReport struct {
 	Dirty       bool              `json:"dirty"`
 	At          string            `json:"at"`
 	Mode        string            `json:"mode"`
+	Venue       string            `json:"venue,omitempty"`
+	From        string            `json:"from,omitempty"`
 }
+
+// The venues of a report (docs/model.md §3.5).
+const (
+	VenueTest    = "test"
+	VenueRuntime = "runtime"
+)
 
 // Generator is the optional generation capability of a language backend.
 //

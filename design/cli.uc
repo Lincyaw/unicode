@@ -1,7 +1,7 @@
 component cli "命令行：解析参数，调用其余组件，输出结果和退出码" {
   focus support
   paths "cmd/unicode/**"
-  uses diag, graph, syntax, design, lang, lang.golang, lang.python, check, query, view, gen, run, serve, repo, review, evidence
+  uses diag, graph, syntax, design, lang, lang.golang, lang.python, check, query, view, gen, run, serve, repo, review, evidence, monitor
 }
 
 type RepoFile record "仓库中的一个文件：内容和权限位" {
@@ -20,6 +20,11 @@ type StoreWrite record "stores-reach-viewer-through-build 的输入：打开在�
   field request: serve.Request
   field before: serve.Response
   field written: serve.Response
+}
+
+type CommitGraphs object "serve 比较时用的建图器：像 unicode diff 取基准那样，取出仓库在一个提交上的文件再建图；组合根在监控构建中经 monitor.Wrap 把它交给 serve.open" {
+  implements serve.Builder
+  op build(root: string, commit: string) -> graph.Graph raises serve.Unbuildable "取出 root 处仓库在 commit 上的文件并建图，取不出或建不出时抛出 serve.Unbuildable"
 }
 
 op affectedChecks(base: graph.Graph, head: graph.Graph, selected: list<string>) -> list<string> "供 unicode test --since 使用：比较 base 和 head，按 design.md §6.3 从变化的节点和边传播影响，返回仍存在且受影响的性质和流程，再与 selected 中显式给出的标识取交集"
@@ -130,4 +135,14 @@ property stores-reach-viewer-through-build postcondition "往评审存储或运�
   ensure change.written == change.before
   ensure result.status == 200
   ensure result != change.before
+}
+
+property commit-graphs-have-one-system postcondition "CommitGraphs.build 建出的图恰有一个形式为 system 的节点，或者抛出 serve.Unbuildable" {
+  about CommitGraphs.build
+  forall graphs: CommitGraphs
+  forall root: string generated "以 absent- 开头、其后一至十二个小写字母的相对路径，在测试的工作目录中不存在"
+  forall commit: string
+  where commit size 1..64
+  call graphs.build(root, commit)
+  ensure raised(serve.Unbuildable) or count(n in result.nodes(): n.form == "system") == 1
 }

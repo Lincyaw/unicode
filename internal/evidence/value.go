@@ -30,7 +30,13 @@ func canonical(value any) []byte {
 }
 
 func hash(value any) string {
-	sum := sha256.Sum256(canonical(value))
+	return rawHash(canonical(value))
+}
+
+// rawHash is the SHA-256 of bytes as they are, the name a monitored program
+// gives the runtime record it writes.
+func rawHash(data []byte) string {
+	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
 
@@ -128,6 +134,13 @@ func normalizeValue(value lang.Value, depth int) (lang.Value, error) {
 			return out, fmt.Errorf("invalid duration: %w", err)
 		}
 		out.Text = span.String()
+	case "redacted":
+		// A monitored program writes a value of a sensitive type as the
+		// HMAC-SHA-256 of its canonical encoding (docs/design.md §6.6).
+		if !hexDigest(value.Text, 64) {
+			return out, fmt.Errorf("a redacted value needs its lowercase hexadecimal HMAC-SHA-256")
+		}
+		out.Text = value.Text
 	case "enum":
 		if value.Text == "" || !utf8.ValidString(value.Text) {
 			return out, fmt.Errorf("an enum needs its UTF-8 member name")
@@ -183,7 +196,7 @@ func normalizeValue(value lang.Value, depth int) (lang.Value, error) {
 	return out, nil
 }
 
-func cloneCase(result lang.CaseResult) (lang.CaseResult, error) {
+func cloneCase(result lang.CaseResult, runtime bool) (lang.CaseResult, error) {
 	input, err := NormalizeInput(result.Input)
 	if err != nil {
 		return result, err
@@ -196,8 +209,17 @@ func cloneCase(result lang.CaseResult) (lang.CaseResult, error) {
 	if result.Form == "" {
 		result.Form = "recorded"
 	}
-	if result.Form != "declared" && result.Form != "recorded" {
-		return result, fmt.Errorf("the case form is neither declared nor recorded")
+	switch {
+	case runtime:
+		// A runtime record keeps only its counterexamples: real calls, each
+		// with the clause that does not hold and when the call began.
+		if result.Form != "runtime" || result.Reason != "counterexample" || result.Passed || result.Rejected || result.Clause == "" || !canonicalTime(result.At) {
+			return result, fmt.Errorf("a runtime case is a counterexample of the form runtime with its clause and time")
+		}
+	case result.At != "":
+		return result, fmt.Errorf("only a runtime counterexample carries the time of its call")
+	case result.Form != "declared" && result.Form != "recorded" && result.Form != "traffic":
+		return result, fmt.Errorf("the case form is neither declared, recorded nor traffic")
 	}
 	if strings.TrimSpace(result.Check) == "" {
 		return result, fmt.Errorf("the case has no check identity")

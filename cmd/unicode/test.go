@@ -14,11 +14,11 @@ import (
 	"github.com/lincyaw/unicode/internal/run"
 )
 
-// testCommand is `unicode test [id...] [--since REV] [--explore DURATION] [--record]`.
+// testCommand is `unicode test [id...] [--since REV] [--traffic] [--explore DURATION] [--record]`.
 func testCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
 	var explore time.Duration
 	var since string
-	var record bool
+	var record, traffic bool
 	c := &cobra.Command{
 		Use:   "test [id...]",
 		Short: "Replay the declared and recorded cases of properties and flows",
@@ -28,6 +28,8 @@ func testCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
 			"--explore gives a positive time budget for generating candidate inputs; --record saves the selected\n" +
 			"replayable inputs and refreshes their generated drivers. With --since REV,\n" +
 			"only checks affected since that commit are selected; no affected checks leaves prior results intact.\n" +
+			"With --traffic, the calls a monitored program collected under .unicode/traffic are replayed as cases\n" +
+			"too; a collected call outside a property's domain is counted with the limit or precondition it breaks.\n" +
 			"The viewer shows the results once unicode build compiles them into the snapshot.",
 		RunE: func(c *cobra.Command, ids []string) error {
 			if c.Flags().Changed("since") && since == "" {
@@ -43,17 +45,18 @@ func testCommand(g *globalOptions, stdout, stderr io.Writer) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runTest(root, g.format, ids, explore, since, record, stdout, stderr)
+			return runTest(root, g.format, ids, explore, since, record, traffic, stdout, stderr)
 		},
 	}
 	c.Flags().StringVar(&since, "since", "", "run only checks affected by changes since this commit")
 	c.Flags().DurationVar(&explore, "explore", 0, "generate candidate inputs within this time budget instead of only replaying cases")
 	c.Flags().BoolVar(&record, "record", false, "save selected replayable inputs and refresh generated drivers (requires --explore)")
+	c.Flags().BoolVar(&traffic, "traffic", false, "also replay the calls a monitored program collected under .unicode/traffic")
 	return c
 }
 
 // runTest keeps predicate failures separate from toolchain diagnostics.
-func runTest(root, format string, ids []string, explore time.Duration, since string, record bool, stdout, stderr io.Writer) error {
+func runTest(root, format string, ids []string, explore time.Duration, since string, record, traffic bool, stdout, stderr io.Writer) error {
 	builder := buildInputGraph
 	if explore > 0 {
 		builder = buildGraphForExploration
@@ -71,9 +74,18 @@ func runTest(root, format string, ids []string, explore time.Duration, since str
 		}
 		diags = append(diags, selectionDiagnostics...)
 	}
+	var inputs map[string][]lang.Input
+	if traffic && len(diags) == 0 {
+		collected := evidence.ReadTraffic(root, &g)
+		diags = append(diags, collected.Diagnostics...)
+		inputs = evidence.TrafficInputs(&g, collected.Collected)
+		// The version differential of --since (docs/design.md §6.5) takes
+		// collected.Collected as its inputs too, aligned by operation and input
+		// hash; it is to be called here once unicode test --since has it.
+	}
 	report := lang.RunReport{Results: []lang.RunResult{}, Diagnostics: []diag.Diagnostic{}}
 	if len(diags) == 0 && (since == "" || len(selected) > 0) {
-		report = run.Execute(root, &g, availableBackends(), selected, explore, record)
+		report = run.Execute(root, &g, availableBackends(), selected, explore, record, inputs)
 		if record && len(report.Diagnostics) == 0 {
 			var cases []lang.CaseResult
 			for _, result := range report.Results {

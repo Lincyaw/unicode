@@ -106,15 +106,15 @@ export const EVIDENCE: Record<string, Evidence> = {
   'order.total-is-sum.r-3f9a2c1d': {
     outcome: 'passed',
     coverageGain: 3,
-    history: [{ commit: COMMITS.head, at: '2026-11-26T16:02:00Z', mode: 'replay', outcome: 'passed' }],
+    history: [{ commit: COMMITS.head, at: '2026-11-26T16:02:00Z', mode: 'replay', outcome: 'passed', venue: 'test' }],
   },
   'order.total-is-sum.r-77e01b2a': {
     outcome: 'passed',
     coverageGain: 1,
     history: [
-      { commit: COMMITS.head, at: '2026-11-26T16:02:00Z', mode: 'replay', outcome: 'passed' },
-      { commit: COMMITS.counterexample, at: '2026-11-25T17:30:12Z', mode: 'replay', outcome: 'passed' },
-      { commit: COMMITS.record, at: '2026-11-25T09:41:27Z', mode: 'explore', outcome: 'failed' },
+      { commit: COMMITS.head, at: '2026-11-26T16:02:00Z', mode: 'replay', outcome: 'passed', venue: 'test' },
+      { commit: COMMITS.counterexample, at: '2026-11-25T17:30:12Z', mode: 'replay', outcome: 'passed', venue: 'test' },
+      { commit: COMMITS.record, at: '2026-11-25T09:41:27Z', mode: 'explore', outcome: 'failed', venue: 'test' },
     ],
   },
   'order.submit-order': {
@@ -128,7 +128,7 @@ export const EVIDENCE: Record<string, Evidence> = {
   [FLOW_CASE]: {
     outcome: 'passed',
     coverageGain: 12,
-    history: [{ commit: COMMITS.head, at: '2026-11-26T16:02:00Z', mode: 'replay', outcome: 'passed' }],
+    history: [{ commit: COMMITS.head, at: '2026-11-26T16:02:00Z', mode: 'replay', outcome: 'passed', venue: 'test' }],
   },
   'order.submit-order#4': { branches: [{ label: 'Declined', cases: 3 }] },
   'order.submit-order#7': { branches: [{ label: 'Declined', cases: 3 }] },

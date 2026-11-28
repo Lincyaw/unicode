@@ -103,11 +103,41 @@ func batchBusinessFailure(result lang.RunResult, environment []diag.Diagnostic) 
 			continue
 		}
 		switch problem.Code {
-		case "lang.golang.ensure-failed", "lang.golang.frame-violation", "lang.golang.purity-violation", "lang.golang.undeclared-error", "lang.golang.predicate-failed", "lang.golang.call-panicked", "lang.golang.within-exceeded":
+		case "lang.golang.ensure-failed", "lang.golang.frame-violation", "lang.golang.purity-violation", "lang.golang.undeclared-error", "lang.golang.predicate-failed", "lang.golang.call-panicked", "lang.golang.within-exceeded",
+			"monitor.ensure-failed", "monitor.frame-violation", "monitor.undeclared-error", "monitor.call-panicked", "monitor.within-exceeded":
 			return true
 		}
 	}
 	return false
+}
+
+// runtimeAttrs are the attrs of a runtime conclusion: the limits and
+// preconditions that failed and the clauses judged, each with its count in a
+// parallel attr, the 95th percentile in nanoseconds and the traces checked; a
+// replay of collected calls has the first two attrs too.
+func runtimeAttrs(result lang.RunResult) map[string][]string {
+	out := map[string][]string{}
+	if len(result.OutsideDomain) > 0 {
+		out["outsideDomain"], out["outsideDomainCalls"] = []string{}, []string{}
+		for _, item := range result.OutsideDomain {
+			out["outsideDomain"] = append(out["outsideDomain"], item.Clause)
+			out["outsideDomainCalls"] = append(out["outsideDomainCalls"], strconv.Itoa(item.Calls))
+		}
+	}
+	if len(result.Clauses) > 0 {
+		out["clauses"], out["clausesJudged"] = []string{}, []string{}
+		for _, item := range result.Clauses {
+			out["clauses"] = append(out["clauses"], item.Clause)
+			out["clausesJudged"] = append(out["clausesJudged"], strconv.Itoa(item.Judged))
+		}
+	}
+	if result.P95 > 0 {
+		out["p95"] = []string{strconv.Itoa(result.P95)}
+	}
+	if result.Traces > 0 {
+		out["traces"] = []string{strconv.Itoa(result.Traces)}
+	}
+	return out
 }
 
 type coverKey struct{ from, to string }
@@ -142,9 +172,19 @@ func Attach(g *graph.Graph, reports []lang.RunReport) Attached {
 		runID := "run:" + id
 		at := diag.Position{Path: reportPath(id), Line: 1, Column: 1}
 		fresh := report.Version == 1 && report.Snapshot == inputDigest
-		attrs := textAttrs(map[string]string{"version": strconv.Itoa(report.Version), "snapshot": report.Snapshot, "at": report.At, "commit": report.Commit, "dirty": strconv.FormatBool(report.Dirty), "mode": report.Mode, "fresh": strconv.FormatBool(fresh)})
+		venue, form := report.Venue, report.Mode
+		if venue == "" {
+			venue = lang.VenueTest
+		}
+		if venue == lang.VenueRuntime {
+			form = lang.VenueRuntime
+		}
+		attrs := textAttrs(map[string]string{"version": strconv.Itoa(report.Version), "snapshot": report.Snapshot, "at": report.At, "commit": report.Commit, "dirty": strconv.FormatBool(report.Dirty), "mode": report.Mode, "fresh": strconv.FormatBool(fresh), "venue": venue})
+		if venue == lang.VenueRuntime {
+			attrs["from"] = []string{report.From}
+		}
 		applyAttrs(attrs, diagnosticAttrs(report.Diagnostics))
-		out.Fragment.Nodes = append(out.Fragment.Nodes, graph.Node{Id: runID, Kind: graph.NodeKindRun, Form: report.Mode, Layer: graph.LayerEvidence, Source: graph.SourceProduced, Origin: at, Attrs: attrs})
+		out.Fragment.Nodes = append(out.Fragment.Nodes, graph.Node{Id: runID, Kind: graph.NodeKindRun, Form: form, Layer: graph.LayerEvidence, Source: graph.SourceProduced, Origin: at, Attrs: attrs})
 		for _, result := range report.Results {
 			sourceFresh := fresh && existingCheck(g, result.Id)
 			observed := map[string]bool{}
@@ -171,6 +211,8 @@ func Attach(g *graph.Graph, reports []lang.RunReport) Attached {
 				summary["errorTotal"] = []string{strconv.Itoa(result.ErrorTotal)}
 			}
 			summary["observations"], summary["differences"] = slices.Clone(result.Observations), slices.Clone(result.Differences)
+			summary["venue"] = []string{venue}
+			applyAttrs(summary, runtimeAttrs(result))
 			applyAttrs(summary, diagnosticAttrs(result.Diagnostics))
 			out.Fragment.Nodes = append(out.Fragment.Nodes, graph.Node{Id: resultID, Kind: graph.NodeKindResult, Form: "check", Layer: graph.LayerEvidence, Source: graph.SourceProduced, Origin: at, Attrs: summary})
 			out.Fragment.Edges = append(out.Fragment.Edges, graph.Edge{Kind: graph.EdgeKindContains, From: runID, To: resultID, Source: graph.SourceProduced, Origin: at})
@@ -187,6 +229,17 @@ func Attach(g *graph.Graph, reports []lang.RunReport) Attached {
 					detail["calls"] = append(detail["calls"], c.Op+" "+strconv.Itoa(c.Duration))
 				}
 				detail["observations"], detail["differences"] = slices.Clone(candidate.Observations), slices.Clone(candidate.Differences)
+				detail["venue"] = []string{venue}
+				if candidate.Clause != "" {
+					detail["clause"] = []string{candidate.Clause}
+				}
+				if candidate.At != "" {
+					// A runtime counterexample is dated by its call, not by the record period.
+					detail["at"] = []string{candidate.At}
+				}
+				if venue == lang.VenueRuntime {
+					detail["values"] = stringsOf([]lang.Input{candidate.Input})
+				}
 				applyAttrs(detail, diagnosticAttrs(candidate.Diagnostics))
 				out.Fragment.Nodes = append(out.Fragment.Nodes, graph.Node{Id: caseID, Kind: graph.NodeKindResult, Form: "case", Layer: graph.LayerEvidence, Source: graph.SourceProduced, Origin: at, Attrs: detail})
 				out.Fragment.Edges = append(out.Fragment.Edges, graph.Edge{Kind: graph.EdgeKindContains, From: runID, To: caseID, Source: graph.SourceProduced, Origin: at})

@@ -29,17 +29,27 @@ var vocabulary = map[string]struct {
 	"component":       {"c4", graph.NodeKindContainer},
 }
 
+// sensitive is the toolchain's own label: it belongs to no notation and goes
+// on a type, whose values a monitored program redacts (docs/model.md §5).
+const sensitive = "sensitive"
+
 // label checks that a label of e belongs to a notation the system file
-// declares and may be put on e (docs/model.md §10 rule 5).
+// declares and may be put on e, or is the toolchain's label sensitive on a
+// type (docs/model.md §10 rule 5).
 func (l *loader) label(e *entity, label *syntax.Label) {
 	name := string(label.Name)
 	v, ok := vocabulary[name]
 	switch {
+	case name == sensitive && e.kind != graph.NodeKindType:
+		l.report(e.file, label.Pos, "design.label-not-allowed", e.id,
+			fmt.Sprintf("the label sensitive goes on a type, but %s is a %s", e.id, e.kind),
+			"put the label sensitive on the type whose values are sensitive, or remove it")
+	case name == sensitive:
 	case !ok:
 		l.report(e.file, label.Pos, "design.unknown-label", e.id,
 			fmt.Sprintf("%s is not a label of any notation", name),
-			"use a label of ddd (bounded-context, aggregate, entity, value, domain-service, repository, factory) "+
-				"or of c4 (software-system, container, component), or remove it")
+			"use a label of ddd (bounded-context, aggregate, entity, value, domain-service, repository, factory), "+
+				"of c4 (software-system, container, component), or sensitive on a type, or remove it")
 	case !l.notations[v.notation]:
 		l.report(e.file, label.Pos, "design.undeclared-notation", e.id,
 			fmt.Sprintf("the label %s belongs to the notation %s, which the system file does not declare", name, v.notation),

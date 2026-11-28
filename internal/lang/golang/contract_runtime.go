@@ -1,6 +1,7 @@
 package golang
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -73,6 +74,9 @@ type ucContract struct {
 	// Derived names the derived inputs (docs/language.md E24): the
 	// generated symbols whose bound function returns their value.
 	Derived []string
+	// Limits are the property's limits, as the graph writes them; a replayed
+	// collected call and a monitored call are checked against them.
+	Limits []string `json:",omitempty"`
 }
 type ucDiagnostic struct {
 	Code, Subject string
@@ -93,8 +97,10 @@ type ucRunResult struct {
 	Differences    []string       `json:"differences"`
 	Diagnostics    []ucDiagnostic `json:"diagnostics"`
 	Infrastructure bool           `json:"infrastructure,omitempty"`
-	durations      []time.Duration
-	calls          []ucCallTime
+	// Clause is the limit or precondition a replayed collected call breaks.
+	Clause    string `json:"clause,omitempty"`
+	durations []time.Duration
+	calls     []ucCallTime
 }
 
 // ucCallTime is one call of a design operation that a case made, the call
@@ -119,6 +125,9 @@ type ucEnvironment struct {
 	result   ucValue
 	failure  error
 	failures map[string]ucValue
+	// once calls a pure operation of an expression once: a monitored call is
+	// judged without repeating any call (docs/language.md E26).
+	once bool
 }
 type ucOutcome struct {
 	Rejected       bool
@@ -128,7 +137,15 @@ type ucOutcome struct {
 	Differences    []string
 	Duration       time.Duration // the call's processor time, or its elapsed time where unknown (ucCPUTime)
 	Calls          []ucCallTime
+	// Clause is the limit or precondition a replayed collected call breaks.
+	Clause string
 }
+
+// ucTraffic is set while a worker replays a collected call: an input that
+// breaks a limit or a precondition is then counted with its clause, not
+// reported as a replay input outside the domain (docs/language.md E29).
+var ucTraffic bool
+
 type ucIssue struct {
 	code, message string
 	expr          *ucExpr
@@ -1171,6 +1188,7 @@ func (env *ucEnvironment) prepare(e *ucExpr) (ucOperation, reflect.Value, []refl
 	if !ok || !fn.IsValid() {
 		ucFail("lang.golang.expression-failed", "the bound operation "+name+" is unavailable", e)
 	}
+	fn = ucWithoutContext(fn)
 	if fn.Type().NumIn() != len(e.Children)-1 {
 		ucFail("lang.golang.expression-failed", "the operation argument count does not match", e)
 	}
@@ -1192,6 +1210,19 @@ func (env *ucEnvironment) invoke(op ucOperation, fn reflect.Value, args []reflec
 		ucFail("lang.golang.expression-failed", "a non-pure operation was used in an expression", e)
 	}
 	snapshot := func() []ucValue { return env.callInputs(op, args) }
+	if env.once {
+		result := fn.Call(args)
+		if len(result) > 0 && result[len(result)-1].Type().Implements(reflect.TypeFor[error]()) {
+			if err := result[len(result)-1]; !err.IsNil() {
+				ucFail("lang.golang.expression-failed", "a pure operation returned an error: "+err.Interface().(error).Error(), e)
+			}
+			result = result[:len(result)-1]
+		}
+		if len(result) != 1 {
+			ucFail("lang.golang.expression-failed", "a pure operation must return exactly one model value", e)
+		}
+		return ucNormalize(result[0], op.Result, env.spec.Types)
+	}
 	before := snapshot()
 	invoke := func() ucValue {
 		result := fn.Call(args)
@@ -1221,6 +1252,160 @@ func (env *ucEnvironment) invoke(op ucOperation, fn reflect.Value, args []reflec
 		}
 	}
 	return first
+}
+
+// ucWithoutContext gives the function a design operation calls: a Go function
+// whose first parameter is a context.Context gets context.Background() there,
+// since the design leaves that parameter out (docs/design.md §4).
+func ucWithoutContext(fn reflect.Value) reflect.Value {
+	t := fn.Type()
+	if t.NumIn() == 0 || t.In(0) != reflect.TypeFor[context.Context]() {
+		return fn
+	}
+	in := make([]reflect.Type, t.NumIn()-1)
+	for i := range in {
+		in[i] = t.In(i + 1)
+	}
+	out := make([]reflect.Type, t.NumOut())
+	for i := range out {
+		out[i] = t.Out(i)
+	}
+	return reflect.MakeFunc(reflect.FuncOf(in, out, t.IsVariadic()), func(args []reflect.Value) []reflect.Value {
+		all := append([]reflect.Value{reflect.ValueOf(context.Background())}, args...)
+		if t.IsVariadic() {
+			return fn.CallSlice(all)
+		}
+		return fn.Call(all)
+	})
+}
+
+// ucDomain checks the limits of a property on the values of its symbols
+// (docs/model.md §10 rule 25): it gives the first limit that does not hold,
+// as where#n, and false when a limit reads a symbol values lacks, which
+// cannot be judged then.
+func ucDomain(s *ucContract, values map[string]ucValue) (clause string, readable bool) {
+	for i, limit := range s.Limits {
+		parts := strings.Fields(limit)
+		if len(parts) < 3 {
+			continue
+		}
+		path := strings.Split(parts[0], ".")
+		root, ok := values[path[0]]
+		if !ok {
+			return "", false
+		}
+		op, bound := parts[1], strings.Join(parts[2:], " ")
+		if op == "in" && strings.HasPrefix(bound, "{") {
+			op = "subset"
+		}
+		if !ucWithin(root, path[1:], op, bound, s.Types) {
+			return "where#" + strconv.Itoa(i+1), true
+		}
+	}
+	return "", true
+}
+
+// ucWithin tells whether a value keeps a limit at the end of segs: the path
+// goes through a record's fields, and through every element of a list or a
+// set and every value of a map; at its end the limit applies to the first of
+// the value and its elements whose type it fits, as the design places it.
+func ucWithin(v ucValue, segs []string, op, bound string, types map[string]ucType) bool {
+	v = ucMaterialize(v)
+	if ucNone(v) {
+		return true
+	}
+	model := v.Type
+	if kind, args := ucSplitType(model); kind == "optional" {
+		model = args[0]
+	}
+	kind, _ := ucSplitType(model)
+	if len(segs) == 0 && ucFits(op, model, types) {
+		return ucBound(v, model, op, bound)
+	}
+	switch data := v.Data.(type) {
+	case []ucValue:
+		for _, item := range data {
+			if !ucWithin(item, segs, op, bound, types) {
+				return false
+			}
+		}
+	case ucMap:
+		for _, entry := range data {
+			item := entry.Value
+			if kind == "set" {
+				item = entry.Key
+			}
+			if !ucWithin(item, segs, op, bound, types) {
+				return false
+			}
+		}
+	case map[string]ucValue:
+		if field, ok := data[ucFirst(segs)]; ok && kind != "call" {
+			return ucWithin(field, segs[1:], op, bound, types)
+		}
+	}
+	return true
+}
+func ucFirst(segs []string) string {
+	if len(segs) == 0 {
+		return ""
+	}
+	return segs[0]
+}
+
+// ucFits tells whether a limit of the kind op applies to the model type:
+// a size to a collection, a string or bytes, a range to a number, a subset to
+// an enum.
+func ucFits(op, model string, types map[string]ucType) bool {
+	kind, _ := ucSplitType(model)
+	switch op {
+	case "size":
+		return kind == "list" || kind == "set" || kind == "map" || model == "string" || model == "bytes"
+	case "subset":
+		return types[model].Form == "enum"
+	}
+	return model == "int" || model == "float"
+}
+
+// ucBound tells whether a value of the model type is within the bound of a
+// limit: low..high for a range or a size, {a, b} for a subset.
+func ucBound(v ucValue, model, op, bound string) bool {
+	if op == "subset" {
+		name, _ := v.Data.(string)
+		for _, member := range strings.Split(strings.Trim(bound, "{}"), ",") {
+			if strings.TrimSpace(member) == name {
+				return true
+			}
+		}
+		return false
+	}
+	low, high, _ := strings.Cut(bound, "..")
+	lo, okLow := new(big.Rat).SetString(low)
+	hi, okHigh := new(big.Rat).SetString(high)
+	if !okLow || !okHigh {
+		return true
+	}
+	var n *big.Rat
+	switch data := v.Data.(type) {
+	case *big.Int:
+		n = new(big.Rat).SetInt(data)
+	case float64:
+		n = new(big.Rat)
+		n.SetFloat64(data)
+	case string:
+		size := utf8.RuneCountInString(data)
+		if model == "bytes" {
+			size = len(data)
+		}
+		n = big.NewRat(int64(size), 1)
+	case []ucValue:
+		n = big.NewRat(int64(len(data)), 1)
+	case ucMap:
+		n = big.NewRat(int64(len(data)), 1)
+	default:
+		return true
+	}
+	return n.Cmp(lo) >= 0 && n.Cmp(hi) <= 0
 }
 
 func ucWalk(e *ucExpr, visit func(*ucExpr)) {
@@ -1423,13 +1608,21 @@ func ucExecuteSingle(s *ucContract, inputs map[string]reflect.Value, explore boo
 	for _, symbol := range s.Symbols {
 		env.values[symbol.Name] = ucLazyValue(inputs[symbol.Name], symbol.Type, s.Types)
 	}
+	if ucTraffic {
+		phase = "input"
+		if clause, _ := ucDomain(s, env.values); clause != "" {
+			out.Rejected, out.Clause = true, clause
+			return out
+		}
+	}
 	phase = "observer"
 	env.readObservers()
 	phase = "requires"
-	for _, e := range s.Requires {
+	for i, e := range s.Requires {
 		if !ucTruth(env.eval(e), e) {
-			if explore {
+			if explore || ucTraffic {
 				out.Rejected = true
+				out.Clause = "requires#" + strconv.Itoa(i+1)
 				return out
 			}
 			ucFail("lang.golang.input-outside-domain", "a replay input does not satisfy its precondition", e)
@@ -1596,6 +1789,11 @@ func ucDraw(t *rapid.T, typ reflect.Type, model string, types map[string]ucType,
 		if !ok {
 			continue
 		}
+		// A range applies to the numbers along the path, as the design places
+		// it: a list, set or map on the path holds them, and is drawn by size.
+		if parts[1] == "in" && kind != "int" && kind != "float" && kind != "duration" {
+			continue
+		}
 		if kind == "float" && parts[1] == "in" {
 			var err error
 			floatLow, err = strconv.ParseFloat(a, 64)
@@ -1759,6 +1957,7 @@ func ucCheck(t rapid.TB, s *ucContract, inputs map[string]reflect.Value) {
 	if ucCurrent != nil {
 		if out.Rejected {
 			ucCurrent.Rejected++
+			ucCurrent.Clause = out.Clause
 		}
 		if out.Executed {
 			ucCurrent.Accepted++

@@ -84,14 +84,33 @@ func store(root string, create bool) (string, []diag.Diagnostic) {
 	return paths[2], nil
 }
 
+// canonicalTime tells whether text is a canonical UTC RFC3339Nano time.
+func canonicalTime(text string) bool {
+	at, err := time.Parse(time.RFC3339Nano, text)
+	return err == nil && at.UTC().Format(time.RFC3339Nano) == text
+}
+
 func normalizeReport(report lang.RunReport, legacy bool) (lang.RunReport, error) {
 	old := report.Version == 0 && report.Snapshot == "" && legacy
-	if !old {
-		if report.Version != 1 || !hexDigest(report.Snapshot, 64) {
+	runtime := report.Venue == lang.VenueRuntime
+	switch {
+	case old:
+	case report.Venue != "" && report.Venue != lang.VenueTest && !runtime:
+		return report, fmt.Errorf("the report venue is neither test nor runtime")
+	case runtime:
+		// A monitored program writes no snapshot or mode; build gives a clean
+		// commit's record the execution-input digest of that commit.
+		if report.Version != 1 || report.Mode != "" || report.Snapshot != "" && !hexDigest(report.Snapshot, 64) {
+			return report, fmt.Errorf("the runtime record needs version 1, no mode, and no snapshot or a complete one")
+		}
+		if !canonicalTime(report.At) || !canonicalTime(report.From) {
+			return report, fmt.Errorf("the runtime record's from and at must be canonical UTC RFC3339Nano")
+		}
+	default:
+		if report.Version != 1 || !hexDigest(report.Snapshot, 64) || report.From != "" {
 			return report, fmt.Errorf("the report needs version 1 and a complete execution-input digest")
 		}
-		at, err := time.Parse(time.RFC3339Nano, report.At)
-		if err != nil || at.UTC().Format(time.RFC3339Nano) != report.At {
+		if !canonicalTime(report.At) {
 			return report, fmt.Errorf("the report time must be canonical UTC RFC3339Nano")
 		}
 		if report.Mode != "replay" && report.Mode != "explore" && report.Mode != "fuzz" {
@@ -119,8 +138,24 @@ func normalizeReport(report lang.RunReport, legacy bool) (lang.RunReport, error)
 		result.Differences = append([]string{}, result.Differences...)
 		result.Diagnostics = append([]diag.Diagnostic{}, result.Diagnostics...)
 		result.Cases = slices.Clone(result.Cases)
+		if !runtime && (len(result.Clauses) > 0 || result.P95 != 0 || result.Traces != 0) {
+			return report, fmt.Errorf("only a runtime record counts judged clauses, percentiles and traces")
+		}
+		if result.P95 < 0 || result.Traces < 0 {
+			return report, fmt.Errorf("execution and coverage counts cannot be negative")
+		}
+		for _, outside := range result.OutsideDomain {
+			if outside.Clause == "" || outside.Calls < 1 {
+				return report, fmt.Errorf("a count of calls outside the domain needs its clause and a positive count")
+			}
+		}
+		for _, clause := range result.Clauses {
+			if clause.Clause == "" || clause.Judged < 1 {
+				return report, fmt.Errorf("a count of judged clauses needs its clause and a positive count")
+			}
+		}
 		for at, candidate := range result.Cases {
-			copied, err := cloneCase(candidate)
+			copied, err := cloneCase(candidate, runtime)
 			if err != nil {
 				return report, err
 			}
@@ -239,6 +274,12 @@ func decodeReport(data []byte, legacy bool) (lang.RunReport, error) {
 	}
 	if report.Version == 1 {
 		keys := []string{"results", "diagnostics", "version", "snapshot", "commit", "dirty", "at", "mode"}
+		switch report.Venue {
+		case lang.VenueTest:
+			keys = append(keys, "venue")
+		case lang.VenueRuntime:
+			keys = []string{"results", "diagnostics", "version", "commit", "dirty", "at", "venue", "from"}
+		}
 		if len(fields) != len(keys) {
 			return report, fmt.Errorf("the version 1 report has missing fields")
 		}
@@ -310,7 +351,7 @@ func Read(root string) Loaded {
 			continue
 		}
 		report, err := decodeReport(data, file.legacy)
-		if err == nil && !file.legacy && hash(report) != file.id {
+		if err == nil && !file.legacy && hash(report) != file.id && (report.Venue != lang.VenueRuntime || rawHash(data) != file.id) {
 			err = fmt.Errorf("the immutable filename does not match the canonical report content")
 		}
 		if err != nil {

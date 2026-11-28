@@ -130,7 +130,7 @@ func checkExecuteFollowsLanguageRoots(t rapid.TB, sample ExecuteSample) {
 		backends = append(backends, b)
 	}
 	budget := time.Second
-	got := Execute(root, sample.Graph, backends, sample.Ids, budget, false)
+	got := Execute(root, sample.Graph, backends, sample.Ids, budget, false, nil)
 	unknown := slices.Contains(sample.Ids, "missing.check")
 	if unknown {
 		if !slices.ContainsFunc(got.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == "run.unknown-check" }) {
@@ -205,18 +205,18 @@ func checkExecuteFollowsLanguageRoots(t rapid.TB, sample ExecuteSample) {
 		t.Fatal("report arrays encoded as null")
 	}
 	if !unknown {
-		duplicate := Execute(root, sample.Graph, append(backends, backends[0]), sample.Ids, 0, false)
+		duplicate := Execute(root, sample.Graph, append(backends, backends[0]), sample.Ids, 0, false, nil)
 		if !slices.ContainsFunc(duplicate.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == "run.duplicate-backend" }) {
 			t.Fatal("Execute accepted duplicate backends")
 		}
-		unsupported := Execute(root, sample.Graph, []lang.Backend{readOnlyBackend{name: "go"}, readOnlyBackend{name: "python"}}, sample.Ids, 0, false)
+		unsupported := Execute(root, sample.Graph, []lang.Backend{readOnlyBackend{name: "go"}, readOnlyBackend{name: "python"}}, sample.Ids, 0, false, nil)
 		if !slices.ContainsFunc(unsupported.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == "run.unsupported-language" }) {
 			t.Fatal("Execute accepted backends without execution capability")
 		}
 		for _, b := range byName {
 			b.omit = true
 		}
-		omitted := Execute(root, sample.Graph, backends, sample.Ids, 0, false)
+		omitted := Execute(root, sample.Graph, backends, sample.Ids, 0, false, nil)
 		if !slices.ContainsFunc(omitted.Diagnostics, func(d diag.Diagnostic) bool { return d.Code == "run.invalid-report" }) {
 			t.Fatal("Execute accepted missing execution results")
 		}

@@ -15,12 +15,14 @@ import (
 )
 
 // Execute dispatches the selected checks to their language runners and saves
-// the complete report, including diagnostics, to .unicode/results.json.
+// the complete report, including diagnostics, to .unicode/results.json. The
+// inputs traffic gives a check, taken from collected calls, are replayed
+// with its cases.
 //
 //uc:realizes run.execute
-func Execute(root string, g *graph.Graph, backends []lang.Backend, ids []string, explore time.Duration, record bool) lang.RunReport {
+func Execute(root string, g *graph.Graph, backends []lang.Backend, ids []string, explore time.Duration, record bool, traffic map[string][]lang.Input) lang.RunReport {
 	out := lang.RunReport{Results: []lang.RunResult{}, Diagnostics: []diag.Diagnostic{}, Version: 1,
-		Snapshot: graph.InputDigest(g), At: time.Now().UTC().Format(time.RFC3339Nano), Mode: "replay"}
+		Snapshot: graph.InputDigest(g), At: time.Now().UTC().Format(time.RFC3339Nano), Mode: "replay", Venue: lang.VenueTest}
 	if explore > 0 {
 		out.Mode = "explore"
 	}
@@ -91,7 +93,13 @@ func Execute(root string, g *graph.Graph, backends []lang.Backend, ids []string,
 			}
 			b := available[config.name].(lang.Runner)
 			slices.Sort(selected[config.name])
-			report := b.Run(lang.RunPlan{Root: root, Roots: slices.Clone(config.roots), Graph: g, Ids: slices.Clone(selected[config.name]), Explore: explore, Record: record})
+			inputs := map[string][]lang.Input{}
+			for _, id := range selected[config.name] {
+				if len(traffic[id]) > 0 {
+					inputs[id] = traffic[id]
+				}
+			}
+			report := b.Run(lang.RunPlan{Root: root, Roots: slices.Clone(config.roots), Graph: g, Ids: slices.Clone(selected[config.name]), Explore: explore, Record: record, Traffic: inputs})
 			expected := map[string]bool{}
 			for _, id := range selected[config.name] {
 				expected[id] = false

@@ -415,7 +415,7 @@
 | 2 | `design.duplicate-name` | `design.rejects-broken-design` |
 | 3 | `design.missing-system-file`、`design.missing-parent` | `design.rejects-broken-design` |
 | 4 | `design.undeclared-dependency` | `design.rejects-broken-design` |
-| 5 | `design.unknown-label`、`design.undeclared-notation`、`design.label-not-allowed`；`sensitive` 待做：M8 | `design.rejects-broken-design` |
+| 5 | `design.unknown-label`、`design.undeclared-notation`、`design.label-not-allowed` | `design.rejects-broken-design` |
 | 6 | `design.not-an-event`、`design.invalid-subscription` | `design.rejects-broken-design` |
 | 7 | `design.wrong-reference-kind`、`design.nested-person-sender`、`design.undeclared-dependency`、`design.argument-count` | `design.rejects-broken-design` |
 | 8 | `design.sender-not-receiver` | `design.rejects-broken-design` |
@@ -428,7 +428,7 @@
 | 15 | `lang.golang.missing-binding-id`、`lang.golang.invalid-binding-id`、`lang.golang.misplaced-binding`、`lang.golang.duplicate-binding`、`graph.unresolved-binding`、`check.wrong-binding-kind`、`check.multiple-checks`、`check.multiple-observes`、`check.multiple-substitutes`、`check.substitute-signature`、`check.substitute-outside-container`、`check.not-generated-symbol`、`check.method-binding`、`check.multiple-publications`、`check.publisher-signature`、`check.publisher-outside-container` | `lang.golang.extracts-generated-module`、`graph.derive-matches-definition`、`check.rejects-broken-graph` |
 | 16 | `check.unrealized`、`check.multiple-realizations`；按语言分别计数待做：实现差分 | `check.rejects-broken-graph` |
 | 17 | `check.realization-outside-container` | `check.rejects-broken-graph` |
-| 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value`；Go 签名略去第一个参数 `context.Context` 待做：M8（[design.md](design.md) §4） | `check.rejects-broken-graph` |
+| 18 | `check.name-mismatch`、`check.signature-mismatch`、`check.missing-field`、`check.field-type-mismatch`、`check.missing-value`、`check.extra-value`；Go 签名略去第一个参数 `context.Context`（[design.md](design.md) §4） | `check.rejects-broken-graph`、`lang.golang.extracts-generated-module` |
 | 19 | `check.missing-implements`、`check.missing-extends` | `check.rejects-broken-graph` |
 | 20 | `check.missing-predicate`、`check.multiple-predicates`、`check.predicate-signature`；Go 生成带陈述的性质和自动流程的谓词 | `check.rejects-broken-graph`、`lang.golang.executes-contracts` |
 | 21 | `check.handwritten-test`；Go 已启用，Python 待做：M5 | `check.rejects-broken-graph` |
@@ -447,7 +447,7 @@
 | 34 | `check.missing-observer`、`check.multiple-observers`、`check.observer-signature`、`check.observer-outside-container` | `check.rejects-broken-graph` |
 | 35 | `design.invalid-observation`、`design.invalid-change-path`、`lang.golang.expression-failed`、`lang.golang.frame-violation`、`lang.golang.observation-failed` | `design.rejects-broken-design`、`lang.golang.executes-contracts` |
 | 36 | 由性质验证：评审指纹决定观察适配器变化后的待审状态 | `review.evaluation-follows-content` |
-| 37 | `check.runtime-counterexample`、`check.runtime-purity-violation`；运行时的当前证据中的反例待做：M8 | `evidence.attachment-preserves-input-identity`、`evidence.recordings-are-replayable` |
+| 37 | `check.runtime-counterexample`、`check.runtime-purity-violation` | `evidence.attachment-preserves-input-identity`、`evidence.recordings-are-replayable`、`evidence.runtime-evidence-keeps-its-venue` |
 | 38 | `design.invalid-codec`、`design.value-type-mismatch`、`lang.golang.input-codec-failed` | `design.codecs-are-typed`、`evidence.recordings-are-replayable` |
 | 39 | `check.effect-in-pure-op` | `check.rejects-broken-graph`、`check.reports-effects-in-pure-ops` |
 | 40 | 待做：派生输入和效果推导之后由 `check` 报 check.derived-input-value、check.missing-generated-value 和 check.nondeterministic-derivation | — |

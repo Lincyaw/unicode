@@ -19,6 +19,7 @@ import (
 
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/serve"
+	"github.com/lincyaw/unicode/monitor"
 )
 
 // serveCommand is `unicode serve [--snapshot FILE] [--addr HOST:PORT] [--web DIR]`.
@@ -90,7 +91,8 @@ func runServe(root, snapshot, addr string, web pageDir, format string, stdout, s
 	if err != nil {
 		return err
 	}
-	s, err := serve.Open(root, snapshot, commitGraphs{})
+	// A monitored build judges the comparisons' graphs (docs/design.md §6.6).
+	s, err := serve.Open(root, snapshot, monitor.Wrap[serve.Builder](CommitGraphs{}))
 	if err != nil {
 		return &exitError{code: exitEnvironment, err: fmt.Errorf("%w; run unicode build to write the snapshot", err)}
 	}
@@ -148,11 +150,13 @@ func (w *statusWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 }
 
-// commitGraphs builds the graph of a commit for serve's comparisons, as
+// CommitGraphs builds the graph of a commit for serve's comparisons, as
 // unicode diff builds its base.
-type commitGraphs struct{}
+//
+//uc:realizes cli.CommitGraphs
+type CommitGraphs struct{}
 
-func (commitGraphs) Build(root, commit string) (graph.Graph, error) {
+func (CommitGraphs) Build(root, commit string) (graph.Graph, error) {
 	g, _, err := revisionGraph(root, commit)
 	return g, err
 }

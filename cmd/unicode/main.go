@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/lincyaw/unicode/monitor"
 )
 
 const (
@@ -34,8 +36,17 @@ var exitCodes = []struct {
 	{exitConflict, "generated file conflict"}, {exitEnvironment, "environment error"}, {exitDiagnostics, "diagnostics found"}, {exitFailed, "predicate failed"}}
 
 func main() {
-	os.Exit(Main(os.Args[1:]))
+	code := Main(os.Args[1:])
+	// A monitored build writes the record period in progress and ends its
+	// telemetry before the program exits; the default build does nothing here.
+	monitor.Flush()
+	closeTelemetry()
+	os.Exit(code)
 }
+
+// closeTelemetry flushes and stops the telemetry a monitored build installs
+// (telemetry.go); the default build installs none.
+var closeTelemetry = func() {}
 
 // Main runs one command and returns its exit code.
 //

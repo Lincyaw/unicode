@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +32,7 @@ type measuredRunner struct {
 	binary, check                      string
 	deadline                           time.Time
 	trial                              bool
+	traffic                            bool
 	codeTotal, branchTotal, errorTotal int
 	durations                          []time.Duration
 }
@@ -130,11 +132,12 @@ func (b *Backend) runMeasured(plan lang.RunPlan, generation lang.Generation) (re
 }
 func (r *measuredRunner) runCheck(plan lang.RunPlan, replay []ucReplayCase) lang.RunResult {
 	result := lang.RunResult{Id: r.check, Passed: true, Cases: []lang.CaseResult{}, Observations: []string{}, Differences: []string{}, Diagnostics: []diag.Diagnostic{}}
+	outside := map[string]int{}
 	evaluate := func(input lang.Input, form, id, reason string, replaying bool) bool {
 		priorTrial := r.trial
-		r.trial = !replaying
+		r.trial, r.traffic = !replaying, form == "traffic"
 		evaluated := r.Evaluate(input)
-		r.trial = priorTrial
+		r.trial, r.traffic = priorTrial, false
 		if len(evaluated.Diagnostics) > 0 {
 			result.Diagnostics = append(result.Diagnostics, evaluated.Diagnostics...)
 			result.Passed = false
@@ -152,6 +155,17 @@ func (r *measuredRunner) runCheck(plan lang.RunPlan, replay []ucReplayCase) lang
 		candidate.Form = form
 		candidate.Id = id
 		candidate.Reason = reason
+		if form == "traffic" {
+			candidate.Id = r.check + ".t-" + candidate.InputHash[:min(8, len(candidate.InputHash))]
+		}
+		if candidate.Rejected && form == "traffic" {
+			// A collected call outside the domain is counted with the limit or
+			// precondition it breaks, as a monitored call is (docs/language.md E29).
+			result.Rejected++
+			outside[candidate.Clause]++
+			result.Cases = append(result.Cases, candidate)
+			return true
+		}
 		if candidate.Rejected {
 			result.Rejected++
 			result.Cases = append(result.Cases, candidate)
@@ -178,6 +192,12 @@ func (r *measuredRunner) runCheck(plan lang.RunPlan, replay []ucReplayCase) lang
 			continue
 		}
 		evaluate(input, recorded.Form, recorded.Id, recorded.Reason, true)
+	}
+	for _, input := range plan.Traffic[r.check] {
+		evaluate(input, "traffic", "", "", true)
+	}
+	for _, clause := range slices.Sorted(maps.Keys(outside)) {
+		result.OutsideDomain = append(result.OutsideDomain, lang.ClauseCalls{Clause: clause, Calls: outside[clause]})
 	}
 	if plan.Exploring() && result.Passed {
 		// A duration bounds exploration by wall time, as unicode test
@@ -341,7 +361,7 @@ func (r *measuredRunner) Evaluate(input lang.Input) lang.CandidateEvaluation {
 		ctx, cancel = context.WithTimeout(ctx, 2*time.Minute)
 	}
 	defer cancel()
-	request := ucWorkerRequest{Check: r.check, Mode: "prepare", Input: wire, Trial: r.trial}
+	request := ucWorkerRequest{Check: r.check, Mode: "prepare", Input: wire, Trial: r.trial, Traffic: r.traffic}
 	prepared, before, err := r.worker(ctx, request, true)
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) && !r.deadline.IsZero() {
@@ -374,7 +394,7 @@ func (r *measuredRunner) Evaluate(input lang.Input) lang.CandidateEvaluation {
 		return out
 	}
 	hash, _ := evidence.InputHash(normalized)
-	candidate := lang.CaseResult{Check: r.check, Id: r.check + ".r-" + hash[:8], Form: "recorded", Input: normalized, InputHash: hash, Passed: executed.Result.Passed, Rejected: executed.Rejected, Coverage: []lang.Coverage{}, Trace: []lang.TraceEvent{}, Observations: executed.Result.Observations, Differences: executed.Result.Differences, Diagnostics: workerDiagnostics(executed.Result.Diagnostics)}
+	candidate := lang.CaseResult{Check: r.check, Id: r.check + ".r-" + hash[:8], Form: "recorded", Input: normalized, InputHash: hash, Passed: executed.Result.Passed, Rejected: executed.Rejected, Coverage: []lang.Coverage{}, Trace: []lang.TraceEvent{}, Observations: executed.Result.Observations, Differences: executed.Result.Differences, Diagnostics: workerDiagnostics(executed.Result.Diagnostics), Clause: executed.Result.Clause}
 	if !candidate.Rejected {
 		points, total, err := r.program.coverage(r.check, before, after)
 		if err != nil {

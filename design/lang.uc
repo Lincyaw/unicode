@@ -43,7 +43,7 @@ type GenPlan record "一种语言的生成输入：仓库根目录、源码根�
   field graph: graph.Graph
 }
 
-type RunPlan record "一种语言的运行输入：仓库根目录、源码根目录、图、要运行的性质和流程（ids 为空时全部）、探索时长 explore 和探索的候选输入数 explorations（两者都为零时只回放），以及是否写回录制文件 record" {
+type RunPlan record "一种语言的运行输入：仓库根目录、源码根目录、图、要运行的性质和流程（ids 为空时全部）、探索时长 explore 和探索的候选输入数 explorations（两者都为零时只回放）、是否写回录制文件 record，以及 unicode test --traffic 时按性质或流程给出的采集的调用的输入 traffic" {
   field root: string
   field roots: list<string>
   field graph: graph.Graph
@@ -51,6 +51,7 @@ type RunPlan record "一种语言的运行输入：仓库根目录、源码根�
   field explore: duration
   field explorations: int
   field record: bool
+  field traffic: map<string, list<Input>>
 }
 
 type Value record "可回放的模型值：kind 决定取 text、items 还是 entries，经 codec 编码的值的 items 恰是它声明的表示" {
@@ -94,7 +95,7 @@ type CallTime record "用例中对一个设计层操作的一次调用：被测�
   field duration: int
 }
 
-type CaseResult record "一个输入的最终结果：所属的性质或流程、用例的形式和录制原因、冻结的输入及其哈希、是否通过或被拒绝、覆盖、轨迹、观察、范围外的差异、诊断、执行耗时（纳秒），以及其中每次调用的操作和耗时；缩小反例时的尝试不算作结果" {
+type CaseResult record "一个输入的最终结果：所属的性质或流程、用例的形式和录制原因、冻结的输入及其哈希、是否通过或被拒绝、覆盖、轨迹、观察、范围外的差异、诊断、执行耗时（纳秒）、其中每次调用的操作和耗时，以及不成立的子句、限定或前提 clause 和运行时的反例的时间 at；缩小反例时的尝试不算作结果" {
   field id: string
   field check: string
   field form: string
@@ -110,6 +111,8 @@ type CaseResult record "一个输入的最终结果：所属的性质或流程�
   field diagnostics: list<diag.Diagnostic>
   field duration: int
   field calls: list<CallTime>
+  field clause: string
+  field at: string
 }
 
 type CandidateEvaluation record "一个候选输入的执行结果：预算耗尽时没有结果，检查错误列在 diagnostics 中，与反例分开" {
@@ -122,7 +125,17 @@ type CandidateRunner interface "编译好的驱动，每次重新构造输入，
   op evaluate(input: Input) -> CandidateEvaluation "执行 input 这一个候选输入，返回它自己的覆盖和轨迹，不含此前的候选累计的覆盖"
 }
 
-type RunResult record "一条性质或一个流程的运行结论：是否通过、有效执行数、拒绝的候选输入数、观察范围、范围外的差异、ensure 不成立或有范围外的差异时的诊断、各用例的结果，以及代码、分支和错误覆盖点的总数" {
+type ClauseCalls record "一条不成立的限定或前提，以及它不成立的调用数" {
+  field clause: string
+  field calls: int
+}
+
+type ClauseJudged record "一个子句，以及它被判定的次数" {
+  field clause: string
+  field judged: int
+}
+
+type RunResult record "一条性质或一个流程的运行结论：是否通过、有效执行数（运行时为适用的调用数）、拒绝的候选输入数、观察范围、范围外的差异、ensure 不成立或有范围外的差异时的诊断、各用例的结果、代码、分支和错误覆盖点的总数，以及运行时的域外调用数、各子句的判定次数、第 95 百分位耗时（纳秒）和核对的轨迹数" {
   field id: string
   field passed: bool
   field accepted: int
@@ -134,9 +147,13 @@ type RunResult record "一条性质或一个流程的运行结论：是否通过
   field codeTotal: int
   field branchTotal: int
   field errorTotal: int
+  field outsideDomain: list<ClauseCalls>
+  field clauses: list<ClauseJudged>
+  field p95: int
+  field traces: int
 }
 
-type RunReport record "一次运行的报告：各性质和流程的结论，不属于任何一条结论的诊断（工具失败和检查错误），以及格式版本、执行输入哈希、提交、工作区是否有改动、时间和运行方式" {
+type RunReport record "一次运行的报告：各性质和流程的结论，不属于任何一条结论的诊断（工具失败和检查错误），以及格式版本、执行输入哈希、提交、工作区是否有改动、时间、运行方式和执行场合 venue（test 或 runtime），运行时的记录另有记录周期的开始时间 from" {
   field results: list<RunResult>
   field diagnostics: list<diag.Diagnostic>
   field version: int
@@ -145,6 +162,14 @@ type RunReport record "一次运行的报告：各性质和流程的结论，不
   field dirty: bool
   field at: string
   field mode: string
+  field venue: string
+  field from: string
+}
+
+type Monitored record "一条在运行时判定的单次调用契约（model.md §3.4）的被测调用：被调用的设计操作、接收者的符号（容器直接提供的操作为空串），以及按参数次序的各实参的符号" {
+  field op: string
+  field receiver: string
+  field args: list<string>
 }
 
 type Generator interface "生成能力：后端可以另外实现的接口，不实现它的后端仍是完整的 Backend" {
@@ -161,3 +186,5 @@ type Runner interface "运行能力：后端可以另外实现的接口，不实
   op language() -> string "系统文件中的语言名称"
   op run(plan: RunPlan) -> RunReport "核对生成文件后回放，或在 explore 时长内探索，返回每条性质和流程的结论"
 }
+
+op monitoredCalls(g: graph.Graph) -> map<string, Monitored> pure "g 中在运行时判定的每条单次调用契约（model.md §3.4）的标识到它的被测调用：带 call 子句、不是人工性质的 postcondition，被测调用的接收者和各实参是互不相同的符号，性质的每个符号都是其中之一，被调用的操作经接收者的类型及其 extends 的祖先或容器解析得到"

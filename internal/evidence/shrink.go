@@ -26,7 +26,7 @@ type Shrunk struct {
 //uc:realizes evidence.shrink
 func Shrink(initial lang.CaseResult, runner lang.CandidateRunner, budget time.Duration) Shrunk {
 	out := Shrunk{Result: initial, Diagnostics: []diag.Diagnostic{}}
-	best, err := cloneCase(initial)
+	best, err := cloneCase(initial, false)
 	if err != nil {
 		out.Diagnostics = append(out.Diagnostics, diagnostic("evidence.invalid-input", initial.Check, err.Error(), "start shrinking from a replayable confirmed failure"))
 		return out
@@ -88,7 +88,7 @@ func Shrink(initial lang.CaseResult, runner lang.CandidateRunner, budget time.Du
 					out.Result = best
 					return out
 				}
-				result, problem := cloneCase(*evaluated.Result)
+				result, problem := cloneCase(*evaluated.Result, false)
 				if problem != nil || result.InputHash != key || result.Check != best.Check {
 					cause := "the runner returned a different or invalid frozen input"
 					if problem != nil {

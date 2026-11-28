@@ -69,6 +69,7 @@ func buildGraph(root string) (graph.Graph, []diag.Diagnostic, error) {
 		return g, diagnostics, err
 	}
 	runs := evidence.Read(root)
+	runtimeDigests(root, &g, runs.Reports)
 	reviews := review.Read(root)
 	diagnostics = append(diagnostics, runs.Diagnostics...)
 	diagnostics = append(diagnostics, reviews.Diagnostics...)

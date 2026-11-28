@@ -725,6 +725,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
   | `cli.extract-failed` | 代码无法加载，或源码根目录不存在，属于环境 |
   | `cli.unsupported-language` | 系统文件配置的语言尚无后端，属于工具链的能力 |
   | `cli.record-generation-failed` | 录制后重新建图或生成失败，须重试 unicode gen 恢复当前驱动 |
+  | `monitor.bad-rates` | 受监控的程序的 UNICODE_MONITOR_RATE 不合写法，按缺省比例采样，属于环境 |
   | `serve.not-found` | 查看器请求的标识、边、文件或接口不存在，属于请求 |
   | `serve.not-applicable` | 视图不适用于请求的输入，属于请求 |
   | `serve.bad-revision` | 请求的基准提交读不出，属于请求 |

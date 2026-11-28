@@ -65,7 +65,7 @@ func genStoreWrite() *rapid.Generator[StoreWrite] {
 			}
 		}
 		run("build")
-		s, err := serve.Open(root, filepath.Join(root, ".unicode", "graph.json"), commitGraphs{})
+		s, err := serve.Open(root, filepath.Join(root, ".unicode", "graph.json"), CommitGraphs{})
 		if err != nil {
 			t.Fatalf("setup failed: serve.Open refused the snapshot that unicode build wrote: %v", err)
 		}

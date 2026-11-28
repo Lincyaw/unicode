@@ -455,6 +455,24 @@ func (e Status) Valid() bool {
 	}
 }
 
+// Defines values for Venue.
+const (
+	VenueRuntime Venue = "runtime"
+	VenueTest    Venue = "test"
+)
+
+// Valid indicates whether the value is a known member of the Venue enum.
+func (e Venue) Valid() bool {
+	switch e {
+	case VenueRuntime:
+		return true
+	case VenueTest:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ViewKind.
 const (
 	ViewKindActivity     ViewKind = "activity"
@@ -568,6 +586,18 @@ type CheckReport struct {
 
 // ClassLayer The layer the class view draws: the design's types, or the code types that realize them.
 type ClassLayer string
+
+// ClauseCalls M8: a limit or precondition that real calls broke, such as where#1 or requires#1, and on how many calls.
+type ClauseCalls struct {
+	Calls  int32  `json:"calls"`
+	Clause string `json:"clause"`
+}
+
+// ClauseJudged M8: a clause of the statement, such as ensure#2, and how many real calls judged it.
+type ClauseJudged struct {
+	Clause string `json:"clause"`
+	Judged int32  `json:"judged"`
+}
 
 // ClosedTab Why a view's tab cannot be opened from a node (docs/design.md §7.5.1): the system file does not declare the view's
 // notation, or the graph holds no input the view takes.
@@ -863,6 +893,9 @@ type Evidence struct {
 
 	// Outcome A case, a property or a flow: its latest outcome
 	Outcome *Outcome `json:"outcome,omitempty"`
+
+	// Runtime M8, a property or a flow: its current runtime evidence
+	Runtime *RuntimeEvidence `json:"runtime,omitempty"`
 }
 
 // FlowDetail The sections of a flow's page.
@@ -921,6 +954,25 @@ type Member struct {
 
 // MemberKind Whether a member of a type is a field or an enum value.
 type MemberKind string
+
+// ModelValue M8: a model value in the canonical encoding of docs/design.md §6.4; a value of a sensitive type is redacted.
+type ModelValue struct {
+	Entries *[]ModelValueEntry `json:"entries"`
+	Items   *[]ModelValue      `json:"items"`
+
+	// Kind The kind, such as int, string, record, list or redacted; it decides whether text, items or entries hold it
+	Kind string `json:"kind"`
+	Text string `json:"text"`
+}
+
+// ModelValueEntry M8: one entry of a record, a map or a call value.
+type ModelValueEntry struct {
+	// Key M8: a model value in the canonical encoding of docs/design.md §6.4; a value of a sensitive type is redacted.
+	Key ModelValue `json:"key"`
+
+	// Value M8: a model value in the canonical encoding of docs/design.md §6.4; a value of a sensitive type is redacted.
+	Value ModelValue `json:"value"`
+}
 
 // Neighbor A node one edge away from the node `focus`, with that edge (query.Neighbor).
 type Neighbor struct {
@@ -1199,6 +1251,50 @@ type RunResult struct {
 
 	// Outcome The result of a check on an input.
 	Outcome Outcome `json:"outcome"`
+
+	// Venue M8: where it ran
+	Venue Venue `json:"venue"`
+}
+
+// RuntimeCounterexample M8: a real call that contradicts a property or flow.
+type RuntimeCounterexample struct {
+	// At When the call began
+	At time.Time `json:"at"`
+
+	// Clause The clause that does not hold: ensure#n, or changes, raises or call
+	Clause string `json:"clause"`
+
+	// InputHash The hash of its input, as frozen and redacted
+	InputHash string `json:"inputHash"`
+
+	// Values Its input: each symbol's model value, redacted where its type is sensitive
+	Values map[string]ModelValue `json:"values"`
+}
+
+// RuntimeEvidence M8: the current runtime evidence of a property or flow: one record period of a monitored program.
+type RuntimeEvidence struct {
+	// Applicable 适用的调用: the real calls whose input the property applies to and that were judged
+	Applicable int32 `json:"applicable"`
+
+	// Clauses 判定次数: how many times each clause was judged
+	Clauses []ClauseJudged `json:"clauses"`
+
+	// Commit The commit the monitored program was built from
+	Commit          string                  `json:"commit"`
+	Counterexamples []RuntimeCounterexample `json:"counterexamples"`
+
+	// From The record period
+	From time.Time `json:"from"`
+
+	// OutsideDomain 域外调用: by the limit or precondition that did not hold
+	OutsideDomain []ClauseCalls `json:"outsideDomain"`
+
+	// P95 第 95 百分位耗时, in nanoseconds: only of a property or flow with within
+	P95 *int64    `json:"p95,omitempty"`
+	To  time.Time `json:"to"`
+
+	// Traces 核对的轨迹: only of a flow
+	Traces *int32 `json:"traces,omitempty"`
 }
 
 // Slice The slice of a set of nodes, the least context that answers a question about them (docs/design.md §7.3,
@@ -1320,6 +1416,9 @@ type TypeDetail struct {
 	// Supertypes The types it extends or implements, with the edge
 	Supertypes []Neighbor `json:"supertypes"`
 }
+
+// Venue M8: where a check ran (docs/model.md §3.5): in a test, or in a monitored program on real calls.
+type Venue string
 
 // View The data of one view: what it draws, folded and ordered; the layout is the page's.
 type View struct {
