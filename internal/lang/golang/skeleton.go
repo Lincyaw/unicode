@@ -129,7 +129,10 @@ func linkSkeletonGraph(plan lang.GenPlan, l loaded) (lang.GenPlan, []diag.Diagno
 	if err := g.AddFragment(fragment); err != nil {
 		return plan, []diag.Diagnostic{runDiagnostic("lang.golang.generate-failed", err.Error(), "correct the design graph before planning skeletons")}
 	}
-	extracted := extract(l)
+	extracted, err := extract(l)
+	if err != nil {
+		return plan, []diag.Diagnostic{runDiagnostic("lang.golang.generate-failed", err.Error(), "make the dependency modules the code calls loadable from source")}
+	}
 	if err := g.AddFragment(extracted.Fragment); err != nil {
 		return plan, []diag.Diagnostic{runDiagnostic("lang.golang.generate-failed", err.Error(), "give planned declarations distinct bindings")}
 	}

@@ -64,19 +64,10 @@ type declared struct {
 	fn   *types.Func     // a function's or a method's
 }
 
-func extract(l loaded) lang.Extracted {
-	x := &extraction{
-		root:       l.root,
-		nodes:      map[string]graph.Node{},
-		edges:      map[edgeKey]*graph.Edge{},
-		sites:      map[edgeKey][]diag.Position{},
-		bindings:   map[bindingKey]bool{},
-		realizes:   map[string][]string{},
-		predicates: map[string]bool{},
-		values:     map[string][]string{},
-		vars:       map[string][]initializer{},
-		varCalls:   map[string]bodyCalls{},
-	}
+// extract writes the code layer of the loaded packages. It fails when the
+// effects of the dependency modules the code calls cannot be read.
+func extract(l loaded) (lang.Extracted, error) {
+	x := newExtraction(l.root)
 	for _, p := range l.packages {
 		x.addPackage(p)
 	}
@@ -91,7 +82,25 @@ func extract(l loaded) lang.Extracted {
 		}
 	}
 	x.addImplements()
-	return x.result()
+	if err := x.addDirectEffects(l); err != nil {
+		return lang.Extracted{}, err
+	}
+	return x.result(), nil
+}
+
+func newExtraction(root string) *extraction {
+	return &extraction{
+		root:       root,
+		nodes:      map[string]graph.Node{},
+		edges:      map[edgeKey]*graph.Edge{},
+		sites:      map[edgeKey][]diag.Position{},
+		bindings:   map[bindingKey]bool{},
+		realizes:   map[string][]string{},
+		predicates: map[string]bool{},
+		values:     map[string][]string{},
+		vars:       map[string][]initializer{},
+		varCalls:   map[string]bodyCalls{},
+	}
 }
 
 func (x *extraction) addPackage(p *packages.Package) {

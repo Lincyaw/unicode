@@ -78,7 +78,11 @@ func freshExtraction(root string, srcRoots []string, forGeneration bool) (lang.E
 	if err != nil {
 		return lang.Extracted{}, lang.ExtractFailed{Language: language, Root: root, Cause: err}
 	}
-	return extract(loaded), nil
+	extracted, err := extract(loaded)
+	if err != nil {
+		return lang.Extracted{}, lang.ExtractFailed{Language: language, Root: root, Cause: err}
+	}
+	return extracted, nil
 }
 
 // The cached form keeps every map and slice as it was, empty or absent, so

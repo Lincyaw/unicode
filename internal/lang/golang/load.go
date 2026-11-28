@@ -17,8 +17,11 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+// loadMode loads the packages under the roots with their syntax and types,
+// and the packages they import with their files, types and modules, which
+// tell the standard library from dependency modules (effects.go).
 const loadMode = packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax |
-	packages.NeedTypes | packages.NeedTypesInfo | packages.NeedForTest
+	packages.NeedTypes | packages.NeedTypesInfo | packages.NeedForTest | packages.NeedImports | packages.NeedModule
 
 // loaded is the code under the source roots: one variant of each package,
 // sorted by package path.
