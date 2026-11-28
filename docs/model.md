@@ -103,8 +103,8 @@
 - `replies<R>` 是外部系统操作 R 的非空应答脚本，符号的类型确定安装目标；同一性质或流程对每个目标至多一个这样的符号。接口字段的值以同样的应答列表描述全部操作。成功应答和错误应答的写法见 [design.md](design.md) §6.2；末项重复，应答不会在运行中随机生成。
 - **纯操作**是声明为 `pure` 的操作：结果只由接收者和实参决定，调用不改变接收者、实参或其他任何值。
 - **限定**缩小符号的取值。x 的**取值域** Dom(x) 是 type(x) 的全部取值中满足 x 的全部限定的部分。
-- **生成的符号**的取值域不由类型和限定给出，而由 `generates` 绑定的生成器给出（[language.md](language.md) §6）。生成的符号附一句取值域的说明，不带限定。
-- **用例** c 对每个符号 x 给出一个值 c(x) ∈ Dom(x)，只给输入，不给期望结果。form(c) = `declared` 的用例写在设计文件中；form(c) = `recorded` 的用例由探索选出，写在录制文件中（[design.md](design.md) §6.3），另有录制原因 ∈ {coverage, counterexample}。
+- **生成的符号**的取值域不由类型和限定给出，而由 `generates` 绑定的生成器给出（[language.md](language.md) §6）。生成的符号附一句取值域的说明，不带限定。由派生函数给出值的生成的符号是**派生输入**（[language.md](language.md) §6），它的值由前置符号算出。
+- **用例** c 对派生输入之外的每个符号 x 给出一个值 c(x) ∈ Dom(x)，只给输入，不给期望结果；派生输入在执行时算出（[language.md](language.md) E24）。form(c) = `declared` 的用例写在设计文件中；form(c) = `recorded` 的用例由探索选出，写在录制文件中（[design.md](design.md) §6.3），另有录制原因 ∈ {coverage, counterexample}。
 
 ### 3.4 黑盒契约与观察
 
@@ -312,7 +312,7 @@
 23. 不是生成的符号 x，其类型能够生成：type(x) 不是 `interface` 或 `error`，不经由必填字段递归引用自身；type(x) 为 `call<…>` 时，其中各操作的参数都能生成，操作名互不相同。`replies<…>` 只直接作为符号的类型，不嵌在其他类型、字段或操作签名中；同一条性质或同一个流程对每个目标至多一个脚本。其返回值和错误字段同样能够生成。类型为 `interface` 的字段不受此限，由替身填充（[design.md](design.md) §6.2）。
 24. 【状态】每个生成的符号恰有一个 `generates` 绑定，并且不带限定；不是生成的符号没有 `generates` 绑定。唯一的生成器还是骨架时，所属性质或流程为 `stub`。
 25. 限定的路径从一个符号出发逐段解析：经过 `list`、`set` 时作用于每个元素，经过 `map` 时作用于每个值，经过 `call` 时下一段是操作名、再下一段是参数名。区间只用于 `int` 和 `float`；枚举子集只用于 `enum`；大小只用于 `list`、`set`、`map`、`string`、`bytes` 和 `replies`。
-26. 每个用例 c，包括声明的和录制的，对每个符号 x 恰给出一个值，且 c(x) ∈ Dom(x)：记录给出包括继承且未被遮蔽的全部可见字段，枚举值存在，只有 `optional` 取 `none`，调用给出该操作的全部参数，应答脚本非空且全部返回值和错误字段类型相符，并满足全部限定。用例不对具名观察赋值；运行时的前提检查见 [language.md](language.md) E22。
+26. 每个用例 c，包括声明的和录制的，对派生输入之外的每个符号 x 恰给出一个值，且 c(x) ∈ Dom(x)：记录给出包括继承且未被遮蔽的全部可见字段，枚举值存在，只有 `optional` 取 `none`，调用给出该操作的全部参数，应答脚本非空且全部返回值和错误字段类型相符，并满足全部限定。用例不对具名观察赋值；运行时的前提检查见 [language.md](language.md) E22。哪些生成的符号是派生输入由代码中的绑定决定，所以只载入设计时，生成的符号可以没有值，由第 40 条核对。
 27. 声明的用例的名称不匹配 `r-[0-9a-f]{8}`。
 
 **生成与录制**
@@ -340,6 +340,10 @@
 **效果**
 
 39. 【状态】声明为 `pure` 的操作没有效果：实现它的代码层操作的效果（D8）为空；否则该操作为 `contradicted`。
+
+**派生输入**
+
+40. 用例恰好不给派生输入赋值：给派生输入赋值，或者不给不是派生输入的生成的符号赋值，都是错误。派生函数没有 `time` 效果（D8），因此同样的前置符号总算出同样的派生输入。
 
 ## 附录 A 理由
 
@@ -394,7 +398,7 @@
 | 23 | `design.ungenerable-symbol`、`design.invalid-replies-type` | `design.rejects-broken-design`、`design.reply-scripts-are-typed` |
 | 24 | `design.limited-generated-symbol`、`lang.golang.duplicate-binding`、`check.missing-generator`、`check.multiple-generators`、`check.not-generated-symbol` | `design.rejects-broken-design`、`lang.golang.extracts-generated-module`、`check.rejects-broken-graph` |
 | 25 | `design.invalid-limit-path`、`design.invalid-limit` | `design.rejects-broken-design` |
-| 26 | `design.unknown-symbol`、`design.duplicate-value`、`design.missing-value`、`design.value-type-mismatch`、`design.value-out-of-limit` | `design.rejects-broken-design` |
+| 26 | `design.unknown-symbol`、`design.duplicate-value`、`design.missing-value`、`design.value-type-mismatch`、`design.value-out-of-limit`；载入时允许生成的符号没有值待做：派生输入 | `design.rejects-broken-design` |
 | 27 | `design.recorded-case-name` | `design.rejects-broken-design` |
 | 28 | `gen.stale-file`、`lang.golang.stale-contracts` | `gen.check-files-are-current`、`lang.golang.executes-contracts` |
 | 29 | `design.unresolved-reference`、`design.wrong-reference-kind`、`cli.not-canonical` | `design.rejects-broken-design`、`cli.check-design` |
@@ -408,3 +412,4 @@
 | 37 | `check.runtime-counterexample`、`check.runtime-purity-violation` | `evidence.attachment-preserves-input-identity`、`evidence.recordings-are-replayable` |
 | 38 | `design.invalid-codec`、`design.value-type-mismatch`、`lang.golang.input-codec-failed` | `design.codecs-are-typed`、`evidence.recordings-are-replayable` |
 | 39 | 待做：效果推导之后由 `check` 报 check.effect-in-pure-op | — |
+| 40 | 待做：派生输入和效果推导之后由 `check` 报 check.derived-input-value、check.missing-generated-value 和 check.nondeterministic-derivation | — |

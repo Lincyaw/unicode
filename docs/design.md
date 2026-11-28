@@ -139,7 +139,7 @@ type Runner interface {
   - `enum` 对应 Go 的 `type X string` 和常量 `X<值>`，常量的值是设计中枚举值的名称；对应 Python 的 `enum.Enum`，成员的值也是设计中的名称。
 
   操作只有一个返回值；要返回几个结果时，写成一个记录。在 Go 中，`raises` 对应最后一个返回值 `error`，这是多返回值唯一的用法；在 Python 中，错误不出现在签名里。Python 中实现设计节点的函数和谓词，每个参数和返回值都必须有类型标注。
-- **生成器的签名**：带 `generates` 绑定的函数，参数是在该符号之前声明的符号中它用到的那些（按声明的次序，可以没有），返回该符号类型的生成器：Go 为 `func genX() *rapid.Generator[T]`，Python 为返回 Hypothesis strategy 的函数。
+- **生成器的签名**：带 `generates` 绑定的函数，参数是在该符号之前声明的符号中它用到的那些（按声明的次序，可以没有），返回该符号类型的生成器：Go 为 `func genX() *rapid.Generator[T]`，Python 为返回 Hypothesis strategy 的函数。派生函数（[language.md](language.md) §6）的参数相同，直接返回该符号类型的值：Go 为 `func deriveX(…) T` 或 `func deriveX(…) (T, error)`，Python 为返回该值的函数。
 - **观察适配器的签名**：参数是观察的 `from` 按次序列出的输入符号，类型一致，返回观察类型的值；Go 允许末尾另有 `error`，Python 的异常也按观察失败处理。它不接收测试句柄，不使用谓词的名称映射。一个适配器恰绑定一项观察，文件属于性质所在容器。
 - **可选能力**：`lang.Backend` 只要求抽取与名称映射；后端还可以实现接口 `lang.Generator`，即**生成能力**，和接口 `lang.Runner`，即**运行能力**，两者都有 `language`。`generate` 接收生成输入 `GenPlan`，返回 `Generation`，称为**生成计划**：要写的文件和诊断，它不直接写仓库；`run` 接收运行输入 `RunPlan`，返回逐条性质和流程的结论 `RunReport`。各字段以 `design/lang.uc` 为准。`gen.plan` 为每种已配置的语言调用有生成能力的后端，合并成一份生成计划；`gen.write` 先检查全部路径、重复目标、符号链接和生成标记（§6.2），再逐个文件原子写入，多个文件之间不保证同时成功。`run.execute` 按目标标识调用各语言有运行能力的后端，并原子写出 `.unicode/results.json`。
 
@@ -206,7 +206,7 @@ type Runner interface {
 
 ### 5.3 需要代码才能判断的约束（M2）
 
-`check` 在推导过的图上检查以下各项，诊断码写作 `check.<短横线名称>`，并给出每个声明项的状态：[model.md](model.md) §10 的第 12、14 至 20、22、34、39 条，以及第 24 条中"每个生成的符号恰有一个 `generates` 绑定"的一半。第 21 条对 Go 启用：实际声明文件没有生成标记（§6.2）时，测试入口报 `check.handwritten-test`；谓词和生成器不属于测试入口。Python 的驱动生成与本项检查在 M5 交付。第 28 条由 `unicode gen --check` 核对生成计划，并进入 `make check`；运行前仍核对将执行的生成文件。推导由 `graph` 完成，路径模式用 doublestar 匹配。
+`check` 在推导过的图上检查以下各项，诊断码写作 `check.<短横线名称>`，并给出每个声明项的状态：[model.md](model.md) §10 的第 12、14 至 20、22、34、39、40 条，以及第 24 条中"每个生成的符号恰有一个 `generates` 绑定"的一半。第 21 条对 Go 启用：实际声明文件没有生成标记（§6.2）时，测试入口报 `check.handwritten-test`；谓词和生成器不属于测试入口。Python 的驱动生成与本项检查在 M5 交付。第 28 条由 `unicode gen --check` 核对生成计划，并进入 `make check`；运行前仍核对将执行的生成文件。推导由 `graph` 完成，路径模式用 doublestar 匹配。
 
 M2 的验收：`make check` 中加入 `unicode check`，在工具链自身上通过。
 
@@ -257,7 +257,7 @@ Go 的旧生成测试若已不再承载任何性质，仍进入生成计划并�
   - 字段的类型为 `interface` 时，取该接口的替身；
   - `call<…>` 先选一个操作，再按它的参数类型和限定生成实参。
 
-  生成的符号不按类型构造，用 `generates` 绑定的生成器。其余符号的取值域（[model.md](model.md) §3.3）只写在设计中一处，生成器和用例的检查都由它推出。
+  生成的符号不按类型构造，用 `generates` 绑定的生成器；派生输入由派生函数算出（[language.md](language.md) E24）。其余符号的取值域（[model.md](model.md) §3.3）只写在设计中一处，生成器和用例的检查都由它推出。
 - **谓词**：每条带陈述的性质和每个流程一个，按 [language.md](language.md) §4.4 的检查步骤把 `call`、`within` 和 `ensure` 翻译成该语言的代码，带 `checks` 绑定；自动流程的谓词执行流程的第一个同步步骤。该步骤的实参必须是流程的输入符号且类型逐一匹配；类型方法须有唯一的该类型输入作为接收者。步骤树中的内部调用不由驱动重复执行，实际操作自行执行它们；内部顺序、事件和分支的运行核对属于 M6。需要文件系统、HTTP 等环境准备的流程是人工流程：写 `manual` 和理由，绑定手写的谓词；生成的驱动照常构造输入并调用它。`int` 用该语言的任意精度整数，例如 Go 的 `math/big`。人工性质没有生成的谓词。
 - **调用的执行**：每个 `call<…>` 类型有一个执行器，把一个调用值作用到目标上，并返回该操作的结果或错误。有状态的谓词先检查初态，再逐步保存 `old`、调用和检查全部陈述；调用抛出声明的错误之后继续下一步，抛出未声明的错误则失败。Go 的调用值及应答脚本用生成的具名载体保存；生成文件中类型声明上的 `//uc:model-type 类型表达式` 只用于把载体映射回精确的 `call<…>` 或 `replies<…>`，不产生 `realizes` 边。这种注释只在生成文件中有效；计算生成计划时在内存中替换旧生成文件，仍保留这些不依赖运行时的类型声明，以供手写的生成器引用。
 - **替身**：代替接口的实现或外部客户端的测试代码，按输入中的应答脚本应答，也可以记下收到的调用和写入。接口字段以实现接口的具体类型填充，它带原生接口的全部方法；每个在设计中声明的操作，其应答脚本是输入值的一部分，在调用之前生成，被测调用执行时不抽随机数。接口值写成操作名到非空应答列表的记录。成功应答恰写 `{returns: 值}`，无返回值写 `none`；失败应答恰写 `{raises: "绝对错误标识", fields: {字段…}}`，错误须在该操作声明的错误或其后代中。每次调用取下一项，末项重复，输入有限而行为确定。
@@ -306,7 +306,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 
 生成驱动增加内部候选协议，但普通测试和原生 fuzz 的既有入口、输入分布与默认次数保持不变。后端向候选进程提供 typed JSON 模型输入，或只请求依旧有生成器抽取输入；抽取进程与执行进程分开。候选接口以 `CandidateEvaluation` 区分真实结果、正常预算耗尽与检查错误；未完成的进程既不是拒绝输入，也不是反例。缩小从一个已经确认的反例开始，预算耗尽时保留它，缩小过程中的检查错误另列为诊断。
 
-输入规范编码清空与 kind 无关的字段；标量的 items/entries 为 null，列表与集合的 items、记录/映射/调用的 entries 为空时为 []。float 用非指数的有限十进制文本，便于原样写入 corpus。模型值 wire 的 kind 为 none、bool、int、float、string、stringBytes、bytes、time、duration、enum、list、set、map、record、call、encoded。标量放 text；string 是有效 UTF-8，非 UTF-8 的 Go 字符串以 stringBytes 的 Base64 原始字节保存，解码后为有效 UTF-8 时规范为 string；bytes 为 Base64，time 为 UTC RFC3339Nano，duration 为 Go 时长字符串，数值保留精确文本。list/set 用 items，encoded 的 items 恰一项；map/record/call 用 entries，记录字段和调用参数的键为字符串，call.text 是操作名。规范输入按符号名、记录和映射键、集合元素的规范编码排序，列表保序；inputHash 是规范化 Input.values 对象的 JSON 的 SHA-256，不包含外层 values 键。
+输入规范编码清空与 kind 无关的字段；标量的 items/entries 为 null，列表与集合的 items、记录/映射/调用的 entries 为空时为 []。float 用非指数的有限十进制文本，便于原样写入 corpus。模型值 wire 的 kind 为 none、bool、int、float、string、stringBytes、bytes、time、duration、enum、list、set、map、record、call、encoded。标量放 text；string 是有效 UTF-8，非 UTF-8 的 Go 字符串以 stringBytes 的 Base64 原始字节保存，解码后为有效 UTF-8 时规范为 string；bytes 为 Base64，time 为 UTC RFC3339Nano，duration 为 Go 时长字符串，数值保留精确文本。list/set 用 items，encoded 的 items 恰一项；map/record/call 用 entries，记录字段和调用参数的键为字符串，call.text 是操作名。规范输入按符号名、记录和映射键、集合元素的规范编码排序，列表保序；inputHash 是规范化 Input.values 对象的 JSON 的 SHA-256，不包含外层 values 键。Input.values 不含派生输入（[language.md](language.md) E24）。
 
 候选执行使用真正的 `*rapid.T`，其附加随机上下文从规范输入的哈希确定地派生；回放使用同一规则。输入在调用前冻结，替身取原始脚本，不能取调用后的状态。私有状态只能经类型的显式 codec 表示；不能保持规范表示往返的输入报错。有限值树没有引用身份；跨符号或字段的共享可变指针、映射和重叠切片若无法保持别名关系，拒绝录制，须合并到一个保持语义的 codec 输入，不能静默复制。codec 的缓存、nil 与空集合等原生细节是否相同由该类型的表示约定决定，不强制 reflect.DeepEqual。生成消费者只依赖标准库与 rapid，覆盖、轨迹解析和缩减策略留在工具后端。
 
