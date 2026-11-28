@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lincyaw/unicode/internal/diag"
 	"github.com/lincyaw/unicode/internal/graph"
@@ -180,10 +181,10 @@ func Attach(g *graph.Graph, reports []lang.RunReport) Attached {
 				caseFresh := sourceFresh && len(matched) > 0
 				detail := textAttrs(map[string]string{"check": candidate.Check, "case": candidate.Id, "inputHash": candidate.InputHash, "snapshot": report.Snapshot, "fresh": strconv.FormatBool(sourceFresh), "caseFresh": strconv.FormatBool(caseFresh), "passed": strconv.FormatBool(candidate.Passed), "rejected": strconv.FormatBool(candidate.Rejected), "reason": candidate.Reason, "at": report.At, "mode": report.Mode})
 				detail["coverage"], detail["trace"] = stringsOf(candidate.Coverage), stringsOf(candidate.Trace)
-				detail["duration"] = []string{strconv.FormatInt(int64(candidate.Duration), 10)}
+				detail["duration"] = []string{strconv.Itoa(candidate.Duration)}
 				detail["calls"] = []string{}
 				for _, c := range candidate.Calls {
-					detail["calls"] = append(detail["calls"], c.Op+" "+strconv.FormatInt(int64(c.Duration), 10))
+					detail["calls"] = append(detail["calls"], c.Op+" "+strconv.Itoa(c.Duration))
 				}
 				detail["observations"], detail["differences"] = slices.Clone(candidate.Observations), slices.Clone(candidate.Differences)
 				applyAttrs(detail, diagnosticAttrs(candidate.Diagnostics))
@@ -248,4 +249,55 @@ func Attach(g *graph.Graph, reports []lang.RunReport) Attached {
 		return strings.Compare(first, second)
 	})
 	return out
+}
+
+// MeanDurations gives each design operation the mean duration, in
+// nanoseconds and truncated, of the calls of it that the current evidence
+// records (docs/model.md §3.5): the calls of the case results of each
+// property's and flow's most recent fresh run, as attach writes them. An
+// operation with no such call has none.
+//
+//uc:realizes evidence.meanDurations
+func MeanDurations(g *graph.Graph) map[string]int {
+	nodes := g.Nodes()
+	fresh := func(n graph.Node, form string) bool {
+		return n.Layer == graph.LayerEvidence && n.Kind == graph.NodeKindResult && n.Form == form && first(n.Attrs["fresh"]) == "true"
+	}
+	at := func(n graph.Node) (time.Time, bool) {
+		t, err := time.Parse(time.RFC3339Nano, first(n.Attrs["at"]))
+		return t, err == nil
+	}
+	latest := map[string]time.Time{}
+	for _, n := range nodes {
+		if t, ok := at(n); ok && fresh(n, "check") && t.After(latest[first(n.Attrs["check"])]) {
+			latest[first(n.Attrs["check"])] = t
+		}
+	}
+	total, count := map[string]int{}, map[string]int{}
+	for _, n := range nodes {
+		if t, ok := at(n); !ok || !fresh(n, "case") || !t.Equal(latest[first(n.Attrs["check"])]) {
+			continue
+		}
+		for _, call := range n.Attrs["calls"] {
+			op, text, _ := strings.Cut(call, " ")
+			if d, err := strconv.Atoi(text); err == nil {
+				total[op] += d
+				count[op]++
+			}
+		}
+	}
+	out := map[string]int{}
+	for op, n := range count {
+		if node := g.Node(op); node != nil && node.Layer == graph.LayerDesign && node.Kind == graph.NodeKindOp {
+			out[op] = total[op] / n
+		}
+	}
+	return out
+}
+
+func first(values []string) string {
+	if len(values) > 0 {
+		return values[0]
+	}
+	return ""
 }

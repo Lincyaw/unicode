@@ -24,6 +24,7 @@ import (
 	"github.com/getkin/kin-openapi/routers/legacy"
 	"pgregory.net/rapid"
 
+	"github.com/lincyaw/unicode/internal/evidence"
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/query"
 	"github.com/lincyaw/unicode/internal/review"
@@ -207,8 +208,8 @@ func sameNode(got Node, g *graph.Graph, id string) string {
 	want := Node{Id: n.Id, Kind: NodeKind(n.Kind), Form: n.Form, Layer: Layer(n.Layer), Source: Source(n.Source), Origin: position(n.Origin),
 		Summary: n.Summary, Salient: n.Salient, Digest: g.Digest(id), Attrs: attrs(n.Attrs)}
 	if n.Kind == graph.NodeKindOp {
-		// An operation carries the effects graph.Graph.Effects gives it; the
-		// exchange's snapshot holds no evidence, so no mean duration.
+		// An operation carries the effects graph.Graph.Effects gives it, and
+		// the mean duration evidence.MeanDurations gives it.
 		want.Operation = &OperationInfo{}
 		if kinds, ok := g.Effects()[id]; ok {
 			effects := []Effect{}
@@ -216,6 +217,10 @@ func sameNode(got Node, g *graph.Graph, id string) string {
 				effects = append(effects, Effect(k))
 			}
 			want.Operation.Effects = &effects
+		}
+		if d, ok := evidence.MeanDurations(g)[id]; ok {
+			mean := int64(d)
+			want.Operation.MeanDuration = &mean
 		}
 	}
 	got.Title, got.Status, got.Refers, got.Bindings, got.Step = "", nil, nil, nil, nil

@@ -327,7 +327,7 @@ NL            = 换行 { 换行 } .
 
 类型为 `optional<T>` 的表达式可以用在需要 T 的地方。`int` 与 `float` 不互相转换，与 `float` 比较的常数写作 `0.0`。`ensure` 的类型为 `bool`。
 
-字段与操作先在本类型查找，再沿 `extends` 按父类型的声明次序深度优先查找；本类型的同名成员遮蔽父成员，同一祖先在菱形继承中只访问一次。用例给出记录的值时，给出按这条规则可见的全部字段；限定和表达式使用同一查找规则。`call<T>` 包含 T 的可见操作，继承操作仍调用实际实现它的代码；这类类型引用的序列以 T 为接收者类型，直接操作引用则以其声明的所属类型为接收者类型。
+字段与操作先在本类型查找，再沿 `extends` 按父类型的声明次序深度优先查找；`implements` 不带入接口的操作，要在实现接口的类型上调用接口的某个操作时，这个类型自己声明该操作（例如 `lang.golang.Backend` 声明 `extract` 和 `run`）；本类型的同名成员遮蔽父成员，同一祖先在菱形继承中只访问一次。用例给出记录的值时，给出按这条规则可见的全部字段；限定和表达式使用同一查找规则。`call<T>` 包含 T 的可见操作，继承操作仍调用实际实现它的代码；这类类型引用的序列以 T 为接收者类型，直接操作引用则以其声明的所属类型为接收者类型。
 
 **被测的调用**是性质的 `call` 子句，或流程的第一个步骤。`call` 子句写作 `e.o(a1, …)` 或 `o(a1, …)`：o 可以不是纯操作，可以没有返回值；e 是输入符号，或从输入符号出发的字段访问；接收者和实参不依赖具名观察，也不使用 `old`、`result`、`raised` 或 `failure`。
 
@@ -894,7 +894,7 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 | E21 | `lang.golang.expression-failed`、`lang.golang.observation-failed` | `lang.golang.executes-contracts` |
 | E22 | `lang.golang.input-outside-domain`、`lang.golang.expression-failed` | `lang.golang.executes-contracts` |
 | E23 | `lang.golang.no-effective-input` | `lang.golang.executes-contracts` |
-| E24 | `lang.golang.derivation-failed` | `lang.golang.underivable-input-is-check-error` |
+| E24 | `lang.golang.derivation-failed` | `lang.golang.derived-state-is-removed` |
 | E25 | 由性质验证 | `lang.golang.derived-state-is-removed` |
 | E26 | 待做：M8，监控文件的判定函数报出反例 monitor.ensure-failed、monitor.frame-violation、monitor.undeclared-error、monitor.call-panicked，检查错误 monitor.check-failed，流程的次序不符 monitor.flow-mismatch | — |
 | E27 | 待做：M8，监控文件的判定函数报出反例 monitor.ensure-failed、monitor.undeclared-error、monitor.call-panicked | — |

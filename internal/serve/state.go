@@ -14,6 +14,7 @@ import (
 
 	"github.com/lincyaw/unicode/internal/check"
 	"github.com/lincyaw/unicode/internal/diag"
+	"github.com/lincyaw/unicode/internal/evidence"
 	"github.com/lincyaw/unicode/internal/graph"
 	"github.com/lincyaw/unicode/internal/repo"
 	"github.com/lincyaw/unicode/internal/review"
@@ -44,7 +45,7 @@ type state struct {
 	// meanDurations the mean durations of the design operations that the
 	// current evidence records calls of, in nanoseconds.
 	effects       map[string][]graph.Effect
-	meanDurations map[string]int64
+	meanDurations map[string]int
 	// prepare makes, once for the served snapshot, what every page reads:
 	// inputs, the inputs each view kind takes, by identity (view.Inputs);
 	// evaluated, the review evaluation without a base; typeMembers, the
@@ -116,7 +117,7 @@ func indexed(root string, g graph.Graph) *state {
 		}
 	}
 	st.effects = g.Effects()
-	st.meanDurations = meanDurations(st.nodes)
+	st.meanDurations = evidence.MeanDurations(&g)
 	return st
 }
 
@@ -293,7 +294,8 @@ func (st *state) operation(id string) *OperationInfo {
 		out.Effects = &effects
 	}
 	if d, ok := st.meanDurations[id]; ok {
-		out.MeanDuration = &d
+		mean := int64(d)
+		out.MeanDuration = &mean
 	}
 	return out
 }

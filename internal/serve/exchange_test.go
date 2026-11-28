@@ -615,11 +615,48 @@ func genExchange() *rapid.Generator[Exchange] {
 }
 
 // genQueryExchange draws requests to the endpoints that query, view,
-// graph.Compare and review.Evaluate answer, and to entity pages.
+// graph.Compare and review.Evaluate answer, and to entity pages, on a
+// repository whose snapshot also holds run evidence (withRunEvidence).
 //
 //uc:generates serve.queries-agree.exchange
 func genQueryExchange() *rapid.Generator[Exchange] {
-	return genExchangeOf(queryEndpoints)
+	return rapid.Custom(func(t *rapid.T) Exchange {
+		x := genExchangeOf(queryEndpoints).Draw(t, "exchange")
+		x.Fragment = withRunEvidence(t, x.Fragment)
+		return x
+	})
+}
+
+// withRunEvidence adds to f the results of zero to three fresh runs, a
+// second apart, each a result of check c0 or c1 with zero to three case
+// results that record zero to three calls of the design operations of f,
+// each lasting 0 to 1000000 ns, as attach writes them.
+func withRunEvidence(t *rapid.T, f graph.Fragment) graph.Fragment {
+	var ops []string
+	for _, n := range f.Nodes {
+		if n.Layer == graph.LayerDesign && n.Kind == graph.NodeKindOp {
+			ops = append(ops, n.Id)
+		}
+	}
+	if len(ops) == 0 {
+		return f
+	}
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for run := range rapid.IntRange(0, 3).Draw(t, "runs") {
+		at := base.Add(time.Duration(run) * time.Second).Format(time.RFC3339Nano)
+		check := rapid.SampledFrom([]string{"c0", "c1"}).Draw(t, "check")
+		attrs := map[string][]string{"check": {check}, "fresh": {"true"}, "at": {at}}
+		f.Nodes = append(f.Nodes, graph.Node{Id: fmt.Sprintf("result:run%d:check", run), Kind: graph.NodeKindResult, Form: "check", Layer: graph.LayerEvidence, Source: graph.SourceProduced, Attrs: attrs})
+		for c := range rapid.IntRange(0, 3).Draw(t, "cases") {
+			calls := []string{}
+			for range rapid.IntRange(0, 3).Draw(t, "calls") {
+				calls = append(calls, fmt.Sprintf("%s %d", rapid.SampledFrom(ops).Draw(t, "op"), rapid.IntRange(0, 1000000).Draw(t, "duration")))
+			}
+			f.Nodes = append(f.Nodes, graph.Node{Id: fmt.Sprintf("result:run%d:case%d", run, c), Kind: graph.NodeKindResult, Form: "case", Layer: graph.LayerEvidence, Source: graph.SourceProduced,
+				Attrs: map[string][]string{"check": {check}, "fresh": {"true"}, "at": {at}, "calls": calls}})
+		}
+	}
+	return f
 }
 
 // genCodeViewExchange draws code views whose input is one of the repository's

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/lincyaw/unicode/internal/graph"
@@ -185,55 +184,4 @@ func (st *state) coverageGain(id string) int32 {
 		}
 	}
 	return count
-}
-
-// meanDurations gives each design operation the mean duration, in
-// nanoseconds, of the calls of it that the current evidence records
-// (docs/model.md §3.5): those of the case results of the most recent fresh
-// run of each property and flow. An operation with no such call has none.
-func meanDurations(nodes map[string]graph.Node) map[string]int64 {
-	latest := map[string]time.Time{}
-	var cases []graph.Node
-	for _, n := range nodes {
-		if n.Layer != graph.LayerEvidence || n.Kind != graph.NodeKindResult || n.Form != "case" || firstValue(n.Attrs["fresh"]) != "true" {
-			continue
-		}
-		at, err := time.Parse(time.RFC3339Nano, firstValue(n.Attrs["at"]))
-		if err != nil {
-			continue
-		}
-		if check := firstValue(n.Attrs["check"]); at.After(latest[check]) {
-			latest[check] = at
-		}
-		cases = append(cases, n)
-	}
-	total, count := map[string]int64{}, map[string]int64{}
-	for _, n := range cases {
-		if at, _ := time.Parse(time.RFC3339Nano, firstValue(n.Attrs["at"])); !at.Equal(latest[firstValue(n.Attrs["check"])]) {
-			continue
-		}
-		for _, call := range n.Attrs["calls"] {
-			op, text, ok := strings.Cut(call, " ")
-			d, err := strconv.ParseInt(text, 10, 64)
-			if !ok || err != nil {
-				continue
-			}
-			total[op] += d
-			count[op]++
-		}
-	}
-	out := map[string]int64{}
-	for op, n := range count {
-		if node, ok := nodes[op]; ok && node.Layer == graph.LayerDesign && node.Kind == graph.NodeKindOp {
-			out[op] = total[op] / n
-		}
-	}
-	return out
-}
-
-func firstValue(values []string) string {
-	if len(values) > 0 {
-		return values[0]
-	}
-	return ""
 }

@@ -171,7 +171,7 @@ type CaseResult struct {
 	Observations []string          `json:"observations"`
 	Differences  []string          `json:"differences"`
 	Diagnostics  []diag.Diagnostic `json:"diagnostics"`
-	Duration     time.Duration     `json:"duration"`
+	Duration     int               `json:"duration"` // nanoseconds
 	Calls        []CallTime        `json:"calls"`
 }
 
@@ -180,8 +180,8 @@ type CaseResult struct {
 //
 //uc:realizes lang.CallTime
 type CallTime struct {
-	Op       string        `json:"op"`
-	Duration time.Duration `json:"duration"`
+	Op       string `json:"op"`
+	Duration int    `json:"duration"` // nanoseconds
 }
 
 // CandidateEvaluation distinguishes a real result, budget exhaustion and tool errors.

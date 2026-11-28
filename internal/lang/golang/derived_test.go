@@ -52,7 +52,7 @@ var derivedModes = map[DerivedOutcome]int{
 // module's drivers and gives the plan that replays demo.cleans.
 //
 //uc:generates lang.golang.derived-state-is-removed.plan
-//uc:generates lang.golang.underivable-input-is-check-error.plan
+//uc:generates lang.golang.records-call-durations.plan
 func deriveCleanupPlan(outcomes []DerivedOutcome) (lang.RunPlan, error) {
 	root, err := os.MkdirTemp("", "derived-module-")
 	if err != nil {

@@ -206,7 +206,7 @@ property split-failures-replay-by-seed invariant "一条性质在奇数输入上
   manual "需要生成并编译一个 Go 模块的驱动，再拆分执行并按 rapid 给出的种子重放它的测试二进制，读取输出，表达式不能运行程序"
 }
 
-property derived-state-is-removed postcondition "Go 后端回放一条派生函数建出目录的性质之后，派生函数记下了目录，记下的目录都已删除，不论用例通过、失败、被前提拒绝、panic 还是派生函数出错" {
+property derived-state-is-removed postcondition "Go 后端回放一条派生函数建出目录的性质之后，派生函数记下了目录，记下的目录都已删除，不论用例通过、失败、被前提拒绝、panic 还是派生函数出错；有派生函数出错的用例时，运行报告的诊断中有 lang.golang.derivation-failed" {
   about Backend.run
   forall backend: Backend
   forall outcomes: list<DerivedOutcome>
@@ -216,15 +216,6 @@ property derived-state-is-removed postcondition "Go 后端回放一条派生函�
   changes built
   call backend.run(plan)
   ensure built.recorded > 0 and built.remaining == 0
-}
-
-property underivable-input-is-check-error postcondition "Go 后端回放的用例中有派生函数返回错误的时，运行报告的诊断中有 lang.golang.derivation-failed" {
-  about Backend.run
-  forall backend: Backend
-  forall outcomes: list<DerivedOutcome>
-  forall plan: lang.RunPlan generated "与 derived-state-is-removed 的 plan 相同"
-  where outcomes size 1..5
-  call backend.run(plan)
   ensure DerivedOutcome.underivable in outcomes implies any(d in result.diagnostics: d.code == "lang.golang.derivation-failed")
 }
 
@@ -250,4 +241,15 @@ property extracts-direct-effects postcondition "抽取 root 中的模块没有�
   ensure all(id in module.expected: any(n in result.fragment.nodes: n.id == id))
   ensure all(n in result.fragment.nodes: n.kind == graph.NodeKind.op implies n.id in module.expected and (size(module.expected[n.id]) > 0) == ("directEffects" in n.attrs))
   ensure all(n in result.fragment.nodes: "directEffects" in n.attrs implies n.id in module.expected and n.attrs["directEffects"] == module.expected[n.id])
+}
+
+property records-call-durations postcondition "Go 后端回放一条性质时，每个通过的用例记下正的执行耗时（纳秒）和恰好一次调用，即被测调用 demo.probe 及其不小于零、不大于执行耗时的耗时，outcomes 中有通过的用例时报告中有通过的用例" {
+  about Backend.run
+  forall backend: Backend
+  forall outcomes: list<DerivedOutcome>
+  forall plan: lang.RunPlan generated "与 derived-state-is-removed 的 plan 相同"
+  where outcomes size 1..5
+  call backend.run(plan)
+  ensure all(r in result.results: all(c in r.cases: c.passed implies c.duration > 0 and size(c.calls) == 1 and all(t in c.calls: t.op == "demo.probe" and t.duration >= 0 and t.duration <= c.duration)))
+  ensure DerivedOutcome.passes in outcomes implies any(r in result.results: any(c in r.cases: c.passed))
 }

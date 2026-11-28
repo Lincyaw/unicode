@@ -44,6 +44,12 @@ type AttachmentSample record "attachment-preserves-input-identity 的输入：�
   field failedChecks: list<string>
 }
 
+type DurationSample record "mean-durations-follow-current-evidence 的输入：一张图、一组运行报告，以及按 model.md §3.5 的定义从报告直接算出的每个设计层操作的平均耗时（纳秒）" {
+  field graph: graph.Graph
+  field reports: list<lang.RunReport>
+  field expected: map<string, int>
+}
+
 op reduce(cases: list<lang.CaseResult>, limit: int) -> Reduction pure "保留全部声明的用例和反例，其余按新增覆盖最多、同分时按输入哈希的次序贪心挑选，再删去冗余的用例；录制用例超过 limit 而不能保持覆盖时给出诊断"
 
 op shrink(initial: lang.CaseResult, runner: lang.CandidateRunner, budget: duration) -> Shrunk "在 budget 内反复把 initial 缩小成仍合乎类型和前提、仍以反例而不是检查错误失败的更小输入，直到不能再缩小，返回最后的反例，不含中途的尝试"
@@ -53,6 +59,8 @@ op read(root: string) -> Loaded "读取 .unicode/runs 下的不可变运行记�
 op save(root: string, report: lang.RunReport) -> list<diag.Diagnostic> "把 report 保存成不可变的运行记录，并写出最新的 results.json，同一份记录再保存不改变文件，写入失败时给出诊断"
 
 op attach(g: graph.Graph, reports: list<lang.RunReport>) -> Attached pure "按执行输入哈希判定哪些结果是当前证据，为它们生成 run 和 result 节点及 about、contains 和 covers 边；旧结果的行号不套用到新的源码上"
+
+op meanDurations(g: graph.Graph) -> map<string, int> pure "g 的证据层中当前证据记下的设计层操作的平均耗时（纳秒，向零取整）：每条性质和流程取它最近一次的当前运行，按操作平均其中用例记下的调用的耗时，没有这样的调用的操作不在其中"
 
 op recordings(root: string, g: graph.Graph, cases: list<lang.CaseResult>) -> Recording "按规范格式给出 corpus 下要写的录制文件，用例名是输入哈希的前八位；名称碰撞、输入不能回放或超过上限时不写入"
 
@@ -76,6 +84,14 @@ property attachment-preserves-input-identity postcondition "attach 没有诊断�
   ensure count(node in result.fragment.nodes: node.form == "check" and "true" in node.attrs["fresh"] and "true" in node.attrs["businessFailed"]) == size(sample.failedChecks)
   ensure all(id in sample.failedChecks: any(node in result.fragment.nodes: node.form == "check" and id in node.attrs["check"] and "true" in node.attrs["fresh"] and "true" in node.attrs["businessFailed"]))
   ensure all(edge in result.fragment.edges: edge.kind == graph.EdgeKind.covers implies edge.from in sample.currentCases)
+}
+
+property mean-durations-follow-current-evidence postcondition "在 sample.graph 加上 attach 为 sample.reports 给出的证据层的图上，meanDurations 给出的平均耗时与 sample.expected 相同" {
+  about meanDurations, attach
+  forall sample: DurationSample generated "一张有操作 domain.a、b、c 和性质 domain.p0、p1 的图，一至四份时间各不相同（有的只差零点五秒）、约四分之三的执行输入哈希与图相符的运行报告，每份各有约四分之三的机会带两条性质的结论（没有 domain.p0 的结论时总带 domain.p1 的），每条结论零至三个通过的用例，各耗时 1 至 1000000 纳秒，调用零至三次 domain.a、b、c 或不是操作的 domain.gone，每次的耗时不超过用例的耗时，以及按每条性质最近一次相符的报告中的调用、逐个操作求出的向零取整的平均耗时"
+  forall snapshot: graph.Graph generated "sample.graph 加上 attach(sample.graph, sample.reports) 给出的节点和边"
+  call meanDurations(snapshot)
+  ensure result == sample.expected
 }
 
 property recordings-are-replayable invariant "录制文件重新解析后给出录制时的同一输入，再次录制不改动文件，不能写成录制文件的输入、越界路径、损坏的录制文件和符号链接给出诊断而不改动文件，孤立的录制文件被删除，运行记录保存后读出不变且不改写历史，缩小把反例缩到最小的失败输入，缩小中断时保留原反例" {
