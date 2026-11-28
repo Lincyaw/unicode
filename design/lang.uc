@@ -161,4 +161,18 @@ type Runner interface "运行能力：后端可以另外实现的接口，不实
   op run(plan: RunPlan) -> RunReport "核对生成文件后回放，或在 explore 时长内探索，返回每条性质和流程的结论"
 }
 
+type RootsSample record "roots-follow-system-file 的输入：一张图，以及写进其中系统节点的 roots 属性的各语言的源码根目录" {
+  field graph: graph.Graph
+  field roots: map<string, list<string>>
+}
+
 op monitoredCalls(g: graph.Graph) -> map<string, Monitored> pure "g 中在运行时判定的每条单次调用契约（model.md §3.4）的标识到它的被测调用：带 call 子句、不是人工性质的 postcondition，被测调用的接收者和各实参是互不相同的符号，性质的每个符号都是其中之一，被调用的操作经接收者的类型及其 extends 的祖先或容器解析得到"
+
+op languageRoots(g: graph.Graph) -> map<string, list<string>> pure "系统节点的 roots 属性中每项写作“语言: 目录”，给出各语言的源码根目录，同一语言的目录按书写的次序"
+
+property roots-follow-system-file postcondition "languageRoots 恰给出写进系统节点的各语言的源码根目录，同一语言的目录按写入的次序" {
+  about languageRoots
+  forall sample: RootsSample generated "go、python、rust 各以一半机会有一至三个源码根目录，目录是一至三个小写字母或 . 与 / 组成的串，可以重复，各语言的项交错写进系统节点的 roots 属性；图中另有一个也带 roots 属性的组件节点，它的项不算"
+  call languageRoots(sample.graph)
+  ensure result == sample.roots
+}

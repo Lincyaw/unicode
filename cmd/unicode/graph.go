@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"os/exec"
 	"slices"
 	"strings"
@@ -188,23 +189,13 @@ type languageRoot struct {
 	dirs     []string
 }
 
-// languageRoots reads the roots of the system node, each written
-// `language: dir`, grouped by language in the order they first appear.
+// languageRoots lists the configured languages, sorted, each with its
+// source roots as lang.LanguageRoots reads them.
 func languageRoots(g *graph.Graph) []languageRoot {
+	roots := lang.LanguageRoots(g)
 	var out []languageRoot
-	for _, n := range g.Nodes() {
-		if n.Layer != graph.LayerDesign || n.Kind != graph.NodeKindContainer || n.Form != "system" {
-			continue
-		}
-		for _, r := range n.Attrs["roots"] {
-			language, dir, _ := strings.Cut(r, ": ")
-			i := slices.IndexFunc(out, func(l languageRoot) bool { return l.language == language })
-			if i < 0 {
-				out = append(out, languageRoot{language: language})
-				i = len(out) - 1
-			}
-			out[i].dirs = append(out[i].dirs, dir)
-		}
+	for _, language := range slices.Sorted(maps.Keys(roots)) {
+		out = append(out, languageRoot{language: language, dirs: roots[language]})
 	}
 	return out
 }

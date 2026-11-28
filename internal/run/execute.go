@@ -2,6 +2,7 @@ package run
 
 import (
 	"cmp"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -45,7 +46,8 @@ func Execute(plan lang.RunPlan, backends []lang.Backend) lang.RunReport {
 		}
 		available[name] = b
 	}
-	configs := languages(g)
+	roots := lang.LanguageRoots(g)
+	configured := slices.Sorted(maps.Keys(roots))
 	selected := map[string][]string{}
 	requested := slices.Clone(ids)
 	if len(requested) == 0 {
@@ -65,10 +67,10 @@ func Execute(plan lang.RunPlan, backends []lang.Backend) lang.RunReport {
 			continue
 		}
 		found := false
-		for _, config := range configs {
-			if checkLanguage(g, id, config.name) {
-				if !slices.Contains(selected[config.name], id) {
-					selected[config.name] = append(selected[config.name], id)
+		for _, name := range configured {
+			if checkLanguage(g, id, name) {
+				if !slices.Contains(selected[name], id) {
+					selected[name] = append(selected[name], id)
 				}
 				found = true
 			}
@@ -80,39 +82,39 @@ func Execute(plan lang.RunPlan, backends []lang.Backend) lang.RunReport {
 			out.Diagnostics = append(out.Diagnostics, d)
 		}
 	}
-	for _, config := range configs {
-		if len(selected[config.name]) == 0 {
+	for _, name := range configured {
+		if len(selected[name]) == 0 {
 			continue
 		}
-		if _, ok := available[config.name].(lang.Runner); !ok {
-			out.Diagnostics = append(out.Diagnostics, diagnostic("run.unsupported-language", config.at.Path, "no execution backend provides "+config.name, "register a runner for this language, or remove its language roots"))
+		if _, ok := available[name].(lang.Runner); !ok {
+			out.Diagnostics = append(out.Diagnostics, diagnostic("run.unsupported-language", "design/system.uc", "no execution backend provides "+name, "register a runner for this language, or remove its language roots"))
 		}
 	}
 	if len(out.Diagnostics) == 0 {
-		for _, config := range configs {
-			if len(selected[config.name]) == 0 {
+		for _, name := range configured {
+			if len(selected[name]) == 0 {
 				continue
 			}
-			b := available[config.name].(lang.Runner)
-			slices.Sort(selected[config.name])
+			b := available[name].(lang.Runner)
+			slices.Sort(selected[name])
 			inputs := map[string][]lang.Input{}
-			for _, id := range selected[config.name] {
+			for _, id := range selected[name] {
 				if len(traffic[id]) > 0 {
 					inputs[id] = traffic[id]
 				}
 			}
-			report := b.Run(lang.RunPlan{Root: root, Roots: slices.Clone(config.roots), Graph: g, Ids: slices.Clone(selected[config.name]), Explore: explore, Record: record, Traffic: inputs})
+			report := b.Run(lang.RunPlan{Root: root, Roots: slices.Clone(roots[name]), Graph: g, Ids: slices.Clone(selected[name]), Explore: explore, Record: record, Traffic: inputs})
 			expected := map[string]bool{}
-			for _, id := range selected[config.name] {
+			for _, id := range selected[name] {
 				expected[id] = false
 			}
 			for _, result := range report.Results {
 				if result.Passed && result.Accepted <= 0 {
-					out.Diagnostics = append(out.Diagnostics, diagnostic("run.invalid-report", config.at.Path, "the "+config.name+" runner reported success without an effective execution for "+result.Id, "execute at least one valid input before reporting a check as passed"))
+					out.Diagnostics = append(out.Diagnostics, diagnostic("run.invalid-report", "design/system.uc", "the "+name+" runner reported success without an effective execution for "+result.Id, "execute at least one valid input before reporting a check as passed"))
 				}
 				already, selected := expected[result.Id]
 				if !selected || already {
-					out.Diagnostics = append(out.Diagnostics, diagnostic("run.invalid-report", config.at.Path, "the "+config.name+" runner returned an unselected or duplicate result "+result.Id, "make the runner return exactly one result per selected check"))
+					out.Diagnostics = append(out.Diagnostics, diagnostic("run.invalid-report", "design/system.uc", "the "+name+" runner returned an unselected or duplicate result "+result.Id, "make the runner return exactly one result per selected check"))
 				}
 				if selected {
 					expected[result.Id] = true
@@ -131,9 +133,9 @@ func Execute(plan lang.RunPlan, backends []lang.Backend) lang.RunReport {
 				}
 				out.Results = append(out.Results, result)
 			}
-			for _, id := range selected[config.name] {
+			for _, id := range selected[name] {
 				if !expected[id] {
-					out.Diagnostics = append(out.Diagnostics, diagnostic("run.invalid-report", config.at.Path, "the "+config.name+" runner omitted the selected check "+id, "make the runner return exactly one result per selected check"))
+					out.Diagnostics = append(out.Diagnostics, diagnostic("run.invalid-report", "design/system.uc", "the "+name+" runner omitted the selected check "+id, "make the runner return exactly one result per selected check"))
 				}
 			}
 			out.Diagnostics = append(out.Diagnostics, report.Diagnostics...)
@@ -241,31 +243,6 @@ func codeLanguage(g *graph.Graph, id, name string, parents map[string][]string) 
 		pending = append(pending, parents[current]...)
 	}
 	return false
-}
-
-type languageRoots struct {
-	name  string
-	roots []string
-	at    diag.Position
-}
-
-func languages(g *graph.Graph) []languageRoots {
-	var out []languageRoots
-	for _, n := range g.Nodes() {
-		if n.Layer != graph.LayerDesign || n.Kind != graph.NodeKindContainer || n.Form != "system" {
-			continue
-		}
-		for _, entry := range n.Attrs["roots"] {
-			name, root, _ := strings.Cut(entry, ": ")
-			i := slices.IndexFunc(out, func(c languageRoots) bool { return c.name == name })
-			if i < 0 {
-				out = append(out, languageRoots{name: name, at: n.Origin})
-				i = len(out) - 1
-			}
-			out[i].roots = append(out[i].roots, root)
-		}
-	}
-	return out
 }
 
 func diagnostic(code, path, cause, fix string) diag.Diagnostic {

@@ -2,6 +2,7 @@ package lang
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lincyaw/unicode/internal/diag"
@@ -278,4 +279,22 @@ type GenerationExtractor interface {
 type Runner interface {
 	Language() string
 	Run(plan RunPlan) RunReport
+}
+
+// LanguageRoots reads the roots attr of the system node, each entry written
+// `language: dir`: every language's source roots, in the order written.
+//
+//uc:realizes lang.languageRoots
+func LanguageRoots(g *graph.Graph) map[string][]string {
+	out := map[string][]string{}
+	for _, n := range g.Nodes() {
+		if n.Layer != graph.LayerDesign || n.Kind != graph.NodeKindContainer || n.Form != "system" {
+			continue
+		}
+		for _, entry := range n.Attrs["roots"] {
+			language, dir, _ := strings.Cut(entry, ": ")
+			out[language] = append(out[language], dir)
+		}
+	}
+	return out
 }

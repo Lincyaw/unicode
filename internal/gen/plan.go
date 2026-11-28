@@ -3,6 +3,7 @@ package gen
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -25,13 +26,14 @@ func Plan(root string, g *graph.Graph, backends []lang.Backend) lang.Generation 
 		}
 		available[name] = b
 	}
-	for _, config := range languages(g) {
-		b, ok := available[config.name].(lang.Generator)
+	roots := lang.LanguageRoots(g)
+	for _, name := range slices.Sorted(maps.Keys(roots)) {
+		b, ok := available[name].(lang.Generator)
 		if !ok {
-			out.Diagnostics = append(out.Diagnostics, diagnostic("gen.unsupported-language", config.at.Path, "no generation backend provides "+config.name, "register a generator for this language, or remove its language roots"))
+			out.Diagnostics = append(out.Diagnostics, diagnostic("gen.unsupported-language", "design/system.uc", "no generation backend provides "+name, "register a generator for this language, or remove its language roots"))
 			continue
 		}
-		generated := b.Generate(lang.GenPlan{Root: root, Roots: slices.Clone(config.roots), Graph: g})
+		generated := b.Generate(lang.GenPlan{Root: root, Roots: roots[name], Graph: g})
 		out.Edits = append(out.Edits, generated.Edits...)
 		out.Diagnostics = append(out.Diagnostics, generated.Diagnostics...)
 	}
@@ -42,31 +44,6 @@ func Plan(root string, g *graph.Graph, backends []lang.Backend) lang.Generation 
 		}
 	}
 	sortDiagnostics(out.Diagnostics)
-	return out
-}
-
-type languageRoots struct {
-	name  string
-	roots []string
-	at    diag.Position
-}
-
-func languages(g *graph.Graph) []languageRoots {
-	var out []languageRoots
-	for _, n := range g.Nodes() {
-		if n.Layer != graph.LayerDesign || n.Kind != graph.NodeKindContainer || n.Form != "system" {
-			continue
-		}
-		for _, entry := range n.Attrs["roots"] {
-			name, root, _ := strings.Cut(entry, ": ")
-			i := slices.IndexFunc(out, func(c languageRoots) bool { return c.name == name })
-			if i < 0 {
-				out = append(out, languageRoots{name: name, at: n.Origin})
-				i = len(out) - 1
-			}
-			out[i].roots = append(out[i].roots, root)
-		}
-	}
 	return out
 }
 
