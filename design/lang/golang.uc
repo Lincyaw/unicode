@@ -93,6 +93,13 @@ type EffectModule record "extracts-direct-effects 的输入：一个 Go 模块�
   field expected: map<string, list<string>>
 }
 
+type MonitoredRun record "monitored-judgments-match-replay 和 monitoring-keeps-calls 的输入：受监控的模块的一个副本的目录，它以 unicode_monitor 构建的程序对每个值经入口包装和直接各调用一次 demo.score 之后写出的运行时的运行记录（没有判定时为空的报告），以及每次调用经入口包装和直接调用各自得到的结果" {
+  field root: string
+  field record: lang.RunReport
+  field wrapped: list<string>
+  field direct: list<string>
+}
+
 op newBackend() -> Backend "创建 Go 后端"
 
 op testFile(path: string) -> bool pure "path 是不是 Go 的测试文件，即文件名以 _test.go 结尾、只有 go test 才编译的文件"
@@ -267,4 +274,28 @@ property records-call-durations postcondition "Go 后端回放一条性质时，
   call backend.run(plan)
   ensure all(r in result.results: all(c in r.cases: c.passed implies c.duration > 0 and size(c.calls) == 1 and all(t in c.calls: t.op == "demo.probe" and t.duration >= 0 and t.duration <= c.duration)))
   ensure DerivedOutcome.passes in outcomes implies any(r in result.results: any(c in r.cases: c.passed))
+}
+
+property monitored-judgments-match-replay postcondition "回放 run.root 中采集的调用时，demo.bounded 的以反例失败的回放用例的输入哈希恰是 run.record 中反例的输入哈希，回放中不成立的限定或前提恰是 run.record 中域外调用的子句" {
+  about Backend.run
+  forall backend: Backend
+  forall levels: list<int>
+  forall run: MonitoredRun generated "把受监控的模块复制到新目录：纯操作 demo.score 在 3 上返回 2、在 4 上 panic，其余返回 level + 1，纯操作 demo.ratio 在 -3 上 panic，性质 demo.bounded 限定 level in -5..5、前提 level != 0、ensure result >= level 和 ratio(level) == level；再以抽样比例 1、打开采集运行以 unicode_monitor 构建的程序，对 levels 中的每个值经 monitor.Entry 和直接各调用一次 score，得到的目录、运行记录和两种调用的结果"
+  forall plan: lang.RunPlan generated "以 run.root 的设计和代码建出的图回放 demo.bounded 的运行输入，traffic 是按 language.md E29 把 run.root 中采集的调用对应成的 demo.bounded 的输入"
+  where levels size 1..4
+  where levels in -8..8
+  call backend.run(plan)
+  ensure all(r in result.results: all(c in r.cases: c.form == "traffic" and not c.passed and not c.rejected implies any(x in run.record.results: any(k in x.cases: k.inputHash == c.inputHash))))
+  ensure all(x in run.record.results: all(k in x.cases: any(r in result.results: any(c in r.cases: c.form == "traffic" and not c.passed and not c.rejected and c.inputHash == k.inputHash))))
+  ensure all(x in run.record.results: all(o in x.outsideDomain: any(r in result.results: any(p in r.outsideDomain: p.clause == o.clause))))
+  ensure all(r in result.results: all(p in r.outsideDomain: any(x in run.record.results: any(o in x.outsideDomain: o.clause == p.clause))))
+}
+
+property monitoring-keeps-calls invariant "受监控的程序经入口包装对 levels 中的每个值调用 demo.score 得到的结果与直接调用的相同，即返回值相同、判定中 demo.ratio 的 panic 不改变调用的结果、score 的 panic 以同一个值继续，并且每个值都调用了一次" {
+  about Backend
+  forall levels: list<int>
+  forall run: MonitoredRun generated "与 monitored-judgments-match-replay 的 run 相同"
+  where levels size 1..4
+  where levels in -8..8
+  ensure size(run.wrapped) == size(levels) and run.wrapped == run.direct
 }

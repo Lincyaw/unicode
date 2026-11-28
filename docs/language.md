@@ -896,7 +896,7 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 | E23 | `lang.golang.no-effective-input` | `lang.golang.executes-contracts` |
 | E24 | `lang.golang.derivation-failed` | `lang.golang.derived-inputs-are-recomputed` |
 | E25 | 由性质验证 | `lang.golang.derived-state-is-removed` |
-| E26 | `monitor.ensure-failed`、`monitor.frame-violation`、`monitor.undeclared-error`、`monitor.call-panicked`、`monitor.check-failed`；流程的次序不符 monitor.flow-mismatch 待做：M8 | `monitor.summary-counts-judgments` |
+| E26 | `monitor.ensure-failed`、`monitor.frame-violation`、`monitor.undeclared-error`、`monitor.call-panicked`、`monitor.check-failed`；流程的次序不符 monitor.flow-mismatch 待做：M8 | `monitor.summary-counts-judgments`、`lang.golang.monitored-judgments-match-replay`、`lang.golang.monitoring-keeps-calls` |
 | E27 | 待做：M8，判定深度由效果决定之后，监控文件判定带调用序列符号的不变式，报出反例 monitor.ensure-failed、monitor.undeclared-error、monitor.call-panicked | — |
 | E28 | `monitor.within-exceeded` | `monitor.summary-counts-judgments` |
-| E29 | `evidence.invalid-traffic` | `evidence.traffic-gives-inputs`、`evidence.collected-calls-round-trip` |
+| E29 | `evidence.invalid-traffic` | `evidence.traffic-gives-inputs`、`evidence.collected-calls-round-trip`、`lang.golang.monitored-judgments-match-replay` |

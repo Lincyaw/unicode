@@ -73,8 +73,9 @@ func publish(directory, name string, data []byte) error {
 		return err
 	}
 	_, writeErr := temp.Write(data)
+	modeErr := temp.Chmod(0o644)
 	closeErr := temp.Close()
-	if err := errors.Join(writeErr, closeErr); err != nil {
+	if err := errors.Join(writeErr, modeErr, closeErr); err != nil {
 		_ = os.Remove(temp.Name())
 		return err
 	}
