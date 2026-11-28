@@ -142,17 +142,35 @@ function tidy(points: Point[]): Point[] {
   return kept;
 }
 
+/** The links and boxes as layOut takes them, checked: the boxes beside others, the stacks, and which links rank. */
+interface Setup {
+  axis: Axis;
+  direction: Direction;
+  spacing: Spacing;
+  base: Map<string, Box>;
+  links: LayeredLink[];
+  stacks: Stack[];
+  stackOf: Map<string, string>;
+  besides: Map<string, string>;
+  sideways: LayeredLink[];
+  ranked: LayeredLink[];
+  besideLines: Map<string, LayeredLink[]>;
+  gaps: Map<string, number>;
+}
+
+/** The box dagre places for an end: its stack, else the box itself. */
+function lift(setup: Setup, id: string): string {
+  return setup.stackOf.get(id) ?? id;
+}
+
 /**
- * Places the boxes in ranks and routes every link. `beside` maps a box to the box it stands beside (TB only), as
- * arrange's does; a box keeps that place only if each of its links joins it to that box. `stacks` names boxes that
- * stand as one; no link joins two members of one stack.
+ * Checks the boxes and links: a box keeps its place beside another only if each of its links joins it to that box, and
+ * only in a top-to-bottom drawing; no link joins two members of one stack.
  */
-export function layOut(boxes: Box[], links: LayeredLink[], direction: Direction, spacing: Spacing, options: { beside?: ReadonlyMap<string, string>; stacks?: Stack[] } = {}): Layered {
-  const axis = AXES[direction];
+function setUp(boxes: Box[], links: LayeredLink[], direction: Direction, spacing: Spacing, options: { beside?: ReadonlyMap<string, string>; stacks?: Stack[] }): Setup {
   const base = new Map(boxes.map(box => [box.id, box]));
   const stacks = options.stacks ?? [];
   const stackOf = new Map(stacks.flatMap(stack => stack.members.map(member => [member.id, stack.id] as const)));
-  const lift = (id: string) => stackOf.get(id) ?? id;
   const asked = options.beside ?? new Map<string, string>();
   const besides = new Map([...asked].filter(([leaf, anchor]) => (
     base.has(leaf) && base.has(anchor) && !asked.has(anchor) && !stackOf.has(leaf) && !stackOf.has(anchor)
@@ -164,55 +182,75 @@ export function layOut(boxes: Box[], links: LayeredLink[], direction: Direction,
   const sideways = links.filter(link => besides.get(link.from) === link.to || besides.get(link.to) === link.from);
   const ranked = links.filter(link => !sideways.includes(link));
   for (const link of ranked) {
-    if (link.from !== link.to && lift(link.from) === lift(link.to)) {
+    if (link.from !== link.to && (stackOf.get(link.from) ?? link.from) === (stackOf.get(link.to) ?? link.to)) {
       throw new Error(`the layered drawing joins ${link.from} and ${link.to}, two members of one stack`);
     }
   }
   const besideLines = Map.groupBy(sideways, link => (besides.has(link.from) ? link.to : link.from));
   const gaps = new Map([...besideLines].map(([anchor, lines]) => [anchor, Math.max(spacing.node, channelRoom(lines.length))]));
+  return { axis: AXES[direction], direction, spacing, base, links, stacks, stackOf, besides, sideways, ranked, besideLines, gaps };
+}
 
-  // The boxes dagre places, at their sizes: each box outside a stack, and each stack with its members one after another.
-  const placed = (sizes: ReadonlyMap<string, Box>) => {
-    const members = new Map<string, Rect>();
-    const outside = [...sizes.values()].filter(box => !stackOf.has(box.id));
-    const stacked = stacks.map((stack): Box => {
-      let cross = 0;
-      let main = 0;
-      for (const member of stack.members) {
-        const box = sizes.get(member.id);
-        if (!box) {
-          throw new Error(`the stack ${stack.id} holds ${member.id}, which is no box`);
-        }
-        members.set(member.id, axis.rect(member.indent, cross, axis.mainSize(box), axis.crossSize(box)));
-        cross += axis.crossSize(box) + STACK_GAP;
-        main = Math.max(main, member.indent + axis.mainSize(box));
+/** The boxes dagre places at some sizes: each box outside a stack, and each stack with its members one after another. */
+interface Sizes {
+  boxes: Box[];
+  members: Map<string, Rect>;
+  ranked: string[];
+}
+
+function sized(setup: Setup, sizes: ReadonlyMap<string, Box>): Sizes {
+  const { axis, stacks, stackOf, besides } = setup;
+  const members = new Map<string, Rect>();
+  const outside = [...sizes.values()].filter(box => !stackOf.has(box.id));
+  const stacked = stacks.map((stack): Box => {
+    let cross = 0;
+    let main = 0;
+    for (const member of stack.members) {
+      const box = sizes.get(member.id);
+      if (!box) {
+        throw new Error(`the stack ${stack.id} holds ${member.id}, which is no box`);
       }
-      return { id: stack.id, ...axis.rect(0, 0, main, Math.max(0, cross - STACK_GAP)) };
-    });
-    const all = [...outside, ...stacked];
-    return { boxes: all.map(box => ({ id: box.id, width: box.width, height: box.height })), members, ranked: all.map(box => box.id).filter(id => !besides.has(id)) };
-  };
-  const forDagre = (forward: (link: LayeredLink) => boolean, keepUnranked: boolean): Link[] => ranked.filter(link => link.from !== link.to).map(link => {
-    const [from, to] = forward(link) ? [lift(link.from), lift(link.to)] : [lift(link.to), lift(link.from)];
+      members.set(member.id, axis.rect(member.indent, cross, axis.mainSize(box), axis.crossSize(box)));
+      cross += axis.crossSize(box) + STACK_GAP;
+      main = Math.max(main, member.indent + axis.mainSize(box));
+    }
+    return { id: stack.id, ...axis.rect(0, 0, main, Math.max(0, cross - STACK_GAP)) };
+  });
+  const all = [...outside, ...stacked];
+  return { boxes: all.map(box => ({ id: box.id, width: box.width, height: box.height })), members, ranked: all.map(box => box.id).filter(id => !besides.has(id)) };
+}
+
+/** Places sized boxes with dagre, by layout.ts's arrange, and ranks them. */
+function placeBoxes(setup: Setup, sizes: Sizes, dagreLinks: Link[]): { arrangement: Arrangement; ranks: Map<string, number> } {
+  const arrangement = arrange(sizes.boxes, dagreLinks, setup.direction, setup.spacing, setup.besides, setup.gaps);
+  return { arrangement, ranks: ranksOf(arrangement, sizes.ranked) };
+}
+
+/**
+ * The links dagre ranks by, between the boxes it places: each ranked link but a box's link to itself, turned round when
+ * `reversed`. A link left out of the ranking (an undeclared dependency against the design) runs the way the other links
+ * rank its ends.
+ */
+function dagreLinksOf(setup: Setup, sizes: Sizes): Link[] {
+  const ranking = (forward: (link: LayeredLink) => boolean, keepUnranked: boolean): Link[] => setup.ranked.filter(link => link.from !== link.to).map(link => {
+    const [from, to] = forward(link) ? [lift(setup, link.from), lift(setup, link.to)] : [lift(setup, link.to), lift(setup, link.from)];
     return { id: link.id, from, to, unranked: keepUnranked && link.unranked === true };
   });
-  const place = (sizes: ReturnType<typeof placed>, dagreLinks: Link[]) => {
-    const arrangement = arrange(sizes.boxes, dagreLinks, direction, spacing, besides, gaps);
-    return { arrangement, ranks: ranksOf(arrangement, sizes.ranked) };
-  };
+  if (!setup.ranked.some(link => link.unranked)) {
+    return ranking(link => !link.reversed, false);
+  }
+  const { ranks } = placeBoxes(setup, sizes, ranking(link => !link.reversed, true));
+  return ranking(link => (link.unranked ? rankIn(ranks, lift(setup, link.from)) <= rankIn(ranks, lift(setup, link.to)) : !link.reversed), false);
+}
 
-  // A link left out of the ranking (an undeclared dependency against the design) runs the way the others rank its ends.
-  const baseSizes = placed(base);
-  const firstRanks = ranked.some(link => link.unranked) ? place(baseSizes, forDagre(link => !link.reversed, true)).ranks : undefined;
-  const dagreLinks = forDagre(link => (firstRanks && link.unranked ? rankIn(firstRanks, lift(link.from)) <= rankIn(firstRanks, lift(link.to)) : !link.reversed), false);
-
-  // The sides each line meets, by the ranks; a box with more lines on a side than the side holds grows along it.
-  const sidesOf = (ranks: ReadonlyMap<string, number>) => new Map<string, [Side, Side]>(links.map(link => {
-    if (sideways.includes(link)) {
+/** The sides each link meets its two boxes on, by the ranks. */
+function sidesOf(setup: Setup, ranks: ReadonlyMap<string, number>): Map<string, [Side, Side]> {
+  return new Map<string, [Side, Side]>(setup.links.map(link => {
+    if (setup.sideways.includes(link)) {
       return [link.id, ['beside', 'beside']];
     }
-    const from = rankIn(ranks, lift(link.from));
-    const to = rankIn(ranks, lift(link.to));
+    const from = rankIn(ranks, lift(setup, link.from));
+    const to = rankIn(ranks, lift(setup, link.to));
     if (link.from === link.to) {
       return [link.id, ['end', 'end']];
     }
@@ -221,70 +259,93 @@ export function layOut(boxes: Box[], links: LayeredLink[], direction: Direction,
     }
     return [link.id, from < to ? ['end', 'start'] : ['start', 'end']];
   }));
+}
+
+/** The boxes grown along each side that meets more lines than the side holds. */
+function grownBoxes(setup: Setup, sides: ReadonlyMap<string, [Side, Side]>): Map<string, Box> {
+  const { axis } = setup;
   const lineCounts = new Map<string, number>();
-  const firstSides = sidesOf(place(baseSizes, dagreLinks).ranks);
-  for (const link of links) {
-    const [fromSide, toSide] = firstSides.get(link.id) ?? ['end', 'start'];
+  for (const link of setup.links) {
+    const [fromSide, toSide] = sides.get(link.id) ?? ['end', 'start'];
     for (const key of [`${link.from} ${fromSide}`, `${link.to} ${toSide}`]) {
       lineCounts.set(key, (lineCounts.get(key) ?? 0) + 1);
     }
   }
-  const grown = new Map([...base].map(([id, box]) => {
+  return new Map([...setup.base].map(([id, box]) => {
     const across = Math.max(lineCounts.get(`${id} start`) ?? 0, lineCounts.get(`${id} end`) ?? 0);
     const along = lineCounts.get(`${id} beside`) ?? 0;
     const size = axis.rect(0, 0, Math.max(axis.mainSize(box), along > 0 ? portRoom(along) : 0), Math.max(axis.crossSize(box), across > 0 ? portRoom(across) : 0));
     return [id, { id, width: size.width, height: size.height }];
   }));
-  const sizes = placed(grown);
-  const { arrangement, ranks } = place(sizes, dagreLinks);
-  const sides = sidesOf(ranks);
-  const rankOf = (id: string) => rankIn(ranks, lift(besides.get(id) ?? id));
+}
 
-  // Every box where it stands, a stack's members inside it.
+/** The boxes in their ranks: where each stands, a stack's members inside it, and each rank's band along the main axis. */
+interface Placed {
+  rects: Map<string, Rect>;
+  rankOf: (id: string) => number;
+  bands: { start: number; end: number; centre: number }[];
+  bends: Arrangement['bends'];
+}
+
+function rectOf(placed: Placed, id: string): Rect {
+  const rect = placed.rects.get(id);
+  if (!rect) {
+    throw new Error(`the layered drawing placed no box for ${id}`);
+  }
+  return rect;
+}
+
+function placedOf(setup: Setup, sizes: Sizes, arrangement: Arrangement, ranks: Map<string, number>): Placed {
+  const { axis } = setup;
   const rects = new Map(arrangement.rects);
   for (const [id, rect] of sizes.members) {
-    const at = rects.get(lift(id));
+    const at = rects.get(lift(setup, id));
     if (at) {
       rects.set(id, { ...rect, x: rect.x + at.x, y: rect.y + at.y });
     }
   }
-  const rectOf = (id: string) => {
-    const rect = rects.get(id);
-    if (!rect) {
-      throw new Error(`the layered drawing placed no box for ${id}`);
-    }
-    return rect;
-  };
-  const rankCount = Math.max(0, ...ranks.values()) + 1;
-  const bands = Array.from({ length: rankCount }, () => ({ start: Infinity, end: -Infinity, centre: 0 }));
+  const rankOf = (id: string) => rankIn(ranks, lift(setup, setup.besides.get(id) ?? id));
+  const bands = Array.from({ length: Math.max(0, ...ranks.values()) + 1 }, () => ({ start: Infinity, end: -Infinity, centre: 0 }));
   for (const box of sizes.boxes) {
-    const rect = rectOf(box.id);
+    const rect = rects.get(box.id);
     const band = bands[rankOf(box.id)];
-    if (band) {
+    if (rect && band) {
       band.start = Math.min(band.start, axis.mainStart(rect));
       band.end = Math.max(band.end, axis.mainStart(rect) + axis.mainSize(rect));
       band.centre = arrangement.centres.get(box.id) ?? band.centre;
     }
   }
-  const centreOf = (id: string) => axis.crossStart(rectOf(id)) + axis.crossSize(rectOf(id)) / 2;
+  return { rects, rankOf, bands, bends: arrangement.bends };
+}
 
-  // Each ranked line's stops, rank by rank: its first box's port, where it passes the ranks between, its last box's port.
+/** The lines' stops rank by rank, and every place a line meets a box. */
+interface Stops {
+  stops: Map<string, Stop[]>;
+  meets: Meet[];
+  besideMeets: Map<string, readonly [Meet, Meet]>;
+}
+
+/** Each ranked line's stops: its first box's port, where it passes the ranks between, its last box's port. */
+function stopsOf(setup: Setup, placed: Placed, sides: ReadonlyMap<string, [Side, Side]>): Stops {
+  const { axis, besides } = setup;
   const meets: Meet[] = [];
   const meet = (key: string, box: string, side: Side, toward: number): Meet => {
     const item: Meet = { key, box, side, wall: side === 'start' || (side === 'beside' && besides.has(box)) ? 'end' : 'start', toward };
     meets.push(item);
     return item;
   };
-  const stopsOf = new Map<string, Stop[]>();
-  for (const link of ranked) {
+  const crossCentre = (id: string) => axis.crossStart(rectOf(placed, id)) + axis.crossSize(rectOf(placed, id)) / 2;
+  const mainCentre = (id: string) => axis.mainStart(rectOf(placed, id)) + axis.mainSize(rectOf(placed, id)) / 2;
+  const stops = new Map<string, Stop[]>();
+  for (const link of setup.ranked) {
     const [fromSide, toSide] = sides.get(link.id) ?? ['end', 'start'];
-    const from = rankOf(link.from);
-    const to = rankOf(link.to);
+    const from = placed.rankOf(link.from);
+    const to = placed.rankOf(link.to);
     const step = Math.sign(to - from);
     const passes: Stop[] = [];
     for (let rank = from + step; rank !== to; rank += step) {
-      const centre = bands[rank]?.centre ?? 0;
-      const point = (arrangement.bends.get(link.id) ?? []).find(item => Math.abs(axis.main(item) - centre) < 1);
+      const centre = placed.bands[rank]?.centre ?? 0;
+      const point = (placed.bends.get(link.id) ?? []).find(item => Math.abs(axis.main(item) - centre) < 1);
       if (!point) {
         throw new Error(`dagre left ${link.id} no room in rank ${rank}`);
       }
@@ -293,44 +354,53 @@ export function layOut(boxes: Box[], links: LayeredLink[], direction: Direction,
     const first = passes[0];
     const last = passes.at(-1);
     const own = link.from === link.to;
-    stopsOf.set(link.id, [
-      { rank: from, meet: meet(`${link.id} from`, link.from, fromSide, own ? -Infinity : first && 'pass' in first ? first.pass : centreOf(link.to)) },
+    stops.set(link.id, [
+      { rank: from, meet: meet(`${link.id} from`, link.from, fromSide, own ? -Infinity : first && 'pass' in first ? first.pass : crossCentre(link.to)) },
       ...passes,
-      { rank: to, meet: meet(`${link.id} to`, link.to, toSide, own ? Infinity : last && 'pass' in last ? last.pass : centreOf(link.from)) },
+      { rank: to, meet: meet(`${link.id} to`, link.to, toSide, own ? Infinity : last && 'pass' in last ? last.pass : crossCentre(link.from)) },
     ]);
   }
-  const mainCentre = (id: string) => axis.mainStart(rectOf(id)) + axis.mainSize(rectOf(id)) / 2;
-  const besideMeets = new Map(sideways.map(link => [link.id, [meet(`${link.id} from`, link.from, 'beside', mainCentre(link.to)), meet(`${link.id} to`, link.to, 'beside', mainCentre(link.from))]] as const));
+  const besideMeets = new Map(setup.sideways.map(link => [link.id, [meet(`${link.id} from`, link.from, 'beside', mainCentre(link.to)), meet(`${link.id} to`, link.to, 'beside', mainCentre(link.from))] as const]));
+  return { stops, meets, besideMeets };
+}
 
-  // The ports: each side's lines in the order of where they head, spread over the side's ports of its wall's parity.
+/** The ports: each side's lines in the order of where they head, spread over the side's ports of its wall's parity. */
+function portsOf(axis: Axis, placed: Placed, meets: Meet[]): (item: Meet) => number {
   const ports = new Map<string, number>();
   for (const group of Map.groupBy(meets, item => `${item.box} ${item.side}`).values()) {
     const sorted = group.sort((a, b) => a.toward - b.toward || (a.key < b.key ? -1 : 1));
     for (const [index, item] of sorted.entries()) {
-      const rect = rectOf(item.box);
+      const rect = rectOf(placed, item.box);
       const [from, length] = item.side === 'beside' ? [axis.mainStart(rect), axis.mainSize(rect)] : [axis.crossStart(rect), axis.crossSize(rect)];
       ports.set(item.key, portFor(index, sorted.length, portsAlong(from, from + length, item.wall)));
     }
   }
-  const portOf = (item: Meet) => {
+  return item => {
     const port = ports.get(item.key);
     if (port === undefined) {
       throw new Error(`the layered drawing gave ${item.key} no port`);
     }
     return port;
   };
-  /** Where a stop meets a wall of the channel beside its rank: its box's port, or the wall's port nearest its pass. */
-  const crossAt = (stop: Stop, wall: Wall) => ('meet' in stop ? portOf(stop.meet) : portNear(stop.pass, wall));
+}
 
-  // The channels: the one after each rank holds the legs between it and the next, and the lines from a box back to it.
-  const channels = Array.from({ length: rankCount }, () => [] as ChannelLine[]);
-  const legKey = (link: string, index: number) => `${link} ${index}`;
-  const sideCounts = Map.groupBy(meets, item => `${item.box} ${item.side}`);
+function legKey(link: string, index: number): string {
+  return `${link} ${index}`;
+}
+
+/**
+ * The legs of each channel: the one after each rank holds the legs between it and the next, and the lines from a box
+ * back to it. A marked line has its mark on its first leg beside the box it leaves, or on its last beside the box it
+ * enters, whichever side meets fewer lines; `marked` names the leg.
+ */
+function channelsOf(setup: Setup, placed: Placed, found: Stops, portOf: (item: Meet) => number): { channels: ChannelLine[][]; marked: Map<string, number> } {
+  const channels = Array.from({ length: placed.bands.length }, () => [] as ChannelLine[]);
+  const crossAt = (stop: Stop, wall: Wall) => ('meet' in stop ? portOf(stop.meet) : portNear(stop.pass, wall));
+  const sideCounts = Map.groupBy(found.meets, item => `${item.box} ${item.side}`);
   const linesAt = (stop: Stop | undefined) => (stop && 'meet' in stop ? sideCounts.get(`${stop.meet.box} ${stop.meet.side}`)?.length ?? 0 : Infinity);
   const marked = new Map<string, number>();
-  for (const link of ranked) {
-    const stops = stopsOf.get(link.id) ?? [];
-    // The mark goes on the first leg beside the box it leaves, or on the last beside the box it enters.
+  for (const link of setup.ranked) {
+    const stops = found.stops.get(link.id) ?? [];
     const onFirst = link.mark !== undefined && linesAt(stops[0]) < linesAt(stops.at(-1));
     for (const [index, stop] of stops.slice(0, -1).entries()) {
       const next = stops[index + 1];
@@ -350,54 +420,56 @@ export function layOut(boxes: Box[], links: LayeredLink[], direction: Direction,
       });
     }
   }
-  const plans = channels.map((lines, rank) => (rank < rankCount - 1 || lines.length > 0 ? planChannel(lines, rank < rankCount - 1 ? spacing.rank : 0) : undefined));
+  return { channels, marked };
+}
 
-  // Each rank moves along the main axis so that the channel before it is as wide as its tracks need.
+/**
+ * Plans each channel and moves each rank along the main axis so that the channel before it is as wide as its tracks
+ * need; the boxes move with their ranks. The legs' routes and the ranks' moved bands.
+ */
+function widened(setup: Setup, placed: Placed, channels: ChannelLine[][]): { legs: Map<string, Route>; bands: { start: number; end: number }[] } {
+  const { axis, spacing } = setup;
+  const last = placed.bands.length - 1;
+  const plans = channels.map((lines, rank) => (rank < last || lines.length > 0 ? planChannel(lines, rank < last ? spacing.rank : 0) : undefined));
   const shifts: number[] = [];
-  let at = bands[0]?.start ?? 0;
-  for (const [rank, band] of bands.entries()) {
+  let at = placed.bands[0]?.start ?? 0;
+  for (const [rank, band] of placed.bands.entries()) {
     shifts.push(at - band.start);
     at += band.end - band.start + (plans[rank]?.width ?? 0);
   }
-  for (const [id, rect] of rects) {
-    const shift = shifts[rankOf(id)] ?? 0;
-    rects.set(id, axis.rect(axis.mainStart(rect) + shift, axis.crossStart(rect), axis.mainSize(rect), axis.crossSize(rect)));
+  for (const [id, rect] of placed.rects) {
+    const shift = shifts[placed.rankOf(id)] ?? 0;
+    placed.rects.set(id, axis.rect(axis.mainStart(rect) + shift, axis.crossStart(rect), axis.mainSize(rect), axis.crossSize(rect)));
   }
-  const moved = bands.map((band, rank) => ({ start: band.start + (shifts[rank] ?? 0), end: band.end + (shifts[rank] ?? 0) }));
-  const bandAt = (rank: number) => {
-    const band = moved[rank];
-    if (!band) {
-      throw new Error(`the layered drawing has no rank ${rank}`);
-    }
-    return band;
-  };
+  const bands = placed.bands.map((band, rank) => ({ start: band.start + (shifts[rank] ?? 0), end: band.end + (shifts[rank] ?? 0) }));
   const legs = new Map(channels.flatMap((lines, rank) => {
     const plan = plans[rank];
-    return plan ? [...routeChannel(lines, plan, bandAt(rank).end)] : [];
+    const band = bands[rank];
+    return plan && band ? [...routeChannel(lines, plan, band.end)] : [];
   }));
+  return { legs, bands };
+}
 
-  // The routes: from the first box's side to its rank's edge, through each channel and each rank passed, into the last box.
+/** The ranked lines' points: from the first box's side to its rank's edge, through each channel and rank passed, into the last box. */
+function rankedPoints(setup: Setup, placed: Placed, stops: Map<string, Stop[]>, portOf: (item: Meet) => number, legs: Map<string, Route>, bands: { start: number; end: number }[]): Map<string, Point[]> {
+  const { axis } = setup;
   const points = new Map<string, Point[]>();
-  const mids = new Map<string, Point>();
-  for (const [id, index] of marked) {
-    const leg = legs.get(legKey(id, index));
-    if (leg) {
-      mids.set(id, axis.point(leg.mid.x, leg.mid.y));
-    }
-  }
-  for (const [id, stops] of stopsOf) {
+  for (const [id, line] of stops) {
     const path: Point[] = [];
-    for (const [index, stop] of stops.entries()) {
-      const band = bandAt(stop.rank);
+    for (const [index, stop] of line.entries()) {
+      const band = bands[stop.rank];
+      if (!band) {
+        throw new Error(`the layered drawing has no rank ${stop.rank}`);
+      }
       if ('meet' in stop) {
-        const rect = rectOf(stop.meet.box);
+        const rect = rectOf(placed, stop.meet.box);
         const port = portOf(stop.meet);
         const side = stop.meet.side === 'start' ? [axis.mainStart(rect), band.start] : [axis.mainStart(rect) + axis.mainSize(rect), band.end];
         const ends = side.map(main => axis.point(main, port));
         path.push(...(index === 0 ? ends : ends.reverse()));
       } else {
         // A pass enters its rank at one wall's port and leaves at the other's, stepping over in the middle.
-        const down = stop.rank > (stops[index - 1]?.rank ?? stop.rank);
+        const down = stop.rank > (line[index - 1]?.rank ?? stop.rank);
         const [enter, leave]: [Wall, Wall] = down ? ['end', 'start'] : ['start', 'end'];
         const [first, last] = down ? [band.start, band.end] : [band.end, band.start];
         const middle = (band.start + band.end) / 2;
@@ -410,31 +482,38 @@ export function layOut(boxes: Box[], links: LayeredLink[], direction: Direction,
     }
     points.set(id, path);
   }
+  return points;
+}
 
-  // The lines to the boxes beside others, each through the channel between its two boxes.
-  for (const [anchor, lines] of besideLines) {
-    const rect = rectOf(anchor);
+/** The lines to the boxes beside others, each through the channel between its two boxes. */
+function besidePoints(setup: Setup, placed: Placed, found: Stops, portOf: (item: Meet) => number): Map<string, Point[]> {
+  const points = new Map<string, Point[]>();
+  for (const [anchor, lines] of setup.besideLines) {
+    const rect = rectOf(placed, anchor);
     const channel = lines.map((link): ChannelLine => {
-      const [from, to] = besideMeets.get(link.id) ?? [];
+      const [from, to] = found.besideMeets.get(link.id) ?? [];
       if (!from || !to) {
         throw new Error(`the layered drawing met ${link.id} at no box`);
       }
       return { id: link.id, from: { y: portOf(from), wall: from.wall }, to: { y: portOf(to), wall: to.wall } };
     });
-    for (const [id, route] of routeChannel(channel, planChannel(channel, gaps.get(anchor) ?? spacing.node), rect.x + rect.width)) {
+    for (const [id, route] of routeChannel(channel, planChannel(channel, setup.gaps.get(anchor) ?? setup.spacing.node), rect.x + rect.width)) {
       points.set(id, route.points);
     }
   }
+  return points;
+}
 
-  // The drawing starts at the origin, moved by whole steps of the port grid so that every port keeps its parity.
+/**
+ * The drawing moved to start at the origin, by whole steps of the port grid so that every port keeps its parity; a
+ * marked line's label point is its mark's centre.
+ */
+function atOrigin(rects: Map<string, Rect>, points: Map<string, Point[]>, mids: Map<string, Point>): Layered {
   const corners = [...rects.values()].flatMap(rect => [{ x: rect.x, y: rect.y }, { x: rect.x + rect.width, y: rect.y + rect.height }]).concat([...points.values()].flat());
   const left = Math.floor(Math.min(0, ...corners.map(point => point.x)) / PORT_GRID) * PORT_GRID;
   const top = Math.floor(Math.min(0, ...corners.map(point => point.y)) / PORT_GRID) * PORT_GRID;
-  for (const [id, rect] of rects) {
-    rects.set(id, { ...rect, x: rect.x - left, y: rect.y - top });
-  }
   return {
-    rects,
+    rects: new Map([...rects].map(([id, rect]) => [id, { ...rect, x: rect.x - left, y: rect.y - top }])),
     routes: new Map([...points].map(([id, path]) => {
       const moved = tidy(path.map(point => ({ x: point.x - left, y: point.y - top })));
       const mid = mids.get(id);
@@ -443,4 +522,29 @@ export function layOut(boxes: Box[], links: LayeredLink[], direction: Direction,
     width: Math.max(0, ...corners.map(point => point.x - left)),
     height: Math.max(0, ...corners.map(point => point.y - top)),
   };
+}
+
+/**
+ * Places the boxes in ranks and routes every link. `beside` maps a box to the box it stands beside (TB only), as
+ * arrange's does; a box keeps that place only if each of its links joins it to that box. `stacks` names boxes that
+ * stand as one; no link joins two members of one stack. The boxes are ranked once at their own sizes, grown where a
+ * side meets more lines than it holds, and placed again; then the lines are routed.
+ */
+export function layOut(boxes: Box[], links: LayeredLink[], direction: Direction, spacing: Spacing, options: { beside?: ReadonlyMap<string, string>; stacks?: Stack[] } = {}): Layered {
+  const setup = setUp(boxes, links, direction, spacing, options);
+  const baseSizes = sized(setup, setup.base);
+  const dagreLinks = dagreLinksOf(setup, baseSizes);
+  const sizes = sized(setup, grownBoxes(setup, sidesOf(setup, placeBoxes(setup, baseSizes, dagreLinks).ranks)));
+  const { arrangement, ranks } = placeBoxes(setup, sizes, dagreLinks);
+  const placed = placedOf(setup, sizes, arrangement, ranks);
+  const found = stopsOf(setup, placed, sidesOf(setup, ranks));
+  const portOf = portsOf(setup.axis, placed, found.meets);
+  const { channels, marked } = channelsOf(setup, placed, found, portOf);
+  const { legs, bands } = widened(setup, placed, channels);
+  const points = new Map([...rankedPoints(setup, placed, found.stops, portOf, legs, bands), ...besidePoints(setup, placed, found, portOf)]);
+  const mids = new Map([...marked].flatMap(([id, index]) => {
+    const leg = legs.get(legKey(id, index));
+    return leg ? [[id, setup.axis.point(leg.mid.x, leg.mid.y)] as const] : [];
+  }));
+  return atOrigin(placed.rects, points, mids);
 }
