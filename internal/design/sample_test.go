@@ -94,13 +94,14 @@ type gNode struct {
 	component *syntax.ComponentDecl
 	uses      []*gNode
 
-	typeDecl  *syntax.TypeDecl
-	bases     []*gNode
-	fields    []gField
-	values    []string
-	ops       []*gNode
-	simple    bool // can be generated, without recursion
-	recursive bool // a tree type, generable through its own list or optional
+	typeDecl   *syntax.TypeDecl
+	bases      []*gNode
+	interfaces []*gNode
+	fields     []gField
+	values     []string
+	ops        []*gNode
+	simple     bool // can be generated, without recursion
+	recursive  bool // a tree type, generable through its own list or optional
 
 	opDecl  *syntax.OpDecl
 	params  []gField
@@ -784,6 +785,7 @@ func (d *designer) genFields() {
 			iface := pick(d, "iface", ifaces)
 			t.typeDecl.Lines = append(t.typeDecl.Lines, &syntax.Implements{Type: syntax.TypeRef{Segments: d.refTo(iface, a)}})
 			d.edge("implements", t, iface)
+			t.interfaces = append(t.interfaces, iface)
 		}
 		valueLines(t)
 		if t.form == "enum" || t.form == "interface" {
@@ -970,6 +972,10 @@ func gVisibleFields(n *gNode) []gField {
 	visit(n)
 	return out
 }
+
+// gVisibleOps lists the operations of n as the loader resolves them: its
+// own, those of its bases, then those of the interfaces it and its bases
+// implement (docs/language.md §4.4).
 func gVisibleOps(n *gNode) []*gNode {
 	var out []*gNode
 	visited, chosen := map[*gNode]bool{}, map[string]bool{}
@@ -990,5 +996,18 @@ func gVisibleOps(n *gNode) []*gNode {
 		}
 	}
 	visit(n)
+	implementing := []*gNode{n}
+	for i := 0; i < len(implementing); i++ {
+		for _, base := range implementing[i].bases {
+			if !slices.Contains(implementing, base) {
+				implementing = append(implementing, base)
+			}
+		}
+	}
+	for _, current := range implementing {
+		for _, iface := range current.interfaces {
+			visit(iface)
+		}
+	}
 	return out
 }

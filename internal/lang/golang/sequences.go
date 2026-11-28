@@ -316,6 +316,20 @@ func (c *contractCompiler) modelParents(id string) []string {
 	}
 	return slices.Clone(c.extends[id])
 }
+
+// modelInterfaces are the interfaces id declares that it implements, in
+// identity order.
+func (c *contractCompiler) modelInterfaces(id string) []string {
+	var out []string
+	for _, edge := range c.graphEdges() {
+		if edge.Kind == graph.EdgeKindImplements && edge.From == id && c.nodes[edge.To].Layer == graph.LayerDesign {
+			out = append(out, edge.To)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 func (c *contractCompiler) visibleOperationIDs(id string) []string {
 	var out []string
 	seenTypes, seenNames := map[string]bool{}, map[string]bool{}
@@ -336,5 +350,21 @@ func (c *contractCompiler) visibleOperationIDs(id string) []string {
 		}
 	}
 	visit(id)
+	// The interfaces the type and its bases implement come last, as in
+	// the design (docs/language.md §4.4).
+	implementing, seen := []string{id}, map[string]bool{id: true}
+	for i := 0; i < len(implementing); i++ {
+		for _, parent := range c.modelParents(implementing[i]) {
+			if !seen[parent] {
+				seen[parent] = true
+				implementing = append(implementing, parent)
+			}
+		}
+	}
+	for _, current := range implementing {
+		for _, iface := range c.modelInterfaces(current) {
+			visit(iface)
+		}
+	}
 	return out
 }

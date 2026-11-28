@@ -8,8 +8,6 @@ type Backend object "Go 的后端：用 go/packages 和 go/types 静态抽取，
   implements lang.Generator
   implements lang.GenerationExtractor
   implements lang.Runner
-  op extract(root: string, srcRoots: list<string>) -> lang.Extracted raises lang.ExtractFailed "抽取源码根目录下的 Go 代码层：节点及其属性（包括每个函数的直接效果）、边，以及方法的候选边（design.md §4）"
-  op run(plan: lang.RunPlan) -> lang.RunReport "核对 plan.root 中的生成文件后回放，或在 plan.explore 时长内探索，返回每条性质和流程的结论"
 }
 
 type ContractSample record "executes-contracts 的输入：一次转账的余额表、转出和转入的账户、金额，对其他值的改动量 foreignDelta，以及被测函数是否返回错误" {
@@ -207,7 +205,7 @@ property split-failures-replay-by-seed invariant "一条性质在奇数输入上
 }
 
 property derived-state-is-removed postcondition "Go 后端回放一条派生函数建出目录的性质之后，派生函数记下了目录，记下的目录都已删除，不论用例通过、失败、被前提拒绝、panic 还是派生函数出错；有派生函数出错的用例时，运行报告的诊断中有 lang.golang.derivation-failed" {
-  about Backend.run
+  about lang.Runner.run
   forall backend: Backend
   forall outcomes: list<DerivedOutcome>
   forall plan: lang.RunPlan generated "把一个 Go 模块写进新目录、生成驱动并建图得到的运行输入：模块中的一条性质带派生输入，派生函数新建一个目录并把它的路径记在模块根目录的 built.txt 中，outcomes 的每一项是这条性质的一个声明的用例，按其结局使用例通过、失败、被前提拒绝、在被测调用中 panic，或者使派生函数记下目录之后返回错误"
@@ -232,7 +230,7 @@ property derived-template-skips-self-naming-state invariant "派生函数建出�
 }
 
 property extracts-direct-effects postcondition "抽取 root 中的模块没有诊断，抽取出的操作恰是 module.expected 中的那些，每个操作带 directEffects 当且仅当 module.expected 给它非空的效果，带的效果种类与 module.expected 中的相同" {
-  about Backend.extract
+  about lang.Backend.extract
   forall backend: Backend
   forall module: EffectModule generated "位于根目录、源码根目录恰为 . 的模块 example.test/m 和它依赖并以目录 dep 替换的模块 example.test/dep 的文件，依赖模块有未导出的辅助函数、保存函数字面量的包级变量和一至三个导出函数（各调用零至两个标准库函数，可能调用辅助函数、该变量的函数和更早的导出函数），本模块有接口 Doer、类型 Impl 的方法 Do、保存函数字面量的包级变量和一至四个函数（各在函数体和其中的函数字面量中各调用零至两个标准库函数，可能调用依赖模块的一个导出函数、该变量的函数、本模块的一个函数和经 Doer 调用的 Do），标准库的调用取自表中每一行的函数和方法、经 net.Conn 调用的方法和表外的同包函数，以及按这些调用逐个函数算出的、含抽象方法 Doer.Do 在内的每个操作的直接效果"
   forall root: string generated "把 module.files 写进的新目录的路径"
@@ -244,7 +242,7 @@ property extracts-direct-effects postcondition "抽取 root 中的模块没有�
 }
 
 property records-call-durations postcondition "Go 后端回放一条性质时，每个通过的用例记下正的执行耗时（纳秒）和恰好一次调用，即被测调用 demo.probe 及其不小于零、不大于执行耗时的耗时，outcomes 中有通过的用例时报告中有通过的用例" {
-  about Backend.run
+  about lang.Runner.run
   forall backend: Backend
   forall outcomes: list<DerivedOutcome>
   forall plan: lang.RunPlan generated "与 derived-state-is-removed 的 plan 相同"

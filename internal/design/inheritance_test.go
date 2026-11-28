@@ -9,8 +9,10 @@ import (
 )
 
 // inheritanceSource writes a component whose child type extends a parent
-// type with a field of the given value; when overridden, the child declares
-// a field and an operation of the parent's names, which shadow the parent's.
+// type with a field of the given value and implements an interface whose
+// operation a property calls on the child; when overridden, the child
+// declares a field and an operation of the parent's names, which shadow the
+// parent's.
 func inheritanceSource(value int, overridden bool) string {
 	childField, childOperation := "", ""
 	shown := strconv.Itoa(value)
@@ -35,8 +37,13 @@ type Parent object "Parent state" {
   op shift(delta: int) raises Rejected
 }
 
+type Readable interface "Readable state" {
+  op look() -> int pure
+}
+
 type Child object "Child state" {
   extends Parent
+  implements Readable
   field marker: int
 %s%s}
 
@@ -52,6 +59,13 @@ property inherited-value postcondition "Visible field and operation agree" {
   case supplied {
     child = {value: %s, stamp: %d, marker: %d}
   }
+}
+
+property implemented-operation postcondition "An implemented interface operation is visible on the type" {
+  about Readable.look
+  forall child: Child
+  call child.look()
+  ensure result == result
 }
 
 property inherited-sequence transition "A type reference retains its concrete receiver" {
@@ -72,25 +86,28 @@ property inherited-sequence transition "A type reference retains its concrete re
 // inheritanceNames are the names of inheritanceSource and its broken forms,
 // and the names each may take instead.
 var inheritanceNames = map[string][]string{
-	"domain":             {"domain", "family", "lineage"},
-	"Rejected":           {"Rejected", "Refused", "Failed"},
-	"reason":             {"reason", "why", "cause"},
-	"Parent":             {"Parent", "Base", "Ancestor"},
-	"Child":              {"Child", "Derived", "Heir"},
-	"stamp":              {"stamp", "mark", "tick"},
-	"marker":             {"marker", "tag", "flag"},
-	"read":               {"read", "fetch", "peek"},
-	"shift":              {"shift", "bump", "move"},
-	"delta":              {"delta", "offset", "jump"},
-	"inherited-value":    {"inherited-value", "shared-value", "base-value"},
-	"inherited-sequence": {"inherited-sequence", "call-sequence", "base-sequence"},
-	"child":              {"child", "heir", "kid"},
-	"steps":              {"steps", "sequence", "trail"},
-	"supplied":           {"supplied", "given", "fixed"},
-	"Nominal":            {"Nominal", "Plain", "Bare"},
-	"nominal-field":      {"nominal-field", "plain-field", "bare-field"},
-	"nominal":            {"nominal", "plain", "bare"},
-	"chosen":             {"chosen", "picked", "first"},
+	"domain":                {"domain", "family", "lineage"},
+	"Rejected":              {"Rejected", "Refused", "Failed"},
+	"reason":                {"reason", "why", "cause"},
+	"Parent":                {"Parent", "Base", "Ancestor"},
+	"Child":                 {"Child", "Derived", "Heir"},
+	"stamp":                 {"stamp", "mark", "tick"},
+	"marker":                {"marker", "tag", "flag"},
+	"read":                  {"read", "fetch", "peek"},
+	"shift":                 {"shift", "bump", "move"},
+	"delta":                 {"delta", "offset", "jump"},
+	"inherited-value":       {"inherited-value", "shared-value", "base-value"},
+	"inherited-sequence":    {"inherited-sequence", "call-sequence", "base-sequence"},
+	"child":                 {"child", "heir", "kid"},
+	"steps":                 {"steps", "sequence", "trail"},
+	"supplied":              {"supplied", "given", "fixed"},
+	"Nominal":               {"Nominal", "Plain", "Bare"},
+	"nominal-field":         {"nominal-field", "plain-field", "bare-field"},
+	"nominal":               {"nominal", "plain", "bare"},
+	"chosen":                {"chosen", "picked", "first"},
+	"Readable":              {"Readable", "Viewable", "Inspectable"},
+	"look":                  {"look", "glance", "scan"},
+	"implemented-operation": {"implemented-operation", "interface-operation", "granted-operation"},
 }
 
 // inheritanceFiles are the system file and the component of inheritanceSource.
@@ -100,8 +117,8 @@ func inheritanceFiles(value int, overridden bool) map[string]string {
 
 // genInheritance draws a valid design with inherited members under drawn
 // names, with the fields each type declares, the symbols of the sequence,
-// and the operation the tested call refers to: the child's when it shadows
-// the parent's.
+// and the operations the tested calls refer to: the child's when it shadows
+// the parent's, and the interface's for the operation the child implements.
 //
 //uc:generates design.inheritance-members-are-resolved.expected
 func genInheritance() *rapid.Generator[Expected] {
@@ -119,16 +136,20 @@ func genInheritance() *rapid.Generator[Expected] {
 				"domain.Parent":             {"fields": {"value: int", "stamp: int"}},
 				"domain.inherited-sequence": {"symbols": {"child: domain.Child", "steps: list<call<domain.Child>>"}},
 			}),
-			Edges: []EdgeRef{{Kind: "refers", From: r.apply("domain.inherited-value"), To: r.apply(operation)}},
+			Edges: []EdgeRef{
+				{Kind: "refers", From: r.apply("domain.inherited-value"), To: r.apply(operation)},
+				{Kind: "refers", From: r.apply("domain.implemented-operation"), To: r.apply("domain.Readable.look")},
+			},
 		}
 	})
 }
 
 // genBrokenInheritance draws the valid design of genInheritance broken in
-// one of three ways, a third of the time each: a record case leaves out an
+// one of four ways, a quarter of the time each: a record case leaves out an
 // inherited field; an enum or an interface extends the parent and a limit
-// and an ensure read its inherited field; or a sequence of calls names the
-// parent's operation for a child receiver; the names are drawn.
+// and an ensure read its inherited field; a sequence of calls names the
+// parent's operation for a child receiver; or the child no longer implements
+// the interface whose operation a property calls on it; the names are drawn.
 //
 //uc:generates design.inheritance-rejects-invalid-members.broken
 func genBrokenInheritance() *rapid.Generator[Broken] {
@@ -137,7 +158,7 @@ func genBrokenInheritance() *rapid.Generator[Broken] {
 		files := inheritanceFiles(value, overridden)
 		source := files["design/domain.uc"]
 		b := brokenFiles{files: files, path: "design/domain.uc"}
-		switch rapid.IntRange(0, 2).Draw(t, "break") {
+		switch rapid.IntRange(0, 3).Draw(t, "break") {
 		case 0:
 			files["design/domain.uc"] = strings.Replace(source, fmt.Sprintf(", stamp: %d", value+1), "", 1)
 			b.codes = []string{"design.value-type-mismatch"}
@@ -156,9 +177,12 @@ property nominal-field invariant "Only record values expose fields" {
 %s}
 `, value, value, value, supplied)
 			b.codes, b.subject = []string{"design.invalid-limit-path", "design.expression-type"}, "domain.nominal-field"
-		default:
+		case 2:
 			files["design/domain.uc"] = strings.Replace(source, "list<call<Child>>", "list<call<Parent.shift>>", 1)
 			b.codes = []string{"design.invalid-call-sequence"}
+		default:
+			files["design/domain.uc"] = strings.Replace(source, "  implements Readable\n", "", 1)
+			b.codes, b.subject = []string{"design.expression-type"}, "domain.implemented-operation"
 		}
 		return drawRenaming(t, inheritanceNames).broken(b).broken()
 	})

@@ -445,8 +445,12 @@ func (l *loader) typeDecl(f *syntax.File, parent, scope *entity, d *syntax.TypeD
 
 func (l *loader) supertype(e, scope *entity, kind graph.EdgeKind, r syntax.TypeRef) {
 	target := l.refer(e, scope, r.Segments, r.Pos, acceptType)
-	if kind == graph.EdgeKindExtends && target != nil {
+	switch {
+	case target == nil:
+	case kind == graph.EdgeKindExtends:
 		e.bases = append(e.bases, target)
+	case kind == graph.EdgeKindImplements:
+		e.interfaces = append(e.interfaces, target)
 	}
 	l.edge(kind, e, target, e.file, r.Pos, graph.SourceDeclared, nil)
 	l.depends(e, []ref{{strings.Join(r.Segments, "."), r.Pos, target}})

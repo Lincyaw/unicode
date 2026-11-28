@@ -67,6 +67,7 @@ var _ = ucParseDuration
 var _ = ucFinish
 var _ = ucFailedPredicate
 var _ = ucDerive
+var _ = ucGuard
 
 type nativeDeclaration struct {
 	obj types.Object
@@ -504,6 +505,7 @@ func (c *contractCompiler) unit(n graph.Node) *contractUnit {
 
 			ty.Parents = c.modelParents(node.Id)
 			ty.Parent = first(ty.Parents)
+			ty.Implements = c.modelInterfaces(node.Id)
 			unit.spec.Types[node.Id] = c.nativeModelType(node.Id, ty)
 		}
 		if node.Kind == graph.NodeKindOp {
@@ -1057,7 +1059,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 			}
 		}
 		body.WriteString("return values}\n")
-		fmt.Fprintf(&body, "func ucRandom%s(rt *rapid.T,s *ucContract){defer ucCleanDerived();ucInvoke%s(rt,s,ucInputs%s(rt,s))}\n", id, id, id)
+		fmt.Fprintf(&body, "func ucRandom%s(rt *rapid.T,s *ucContract){defer ucCleanDerived();ucGuard(rt,s,func(){ucInvoke%s(rt,s,ucInputs%s(rt,s))})}\n", id, id, id)
 		fmt.Fprintf(&body, "func ucDrive%s(t *testing.T, mode string, budget time.Duration, r *ucRunResult) { s:=%s(); *r=ucRunResult{Id:s.ID,Passed:true,Observations:append([]string{},s.Observe...)}; for _,o:=range s.Observers {r.Observations=append(r.Observations,o.Name)}; restore:=ucContext(r,false); defer restore(); defer func(){ucFailedPredicate(t,s,r);ucFinish(t,s,r)}();", id, specName)
 		if len(unit.spec.Derived) > 0 {
 			body.WriteString("defer ucCleanDerived();")
@@ -1081,7 +1083,7 @@ func (c *contractCompiler) render(file *contractFile) []byte {
 				// The state a case's derived inputs build is removed after
 				// the case; the deferred removal in the drive covers a case
 				// that stops the test.
-				fmt.Fprintf(&body, "ucInvoke%s(t,s,ucDerive%s(s,map[string]reflect.Value{%s}));ucCleanDerived();", id, id, strings.Join(vals, ","))
+				fmt.Fprintf(&body, "ucGuard(t,s,func(){ucInvoke%s(t,s,ucDerive%s(s,map[string]reflect.Value{%s}))});ucCleanDerived();", id, id, strings.Join(vals, ","))
 			}
 		}
 		fmt.Fprintf(&body, "if mode!=\"replay\" { restoreRandom:=ucContext(r,true); defer restoreRandom(); start:=time.Now(); rapid.Check(t,func(rt *rapid.T){if mode==\"explore\"&&time.Since(start)>budget{return};ucRandom%s(rt,s)})} }\n", id)

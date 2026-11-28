@@ -154,18 +154,18 @@ property reply-scripts-are-typed postcondition "应答脚本有一处不合 mode
   ensure all(c in broken.codes: any(d in result.diagnostics: d.code == c and d.position.path == broken.path and (broken.line == none or d.position.line == broken.line) and (broken.subject == none or d.subject == broken.subject)))
 }
 
-property inheritance-members-are-resolved postcondition "继承的字段和操作在表达式、限定、用例和调用序列中都能访问时载入没有诊断，类型的 fields 属性只列自己声明的字段，类型引用的调用序列在 symbols 属性中保留这个类型，被测调用的 refers 边指向实际声明的操作，子类型的同名操作遮蔽父类型的" {
+property inheritance-members-are-resolved postcondition "继承的字段和操作在表达式、限定、用例和调用序列中都能访问时载入没有诊断，类型的 fields 属性只列自己声明的字段，类型引用的调用序列在 symbols 属性中保留这个类型，被测调用的 refers 边指向实际声明的操作，子类型的同名操作遮蔽父类型的，类型经 implements 得到所实现接口的操作" {
   about loadSources
-  forall expected: Expected generated "一个系统文件和一个组件文件：子类型继承父类型的字段和操作，父类型字段的值取 -20 至 20 的整数，子类型或另声明同名的字段和操作来遮蔽父类型的、或不声明，两条性质在表达式、限定、用例和调用序列中访问继承的成员，组件、类型、字段、操作、符号、用例和性质的名称各从三个候选中取；附两个类型的 fields 属性、调用序列性质的 symbols 属性，以及被测调用指向实际声明的操作的 refers 边"
+  forall expected: Expected generated "一个系统文件和一个组件文件：子类型继承父类型的字段和操作，父类型字段的值取 -20 至 20 的整数，子类型或另声明同名的字段和操作来遮蔽父类型的、或不声明，子类型实现一个接口，两条性质在表达式、限定、用例和调用序列中访问继承的成员，另一条性质在子类型上调用接口的操作，组件、类型、字段、操作、符号、用例和性质的名称各从三个候选中取；附两个类型的 fields 属性、调用序列性质的 symbols 属性，以及两个被测调用指向实际声明的操作的 refers 边"
   call loadSources(expected.sources)
   ensure size(result.diagnostics) == 0
   ensure all(id in expected.attrs: all(k in expected.attrs[id]: result.graph.node(id).attrs[k] == expected.attrs[id][k]))
   ensure all(x in expected.edges: any(e in result.graph.edges(): e.kind == x.kind and e.from == x.from and e.to == x.to))
 }
 
-property inheritance-rejects-invalid-members postcondition "用例给出的记录缺继承的字段、继承对象类型的枚举或接口的字段被访问、操作引用的调用序列以子类型为接收者时，载入在出错的文件给出对应的全部诊断码，给出行或 subject 时诊断的行或 subject 也相符" {
+property inheritance-rejects-invalid-members postcondition "用例给出的记录缺继承的字段、继承对象类型的枚举或接口的字段被访问、操作引用的调用序列以子类型为接收者、类型不再实现的接口的操作被调用时，载入在出错的文件给出对应的全部诊断码，给出行或 subject 时诊断的行或 subject 也相符" {
   about loadSources
-  forall broken: Broken generated "与 inheritance-members-are-resolved 取法相同的设计做三种改动之一：记录用例去掉一个继承的字段，应得 design.value-type-mismatch，或者加一个继承父类型的枚举或接口并在一条新性质的限定和 ensure 中访问它继承的字段，应得 subject 为这条性质的 design.invalid-limit-path 和 design.expression-type，或者调用序列改为引用父类型的操作，应得 design.invalid-call-sequence；附组件文件，不给行"
+  forall broken: Broken generated "与 inheritance-members-are-resolved 取法相同的设计做四种改动之一：记录用例去掉一个继承的字段，应得 design.value-type-mismatch，或者加一个继承父类型的枚举或接口并在一条新性质的限定和 ensure 中访问它继承的字段，应得 subject 为这条性质的 design.invalid-limit-path 和 design.expression-type，或者调用序列改为引用父类型的操作，应得 design.invalid-call-sequence，或者子类型去掉 implements，应得 subject 为调用接口操作的性质的 design.expression-type；附组件文件，不给行"
   call loadSources(broken.sources)
   ensure all(c in broken.codes: any(d in result.diagnostics: d.code == c and d.position.path == broken.path and (broken.line == none or d.position.line == broken.line) and (broken.subject == none or d.subject == broken.subject)))
 }

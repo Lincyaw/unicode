@@ -32,6 +32,7 @@ type ucType struct {
 	Values                []string
 	Parent                string
 	Parents               []string
+	Implements            []string
 	Calls                 []ucOperation
 	Double                *ucDoubleFactory `json:"-"`
 }
@@ -244,7 +245,30 @@ func ucOperationFor(s *ucContract, model, name string) (ucOperation, bool) {
 		}
 		return ucOperation{}, false
 	}
-	return find(model)
+	if operation, ok := find(model); ok {
+		return operation, true
+	}
+	// The interfaces a type or its bases implement come last (docs/language.md §4.4).
+	var implemented func(string) (ucOperation, bool)
+	visited := map[string]bool{}
+	implemented = func(current string) (ucOperation, bool) {
+		if visited[current] {
+			return ucOperation{}, false
+		}
+		visited[current] = true
+		for _, iface := range s.Types[current].Implements {
+			if operation, ok := find(iface); ok {
+				return operation, true
+			}
+		}
+		for _, parent := range ucParents(s.Types[current]) {
+			if operation, ok := implemented(parent); ok {
+				return operation, true
+			}
+		}
+		return ucOperation{}, false
+	}
+	return implemented(model)
 }
 
 func ucDeref(v reflect.Value) reflect.Value {
@@ -1118,7 +1142,7 @@ func (env *ucEnvironment) prepare(e *ucExpr) (ucOperation, reflect.Value, []refl
 		if ok {
 			op.receiver = receiver
 			nativeReceiver := receiver.Native
-			if op.Owner != "" && op.Owner != base && env.spec.Types[op.Owner].NativeName != "" {
+			if op.Owner != "" && op.Owner != base && env.spec.Types[op.Owner].NativeName != "" && env.spec.Types[op.Owner].Form != "interface" {
 				nativeReceiver = ucOwnerView(receiver.Native, env.spec.Types, base, op.Owner, false)
 			}
 			if !nativeReceiver.IsValid() {
@@ -1998,6 +2022,29 @@ func ucExecute(s *ucContract, inputs map[string]reflect.Value, explore bool) (ou
 		}
 	}
 	return out
+}
+
+// ucGuard runs one case of the go test driver: constructing its inputs and
+// checking them. An issue raised while the inputs are constructed, a draw
+// or a derivation that fails (docs/language.md E24), is a check error of
+// the case (E15): it is recorded with its own code and fails the test, and
+// it neither counts as a counterexample nor escapes the drive.
+func ucGuard(t rapid.TB, s *ucContract, run func()) {
+	defer func() {
+		if problem := recover(); problem != nil {
+			issue, ok := problem.(ucIssue)
+			if !ok {
+				panic(problem)
+			}
+			if ucCurrent != nil {
+				ucCurrent.Infrastructure = true
+				ucCurrent.Passed = false
+				ucCurrent.Diagnostics = append(ucCurrent.Diagnostics, ucDiagnosticOf(s, issue))
+			}
+			t.Fatalf("contract %s check error: %s", s.ID, issue.message)
+		}
+	}()
+	run()
 }
 
 // ucManual preserves the same substitution boundary around preconditions and
