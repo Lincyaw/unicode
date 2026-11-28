@@ -1,4 +1,4 @@
-.PHONY: check check-steps build lint test fmt-check gen-check self-check rule-check api api-check serve-gen serve-gen-check web-check deep
+.PHONY: check check-steps build lint test fmt-check gen-check self-check rule-check api api-check serve-gen serve-gen-check web-check view-check deep
 
 # check is what a lane runs once its work is done: default rapid settings. Full
 # runs on one machine take turns through one lock (CLAUDE.md, Roles and
@@ -13,7 +13,7 @@ check:
 		$(MAKE) check-steps; \
 	fi
 
-check-steps: lint fmt-check gen-check self-check rule-check api-check serve-gen-check web-check
+check-steps: lint fmt-check gen-check self-check rule-check api-check serve-gen-check web-check view-check
 	$(MAKE) test
 
 # build makes bin/unicode with the viewer's pages in it (docs/design.md §8): the
@@ -67,6 +67,13 @@ api-check:
 web-check:
 	pnpm --dir web install --frozen-lockfile --silent
 	pnpm --dir web run --silent check
+
+# The viewer's acceptance on this repository (CLAUDE.md principle 12): web/scripts/view-check.ts builds
+# this repository's snapshot, serves it with the pages web-check built, and checks every view kind and
+# the entity page of each kind of node in a headless Chromium (Playwright's; pnpm --dir web exec
+# playwright install chromium fetches it once).
+view-check: web-check
+	node web/scripts/view-check.ts
 
 # The server's Go code (docs/design.md §3) is generated from api/openapi.yaml by
 # oapi-codegen. serve-gen regenerates it; serve-gen-check fails when it differs.
