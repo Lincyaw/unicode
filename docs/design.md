@@ -374,6 +374,8 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 
 监控文件中的元素都是细节（[model.md](model.md) §9 D6）。
 
+运行时包 `monitor` 本身不受监控，因为它的监控文件要导入它自己。符号中有派生输入、调用值（`call<…>`）、应答脚本或类型为接口的值的性质，也不在运行时判定：这些值在测试中由派生函数、载体和替身给出，真实的调用不给出它们。
+
 **轨迹与流程的核对。** 接口包装和入口包装为每次调用开始一个 OpenTelemetry span，名称是被调用的设计操作的标识。Go 函数或方法的第一个参数是 `context.Context` 时（§4），span 以其中的 span 为父，传给真实实现的是带新 span 的 context；没有这个参数时，span 没有父 span。流程的步骤次序取自这些 span：第一个步骤的调用的 span 是根，经由 context 连到它的 span 依次是其中的调用。流程的核对器写在 `monitor` 中，Go 后端核对测试中的运行轨迹（§6.4）时也调用它：两种来源先转成同一种调用事件，即进入、返回或抛出的错误、事件的发布，以及因果上的父调用，再与步骤树比较。一个流程在运行时核对次序，要求它的每个步骤都能在轨迹中观察到：
 
 - 步骤只有 `call`、`emit` 和 `alt`、`opt`、`loop`、`on` 片段，没有 `send` 和 `async`，因为后两者可能在第一个步骤返回之后、在别的进程中发生；
@@ -382,7 +384,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 
 不满足时，这个流程在运行时只判定陈述，不核对次序。
 
-**采样。** 每个操作有一个采样比例，在 0 到 1 之间。接口包装和入口包装对每次调用都开始 span 并记下调用事件，只对抽中的调用取值和判定，判定的开销因此按比例下降；流程在第一个步骤的调用被抽中时核对次序。比例由环境变量 `UNICODE_MONITOR_RATE` 给出，写作 `默认比例[,操作的标识=比例]...`，缺省为 `0.01`。
+**采样。** 每个操作有一个采样比例，在 0 到 1 之间。接口包装和入口包装对每次调用都开始 span 并记下调用事件，只对抽中的调用取值和判定，判定的开销因此按比例下降；流程在第一个步骤的调用被抽中时核对次序。比例由环境变量 `UNICODE_MONITOR_RATE` 给出，写作 `默认比例[,操作的标识=比例]...`，缺省为 `0.01`。其中操作的标识是包装所在的操作，也就是 span 的名称：接口包装取接口中的操作，例如 `serve.Builder.build`，不取实现类型中的同名操作。
 
 **判定深度。** 判定读取哪些值，由被调用的设计操作 o 的效果（[model.md](model.md) §9 D8）决定：
 
@@ -391,7 +393,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 
 具名观察在两种深度下都只在它的适配器廉价时读取，调用前后各一次。适配器**廉价**是指它的效果（D8）为空或只有 `time`：廉价与否由适配器的代码推出，不另写声明，所以读写文件、进程或网络的适配器不在真实的调用上运行。`gen` 按判定深度为每条性质在每个操作上定下判定哪些子句（[language.md](language.md) E26），写进判定函数。
 
-读调用前后的状态，还要求这段时间中没有并发的受监控的调用改变它：同一个接收者上有另一次受监控的调用与这次重叠时，这次不读接收者；程序中有另一次受监控的调用与这次重叠时，这次不读具名观察，也不检查范围。读不到的值按 [language.md](language.md) E26 处理：读它的 `ensure` 不判定，读它的前提使这次调用不判定这条性质。结论记下每个子句被判定的次数，读者因此能看到哪些子句在运行时得到了检查。不经监控的并发改动看不到，设计也不描述并发（附录 B 第 6 条）。
+读调用前后的状态，还要求这段时间中没有并发的受监控的调用改变它：同一个接收者上有另一次受监控的调用与这次重叠时，这次不读接收者；程序中有另一次受监控的调用与这次重叠时，这次不读具名观察，也不检查范围。读不到的值按 [language.md](language.md) E26 处理：读它的 `ensure` 不判定，读它的前提使这次调用不判定这条性质，读它的限定也一样，例如不读接收者时接收者上的限定。取值域只按限定检查：生成的符号没有限定，合乎类型就在取值域中；枚举的值不另核对是否为声明的枚举值。结论记下每个子句被判定的次数，读者因此能看到哪些子句在运行时得到了检查。不经监控的并发改动看不到，设计也不描述并发（附录 B 第 6 条）。
 
 **不改变真实的调用。** 判定只报告，不改变也不阻挡程序的调用：
 
@@ -402,10 +404,10 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 
 **报告。** 判定的结论经 OpenTelemetry 报告，并写成运行记录：
 
-- 每个反例、域外调用和检查错误是这次调用的 span 上的一个事件，名为 `unicode.counterexample`、`unicode.outside_domain` 和 `unicode.check_error`。事件的属性 `unicode.check` 是性质或流程的标识，`unicode.clause` 是不成立的子句、限定或前提，写作 `ensure#2`、`where#1`、`requires#1` 这样的序号，`unicode.input_hash` 是输入哈希；事件不带输入的值。
+- 每个反例、域外调用和检查错误是这次调用的 span 上的一个事件，名为 `unicode.counterexample`、`unicode.outside_domain` 和 `unicode.check_error`。事件的属性 `unicode.check` 是性质或流程的标识，`unicode.clause` 是不成立的子句、限定或前提，写作 `ensure#2`、`where#1`、`requires#1` 这样的序号，反例不是 `ensure` 为假时写作 `changes`（范围外的差异）、`raises`（未声明的错误）或 `call`（调用 panic）；`unicode.input_hash` 是输入哈希，按这次判定读到的符号脱敏之后的规范编码计算，结论为通过时不冻结输入，也不计算哈希；事件不带输入的值。
 - 计数器按 `unicode.check` 计数：`unicode.monitor.applicable` 是适用的调用，`unicode.monitor.counterexamples`、`unicode.monitor.outside_domain` 和 `unicode.monitor.check_errors` 是三种结论，`unicode.monitor.write_failures` 是写不出的记录；直方图 `unicode.monitor.duration` 按 `unicode.op` 记下受监控的调用的耗时，以秒计。
 - `monitor` 只依赖 OpenTelemetry 的 API（`go.opentelemetry.io/otel` 的 `trace` 和 `metric`），导出由组合根装上的 SDK 完成。`cmd/unicode` 在带同一构建条件的文件中装上 SDK 和 OTLP/HTTP 导出器，按 OpenTelemetry 标准的 `OTEL_*` 环境变量配置，所以默认构建不含 SDK。没有装 SDK 时，span 没有标识，流程不核对次序，其余照常。
-- 每个**记录周期**（一分钟）结束时，`monitor` 为这个周期中有判定的性质和流程写出一份运行记录，格式与 `unicode test` 的相同（§8 运行的 JSON），执行场合为 `runtime`（[model.md](model.md) §3.5）。每条结论记下适用的调用数、域外调用数及各条不成立的限定或前提的次数、每个子句被判定的次数、检查错误、带 `within` 时耗时的第 95 百分位，以及反例：每个反例带冻结的输入、不成立的子句和时间，输入经过脱敏（见下文）；通过的调用不留输入。流程另记下核对的轨迹数。记录的提交和工作区是否有改动取自 Go 写进程序的构建信息，即 `runtime/debug.ReadBuildInfo` 的 `vcs.revision` 和 `vcs.modified`。记录写到环境变量 `UNICODE_MONITOR_DIR` 给出的目录（缺省为工作目录下的 `.unicode`）中的 `runs/`，文件名是内容的 SHA-256，所以几个副本同时写入互不覆盖。
+- 每个**记录周期**（一分钟）结束时，`monitor` 为这个周期中有判定的性质和流程写出一份运行记录，格式与 `unicode test` 的相同（§8 运行的 JSON），执行场合为 `runtime`（[model.md](model.md) §3.5）。每条结论记下适用的调用数、域外调用数及各条不成立的限定或前提的次数、每个子句被判定的次数（`ensure#n`，检查了范围时另有 `changes`）、检查错误、带 `within` 时耗时的第 95 百分位，以及反例：每个反例带冻结的输入、不成立的子句和时间，输入经过脱敏（见下文）；通过的调用不留输入。流程另记下核对的轨迹数。记录的提交和工作区是否有改动取自 Go 写进程序的构建信息，即 `runtime/debug.ReadBuildInfo` 的 `vcs.revision` 和 `vcs.modified`。记录写到环境变量 `UNICODE_MONITOR_DIR` 给出的目录（缺省为工作目录下的 `.unicode`）中的 `runs/`，文件名是内容的 SHA-256，所以几个副本同时写入互不覆盖。
 - 部署的程序写出的 `runs/` 中的文件放进仓库的 `.unicode/runs/` 之后，`unicode build` 像对测试的运行记录一样把它们编进快照的证据层（§5），查看器因此只从快照读到运行时的证据（CLAUDE.md 原则 12）。运行时的结论的执行输入哈希，是记录的提交上该性质或流程的执行输入哈希：`build` 像查询的 `--rev` 一样取出这个提交并建图求出，每个提交只建一次，结果按提交缓存在 `.unicode/cache/` 中。记录的工作区有改动，或者没有提交时，结论没有执行输入哈希，只是历史。
 
 **采集。** 环境变量 `UNICODE_MONITOR_TRAFFIC` 为 `on` 时，`monitor` 把抽中的调用的输入存下来，存下的调用称为**采集的调用**：
@@ -415,7 +417,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 - 采集的调用写到 `UNICODE_MONITOR_DIR` 中的 `traffic/<操作的标识>/<输入哈希>.json`，输入哈希按接收者和调用值计算，相同的输入只存一份；每个操作至多存 1000 个，存满后不再采集这个操作。
 - 采集的调用不写进 `corpus/`：录制文件只由 `unicode test --record` 写入（[language.md](language.md) F3），是评审过的回归集；采集的调用来自真实的调用，数量随流量增长，并且可能含有用户的数据。
 
-**脱敏。** 保存敏感数据的字段在设计中取一个带标签 `sensitive`（[model.md](model.md) §5）的具名类型。这种类型的值在 `monitor` 写出的每一处都被脱敏：采集的调用，以及运行记录中反例的输入。这样的值，无论是符号、字段、列表或集合的元素，还是映射的值，都换成规范编码中种类为 `redacted` 的值（§6.4），`text` 是原值的规范编码的 HMAC-SHA-256，写作小写十六进制。密钥取自环境变量 `UNICODE_MONITOR_KEY`，没有时由进程随机生成，密钥本身不写出。同一个密钥下相等的值脱敏后仍然相等，原值不能从中读回。OpenTelemetry 的事件和计数不带任何值，不需要脱敏。回放时，驱动把每个 `redacted` 的值换成按该类型构造的生成器（§6.2）以这个摘要为随机源取得的值，同一个摘要总得到同一个值。
+**脱敏。** 保存敏感数据的字段在设计中取一个带标签 `sensitive`（[model.md](model.md) §5）的具名类型。这种类型的值在 `monitor` 写出的每一处都被脱敏：采集的调用，以及运行记录中反例的输入。这样的值，无论是符号、字段、列表或集合的元素、映射的键或值、可选值的内容、codec 的表示，还是调用值的实参，都换成规范编码中种类为 `redacted` 的值（§6.4），`text` 是原值的规范编码的 HMAC-SHA-256，写作小写十六进制。密钥取自环境变量 `UNICODE_MONITOR_KEY`，没有时由进程随机生成，密钥本身不写出。同一个密钥下相等的值脱敏后仍然相等，原值不能从中读回。OpenTelemetry 的事件和计数不带任何值，不需要脱敏。回放时，驱动把每个 `redacted` 的值换成按该类型构造的生成器（§6.2）以这个摘要为随机源取得的值，同一个摘要总得到同一个值。
 
 **回放与部署之前的差分。** `unicode test --traffic` 把 `.unicode/traffic/` 中采集的调用回放为用例（[language.md](language.md) E29）：每条在运行时判定的单次调用契约和流程，以其被测调用（流程为第一个步骤）的操作的每个采集的调用为一个输入；每条在运行时判定的不变式，以对其类型 T 的对象的每个采集的调用为一个输入。带 `--since REV` 时，版本差分另以采集的调用为输入（§6.5）。部署一个新版本之前，以正在运行的版本的提交为 REV 运行它，差分有不同就不部署（§8 的部署）。
 
@@ -715,7 +717,7 @@ Go 先在不改动磁盘的前提下给源码插入 `runtime/trace.Log`，编译
 - **改写与输出**：改写在 POSIX 上是原子的（Windows 上不保证原子），并保留文件的权限，失败时不留下临时文件；写入或输出失败时退出码为 1。`cli.not-canonical` 的位置是与规范格式第一处不同的字节。`--help` 写到标准输出，退出码为 0。JSON 缩进两个空格。带 `--format json` 时，诊断是数据，写在标准输出的 JSON 中，标准错误只放日志；文本模式下，诊断写到标准错误，标准输出只列出改写了的或不是规范格式的文件。
 - **诊断的 JSON**：`{code, subject, path, line, column, message, fix}`，即线上记录 `diag.Flat` 的字段。`code` 是稳定的诊断码，写作 `<组件>.<短横线名称>`，例如 `syntax.unexpected-token`；每条约束有一个或几个，修正办法不同的子规则各用一个。`subject` 是出错的节点、边或文件；`syntax` 和 `cli` 的诊断，`subject` 是文件的路径。
 - **生成的 JSON**：与 `lang.Generation` 同形，为 `{edits: [{path, content, createOnly}], diagnostics: [...]}`；`content` 是 UTF-8 源码字符串，不是字节的 base64。`--dry-run` 返回同样的生成计划，不写文件。有诊断时 `gen` 不写入任何文件；没有诊断时，文本模式只列出生成文件的路径。目标已有文件而没有生成标记时是冲突，退出码为 5。
-- **运行的 JSON**：与 `lang.RunReport` 同形，为 `{version, snapshot, commit, dirty, at, venue, mode, results: [{id, passed, accepted, rejected, observations, differences, diagnostics, cases, codeTotal?, branchTotal?, errorTotal?}], diagnostics}`；`venue` 是执行场合（[model.md](model.md) §3.5），`unicode test` 写 `test`。运行时的运行记录（§6.6）与它同形，`venue` 为 `runtime`，没有 `snapshot` 和 `mode`，`accepted` 是适用的调用数，结论另有 `outsideDomain`（各项为不成立的限定或前提 `clause` 和次数 `calls`）、`clauses`（各项为子句 `clause` 和判定的次数 `judged`）、`p95`（以纳秒计）和流程的 `traces`，`cases` 只有反例；cases 保存逐输入的冻结模型值、inputHash、覆盖、轨迹、耗时及结果，数组为空时也输出 `[]`。外层的 `diagnostics` 列出不属于任何一条结论的诊断：工具失败、检查错误（[language.md](language.md) E15）和结果写入失败，有这样的诊断时退出码为 10；工具链不存在仍为 7。外层没有诊断而有 `passed = false` 的结论时退出码为 11，该结论的 `diagnostics` 指出不成立的 `ensure` 或范围外的差异。观察失败可以另列在相关的结论中，但外层的 `diagnostics` 中必须也有。命令输出和 `.unicode/results.json` 均使用小驼峰字段，所有层级的诊断都使用上面的扁平 JSON 形状；`diag.Diagnostic` 的 JSON 编解码统一写成此形状。
+- **运行的 JSON**：与 `lang.RunReport` 同形，为 `{version, snapshot, commit, dirty, at, venue, mode, results: [{id, passed, accepted, rejected, observations, differences, diagnostics, cases, codeTotal?, branchTotal?, errorTotal?}], diagnostics}`；`venue` 是执行场合（[model.md](model.md) §3.5），`unicode test` 写 `test`，没有 `venue` 的报告是测试的报告，所以此前的运行记录照常读入。运行时的运行记录（§6.6）与它同形，`venue` 为 `runtime`，没有 `snapshot` 和 `mode`，另有记录周期的开始时间 `from`，`at` 是周期的结束时间，`accepted` 是适用的调用数，结论另有 `outsideDomain`（各项为不成立的限定或前提 `clause` 和次数 `calls`）、`clauses`（各项为子句 `clause` 和判定的次数 `judged`）、`p95`（以纳秒计）和流程的 `traces`，`cases` 只有反例；cases 保存逐输入的冻结模型值、inputHash、覆盖、轨迹、耗时及结果，数组为空时也输出 `[]`。外层的 `diagnostics` 列出不属于任何一条结论的诊断：工具失败、检查错误（[language.md](language.md) E15）和结果写入失败，有这样的诊断时退出码为 10；工具链不存在仍为 7。外层没有诊断而有 `passed = false` 的结论时退出码为 11，该结论的 `diagnostics` 指出不成立的 `ensure` 或范围外的差异。观察失败可以另列在相关的结论中，但外层的 `diagnostics` 中必须也有。命令输出和 `.unicode/results.json` 均使用小驼峰字段，所有层级的诊断都使用上面的扁平 JSON 形状；`diag.Diagnostic` 的 JSON 编解码统一写成此形状。
 - **诊断码与规则**：违反规则的诊断码按规则列在 [language.md](language.md) 和 [model.md](model.md) 的附录 B 中。不属于任何规则的诊断码如下：
 
   | 诊断码 | 原因 |
