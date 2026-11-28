@@ -149,7 +149,7 @@ func implementsNetConn(fn *types.Func, net *types.Package) bool {
 // that what a cache holds changes with them: the table enters by its
 // content, the walk by this version, which a change to the calls a body
 // gives must raise.
-const effectsWalkVersion = "1"
+const effectsWalkVersion = "2"
 
 func effectsRules() string {
 	var b strings.Builder
@@ -172,65 +172,82 @@ func effectsRules() string {
 	return b.String()
 }
 
-// external is a function outside the code layer that the code calls: its
-// identity, and the package it belongs to.
+// external is a function outside the code layer that the code calls, and
+// the package it belongs to.
 type external struct {
-	id  string
+	fn  *types.Func
 	pkg *packages.Package
 }
 
 // effect is the kind of a function of the standard library by the table,
 // or "" when it has none or is not of the standard library.
 func (e external) effect() graph.Effect {
-	if !standard(e.pkg) || e.pkg.Types == nil {
+	if !standard(e.pkg) {
 		return ""
 	}
-	if fn := lookupFunc(e.pkg.Types, strings.TrimPrefix(e.id, "go:"+e.pkg.PkgPath+".")); fn != nil {
-		return stdEffect(fn)
+	return stdEffect(e.fn)
+}
+
+// usedFuncs indexes by identity the package-level functions and methods
+// that the packages name: those their calls and references name, with the
+// types their packages give them, which an identity alone does not reach.
+func usedFuncs(pkgs []*packages.Package) map[string]*types.Func {
+	out := map[string]*types.Func{}
+	for _, p := range pkgs {
+		for _, obj := range p.TypesInfo.Uses {
+			if fn, ok := obj.(*types.Func); ok && packageLevel(fn) {
+				out[funcID(fn.Origin())] = fn.Origin()
+			}
+		}
 	}
-	return ""
+	return out
+}
+
+// externals lists, for each function of an extraction, the functions
+// outside it that it calls, as the calls edges give them, by identity.
+func (x *extraction) externals(funcs map[string]*types.Func, known map[string]*packages.Package) map[string][]external {
+	out := map[string][]external{}
+	for _, key := range slices.SortedFunc(maps.Keys(x.edges), compareEdgeKeys) {
+		if key.kind != graph.EdgeKindCalls {
+			continue
+		}
+		fn := funcs[key.to]
+		if _, isNode := x.nodes[key.to]; isNode || fn == nil || known[fn.Pkg().Path()] == nil {
+			continue
+		}
+		out[key.from] = append(out[key.from], external{fn: fn, pkg: known[fn.Pkg().Path()]})
+	}
+	return out
 }
 
 // addDirectEffects writes the directEffects attr of each function of the
 // code layer: the kinds of the standard library functions it calls, and the
 // effects of the functions of dependency modules it calls, in the order of
 // graph.Effect. Functions of the main module outside the source roots are
-// not counted, nor are calls of functions that the types do not name.
+// not counted.
 func (x *extraction) addDirectEffects(l loaded) error {
 	known := importClosure(l.packages)
-	calls := map[string][]external{}
-	var fromDependencies []external
-	for _, key := range slices.SortedFunc(maps.Keys(x.edges), compareEdgeKeys) {
-		if key.kind != graph.EdgeKindCalls {
-			continue
-		}
-		if _, isNode := x.nodes[key.to]; isNode || x.nodes[key.from].Kind != graph.NodeKindOp {
-			continue
-		}
-		p := packageOf(known, key.to)
-		if p == nil {
-			continue
-		}
-		e := external{id: key.to, pkg: p}
-		calls[key.from] = append(calls[key.from], e)
-		if dependency(p) {
-			fromDependencies = append(fromDependencies, e)
-		}
-	}
+	calls := x.externals(usedFuncs(l.packages), known)
 	var deps map[string][]graph.Effect
-	if len(fromDependencies) > 0 {
-		var err error
-		if deps, err = dependencyEffects(l.root, known); err != nil {
-			return err
+	for _, callees := range calls {
+		if deps == nil && slices.ContainsFunc(callees, func(e external) bool { return dependency(e.pkg) }) {
+			var err error
+			if deps, err = dependencyEffects(l.root, known); err != nil {
+				return err
+			}
 		}
 	}
 	for from, callees := range calls {
+		n, isFunction := x.nodes[from]
+		if !isFunction || n.Kind != graph.NodeKindOp {
+			continue
+		}
 		has := map[graph.Effect]bool{}
 		for _, c := range callees {
 			if k := c.effect(); k != "" {
 				has[k] = true
 			}
-			for _, k := range deps[c.id] {
+			for _, k := range deps[funcID(c.fn)] {
 				has[k] = true
 			}
 		}
@@ -238,17 +255,20 @@ func (x *extraction) addDirectEffects(l loaded) error {
 			continue
 		}
 		var written []string
-		for _, k := range []graph.Effect{graph.EffectTime, graph.EffectFs, graph.EffectProcess, graph.EffectNetwork} {
+		for _, k := range effectKinds {
 			if has[k] {
 				written = append(written, string(k))
 			}
 		}
-		n := x.nodes[from]
 		n.Attrs["directEffects"] = written
 		x.nodes[from] = n
 	}
 	return nil
 }
+
+// effectKinds are the kinds of effect in the order they are written in
+// (docs/design.md §5.2).
+var effectKinds = []graph.Effect{graph.EffectTime, graph.EffectFs, graph.EffectProcess, graph.EffectNetwork}
 
 func compareEdgeKeys(a, b edgeKey) int {
 	return cmp.Or(cmp.Compare(a.kind, b.kind), cmp.Compare(a.from, b.from), cmp.Compare(a.to, b.to))
@@ -280,51 +300,4 @@ func importClosure(roots []*packages.Package) map[string]*packages.Package {
 		visit(p)
 	}
 	return out
-}
-
-// packageOf finds, among the known packages, the package of the function
-// whose identity funcID gives as id; a package's path may hold dots, so the
-// longest known path that the identity starts with names it.
-func packageOf(known map[string]*packages.Package, id string) *packages.Package {
-	rest, ok := strings.CutPrefix(id, "go:")
-	if !ok {
-		return nil
-	}
-	for i := len(rest) - 1; i > 0; i-- {
-		if p := known[rest[:i]]; rest[i] == '.' && p != nil {
-			return p
-		}
-	}
-	return nil
-}
-
-// lookupFunc finds a package-level function `Name`, or a method `Type.Name`
-// declared on a package-level type, of a package.
-func lookupFunc(pkg *types.Package, name string) *types.Func {
-	typeName, method, isMethod := strings.Cut(name, ".")
-	if !isMethod {
-		fn, _ := pkg.Scope().Lookup(name).(*types.Func)
-		return fn
-	}
-	tn, ok := pkg.Scope().Lookup(typeName).(*types.TypeName)
-	if !ok {
-		return nil
-	}
-	named, ok := types.Unalias(tn.Type()).(*types.Named)
-	if !ok {
-		return nil
-	}
-	for m := range named.Methods() {
-		if m.Name() == method {
-			return m
-		}
-	}
-	if iface, ok := named.Underlying().(*types.Interface); ok {
-		for m := range iface.ExplicitMethods() {
-			if m.Name() == method {
-				return m
-			}
-		}
-	}
-	return nil
 }

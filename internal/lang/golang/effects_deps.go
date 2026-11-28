@@ -212,22 +212,19 @@ func summarize(p *packages.Package, known map[string]*packages.Package) packageS
 			s.Functions[funcID(fn)] = functionSummary{}
 		}
 	}
-	for _, key := range slices.SortedFunc(maps.Keys(x.edges), compareEdgeKeys) {
-		f, ok := s.Functions[key.from]
-		if key.kind != graph.EdgeKindCalls || !ok {
+	for from, callees := range x.externals(usedFuncs([]*packages.Package{p}), known) {
+		f, ok := s.Functions[from]
+		if !ok {
 			continue
 		}
-		callee := packageOf(known, key.to)
-		switch {
-		case callee == nil:
-		case dependency(callee):
-			f.Calls = append(f.Calls, key.to)
-		default:
-			if k := (external{id: key.to, pkg: callee}).effect(); k != "" && !slices.Contains(f.Effects, string(k)) {
+		for _, c := range callees {
+			if dependency(c.pkg) {
+				f.Calls = append(f.Calls, funcID(c.fn))
+			} else if k := c.effect(); k != "" && !slices.Contains(f.Effects, string(k)) {
 				f.Effects = append(f.Effects, string(k))
 			}
 		}
-		s.Functions[key.from] = f
+		s.Functions[from] = f
 	}
 	for id, f := range s.Functions {
 		slices.SortFunc(f.Effects, func(a, b string) int { return effectRank(a) - effectRank(b) })
@@ -236,6 +233,4 @@ func summarize(p *packages.Package, known map[string]*packages.Package) packageS
 	return s
 }
 
-func effectRank(e string) int {
-	return slices.Index([]graph.Effect{graph.EffectTime, graph.EffectFs, graph.EffectProcess, graph.EffectNetwork}, graph.Effect(e))
-}
+func effectRank(e string) int { return slices.Index(effectKinds, graph.Effect(e)) }
