@@ -230,4 +230,4 @@
     - 后端的分派同样按黑盒写：`gen.plan` 和 `run.execute` 的后端是派生输入中记下所收输入的替身，观察适配器读出每个替身收到的输入，不为此抽出纯的调度核心。`gen.merge` 抽成纯操作，只为说出合并的结果与生成计划的次序无关。系统节点 `roots` 的三处解析合并为 `lang.languageRoots`。
     - 推导规则逐条写成推导之后的图上的局部条件。传递闭包借来历核对：`exercises` 边带属性 `path`（[model.md](model.md) §9 D5），与 D8 的来历同一做法。推导的样本附上生成时就定下的事实（模式匹配、容器深度、各代码元素所在的文件和各级容器、外部系统的操作、调用和导入），`Graph.edge` 按种类、起点和终点取一条边。快照的记录形式声明为 `graph.Snapshot`，`encode` 写出它的 JSON。
     - 次序的断言改为与输入次序无关（`graph.compare-is-canonical`、`graph.derive-ignores-order`、`gen.merge-ignores-order`）。
-    - 仍手写的两条各缺一项构造：`graph.reaches-covers-detail-chains` 要核对 `via` 恰是两个传递闭包的交，单一的来历不能逐条边核对；`graph.snapshot-json-is-the-record` 要解析 JSON。
+    - 仍手写的六条各缺一项构造，范围收窄到这一项：`graph.reaches-covers-detail-chains` 要核对 `via` 恰是两个传递闭包的交，单一的来历不能逐条边核对；`graph.snapshot-json-is-the-record` 和 `run.execute-writes-report-json` 要编码或解析 JSON；`graph.digest-is-lowercase-hex` 要逐个字符判断；`graph.compare-lists-are-present` 要区分 nil 列表和空列表；`review.concurrent-writes-keep-both` 要同时执行两次调用。迁移保留每一条原有的断言，只有原来就按决定 113 改为与次序无关的次序断言除外。

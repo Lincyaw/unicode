@@ -292,3 +292,10 @@ property recorded-reports-malformed-nodes postcondition "recorded 对 malformed.
   ensure size(result.records) == size(malformed.valid)
   ensure all(record in malformed.valid: record in result.records)
 }
+
+property concurrent-writes-keep-both invariant "两个写入者同时向同一个空存储写 sample 的第一个目标的两个意见不同的请求时，两次 write 都返回记录、没有诊断，之后 read 恰读出这两条记录" {
+  about write, read
+  forall sample: Sample generated "整数 -20 至 20 构造的一张固定的小图，约一半附基准图，以及十四种改动之一：不改、新增节点、删除节点及其边、改性质或观察的摘要、改手写谓词、观察适配器或无关函数的函数体、只移动无关函数的位置、新增、删除或改动边、改生成文件中的函数、把谓词绑定移到另一个函数；改动前和改动后的图中每个目标各以一半机会带按所在图的内容写的 approved 记录，已删除的项另以一半机会带 changes-requested 记录，并附应有的候选和待审目标"
+  requires size(sample.targets) > 0
+  manual "需要同时执行两次 write，一条性质只有一个被测调用"
+}

@@ -139,6 +139,7 @@ func treeDir() repo.Entry { return repo.Entry{Kind: repo.EntryKindDir, Mode: 0o7
 //uc:generates evidence.apply-writes-the-plan.sample
 //uc:generates evidence.apply-keeps-other-entries.sample
 //uc:generates evidence.apply-is-all-or-nothing.sample
+//uc:generates evidence.apply-diagnostics-are-described.sample
 //uc:generates evidence.apply-refuses-foreign-removals.sample
 func genCorpusSample() *rapid.Generator[CorpusSample] {
 	return rapid.Custom(func(t *rapid.T) CorpusSample {
@@ -213,6 +214,7 @@ func corpusGraph(t rapid.TB, cases []lang.CaseResult) *graph.Graph {
 //uc:generates evidence.apply-writes-the-plan.dir
 //uc:generates evidence.apply-keeps-other-entries.dir
 //uc:generates evidence.apply-is-all-or-nothing.dir
+//uc:generates evidence.apply-diagnostics-are-described.dir
 //uc:generates evidence.apply-refuses-foreign-removals.dir
 func deriveCorpusDir(sample CorpusSample) (string, error) { return repo.Materialize(sample.Tree) }
 
@@ -237,6 +239,7 @@ func deriveWritten(sample CorpusSample) (string, error) {
 // deriveBad is the plan without its diagnostics and with one unsafe action after it.
 //
 //uc:generates evidence.apply-is-all-or-nothing.bad
+//uc:generates evidence.apply-diagnostics-are-described.bad
 func deriveBad(sample CorpusSample, action int, dir string) Recording {
 	plan := Recordings(dir, sample.Graph, sample.Cases)
 	plan.Diagnostics = []diag.Diagnostic{}

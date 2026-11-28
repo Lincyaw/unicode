@@ -351,3 +351,30 @@ func genLatestSample() *rapid.Generator[LatestSample] {
 		return out
 	})
 }
+
+//uc:checks review.concurrent-writes-keep-both
+func checkConcurrentWritesKeepBoth(t rapid.TB, sample Sample) {
+	root, err := os.MkdirTemp("", "unicode-review-parallel-")
+	if err != nil {
+		t.Fatalf("no temporary directory for the store: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(root) }()
+	replies := make(chan Written, 2)
+	for _, comment := range []string{"parallel first", "parallel second"} {
+		go func() {
+			replies <- Write(root, sample.Graph, sample.Base, Request{Target: sample.Targets[0], Reviewer: "reviewer", Decision: "approved", Comment: comment})
+		}()
+	}
+	var written []Record
+	for range 2 {
+		reply := <-replies
+		if reply.Record == nil || len(reply.Diagnostics) != 0 {
+			t.Fatalf("a write that ran beside another returned no record: %+v", reply)
+		}
+		written = append(written, *reply.Record)
+	}
+	loaded := Read(root)
+	if len(loaded.Diagnostics) != 0 || len(loaded.Records) != 2 || !slices.Contains(loaded.Records, written[0]) || !slices.Contains(loaded.Records, written[1]) {
+		t.Fatalf("two writes that ran side by side did not both keep their records: wrote %+v, read %+v", written, loaded)
+	}
+}

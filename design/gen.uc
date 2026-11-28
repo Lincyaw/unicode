@@ -107,13 +107,14 @@ property check-files-agrees-with-write postcondition "生成计划不安全时�
   ensure not sample.safe implies result == rejection
 }
 
-property check-files-reports-stale-targets postcondition "生成计划安全、没有已存在的 createOnly 目标时，checkFiles 恰给每个缺失或内容不同的目标报一条 subject 为它的路径的 gen.stale-file，没有别的诊断，仓库内外的条目都不变" {
+property check-files-reports-stale-targets postcondition "生成计划安全、没有已存在的 createOnly 目标时，checkFiles 恰给每个缺失或内容不同的目标报一条 subject 为它的路径的 gen.stale-file，没有别的诊断，仓库内外的条目和修改时间都不变" {
   about checkFiles
   forall sample: WriteSample generated "与 write-rejects-unsafe-plans 的 sample 相同，只取三种安全的情形"
   forall state: repo.Tree generated "等概率取 sample.tree、sample.applied，或者 sample.applied 中改了一个目标的内容或删去一个目标的树"
   forall dir: string generated "materialize 把 state 写成的新目录"
   forall root: string generated "dir 下的 repo 目录"
   observe files: repo.Tree from dir
+  observe stamps: map<string, time> from dir
   requires not any(e in sample.edits: e.createOnly and sample.keys[e.path] in files.entries)
   changes none
   call checkFiles(root, sample.edits)
@@ -121,22 +122,26 @@ property check-files-reports-stale-targets postcondition "生成计划安全、�
   ensure all(d in result: d.code == "gen.stale-file" and count(x in result: x.subject == d.subject) == 1)
 }
 
-property check-files-rejects-written-create-only postcondition "安全的生成计划写入之后，计划中有 createOnly 的文件时 checkFiles 给出诊断，否则没有诊断，仓库内外的条目都不变" {
+property check-files-rejects-written-create-only postcondition "安全的生成计划写入之后，计划中有 createOnly 的文件时 checkFiles 给出诊断，否则没有诊断，仓库内外的条目和修改时间都不变" {
   about checkFiles
   forall sample: WriteSample generated "与 write-rejects-unsafe-plans 的 sample 相同，只取三种安全的情形"
   forall dir: string generated "materialize 把 sample.applied 写成的新目录"
   forall root: string generated "dir 下的 repo 目录"
   observe files: repo.Tree from dir
+  observe stamps: map<string, time> from dir
   changes none
   call checkFiles(root, sample.edits)
   ensure any(e in sample.edits: e.createOnly) == (size(result) > 0)
 }
 
-property check-files-diagnostics-are-described postcondition "checkFiles 给出的每条诊断都有位置的路径、从 1 起的行和列、原因和修正" {
+property check-files-diagnostics-are-described postcondition "checkFiles 给出的每条诊断都有位置的路径、从 1 起的行和列、原因和修正，仓库内外的条目和修改时间都不变" {
   about checkFiles
   forall sample: WriteSample generated "一棵目录树：repo 下是仓库，有一个带生成标记的 owned.go 和一个不带的 user.go（权限位都是 640），outside 下是仓库之外的 user.go，生成计划新建 repo 中一至八个小写字母的目录下的 new.go，内容是生成标记和任意文本，再按十三种情形之一改动，三种安全（只新建，另改写 owned.go，新建的文件为 createOnly），十种不安全（改写 user.go、越出仓库到 ../outside/user.go、同一目标两次、目标是指向 user.go 的符号链接、经过指向 ../outside 的目录链接、路径含 . 段、目标是另一目标的上一级目录、空路径、对 owned.go 或 user.go 用 createOnly）；keys 给计划中的每个路径前加 repo/，safe 是按情形定下的是否安全，applied 在安全时是把计划中的每个文件写进这棵树之后的树（新的目录权限位 755，新文件 644，已有的保留权限位），不安全时是原来的树"
   forall dir: string generated "materialize 把 sample.tree 写成的新目录"
   forall root: string generated "dir 下的 repo 目录"
+  observe files: repo.Tree from dir
+  observe stamps: map<string, time> from dir
+  changes none
   call checkFiles(root, sample.edits)
   ensure all(d in result: size(d.position.path) > 0 and d.position.line >= 1 and d.position.column >= 1 and size(d.message) > 0 and size(d.fix) > 0)
 }

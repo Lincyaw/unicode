@@ -469,6 +469,12 @@ property digest-has-sha256-length invariant "图中每个节点的内容哈希�
   ensure all(n in content.nodes: size(g.digest(n.id)) == 64)
 }
 
+property digest-is-lowercase-hex invariant "图中每个节点的内容哈希都只由 0 至 9 和 a 至 f 组成" {
+  about Graph.digest
+  forall content: Fragment generated "零至八个标识互不相同的节点，以及零至十二条两端都在其中、彼此不同的边：标识是 a、b、.、#、- 组成的一至四个字符，种类、层和来源任取，出处取自三个路径（含空路径）和零至三的行列，形式、摘要以及属性的键和值都是由 a、b、英文双引号、< 和汉字“中”组成的零至三个字符，属性至多三个键、每键至多两个值，可以没有属性、有空的属性列表和自环，节点各以一半机会显著"
+  manual "需要逐个字符判断内容哈希的字符，表达式没有逐字符的字符串操作"
+}
+
 property compare-lists-changed-nodes postcondition "compare 列出的节点恰是只在 head 中的（新增）、只在 base 中的（删除）和两边都有而内容哈希不同的（修改），每个只列一次，before 和 after 是它在 base 和 head 中的节点" {
   about compare
   forall base: Fragment generated "零至八个标识互不相同的节点，以及零至十二条两端都在其中、彼此不同的边：标识是 a、b、.、#、- 组成的一至四个字符，种类、层和来源任取，出处取自三个路径（含空路径）和零至三的行列，形式、摘要以及属性的键和值都是由 a、b、英文双引号、< 和汉字“中”组成的零至三个字符，属性至多三个键、每键至多两个值，可以没有属性、有空的属性列表和自环，节点各以一半机会显著"
@@ -524,6 +530,13 @@ property compare-balances-attr-values postcondition "比较中每个键上去掉
   ensure all(c in result.nodes: all(a in c.attrs: (c.after != none and a.key in c.after.attrs implies all(v in a.added: count(x in a.added: x == v) <= count(x in c.after.attrs[a.key]: x == v))) and (not (c.after != none and a.key in c.after.attrs) implies size(a.added) == 0)))
   ensure all(c in result.nodes: all(a in c.attrs: c.before != none and c.after != none and a.key in c.before.attrs and a.key in c.after.attrs implies all(v in c.before.attrs[a.key]: count(x in c.before.attrs[a.key]: x == v) - count(x in a.removed: x == v) == count(x in c.after.attrs[a.key]: x == v) - count(x in a.added: x == v)) and all(v in c.after.attrs[a.key]: count(x in c.before.attrs[a.key]: x == v) - count(x in a.removed: x == v) == count(x in c.after.attrs[a.key]: x == v) - count(x in a.added: x == v))))
   ensure all(c in result.nodes: all(a in c.attrs: (c.before != none and a.key in c.before.attrs and not (c.after != none and a.key in c.after.attrs) implies all(v in c.before.attrs[a.key]: count(x in a.removed: x == v) == count(x in c.before.attrs[a.key]: x == v))) and (c.after != none and a.key in c.after.attrs and not (c.before != none and a.key in c.before.attrs) implies all(v in c.after.attrs[a.key]: count(x in a.added: x == v) == count(x in c.after.attrs[a.key]: x == v)))))
+}
+
+property compare-lists-are-present invariant "compare 的结果中 nodes、edges、每个节点变化的 attrs 以及每个属性变化的 removed 和 added 都不是 nil 列表" {
+  about compare
+  forall base: Fragment generated "零至八个标识互不相同的节点，以及零至十二条两端都在其中、彼此不同的边：标识是 a、b、.、#、- 组成的一至四个字符，种类、层和来源任取，出处取自三个路径（含空路径）和零至三的行列，形式、摘要以及属性的键和值都是由 a、b、英文双引号、< 和汉字“中”组成的零至三个字符，属性至多三个键、每键至多两个值，可以没有属性、有空的属性列表和自环，节点各以一半机会显著"
+  forall head: Fragment generated "base 的一份改动：每个节点和边约五分之一删去、五分之一改内容（边只改属性，改动可能落空）、五分之一重取出处和来源（节点另重取层并翻转显著性），其余不变，端点被删去的边一并删去，再加上零至三个新节点和零至四条新边，新节点可能用回删去的节点的标识"
+  manual "需要区分 nil 列表和空列表，模型值的列表不区分两者"
 }
 
 property compare-is-canonical relation "两张图的节点和边各按 rotation 轮换次序后加入两张新图，compare 给出的比较与原来的逐项相同，次序也相同" {

@@ -17,6 +17,7 @@ import (
 //uc:generates graph.compare-lists-changed-attrs.head
 //uc:generates graph.compare-balances-attr-values.head
 //uc:generates graph.compare-is-canonical.head
+//uc:generates graph.compare-lists-are-present.head
 //uc:generates graph.compare-reverses.head
 func genEdit(base Fragment) *rapid.Generator[Fragment] {
 	return rapid.Custom(func(t *rapid.T) Fragment {
@@ -156,4 +157,30 @@ func deriveRotatedBase(base Fragment, rotation int) (*Graph, error) {
 //uc:generates graph.compare-is-canonical.rh
 func deriveRotatedHead(head Fragment, rotation int) (*Graph, error) {
 	return graphOf(rotate(head.Nodes, rotation), rotate(head.Edges, rotation))
+}
+
+//uc:checks graph.compare-lists-are-present
+func checkCompareListsArePresent(t rapid.TB, base Fragment, head Fragment) {
+	gb, err := graphOf(base.Nodes, base.Edges)
+	if err != nil {
+		t.Fatalf("the base fragment does not make a graph: %v", err)
+	}
+	gh, err := graphOf(head.Nodes, head.Edges)
+	if err != nil {
+		t.Fatalf("the head fragment does not make a graph: %v", err)
+	}
+	c := Compare(gb, gh)
+	if c.Nodes == nil || c.Edges == nil {
+		t.Fatalf("compare gave a nil list of node or edge changes: %+v", c)
+	}
+	for _, n := range c.Nodes {
+		if n.Attrs == nil {
+			t.Fatalf("the change of the node %q has a nil list of attrs changes", n.Id)
+		}
+		for _, a := range n.Attrs {
+			if a.Removed == nil || a.Added == nil {
+				t.Fatalf("the change of the key %q of the node %q has a nil list of removed or added values", a.Key, n.Id)
+			}
+		}
+	}
 }

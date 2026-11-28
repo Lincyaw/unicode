@@ -44,6 +44,7 @@ type sampleRecord struct {
 //uc:generates review.evaluation-follows-content.sample
 //uc:generates review.recorded-inverts-attach.sample
 //uc:generates review.attach-keeps-input-digest.sample
+//uc:generates review.concurrent-writes-keep-both.sample
 func genSample() *rapid.Generator[Sample] {
 	return rapid.Custom(func(t *rapid.T) Sample {
 		value := rapid.IntRange(-20, 20).Draw(t, "value")

@@ -5,6 +5,7 @@ import (
 	"maps"
 	"math/rand/v2"
 	"reflect"
+	"regexp"
 	"slices"
 
 	"pgregory.net/rapid"
@@ -84,12 +85,14 @@ func genNode() *rapid.Generator[Node] {
 //uc:generates graph.decode-inverts-encode.content
 //uc:generates graph.decode-is-total.content
 //uc:generates graph.digest-has-sha256-length.content
+//uc:generates graph.digest-is-lowercase-hex.content
 //uc:generates graph.compare-with-itself-is-empty.content
 //uc:generates graph.compare-lists-changed-nodes.base
 //uc:generates graph.compare-lists-changed-edges.base
 //uc:generates graph.compare-lists-changed-attrs.base
 //uc:generates graph.compare-balances-attr-values.base
 //uc:generates graph.compare-is-canonical.base
+//uc:generates graph.compare-lists-are-present.base
 //uc:generates graph.compare-reverses.base
 func genFragment() *rapid.Generator[Fragment] {
 	return rapid.Custom(func(t *rapid.T) Fragment {
@@ -270,5 +273,20 @@ func checkSnapshotJsonIsTheRecord(t rapid.TB, content Fragment) {
 	}
 	if want := map[string]any{"nodes": nodes, "edges": edges}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("the JSON that encode wrote is not the snapshot record with its field names as keys and no null\nwrote: %v\nrecord: %v", got, want)
+	}
+}
+
+var lowercaseHex = regexp.MustCompile(`^[0-9a-f]*$`)
+
+//uc:checks graph.digest-is-lowercase-hex
+func checkDigestIsLowercaseHex(t rapid.TB, content Fragment) {
+	g, err := graphOf(content.Nodes, content.Edges)
+	if err != nil {
+		t.Fatalf("AddNode or AddEdge refused nodes with distinct identities and distinct edges between them: %v", err)
+	}
+	for _, n := range content.Nodes {
+		if d := g.Digest(n.Id); !lowercaseHex.MatchString(d) {
+			t.Fatalf("the digest %q of the node %q has a character that is not 0 to 9 or a to f", d, n.Id)
+		}
 	}
 }

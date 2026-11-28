@@ -246,6 +246,17 @@ property apply-is-all-or-nothing postcondition "计划中有一个不安全的�
   ensure size(result) > 0
 }
 
+property apply-diagnostics-are-described postcondition "applyRecordings 对有一个不安全的动作的计划给出的每条诊断都有位置的路径、从 1 起的行和列、原因和修正" {
+  about applyRecordings
+  forall sample: CorpusSample generated "一张图中组件 domain 下的性质 domain.rule 带一个 payload 符号，一至八个用例的结果，输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者约一半换成可打印的对应值（非 UTF-8 的字符串换成它的 Base64 文本，字节串换成它的 Base64 文本的字节）而能写成录制文件，其余不能写成录制文件（printable 为假），这时第一个用例是录制的反例，其余用例约一半是声明的，约四分之一是反例；仓库中有设计者的 design/domain.uc，corpus 等概率是 none（没有 corpus 目录）、orphan（corpus/removed.uc 是指向 removed 的录制文件，图中的 removed 等概率不存在或是设计层的操作、设计层的类型或代码层的性质）、foreign（corpus/broken.uc 的头是 corpus other）或 link（corpus/link.uc 是指向 ../design/domain.uc 的符号链接）"
+  forall action: int
+  forall dir: string generated "materialize 把 sample.tree 写成的新目录"
+  forall bad: Recording generated "recordings 对 dir、sample.graph 和 sample.cases 给出的计划去掉诊断，再按 action 加一个不安全的动作：0 写到 ../outside.uc，1 删除 design/domain.uc，2 写一个内容不是规范录制文件的 corpus/x.uc，3 计划有文件时再写一次第一个文件，否则写到 ../outside.uc"
+  where action in 0..3
+  call applyRecordings(dir, bad)
+  ensure all(d in result: size(d.position.path) > 0 and d.position.line >= 1 and d.position.column >= 1 and size(d.message) > 0 and size(d.fix) > 0)
+}
+
 property apply-refuses-foreign-removals postcondition "corpus 中有头与路径不符的录制文件或符号链接时，applyRecordings 删除它的计划给出诊断，不改动仓库" {
   about applyRecordings
   forall sample: CorpusSample generated "一张图中组件 domain 下的性质 domain.rule 带一个 payload 符号，一至八个用例的结果，输入都取十四种模型值中的同一种：整数、列表、集合、记录、经 codec 编码的记录、映射、调用值、应答脚本、字节串、时间、时长、浮点数、枚举或含接口替身的记录，其中经 codec 编码的记录和映射含非 UTF-8 的字符串，字节串含控制字节，三者约一半换成可打印的对应值（非 UTF-8 的字符串换成它的 Base64 文本，字节串换成它的 Base64 文本的字节）而能写成录制文件，其余不能写成录制文件（printable 为假），这时第一个用例是录制的反例，其余用例约一半是声明的，约四分之一是反例；仓库中有设计者的 design/domain.uc，corpus 等概率是 none（没有 corpus 目录）、orphan（corpus/removed.uc 是指向 removed 的录制文件，图中的 removed 等概率不存在或是设计层的操作、设计层的类型或代码层的性质）、foreign（corpus/broken.uc 的头是 corpus other）或 link（corpus/link.uc 是指向 ../design/domain.uc 的符号链接）"
@@ -289,14 +300,14 @@ property save-refuses-damaged-store postcondition "运行记录损坏或 results
   ensure size(result) > 0 and all(d in result: size(d.position.path) > 0 and d.position.line >= 1 and d.position.column >= 1 and size(d.message) > 0 and size(d.fix) > 0)
 }
 
-property read-reports-damaged-store postcondition "运行记录损坏或 results.json 是符号链接时，read 给出诊断，不改动仓库" {
+property read-reports-damaged-store postcondition "运行记录损坏或 results.json 是符号链接时，read 给出带位置、原因和修正的诊断，不改动仓库" {
   about read
   forall sample: StoreSample generated "与 save-keeps-history 的 sample 相同的报告，damage 等概率是 record（.unicode/runs 中多一个有重复键的 broken.json）或 link（.unicode/results.json 换成指向 ../design/domain.uc 的符号链接）"
   forall dir: string generated "materialize 写出只有 design/domain.uc 的新目录，依次用 save 保存 sample.earlier 中的报告，再按 sample.damage 损坏存储"
   observe files: repo.Tree from dir
   changes none
   call read(dir)
-  ensure size(result.diagnostics) > 0
+  ensure size(result.diagnostics) > 0 and all(d in result.diagnostics: size(d.position.path) > 0 and d.position.line >= 1 and d.position.column >= 1 and size(d.message) > 0 and size(d.fix) > 0)
 }
 
 property shrink-finds-the-smallest-failure postcondition "shrink 把反例缩小到仍失败、没有被拒绝的阈值，没有诊断，其间执行过候选、拒绝过候选，不改动原来的反例" {
@@ -311,7 +322,7 @@ property shrink-finds-the-smallest-failure postcondition "shrink 把反例缩小
   ensure log.evaluations > 0 and log.rejected > 0
 }
 
-property shrink-keeps-the-failure-when-interrupted postcondition "候选运行器只报预算耗尽或环境错误时，shrink 保留原来的反例的输入，环境错误时给出诊断，预算耗尽时没有诊断，不改动原来的反例" {
+property shrink-keeps-the-failure-when-interrupted postcondition "候选运行器只报预算耗尽或环境错误时，shrink 保留原来的反例的输入，环境错误时给出带位置、原因和修正的诊断，预算耗尽时没有诊断，不改动原来的反例" {
   about shrink
   forall sample: ShrinkSample generated "与 shrink-finds-the-smallest-failure 的 sample 相同，模式等概率是 exhausted 或 environment"
   forall runner: lang.CandidateRunner generated "按 sample.threshold 和 sample.mode 判定的候选运行器，记下执行和拒绝的次数：normal 时整数输入不小于阈值时失败、小于时通过，不是整数的输入拒绝；exhausted 时只报预算耗尽，environment 时只报一条环境错误"
@@ -321,6 +332,7 @@ property shrink-keeps-the-failure-when-interrupted postcondition "候选运行�
   call shrink(sample.initial, runner, sample.budget)
   ensure result.result.input == sample.initial.input
   ensure (sample.mode == "environment") == (size(result.diagnostics) > 0)
+  ensure all(d in result.diagnostics: size(d.position.path) > 0 and d.position.line >= 1 and d.position.column >= 1 and size(d.message) > 0 and size(d.fix) > 0)
 }
 
 property collected-calls-round-trip invariant "decodeCollected 读回 monitor.encodeCollected 写出的采集的调用，得到原来的 collected" {

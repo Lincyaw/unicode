@@ -3,10 +3,13 @@ package gen
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"pgregory.net/rapid"
 
@@ -240,6 +243,36 @@ func observeStaleTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir)
 
 //uc:observes gen.check-files-rejects-written-create-only.files
 func observeWrittenTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+//uc:observes gen.check-files-diagnostics-are-described.files
+func observeCheckedTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }
+
+// stamps reads the modification time of every entry under dir, links not followed.
+func stamps(dir string) (map[string]time.Time, error) {
+	out := map[string]time.Time{}
+	err := filepath.WalkDir(dir, func(p string, _ fs.DirEntry, err error) error {
+		if err != nil || p == dir {
+			return err
+		}
+		info, err := os.Lstat(p)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, p)
+		out[filepath.ToSlash(rel)] = info.ModTime()
+		return err
+	})
+	return out, err
+}
+
+//uc:observes gen.check-files-diagnostics-are-described.stamps
+func observeCheckedStamps(dir string) (map[string]time.Time, error) { return stamps(dir) }
+
+//uc:observes gen.check-files-reports-stale-targets.stamps
+func observeStaleStamps(dir string) (map[string]time.Time, error) { return stamps(dir) }
+
+//uc:observes gen.check-files-rejects-written-create-only.stamps
+func observeWrittenStamps(dir string) (map[string]time.Time, error) { return stamps(dir) }
 
 //uc:observes gen.plan-dispatches-configured-languages.files
 func observePlanTree(dir string) (repo.Tree, error) { return repo.ReadTree(dir) }

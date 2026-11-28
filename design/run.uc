@@ -116,3 +116,9 @@ property execute-rejects-omitted-results postcondition "目标都存在而后端
   call execute(plan, backends)
   ensure not any(id in sample.ids: sample.graph.node(id) == none) implies any(d in result.diagnostics: d.code == "run.invalid-report")
 }
+
+property execute-writes-report-json invariant "execute 写进 .unicode/results.json 的字节恰是返回的报告编码成的 JSON 加一个换行，其中报告的 results 和 diagnostics 以及各结论的 observations、differences、diagnostics 和 cases 都不是 null" {
+  about execute
+  forall sample: ExecuteSample generated "go 和 python 都配置了一至三个由一至七个小写字母组成的源码根目录，各有一至三条性质，谓词在这种语言的测试文件中，后端替身预先给出的结论各以一半机会通过（不通过的带一条诊断），有效执行数 1 至 50，拒绝数 0 至 10，每条性质一半有一至两个采集的调用的输入（符号 n 取 -9 至 9 的整数），每条性质一半被选中，都不选时表示全部，约四分之一另加一个不存在的标识；selected 是各语言选中的性质按标识排序，expected 是选中的性质的结论按标识排序"
+  manual "需要把报告编码成 JSON 再与文件的字节比较，表达式不能编码 JSON"
+}

@@ -54,6 +54,7 @@ type RunReceived struct {
 //uc:generates run.execute-rejects-duplicate-backends.sample
 //uc:generates run.execute-rejects-backends-without-runner.sample
 //uc:generates run.execute-rejects-omitted-results.sample
+//uc:generates run.execute-writes-report-json.sample
 func genExecuteSample() *rapid.Generator[ExecuteSample] {
 	return rapid.Custom(func(t *rapid.T) ExecuteSample {
 		g := graph.NewGraph()
@@ -282,4 +283,42 @@ func observeStored(dir string) (*lang.RunReport, error) {
 		return nil, err
 	}
 	return &report, nil
+}
+
+//uc:checks run.execute-writes-report-json
+func checkExecuteWritesReportJson(t rapid.TB, sample ExecuteSample) {
+	root, err := os.MkdirTemp("", "unicode-run-")
+	if err != nil {
+		t.Fatalf("no temporary directory for the repository: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(root) }()
+	got := Execute(lang.RunPlan{Root: root, Graph: sample.Graph, Ids: sample.Ids, Explore: time.Second, Traffic: sample.Traffic}, deriveRecordingBackends(sample))
+	written, err := os.ReadFile(filepath.Join(root, ".unicode", "results.json"))
+	if err != nil {
+		t.Fatalf("execute wrote no .unicode/results.json: %v", err)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("the returned report does not encode as JSON: %v", err)
+	}
+	if string(written) != string(encoded)+"\n" {
+		t.Fatalf("results.json is not the returned report's JSON and a newline:\nfile:   %s\nreport: %s", written, encoded)
+	}
+	var report struct {
+		Results     []map[string]json.RawMessage `json:"results"`
+		Diagnostics json.RawMessage              `json:"diagnostics"`
+	}
+	if err := json.Unmarshal(written, &report); err != nil {
+		t.Fatalf("results.json is not a JSON report: %v", err)
+	}
+	if report.Results == nil || string(report.Diagnostics) == "null" {
+		t.Fatalf("results.json writes the report's results or diagnostics as null: %s", written)
+	}
+	for _, result := range report.Results {
+		for _, key := range []string{"observations", "differences", "diagnostics", "cases"} {
+			if raw, ok := result[key]; !ok || string(raw) == "null" {
+				t.Fatalf("results.json writes the %s of a result as null or leaves it out: %s", key, written)
+			}
+		}
+	}
 }
