@@ -206,10 +206,22 @@ func formatFile(root, rel string, check bool) (string, []diag.Diagnostic, error)
 // which is neither followed nor rewritten, a path that KindOf rejects, a file
 // that cannot be read and one with syntax errors give diagnostics and no tree.
 func readFile(root, rel string) ([]byte, *syntax.File, []diag.Diagnostic) {
+	source, diags := readSource(root, rel)
+	if source == nil {
+		return nil, nil, diags
+	}
+	parsed := syntax.Parse(rel, source.Kind, source.Text)
+	return source.Text, parsed.File, parsed.Diagnostics
+}
+
+// readSource reads one file of design/ or corpus/ as a source. A symbolic
+// link, which is neither followed nor rewritten, a path that KindOf rejects
+// and a file that cannot be read give a diagnostic and no source.
+func readSource(root, rel string) (*syntax.Source, []diag.Diagnostic) {
 	at := diag.Position{Path: rel, Line: 1, Column: 1}
 	full := filepath.Join(root, filepath.FromSlash(rel))
 	if info, err := os.Lstat(full); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		return nil, nil, []diag.Diagnostic{{
+		return nil, []diag.Diagnostic{{
 			Code: "cli.symlink", Subject: rel, Position: at,
 			Message: "the file is a symbolic link, which unicode neither follows nor rewrites",
 			Fix:     "replace the link with the file it points to, or move the link out of design/ and corpus/",
@@ -217,7 +229,7 @@ func readFile(root, rel string) ([]byte, *syntax.File, []diag.Diagnostic) {
 	}
 	kind, err := syntax.KindOf(rel)
 	if err != nil {
-		return nil, nil, []diag.Diagnostic{{
+		return nil, []diag.Diagnostic{{
 			Code: "cli.not-a-design-file", Subject: rel, Position: at,
 			Message: "design/ and corpus/ may hold only .uc files, and this file is not one",
 			Fix:     "move the file out of design/ and corpus/, or rename it",
@@ -230,13 +242,12 @@ func readFile(root, rel string) ([]byte, *syntax.File, []diag.Diagnostic) {
 		if errors.As(err, &pathErr) {
 			err = pathErr.Err
 		}
-		return nil, nil, []diag.Diagnostic{{
+		return nil, []diag.Diagnostic{{
 			Code: "cli.unreadable-file", Subject: rel, Position: at,
 			Message: "cannot read the file: " + err.Error(), Fix: "make the file readable, or remove it",
 		}}
 	}
-	parsed := syntax.Parse(rel, kind, src)
-	return src, parsed.File, parsed.Diagnostics
+	return &syntax.Source{Path: rel, Kind: kind, Text: src}, nil
 }
 
 // notCanonical is the diagnostic of a file src whose canonical form is out.

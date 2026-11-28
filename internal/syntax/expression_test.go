@@ -7,15 +7,6 @@ import (
 	"pgregory.net/rapid"
 )
 
-// ExprSample is an expression written with brackets around every compound
-// subexpression, and its canonical text with only the brackets it needs.
-//
-//uc:realizes syntax.ExprSample
-type ExprSample struct {
-	Text      string
-	Canonical string
-}
-
 // exprTree is a drawn expression. An atom's text is its written form; a
 // binary expression's is its operator, a field's its name, a call's its
 // operation and a quantified expression's its quantifier and variable.
@@ -93,78 +84,11 @@ func bracketed(e *exprTree) string {
 	return e.text
 }
 
-// binding is how tightly an expression binds, from the precedence layers of
-// the grammar of docs/language.md §3: implies, or, and, not, the comparisons
-// and in, + and -, * and /; atoms, postfix expressions and bracketed forms bind tightest.
-func binding(e *exprTree) int {
-	switch {
-	case e.kind == "not":
-		return 4
-	case e.kind != "binary":
-		return 8
-	}
-	switch e.text {
-	case "implies":
-		return 1
-	case "or":
-		return 2
-	case "and":
-		return 3
-	case "+", "-":
-		return 6
-	case "*", "/":
-		return 7
-	}
-	return 5
-}
-
-// canonicalExpr writes e with brackets only where its operands would bind
-// otherwise without them: the operators group from the left, except implies,
-// which groups from the right, and the comparisons, which do not chain; e
-// stands where an expression must bind at least as tightly as outer.
-func canonicalExpr(e *exprTree, outer int) string {
-	c := e.children
-	p := binding(e)
-	var out string
-	switch e.kind {
-	case "binary":
-		left, right := p, p+1
-		switch {
-		case e.text == "implies":
-			left, right = p+1, p
-		case p == 5:
-			left = p + 1
-		}
-		out = canonicalExpr(c[0], left) + " " + e.text + " " + canonicalExpr(c[1], right)
-	case "not":
-		out = "not " + canonicalExpr(c[0], p)
-	case "field":
-		out = canonicalExpr(c[0], 8) + "." + e.text
-	case "index":
-		out = canonicalExpr(c[0], 8) + "[" + canonicalExpr(c[1], 0) + "]"
-	case "call":
-		out = e.text + "(" + canonicalExpr(c[0], 0) + ", " + canonicalExpr(c[1], 0) + ")"
-	case "each":
-		out = e.text + "(" + e.variable + " in " + canonicalExpr(c[0], 0) + ": " + canonicalExpr(c[1], 0) + ")"
-	case "old":
-		out = "old(" + canonicalExpr(c[0], 0) + ")"
-	default:
-		out = e.text
-	}
-	if p < outer {
-		return "(" + out + ")"
-	}
-	return out
-}
-
-// genExprSample draws an expression tree and writes it fully bracketed and canonical.
+// genExprText draws an expression tree and writes it fully bracketed.
 //
-//uc:generates syntax.expression-format-is-stable.sample
-func genExprSample() *rapid.Generator[ExprSample] {
-	return rapid.Custom(func(t *rapid.T) ExprSample {
-		e := genExprTree(t, 3)
-		return ExprSample{Text: bracketed(e), Canonical: canonicalExpr(e, 0)}
-	})
+//uc:generates syntax.expression-format-is-stable.text
+func genExprText() *rapid.Generator[string] {
+	return rapid.Custom(func(t *rapid.T) string { return bracketed(genExprTree(t, 3)) })
 }
 
 // newBroken is a broken file of kind at a path drawn for its kind.

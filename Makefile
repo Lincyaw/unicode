@@ -33,7 +33,10 @@ self-check:
 
 # Every numbered rule of docs/language.md and docs/model.md names the codes
 # that report it broken, the tables list exactly the codes of the source, and
-# every code literal of the source has the form <component>.<kebab-name>.
+# every string the source writes where a code is reported or compared, or that
+# starts with its component's name and a dot, is a code that some component's
+# source reports, of the form <component>.<kebab-name>, reported only by that
+# component.
 rule-check:
 	python3 scripts/rulecodes.py
 

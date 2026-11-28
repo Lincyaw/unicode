@@ -117,7 +117,7 @@ func (r renaming) broken(b brokenFiles) brokenFiles {
 }
 
 // genSources draws the sources of a valid design, of one broken in one
-// place, of a valid design with an @ line inserted into one to three of its
+// place (a skeleton breakage or a contract relation), of a valid design with an @ line inserted into one to three of its
 // files, which then do not parse, or of a valid design with one of its
 // component files copied to a new path, whose declarations then clash with
 // the original's; a design without component files gets the @ lines.
@@ -129,7 +129,7 @@ func genSources() *rapid.Generator[[]syntax.Source] {
 		case 0:
 			return genSample().Draw(t, "sample").Sources
 		case 1:
-			return genBroken().Draw(t, "broken").Sources
+			return rapid.OneOf(genBroken(), genBrokenContract()).Draw(t, "broken").Sources
 		}
 		files := designFixture(t).files
 		paths := slices.Sorted(maps.Keys(files))
@@ -165,9 +165,23 @@ func genReordered(sources []syntax.Source) *rapid.Generator[[]syntax.Source] {
 }
 
 // genDescribed draws an input of one of the five properties whose designs
-// are broken in one place, each a fifth of the time.
+// are broken in one place, or the sources of one of the four exploration
+// properties whose loads give diagnostics, with the lines of each file.
 //
 //uc:generates design.diagnostics-are-described.broken
 func genDescribed() *rapid.Generator[Broken] {
-	return rapid.OneOf(genBroken(), genBrokenContract(), genBrokenReplies(), genBrokenInheritance(), genBrokenCodec())
+	explored := func(e Exploration) Broken { return describedSources(e.Sources) }
+	return rapid.OneOf(genBroken(), genBrokenContract(), genBrokenReplies(), genBrokenInheritance(), genBrokenCodec(),
+		rapid.Map(genExplorationStale(), explored), rapid.Map(genExplorationOrphan(), explored),
+		rapid.Map(genExplorationCorpus(), explored), rapid.Map(genExplorationDesign(), describedSources))
+}
+
+// describedSources is the input of diagnostics-are-described for sources:
+// the number of lines of each, and no expected code.
+func describedSources(sources []syntax.Source) Broken {
+	files := map[string]string{}
+	for _, s := range sources {
+		files[s.Path] = string(s.Text)
+	}
+	return Broken{Sources: sources, Lines: lineCounts(files), Codes: []string{}, Absent: map[string][]string{}}
 }

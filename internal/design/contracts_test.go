@@ -234,6 +234,7 @@ func contractFixture(t *rapid.T) designFiles {
 			c.observeID:  {"type": {c.snapshotID}, "inputs": {n.accountSymbol}},
 		},
 		edgeAttrs: edgeAttrs,
+		others:    []string{component, c.accountID, c.moveID, c.rejectedID, c.snapshotID},
 	}
 }
 
@@ -287,6 +288,7 @@ func resultContractFixture(t *rapid.T) designFiles {
 		edges:     edges,
 		attrs:     map[string]map[string][]string{property: {"symbols": {symbol + ": int"}, "call": {maker + "(" + symbol + ")"}, "ensure": ensureTexts}},
 		edgeAttrs: edgeAttrs,
+		others:    []string{component, itemID, measureID, makeID},
 	}
 }
 

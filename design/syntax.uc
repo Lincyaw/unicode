@@ -46,16 +46,11 @@ type RawText record "parse-is-total 的输入：一段源字节 src，以及 src
   field widths: map<int, int>
 }
 
-type Sample record "format-is-stable 的输入：一个合法的设计文件或录制文件的种类、路径和随意排版的文本，以及同一棵语法树按 language.md 的 P1 至 P6 写出的规范文本" {
+type Sample record "format-is-stable、format-ignores-layout、format-keeps-tree 和 format-follows-layout-rules 的输入：一个合法的设计文件或录制文件的种类和路径，以及同一棵语法树的两份随意排版的文本" {
   field kind: FileKind
   field path: string
   field text: bytes
-  field canonical: bytes
-}
-
-type ExprSample record "expression-format-is-stable 的输入：一棵表达式树每个复合子表达式都带括号的文本，以及同一棵树只留下必需的括号的规范文本" {
-  field text: string
-  field canonical: string
+  field relaid: bytes
 }
 
 type Broken record "syntax 中三条拒绝非法文本的性质的输入：做了一处违规改动的合法文件的种类、路径和字节，改动所在的行和列，以及应当得到的诊断码" {
@@ -93,7 +88,7 @@ flow parse-entry-describes-outcome "用户直接调用 parse：没有诊断时�
 
 property kind-of-follows-path postcondition "kindOf 对 sample.kind 不为 none 的路径给出 sample.kind，对 sample.kind 为 none 的路径抛出 NotADesignFile" {
   about kindOf
-  forall sample: KindSample generated "等概率取九类之一再按这一类构造路径，三类合法的是系统文件 design/system.uc，以及 design/ 或 corpus/ 下零至两层目录中的组件文件或录制文件，文件名是 .、..、system 或其他不为空的名称接 .uc，目录名可以含 .，kind 是这一类的种类；六类不合法的 kind 为 none，分别是首段不是 design 或 corpus 的 .uc 路径或只有一段的 .uc 文件名、扩展名是 .UC、.ucx、.txt 等而不是 .uc 的文件、文件名只是 .uc 的文件、只有 design 或 corpus 和零至两层目录而没有文件的路径、在合法的路径中某处插入一段 . 或 ..，以及在合法的路径中某处插入一段空的段，即开头、中间或结尾多一个 /"
+  forall sample: KindSample generated "等概率取九类之一再按这一类构造路径，三类合法的是系统文件 design/system.uc，以及 design/ 或 corpus/ 下零至两层目录中的组件文件或录制文件，文件名是 .、..、system 或其他不为空的名称接 .uc，目录名可以含 .，kind 是这一类的种类；六类不合法的 kind 为 none，分别是首段不是 design 或 corpus 的 .uc 路径或只有一段的 .uc 文件名、扩展名是 .UC、.ucx、.txt 等而不是 .uc、没有扩展名或名称以不带点的 uc、-uc、_uc 结尾的文件、文件名只是 .uc 的文件、只有 design 或 corpus 和零至两层目录而没有文件的路径、在合法的路径中某处插入一段 . 或 ..，以及在合法的路径中某处插入一段空的段，即开头、中间或结尾多一个 /"
   call kindOf(sample.path)
   ensure sample.kind == none implies raised(NotADesignFile)
   ensure sample.kind != none implies not raised(NotADesignFile) and result == sample.kind
@@ -137,20 +132,19 @@ property parse-is-total postcondition "解析任何字节都正常返回：没�
   ensure all(d in result.diagnostics: d.position.line in raw.widths and d.position.column >= 1 and d.position.column <= raw.widths[d.position.line] + 1)
 }
 
-property format-is-stable postcondition "合法的文本 sample.text 解析没有诊断，打印得到 sample.canonical，sample.canonical 解析也没有诊断，打印仍是 sample.canonical" {
+property format-is-stable postcondition "合法的文本 sample.text 解析没有诊断，打印得到的文本解析也没有诊断，再打印仍是同一段文本" {
   about parse, File.print
-  forall sample: Sample generated "一个合法的文件，路径与种类相符（系统文件为 design/system.uc，其余为 design/ 或 corpus/ 下零至两层目录中的随机名称）：约三分之一是一份组件文件，其中一条性质的 ensure 是 expression-format-is-stable 取的随机表达式，text 中每个复合子表达式都带括号，canonical 中只留必需的括号；其余是随机种类、带随机注释的随机语法树，text 随意取缩进、记号间和行尾的空格、空行、零至两个结尾换行、空的可选块是否写花括号、值是否在项之间换行和带结尾逗号，数的写法可带多余的前导零、小数末尾的零或写成 -0，canonical 在每一处都按 P1 至 P6 取规范的写法"
+  forall sample: Sample generated "一个合法的文件，路径与种类相符（系统文件为 design/system.uc，其余为 design/ 或 corpus/ 下零至两层目录中的随机名称）：约三分之一是一份组件文件，其中一条性质的 ensure 是 expression-format-is-stable 取的随机表达式，relaid 在这条表达式外再加一层括号；其余是随机种类、带随机注释的随机语法树，text 和 relaid 各自随意取缩进、记号间和行尾的空格、空行、零至两个结尾换行、空的可选块是否写花括号、值是否在项之间换行和带结尾逗号，数的写法可带多余的前导零、小数末尾的零或写成 -0"
   call parse(sample.path, sample.kind, sample.text)
   ensure size(result.diagnostics) == 0
-  ensure result.file.print() == sample.canonical
-  ensure size(parse(sample.path, sample.kind, sample.canonical).diagnostics) == 0
-  ensure parse(sample.path, sample.kind, sample.canonical).file.print() == sample.canonical
+  ensure size(parse(sample.path, sample.kind, result.file.print()).diagnostics) == 0
+  ensure parse(sample.path, sample.kind, result.file.print()).file.print() == result.file.print()
   case container-named-in {
     sample = {
       kind: component,
       path: "design/sample.uc",
       text: "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure raised(in.A)\n}\n",
-      canonical: "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure raised(in.A)\n}\n",
+      relaid: "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure (raised(in.A))\n}\n",
     }
   }
   case container-named-in-call {
@@ -158,9 +152,28 @@ property format-is-stable postcondition "合法的文本 sample.text 解析没�
       kind: component,
       path: "design/sample.uc",
       text: "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure size(in.items) == 1\n}\n",
-      canonical: "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure size(in.items) == 1\n}\n",
+      relaid: "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure (size(in.items) == 1)\n}\n",
     }
   }
+}
+
+property format-ignores-layout postcondition "同一棵语法树的两份随意排版的文本 sample.text 和 sample.relaid 解析后打印得到同样的字节" {
+  about parse, File.print
+  forall sample: Sample generated "一个合法的文件，路径与种类相符（系统文件为 design/system.uc，其余为 design/ 或 corpus/ 下零至两层目录中的随机名称）：约三分之一是一份组件文件，其中一条性质的 ensure 是 expression-format-is-stable 取的随机表达式，relaid 在这条表达式外再加一层括号；其余是随机种类、带随机注释的随机语法树，text 和 relaid 各自随意取缩进、记号间和行尾的空格、空行、零至两个结尾换行、空的可选块是否写花括号、值是否在项之间换行和带结尾逗号，数的写法可带多余的前导零、小数末尾的零或写成 -0"
+  call parse(sample.path, sample.kind, sample.text)
+  ensure result.file.print() == parse(sample.path, sample.kind, sample.relaid).file.print()
+}
+
+property format-keeps-tree invariant "合法的文本 sample.text 解析后打印得到的文本再解析，得到的语法树除位置之外与 sample.text 的相同，表达式按去掉多余括号之后的结构比较" {
+  about parse, File.print
+  forall sample: Sample generated "一个合法的文件，路径与种类相符（系统文件为 design/system.uc，其余为 design/ 或 corpus/ 下零至两层目录中的随机名称）：约三分之一是一份组件文件，其中一条性质的 ensure 是 expression-format-is-stable 取的随机表达式，relaid 在这条表达式外再加一层括号；其余是随机种类、带随机注释的随机语法树，text 和 relaid 各自随意取缩进、记号间和行尾的空格、空行、零至两个结尾换行、空的可选块是否写花括号、值是否在项之间换行和带结尾逗号，数的写法可带多余的前导零、小数末尾的零或写成 -0"
+  manual "需要比较两棵语法树在位置之外是否相同，语法树是不透明的对象，表达式不能比较它们的结构"
+}
+
+property format-follows-layout-rules invariant "合法的文本 sample.text 解析后打印得到的文本合乎 language.md 的 P1 至 P6：没有制表符、CR 和行尾空格，恰以一个换行结尾，每层块或值缩进两个空格，块内不空行，顶层的项之间恰空一行，注释紧贴它之后的项，记号之间的空格合乎 P3，数是规范写法，值按 P6 在 100 列之内写成一行或逐项断开" {
+  about parse, File.print
+  forall sample: Sample generated "一个合法的文件，路径与种类相符（系统文件为 design/system.uc，其余为 design/ 或 corpus/ 下零至两层目录中的随机名称）：约三分之一是一份组件文件，其中一条性质的 ensure 是 expression-format-is-stable 取的随机表达式，relaid 在这条表达式外再加一层括号；其余是随机种类、带随机注释的随机语法树，text 和 relaid 各自随意取缩进、记号间和行尾的空格、空行、零至两个结尾换行、空的可选块是否写花括号、值是否在项之间换行和带结尾逗号，数的写法可带多余的前导零、小数末尾的零或写成 -0"
+  manual "需要把打印出的字节切成行和记号来判断版面，表达式没有字节和字符串的切分"
 }
 
 property rejects-broken-text postcondition "合法的文件做一处违反某条规则的改动之后，解析不给出语法树，并在改动所在的文件、行和列给出这条规则的诊断" {
@@ -171,18 +184,18 @@ property rejects-broken-text postcondition "合法的文件做一处违反某条
   ensure any(d in result.diagnostics: d.code == broken.code and d.position.path == broken.path and d.position.line == broken.line and d.position.column == broken.column)
 }
 
-property expression-format-is-stable postcondition "复合子表达式都带括号的表达式 sample.text 经 parseExpr 没有诊断，exprText 得到 sample.canonical，sample.canonical 再经 parseExpr 和 exprText 仍是它自己；与 expression-text-is-stable 不同，规范文本由生成器从同一棵表达式树给出" {
+property expression-format-is-stable postcondition "复合子表达式都带括号的合法表达式 text 经 parseExpr 没有诊断，exprText 的结果再经 parseExpr 也没有诊断，再经 exprText 仍是同一段文本；与 expression-text-is-stable 不同，text 都是合法的表达式，并且要求没有诊断" {
   about parseExpr, exprText
-  forall sample: ExprSample generated "一棵至多四层的随机表达式树：最后一层之上约五分之四的子表达式是复合的，其中约三分之一是二元运算，各种形式和运算符等概率，用到数、字符串、名称、true、false、none、result、全部二元运算符、not、字段和下标访问、两个实参的调用、量化式、old、raised 和 failure，text 中每个复合子表达式都带括号，canonical 按 language.md 的文法中各层的优先级只在必需处带括号，implies 向右结合，比较不连写，其余向左结合，表达式不必类型正确"
-  call parseExpr("expression.uc", sample.text)
+  forall text: string generated "一棵至多四层的随机表达式树写成的文本，每个复合子表达式都带括号：最后一层只有原子，即数、字符串、名称，或 true、false、none、result 之一，四类各约四分之一，之上每一层约五分之一是这样的原子，其余是复合的，其中约三分之一是二元运算（十四种运算符各约十四分之一），not、字段访问、下标访问、两个实参的调用、量化式（all、any、count 或 sum）各约九分之一，余下约九分之一中 old 与 raised 或 failure 各半；表达式不必类型正确"
+  call parseExpr("expression.uc", text)
   ensure size(result.diagnostics) == 0
-  ensure exprText(result.expr) == sample.canonical
-  ensure exprText(parseExpr("expression.uc", sample.canonical).expr) == sample.canonical
+  ensure size(parseExpr("expression.uc", exprText(result.expr)).diagnostics) == 0
+  ensure exprText(parseExpr("expression.uc", exprText(result.expr)).expr) == exprText(result.expr)
   case container-named-in {
-    sample = {text: "raised(in.A)", canonical: "raised(in.A)"}
+    text = "raised(in.A)"
   }
   case redundant-brackets {
-    sample = {text: "((a + b) + (c * d))", canonical: "a + b + c * d"}
+    text = "((a + b) + (c * d))"
   }
 }
 

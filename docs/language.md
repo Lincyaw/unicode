@@ -261,7 +261,7 @@ NL            = 换行 { 换行 } .
 | 说出代码覆盖的全部情形，不多不少 | `syntax.contract-syntax-rejects-invalid-claims`："……违反 G0、G13 至 G18 中的一条时……"；G14 由载入报出，生成器另外改坏符号名（G15）和名称（L6） | "……有一处违反 language.md 的 G0、G13、G15 至 G18 或 L6 时……" |
 | 取值域说明写取哪些值，不写来历 | `cli.check-design` 的 `designOnly`："沿用原 IntRange(0,4) 大于零的取值方式与边界偏置" | "约五分之四为真" |
 | 取值域说明写取哪些值，不写来历 | `syntax.parse-is-total` 的 `path`："沿用路径生成器，长度一至六十四，保留原测试的字符与边界分布" | "1 至 64 个任意字符、不超过 64 字节的路径" |
-| `manual` 的原因针对这一条 | `syntax.kind-of-follows-path`："需要比较完整语法树、路径分段或诊断的源位置与排序……"；四条性质共用这一句，而 kindOf 只返回一个枚举值 | "需要按 / 切分路径并检查每一段，表达式没有字符串切分" |
+| `manual` 的原因针对这一条 | `syntax.kind-of-follows-path` 等四条性质共用"需要比较完整语法树、路径分段或诊断的源位置与排序……"，而 kindOf 只返回一个枚举值 | `syntax.format-keeps-tree`："需要比较两棵语法树在位置之外是否相同，语法树是不透明的对象，表达式不能比较它们的结构" |
 | 指代只指本条中的名词 | `graph.compare-follows-identity`："……恰列出新增、删除和修改的项并按此排序……"；"此"没有所指 | "……节点按标识、边按种类、起点和终点排序……" |
 | 一条摘要只说一件事 | `serve.queries-agree`：一致性的陈述之后接着整张错误码表，共 294 字 | "……与直接调用 query、view 和 graph.compare 的结果有同样的节点和边且次序相同（视图另有同样的折叠和隐藏），标识不存在、参数不合、视图不适用或基准提交读不出时应答是 design.md §7.5.1 规定的拒绝" |
 | 不用自造的缩略语 | `lang.golang.driver-modes-preserve-claims`："……拒绝不成为伪反例" | "……被前提拒绝或中止的调用报告没有有效输入而不是反例" |
@@ -429,7 +429,7 @@ NL            = 换行 { 换行 } .
 
 有语法错误的文件不参与载入；其余文件照常载入，指向缺失声明的引用报为未解析。
 
-`design.loadSources` 从源文件的字节开始：逐个解析，把没有诊断的语法树交给 `design.Load`，诊断是各文件的解析诊断和载入诊断，按路径、行、列、诊断码和原因排序。`design.loadSourcesForExploration` 同样解析，再交给 `design.loadForExploration`。
+`design.loadSources` 从源文件的字节开始：逐个解析，把没有诊断的语法树交给 `design.Load`，诊断是各文件的解析诊断和载入诊断，按路径、行、列、诊断码和原因排序。`design.loadSourcesForExploration` 同样解析，再交给 `design.loadForExploration`。命令行经这两个操作载入设计。
 
 ### 5.3.1 可回放表示
 
@@ -860,12 +860,12 @@ property declined-keeps-state postcondition "余额不足时指出账户与可�
 | G19 | `design.invalid-observation`、`design.duplicate-name` | `design.rejects-broken-design` |
 | G20 | `design.expression-type` | `design.rejects-broken-design` |
 | G21 | `design.invalid-change-path`、`design.expression-type` | `design.rejects-broken-design` |
-| P1 | `cli.not-canonical` | `syntax.format-is-stable` |
-| P2 | `cli.not-canonical` | `syntax.format-is-stable` |
-| P3 | `cli.not-canonical` | `syntax.format-is-stable` |
-| P4 | `cli.not-canonical` | `syntax.format-is-stable` |
-| P5 | `cli.not-canonical` | `syntax.format-is-stable` |
-| P6 | `cli.not-canonical` | `syntax.format-is-stable` |
+| P1 | `cli.not-canonical` | `syntax.format-follows-layout-rules` |
+| P2 | `cli.not-canonical` | `syntax.format-follows-layout-rules` |
+| P3 | `cli.not-canonical` | `syntax.format-follows-layout-rules` |
+| P4 | `cli.not-canonical` | `syntax.format-follows-layout-rules` |
+| P5 | `cli.not-canonical` | `syntax.format-follows-layout-rules` |
+| P6 | `cli.not-canonical` | `syntax.format-follows-layout-rules` |
 | R1 | `design.unresolved-reference` | `design.rejects-broken-design` |
 | R2 | `design.unresolved-reference` | `design.rejects-broken-design` |
 | R3 | `design.unresolved-reference` | `design.rejects-broken-design` |

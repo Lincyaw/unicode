@@ -28,7 +28,7 @@ type Exploration struct {
 // one recorded case of the integer symbol number.
 type recordingFixture struct {
 	files                  map[string]string
-	nodes                  []string
+	nodes, others          []string
 	path, owner, component string
 	number                 string
 	file                   syntax.File
@@ -83,7 +83,8 @@ property supplied invariant "The recording remains in its declared domain" {
 	path := corpusPath(owner)
 	files[path] = fmt.Sprintf("corpus %s\n\ncase r-00000000 coverage {\n  number = %d\n}\n", owner, value)
 	file := parseFile(t, path, files[path])
-	return recordingFixture{files, design.nodes, path, owner, component, "number", file, file.Decls[1].(*syntax.RecordedCase)}
+	others := append(slices.Clone(design.others), component, component+".Probe", component+".perform")
+	return recordingFixture{files, design.nodes, others, path, owner, component, "number", file, file.Decls[1].(*syntax.RecordedCase)}
 }
 
 // addedRecording adds to the recording file a copy of its recorded case
@@ -188,12 +189,13 @@ func genExplorationStale() *rapid.Generator[Exploration] {
 }
 
 // orphanTarget draws what a recording file points to that is no property
-// or flow: an identity of no node, or the boundary's type.
+// or flow: an identity of no node, or a component, type or operation of the
+// design, the boundary's included.
 func orphanTarget(t *rapid.T, f recordingFixture) string {
 	if rapid.Bool().Draw(t, "missing target") {
 		return absentID(f.nodes, "retired.check")
 	}
-	return f.component + ".Probe"
+	return rapid.SampledFrom(f.others).Draw(t, "wrong kind")
 }
 
 // absentID is id, with x appended until it is the identity of no node.

@@ -69,10 +69,11 @@ var kindClasses = []func(t *rapid.T) KindSample{
 		}
 		return KindSample{strings.Join(sourcePath(t, top), "/"), nil}
 	},
-	// The file's extension is not .uc.
+	// The file's extension is not .uc: another one, none, or a name that ends
+	// in uc without the dot.
 	func(t *rapid.T) KindSample {
 		segs := append([]string{rapid.SampledFrom([]string{"design", "corpus"}).Draw(t, "top")}, dirs(t, dirNames)...)
-		ext := rapid.SampledFrom([]string{".UC", ".Uc", ".ucx", ".uc.bak", ".txt", ".u", ".go"}).Draw(t, "extension")
+		ext := rapid.SampledFrom([]string{".UC", ".Uc", ".ucx", ".uc.bak", ".txt", ".u", ".go", "", "uc", "-uc", "_uc"}).Draw(t, "extension")
 		return KindSample{strings.Join(append(segs, plainNames.Draw(t, "name")+ext), "/"), nil}
 	},
 	// The file is named only .uc.

@@ -90,20 +90,19 @@ property rejects-broken-design postcondition "合法的设计做一处违反某�
 
 property diagnostics-are-described postcondition "载入做了一处违规改动的设计时，loadSources 和 loadSourcesForExploration 给出的每条诊断都有 subject、原因和修正，行列不小于 1，除 design.missing-system-file 外都位于给出的某个文件中、行不超过这个文件的行数" {
   about loadSources, loadSourcesForExploration
-  forall broken: Broken generated "rejects-broken-design、contract-rejects-invalid-relations、reply-scripts-are-typed、inheritance-rejects-invalid-members 和 codecs-are-typed 五者之一的输入"
+  forall broken: Broken generated "rejects-broken-design、contract-rejects-invalid-relations、reply-scripts-are-typed、inheritance-rejects-invalid-members 和 codecs-are-typed 五者之一的输入，或者 exploration-discards-stale-recordings、exploration-isolates-orphaned-corpus、exploration-keeps-corpus-errors 和 exploration-keeps-design-errors 四者之一取的源文件，附各文件的行数，不给诊断码"
   call loadSources(broken.sources)
-  ensure all(d in result.diagnostics: size(d.subject) > 0 and size(d.message) > 0 and size(d.fix) > 0 and d.position.line >= 1 and d.position.column >= 1)
-  ensure all(d in result.diagnostics: d.code == "design.missing-system-file" or d.position.path in broken.lines and d.position.line <= broken.lines[d.position.path])
-  ensure all(d in loadSourcesForExploration(broken.sources).loaded.diagnostics: size(d.subject) > 0 and size(d.message) > 0 and size(d.fix) > 0 and d.position.line >= 1 and d.position.column >= 1)
-  ensure all(d in loadSourcesForExploration(broken.sources).loaded.diagnostics: d.code == "design.missing-system-file" or d.position.path in broken.lines and d.position.line <= broken.lines[d.position.path])
+  ensure all(d in result.diagnostics: size(d.subject) > 0 and size(d.message) > 0 and size(d.fix) > 0 and d.position.line >= 1 and d.position.column >= 1 and (d.code == "design.missing-system-file" or d.position.path in broken.lines and d.position.line <= broken.lines[d.position.path]))
+  ensure all(d in loadSourcesForExploration(broken.sources).loaded.diagnostics: size(d.subject) > 0 and size(d.message) > 0 and size(d.fix) > 0 and d.position.line >= 1 and d.position.column >= 1 and (d.code == "design.missing-system-file" or d.position.path in broken.lines and d.position.line <= broken.lines[d.position.path]))
 }
 
-property load-ignores-file-order relation "同一组源文件换一种次序载入，得到的图编码和诊断都相同" {
+property load-ignores-file-order postcondition "同一组源文件换一种次序载入，得到的图编码和诊断与按原次序载入的相同" {
   about loadSources
-  forall sources: list<syntax.Source> generated "一组随机的源文件：accepts-valid-design 取的合法设计，rejects-broken-design 取的带一处违规改动的设计，在一至三个文件的随机一行之前插入 @ 而不能解析的合法设计，或者把一个组件文件复制到 design/copy.uc（已有时在 copy 后补 x）的合法设计，没有组件文件的合法设计总是插入 @"
+  forall sources: list<syntax.Source> generated "一组随机的源文件：accepts-valid-design 取的合法设计，rejects-broken-design 或 contract-rejects-invalid-relations 取的带一处违规改动的设计，在一至三个文件的随机一行之前插入 @ 而不能解析的合法设计，或者把一个组件文件复制到 design/copy.uc（已有时在 copy 后补 x）的合法设计，没有组件文件的合法设计总是插入 @"
   forall reordered: list<syntax.Source> generated "sources 的一个随机排列"
-  ensure loadSources(reordered).graph.encode() == loadSources(sources).graph.encode()
-  ensure loadSources(reordered).diagnostics == loadSources(sources).diagnostics
+  call loadSources(sources)
+  ensure loadSources(reordered).graph.encode() == result.graph.encode()
+  ensure loadSources(reordered).diagnostics == result.diagnostics
 }
 
 property contract-graph-is-declared postcondition "合法的黑盒契约载入后没有诊断，节点恰是列出的标识，边恰是不重复地列出的种类、起点和终点，性质的 symbols、limits、observe、requires、changes、call 和 ensure 属性逐条保留子句，具名观察成为带 type 和 inputs 的 observation 节点，子句引用的类型和操作成为带 clauses 属性的 refers 边，子句访问了字段时边另带 paths 属性" {
@@ -211,7 +210,7 @@ property exploration-discards-stale-recordings postcondition "加入的录制用
 
 property exploration-isolates-orphaned-corpus postcondition "录制文件 target 指向的性质或流程不存在时，loadSources 有诊断，探索载入没有诊断，不丢弃录制用例，恰把 target 列为孤立的录制文件，图编码与载入 base 的相同" {
   about loadSourcesForExploration, loadSources
-  forall sample: Exploration generated "与 exploration-keeps-valid-recordings 相同地加入录制边界，再按指向的标识在新路径 target 加一个录制文件，它指向不存在的标识或录制边界组件中的类型；base 是加入它之前的源文件"
+  forall sample: Exploration generated "与 exploration-keeps-valid-recordings 相同地加入录制边界，再按指向的标识在新路径 target 加一个录制文件，它指向不存在的标识，或者设计中（含录制边界组件）的一个组件、类型或操作；base 是加入它之前的源文件"
   call loadSourcesForExploration(sample.sources)
   ensure size(loadSources(sample.sources).diagnostics) > 0
   ensure size(result.loaded.diagnostics) == 0 and size(result.discarded) == 0
@@ -221,7 +220,7 @@ property exploration-isolates-orphaned-corpus postcondition "录制文件 target
 
 property exploration-keeps-corpus-errors postcondition "录制文件放错路径或录制用例重名时，探索载入照常给出诊断码 code，不丢弃录制用例，也不列出孤立的录制文件" {
   about loadSourcesForExploration
-  forall sample: Exploration generated "与 exploration-keeps-valid-recordings 相同地加入录制边界，再在 corpus/wrong-location.uc 加一个指向不存在的标识或类型的录制文件（code 为 design.corpus-path-mismatch），或在录制文件中重复已有的录制用例（code 为 design.duplicate-name）"
+  forall sample: Exploration generated "与 exploration-keeps-valid-recordings 相同地加入录制边界，再在 corpus/wrong-location.uc 加一个指向不存在的标识或者一个组件、类型或操作的录制文件（code 为 design.corpus-path-mismatch），或在录制文件中重复已有的录制用例（code 为 design.duplicate-name）"
   call loadSourcesForExploration(sample.sources)
   ensure any(d in result.loaded.diagnostics: d.code == sample.code)
   ensure size(result.discarded) == 0 and size(result.orphaned) == 0

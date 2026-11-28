@@ -47,7 +47,7 @@ flow check-design "用户运行 unicode check：带 --design-only 时恰报出�
     cli -> syntax.kindOf(path)
     cli -> syntax.parse(path, kind, src)
     cli -> syntax.File.print()
-    cli -> design.load(files)
+    cli -> design.loadSources(sources)
   }
   manual "需要在临时目录中写出仓库再运行命令，表达式不能读写文件"
 }
@@ -55,7 +55,7 @@ flow check-design "用户运行 unicode check：带 --design-only 时恰报出�
 flow check-code "用户运行 unicode check：载入设计，抽取每种已配置语言的代码，合并、推导之后检查全部约束，输出的诊断和状态与直接调用这些组件得到的相同，没有后端的语言和抽取失败的代码各报一条诊断，仓库不变" {
   forall files: map<string, RepoFile> generated "一个建图没有诊断的小仓库（一至三个组件的设计文件、Go 源码和谓词），约四分之三在一个组件处做一处改动：语法错误、排版、违反设计、代码或绑定的一条约束、让 Go 代码编译不过、配置没有后端的语言或改错源码根目录"
   user -> main(args) {
-    cli -> design.load(files)
+    cli -> design.loadSources(sources)
     cli -> lang.golang.newBackend()
     cli -> lang.Backend.extract(root, srcRoots)
     cli -> graph.Graph.addFragment(fragment)
@@ -70,7 +70,7 @@ flow build-snapshot "用户运行 unicode build：按 design.md §8 把快照写
   forall committed: bool
   forall edited: bool
   user -> main(args) {
-    cli -> design.load(files)
+    cli -> design.loadSources(sources)
     cli -> lang.Backend.extract(root, srcRoots)
     cli -> graph.Graph.addFragment(fragment)
     cli -> graph.Graph.derive()
@@ -83,7 +83,7 @@ flow query-graph "用户运行 node get、node search、node refs、slice、impa
   forall files: map<string, RepoFile> generated "一个建图没有诊断的小仓库：一至三个组件的设计文件、Go 源码和谓词，有的组件另有录制文件"
   forall command: list<string> generated "六种查询命令之一及其参数：标识取自这个仓库的设计和 Go 源码，约十分之一不存在，搜索的文本是一个标识的一段，视图的输入约五分之四是该视图接受的节点，--layer 和 --level 各约四分之一给出而不论视图，约五分之一带 --rev HEAD"
   user -> main(args) {
-    cli -> design.load(files)
+    cli -> design.loadSources(sources)
     cli -> graph.Graph.derive()
     cli -> query.slice(g, ids, expand)
     cli -> view.select(g, kind, id, expand, layer, level)
@@ -98,7 +98,7 @@ flow diff-snapshots "用户运行 unicode diff：按 design.md §8 比较一个�
   forall jsonOutput: bool
   forall readable: bool
   user -> main(args) {
-    cli -> design.load(files)
+    cli -> design.loadSources(sources)
     cli -> lang.Backend.extract(root, srcRoots)
     cli -> graph.Graph.addFragment(fragment)
     cli -> graph.Graph.derive()

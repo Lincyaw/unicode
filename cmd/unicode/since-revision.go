@@ -37,7 +37,7 @@ func checksSince(root, rev string, head *graph.Graph, ids []string) ([]string, [
 		n := head.Node(id)
 		if n == nil || n.Layer != graph.LayerDesign || (n.Kind != graph.NodeKindProperty && n.Kind != graph.NodeKindFlow) {
 			diagnostics = append(diagnostics, diag.Diagnostic{
-				Code: "run.unknown-check", Subject: "design/system.uc",
+				Code: "cli.unknown-check", Subject: "design/system.uc",
 				Position: diag.Position{Path: "design/system.uc", Line: 1, Column: 1},
 				Message:  "the target " + id + " is not a property or flow",
 				Fix:      "select an existing property or flow identity",

@@ -31,8 +31,6 @@ QUOTED = re.compile(r'"([^"]*)"')
 BACKTICKED = re.compile(r"`([^`]+)`")
 # Comments, strings and runes of Go, so that a quote inside one starts no string.
 GO_TOKEN = re.compile(r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|`[^`]*`|\'(?:\\.|[^\'\\\n])*\'', re.DOTALL)
-# The text before a literal that makes it the value of a Code field.
-CODE_FIELD = re.compile(r"\bCode:\s*\Z")
 GLOB_PART = re.compile(r"(\*\*/|\*\*|\*|\?)")
 GLOB_REGEX = {"**/": "(?:.*/)?", "**": ".*", "*": "[^/]*", "?": "[^/]"}
 
@@ -60,27 +58,176 @@ def owner(path: str, patterns: dict[str, list[re.Pattern[str]]]) -> str | None:
     return max(matching, key=lambda c: c.count("."), default=None)
 
 
-# The string literals of Go source: each with its line, its text and
-# whether it is the value of a Code field.
-def go_strings(text: str) -> list[tuple[int, str, bool]]:
-    strings = []
-    for token in GO_TOKEN.finditer(text):
-        if token.group()[0] in '"`':
-            field = CODE_FIELD.search(text, max(0, token.start() - 64), token.start()) is not None
-            strings.append((text.count("\n", 0, token.start()) + 1, token.group()[1:-1], field))
-    return strings
+# Where a string literal of Go source is written decides whether it is a
+# diagnostic code. A code is reported where it is the value of a Code field
+# or the argument for the string parameter named code of a function of the
+# same component; it is referenced where it is compared with == or != to a
+# Code field or a variable named code, or listed in a case of a switch on one.
+# Any other string, such as a file name like graph.json, is not a code.
+CODE_FIELD = re.compile(r"\bCode:\s*\Z")
+COMPARED_BEFORE = re.compile(r"\b(?:\w+\.)*(?:Code|code)\s*(?:==|!=)\s*\Z")
+COMPARED_AFTER = re.compile(r"\s*(?:==|!=)\s*(?:\w+\.)*(?:Code|code)\b")
+CODE_SWITCH = re.compile(r"\bswitch\s+(?:\w+\.)*(?:Code|code)\s*\{")
+FUNC_DECL = re.compile(r"\bfunc\s*(?:\([^()]*\)\s*)?(\w+)\s*(?:\[[^\]]*\])?\(")
+CALL = re.compile(r"\b(\w+)\s*\(")
+DECLARED = re.compile(r"\bfunc\s*(?:\([^()]*\)\s*)?\Z")
+LITERAL = re.compile(r'"(?:\\.|[^"\\\n])*"|`[^`]*`')
 
 
-# A diagnostic code is `<component>.<kebab-name>`, named after the component
-# whose source reports it (CLAUDE.md principle 4); a string of that component
-# that ends in "." or "-" is the start of a code assembled at run time. Any
-# other string of that component that starts with its name and a dot and has
-# no white space, and any value of a Code field, must be a whole code, so that
-# a malformed code is reported here rather than by a check of the running code.
-def source_codes(
-    patterns: dict[str, list[re.Pattern[str]]], code_form: re.Pattern[str]
-) -> tuple[dict[str, str], list[str]]:
-    codes, problems = {}, []
+class Source:
+    """A Go file with the spans of its comments, strings and runes."""
+
+    def __init__(self, text: str):
+        self.text = text
+        self.tokens = list(GO_TOKEN.finditer(text))
+        self.skip = {t.start(): t.end() for t in self.tokens}
+
+    def line(self, offset: int) -> int:
+        return self.text.count("\n", 0, offset) + 1
+
+    def inside(self, offset: int) -> bool:
+        return any(t.start() <= offset < t.end() for t in self.tokens)
+
+    def strings(self) -> list[tuple[int, int, str]]:
+        return [(t.start(), t.end(), t.group()[1:-1]) for t in self.tokens if t.group()[0] in '"`']
+
+    # The spans of the comma-separated items between the bracket at open and
+    # the bracket that closes it.
+    def items(self, open: int) -> list[tuple[int, int]]:
+        depth, i, start, items = 0, open + 1, open + 1, []
+        while i < len(self.text):
+            if i in self.skip:
+                i = self.skip[i]
+                continue
+            c = self.text[i]
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                if depth == 0:
+                    items.append((start, i))
+                    return items
+                depth -= 1
+            elif c == "," and depth == 0:
+                items.append((start, i))
+                start = i + 1
+            i += 1
+        return items
+
+    # The offset just past the bracket that closes the one at open.
+    def close(self, open: int) -> int:
+        items = self.items(open)
+        return items[-1][1] + 1 if items else len(self.text)
+
+    # The functions declared here that take a string parameter named code:
+    # each with that parameter's index and its body.
+    def code_parameters(self) -> dict[str, tuple[int, str]]:
+        found = {}
+        for m in FUNC_DECL.finditer(self.text):
+            if self.inside(m.start()):
+                continue
+            named, pending = [], []
+            for a, b in self.items(m.end() - 1):
+                bits = self.text[a:b].split(None, 1)
+                if len(bits) == 1:
+                    pending.append(bits[0])
+                elif bits:
+                    named += [(n, bits[1].strip()) for n in pending + [bits[0]]]
+                    pending = []
+            body = self.text.find("{", self.close(m.end() - 1))
+            for index, (name, kind) in enumerate(named):
+                if name == "code" and kind == "string" and body >= 0:
+                    found[m.group(1)] = (index, self.text[body : self.close(body)])
+        return found
+
+    # The string literals written where a code goes: (offset, literal,
+    # reported), reported being false for a code that is only referenced.
+    def code_uses(self, parameters: dict[str, int]) -> list[tuple[int, str, bool]]:
+        uses = []
+        for start, end, literal in self.strings():
+            if CODE_FIELD.search(self.text, max(0, start - 64), start):
+                uses.append((start, literal, True))
+            elif literal and (COMPARED_BEFORE.search(self.text, max(0, start - 64), start) or COMPARED_AFTER.match(self.text, end)):
+                uses.append((start, literal, False))
+        for m in CALL.finditer(self.text):
+            if m.group(1) not in parameters or self.inside(m.start()) or DECLARED.search(self.text, max(0, m.start() - 64), m.start()):
+                continue
+            items = self.items(m.end() - 1)
+            index = parameters[m.group(1)]
+            if index < len(items):
+                a, b = items[index]
+                argument = self.text[a:b].strip()
+                if LITERAL.fullmatch(argument):
+                    uses.append((a + self.text[a:b].index(argument), argument[1:-1], True))
+        for m in CODE_SWITCH.finditer(self.text):
+            if self.inside(m.start()):
+                continue
+            uses += [(offset, literal, False) for offset, literal in self.case_literals(m.end() - 1)]
+        return uses
+
+    # The string literals in the case lists of the switch whose block opens at open.
+    def case_literals(self, open: int) -> list[tuple[int, str]]:
+        found, depth, i, listing = [], 0, open + 1, False
+        while i < len(self.text):
+            if i in self.skip:
+                if listing and self.text[i] in '"`':
+                    found.append((i, self.text[i + 1 : self.skip[i] - 1]))
+                i = self.skip[i]
+                continue
+            c = self.text[i]
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                if depth == 0:
+                    return found
+                depth -= 1
+            elif depth == 0 and self.text.startswith("case", i) and not self.text[i - 1].isalnum() and not self.text[i + 4].isalnum():
+                listing = True
+            elif depth == 0 and c == ":":
+                listing = False
+            i += 1
+        return found
+
+
+# A function reports the code it takes when its body puts its parameter code
+# into a Code field or a field named code (a diagnostic, an issue), into the
+# first field of a struct literal, or passes it on to a function that reports
+# it. A parameter named code that the body only compares is not reported.
+STORES_CODE = re.compile(r"\b(?:Code|code):\s*code\b|\{\s*code\s*,")
+
+
+def reporting(declared: dict[str, tuple[int, str]]) -> dict[str, int]:
+    found = {name: index for name, (index, body) in declared.items() if STORES_CODE.search(body)}
+    while True:
+        passed = {
+            name: index
+            for name, (index, body) in declared.items()
+            if name not in found
+            and any(
+                index_of == argument
+                for callee, index_of in found.items()
+                for argument in passed_code(body, callee)
+            )
+        }
+        if not passed:
+            return found
+        found.update(passed)
+
+
+# The indices at which body passes its parameter code to callee.
+def passed_code(body: str, callee: str) -> list[int]:
+    source = Source(body)
+    out = []
+    for m in re.finditer(r"\b" + re.escape(callee) + r"\s*\(", body):
+        if source.inside(m.start()):
+            continue
+        for index, (a, b) in enumerate(source.items(m.end() - 1)):
+            if body[a:b].strip() == "code":
+                out.append(index)
+    return out
+
+
+def go_files(patterns: dict[str, list[re.Pattern[str]]]) -> tuple[list[tuple[str, str, Source]], list[str]]:
+    files, problems = [], []
     for path in sorted(ROOT.rglob("*.go")):
         rel = relative(path)
         if rel.endswith("_test.go") or any(part.startswith(".") for part in path.relative_to(ROOT).parts):
@@ -91,10 +238,32 @@ def source_codes(
                 f"{rel}: the file belongs to no component of design/*.uc; add it to the paths of its component"
             )
             continue
+        files.append((rel, component, Source(path.read_text(encoding="utf-8"))))
+    return files, problems
+
+
+# A diagnostic code is `<component>.<kebab-name>`, named after the component
+# whose source reports it (CLAUDE.md principle 4). A string of a component
+# that starts with its name and a dot and has no white space is one of its
+# codes: it must be a whole code, or end in "." or "-", the start of a code
+# assembled at run time, which is reported too. A string written where a code
+# is reported must be a whole code of that component, and one written where a
+# code is referenced must be a code some component's source reports, so that
+# a malformed, misspelled or borrowed code is reported here rather than by a
+# check of the running code.
+def source_codes(
+    patterns: dict[str, list[re.Pattern[str]]], code_form: re.Pattern[str]
+) -> tuple[dict[str, str], list[str]]:
+    files, problems = go_files(patterns)
+    codes = {}
+    declared: dict[str, dict[str, tuple[int, str]]] = {}
+    for rel, component, source in files:
         whole = re.compile(re.escape(component) + r"\." + KEBAB)
         partial = re.compile(re.escape(component) + r"\.(?:" + KEBAB + "-)?")
         prefixed = re.compile(re.escape(component) + r"\.\S+")
-        for line, literal, field in go_strings(path.read_text(encoding="utf-8")):
+        declared.setdefault(component, {}).update(source.code_parameters())
+        for start, _, literal in source.strings():
+            line = source.line(start)
             if whole.fullmatch(literal):
                 codes.setdefault(literal, f"{rel}:{line}")
             elif partial.fullmatch(literal):
@@ -107,10 +276,20 @@ def source_codes(
                     f'{rel}:{line}: "{literal}" is not a code of the form {component}.<kebab-name>; '
                     "write the name after the dot in lower-case letters and digits, its words joined by single hyphens"
                 )
-            elif field and not code_form.fullmatch(literal):
+    parameters = {component: reporting(functions) for component, functions in declared.items()}
+    for rel, component, source in files:
+        whole = re.compile(re.escape(component) + r"\." + KEBAB)
+        for start, literal, reported in source.code_uses(parameters[component]):
+            line = source.line(start)
+            if reported and not whole.fullmatch(literal):
                 problems.append(
-                    f'{rel}:{line}: the Code field "{literal}" is not a code of the form <component>.<kebab-name>; '
-                    "name a component of design/*.uc, then a dot and lower-case words joined by single hyphens"
+                    f'{rel}:{line}: "{literal}" is reported by the component {component}, so it must be a code of the form '
+                    f"{component}.<kebab-name>; correct the component and the name, or report the code where its component reports it"
+                )
+            elif not reported and literal not in codes:
+                problems.append(
+                    f'{rel}:{line}: "{literal}" is compared with a diagnostic code, yet no component reports it; '
+                    "write a code of the form <component>.<kebab-name> that the source of that component reports"
                 )
     return codes, problems
 

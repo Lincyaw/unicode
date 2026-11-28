@@ -31,28 +31,31 @@ func backends() map[string]backend {
 	return map[string]backend{"go": {Backend: golang.NewBackend(), tool: "go"}}
 }
 
-// readDesign reads and parses every file under design/ and corpus/. Its
-// diagnostics are those of reading and parsing each file, and
-// cli.not-canonical for a file that parses but is not canonical.
-func readDesign(root string) ([]syntax.File, []diag.Diagnostic, error) {
+// readDesign reads every file under design/ and corpus/ as a source. Its
+// diagnostics are those of reading each file, and cli.not-canonical for a
+// file that parses but is not canonical; the diagnostics of parsing and
+// loading the sources are design.loadSources's.
+func readDesign(root string) ([]syntax.Source, []diag.Diagnostic, error) {
 	paths, err := fmtPaths(root, nil)
 	if err != nil {
 		return nil, nil, err
 	}
 	var diags []diag.Diagnostic
-	var files []syntax.File
+	var sources []syntax.Source
 	for _, rel := range paths {
-		src, f, ds := readFile(root, rel)
+		source, ds := readSource(root, rel)
 		diags = append(diags, ds...)
-		if f == nil {
+		if source == nil {
 			continue
 		}
-		if out := f.Print(); !bytes.Equal(out, src) {
-			diags = append(diags, notCanonical(rel, src, out))
+		if f := syntax.Parse(rel, source.Kind, source.Text).File; f != nil {
+			if out := f.Print(); !bytes.Equal(out, source.Text) {
+				diags = append(diags, notCanonical(rel, source.Text, out))
+			}
 		}
-		files = append(files, *f)
+		sources = append(sources, *source)
 	}
-	return files, diags, nil
+	return sources, diags, nil
 }
 
 // buildGraph builds the graph of the repository at root (docs/design.md §5):
@@ -111,21 +114,21 @@ const (
 )
 
 func buildGraphWithMode(root string, mode graphLoadMode) (graph.Graph, []diag.Diagnostic, error) {
-	files, diags, err := readDesign(root)
+	sources, diags, err := readDesign(root)
 	if err != nil {
 		return graph.Graph{}, nil, err
 	}
 	var loaded design.Loaded
 	if mode == graphLoadExploration {
-		loaded = design.LoadForExploration(files).Loaded
+		loaded = design.LoadSourcesForExploration(sources).Loaded
 	} else {
-		loaded = design.Load(files)
+		loaded = design.LoadSources(sources)
 	}
 	g := loaded.Graph
 	diags = append(diags, loaded.Diagnostics...)
 	available := backends()
 	for _, r := range languageRoots(&g) {
-		at := languagePosition(files, r.language)
+		at := languagePosition(sources, r.language)
 		b, known := available[r.language]
 		if !known {
 			diags = append(diags, diag.Diagnostic{
@@ -193,11 +196,15 @@ func languageRoots(g *graph.Graph) []languageRoot {
 }
 
 // languagePosition is where the system file declares the language.
-func languagePosition(files []syntax.File, language string) diag.Position {
+func languagePosition(sources []syntax.Source, language string) diag.Position {
 	at := diag.Position{Path: "design/system.uc", Line: 1, Column: 1}
-	for _, f := range files {
-		if f.Path != at.Path {
+	for _, s := range sources {
+		if s.Path != at.Path {
 			continue
+		}
+		f := syntax.Parse(s.Path, s.Kind, s.Text).File
+		if f == nil {
+			break
 		}
 		for _, d := range f.Decls {
 			if d, ok := d.(*syntax.LanguageDecl); ok && d.Name == language {

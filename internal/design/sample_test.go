@@ -64,14 +64,15 @@ type Expected struct {
 }
 
 // designFiles is a valid design as text: its files by path, the nodes and
-// edges (`kind from to`) they declare, and the attributes of the nodes and
-// edges it lists.
+// edges (`kind from to`) they declare, the attributes of the nodes and edges
+// it lists, and the nodes that are neither properties nor flows.
 type designFiles struct {
 	files     map[string]string
 	nodes     []string
 	edges     []string
 	attrs     map[string]map[string][]string
 	edgeAttrs map[string]map[string][]string
+	others    []string // the components, types and operations: nodes no recording can target
 }
 
 // sample is the input of the properties of a valid design.
@@ -420,7 +421,13 @@ func (d *designer) sample() designFiles {
 		}
 		attrs[flow.id] = expected
 	}
-	return designFiles{files: files, nodes: slices.Clone(d.nodes), edges: slices.Clone(d.edges), attrs: attrs}
+	var others []string
+	for _, ns := range [][]*gNode{d.containers, d.types, d.ops} {
+		for _, n := range ns {
+			others = append(others, n.id)
+		}
+	}
+	return designFiles{files: files, nodes: slices.Clone(d.nodes), edges: slices.Clone(d.edges), attrs: attrs, others: others}
 }
 
 func (d *designer) file(path string, kind syntax.FileKind) *syntax.File {

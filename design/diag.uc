@@ -44,3 +44,9 @@ property unflatten-inverts-flatten relation "unflatten 还原 flatten 的结果�
   forall diagnostic: Diagnostic generated "任意诊断：各字符串字段取任意 UTF-8 文本，包括空串，行和列取任意整数，包括 0、负数和很大的数"
   ensure unflatten(flatten(diagnostic)) == diagnostic
 }
+
+property diagnostic-json-is-flat invariant "诊断编码成的 JSON 恰有 code、subject、path、line、column、message、fix 七个顶层键，各取诊断中对应的值，其中 path、line、column 取自位置，解码后得到原来的诊断" {
+  about Diagnostic
+  forall diagnostic: Diagnostic generated "任意诊断：各字符串字段取任意 UTF-8 文本，包括空串，行和列取任意整数，包括 0、负数和很大的数"
+  manual "需要把诊断编码成 JSON 再按键读回，表达式不能编码或解析 JSON"
+}

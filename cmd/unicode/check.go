@@ -55,14 +55,14 @@ type codeReport struct {
 }
 
 // runCheckDesign reports the diagnostics of every file under design/ and
-// corpus/: those of reading and parsing it, cli.not-canonical when it parses
-// but is not canonical, and those of loading every file that parses into the design.
+// corpus/: those of reading it, cli.not-canonical when it parses but is not
+// canonical, and those design.loadSources gives for parsing and loading them.
 func runCheckDesign(root, format string, stdout, stderr io.Writer) error {
-	files, diags, err := readDesign(root)
+	sources, diags, err := readDesign(root)
 	if err != nil {
 		return err
 	}
-	diags = append(diags, design.Load(files).Diagnostics...)
+	diags = append(diags, design.LoadSources(sources).Diagnostics...)
 	sortDiagnostics(diags)
 	return writeReport(format, checkReport{Diagnostics: diagnosticsJSON(diags)}, nil, diags, stdout, stderr)
 }
