@@ -1,80 +1,108 @@
 package syntax
 
 import (
-	"errors"
 	"slices"
 	"strings"
 
 	"pgregory.net/rapid"
 )
 
-//uc:checks syntax.kind-of-follows-path
-func checkKindOfFollowsPath(t rapid.TB, path string) {
-	segs := strings.Split(path, "/")
-	clean := !slices.ContainsFunc(segs, func(s string) bool { return s == "" || s == "." || s == ".." })
-	name := segs[len(segs)-1]
-	named := len(segs) > 1 && strings.HasSuffix(name, ".uc") && len(name) > len(".uc")
-	var want FileKind
-	switch {
-	case !clean || !named:
-	case path == "design/system.uc":
-		want = FileKindSystem
-	case segs[0] == "design":
-		want = FileKindComponent
-	case segs[0] == "corpus":
-		want = FileKindCorpus
-	}
-	kind, err := KindOf(path)
-	switch {
-	case want == "" && err == nil:
-		t.Fatalf("KindOf(%q) gave the kind %s, yet the path is not a clean path to a file <name>.uc under design/ or corpus/, so it should be rejected", path, kind)
-	case want == "" && !errors.As(err, new(NotADesignFile)):
-		t.Fatalf("KindOf(%q) rejected the path with %v, which is not NotADesignFile", path, err)
-	case want != "" && err != nil:
-		t.Fatalf("KindOf(%q) rejected the path (%v), yet it is a %s file", path, err, want)
-	case kind != want:
-		t.Fatalf("KindOf(%q) gave the kind %s, yet the path makes it a %s file", path, kind, want)
-	}
+// KindSample is a path and the kind docs/language.md §5.1 gives it, nil
+// when the path is no source file of the language.
+//
+//uc:realizes syntax.KindSample
+type KindSample struct {
+	Path string
+	Kind *FileKind
 }
 
-// pathTops are the first segments of the paths drawn: the two directories
-// of design and corpus files, and names that are close to them.
-var pathTops = []string{"design", "design", "design", "corpus", "corpus", "designs", "Design", "corpora", "docs", "design.uc", "x"}
-
-// pathNames are the names of the segments after the first, a file's extension aside.
-var pathNames = rapid.OneOf(rapid.SampledFrom([]string{"system", "design", "corpus", "", "x y", "中文"}),
+// dirNames are directory names that keep a path clean: they may hold a dot,
+// equal a top directory or a file name, or hold a space or wide characters.
+var dirNames = rapid.OneOf(rapid.SampledFrom([]string{"system", "design", "corpus", "x y", "中文", "a.b", "v1.uc"}),
 	rapid.StringMatching(`[a-z][a-z0-9-]{0,6}`))
 
-// pathExtensions are .uc and what comes close to it.
-var pathExtensions = []string{".uc", ".uc", ".uc", "", ".UC", ".ucx", ".uc.bak", ".txt", "uc", ".u"}
+// fileNames are what comes before .uc in a valid file name: never empty,
+// and now and then a dot, two dots or system.
+var fileNames = rapid.OneOf(rapid.SampledFrom([]string{"system", ".", "..", "x y", "中文", "a.b"}),
+	rapid.StringMatching(`[a-z][a-z0-9-]{0,6}`))
 
-// genKindPath draws a slash-separated path relative to the root of a
-// repository: under design/, under corpus/ or elsewhere, ending in .uc, in a
-// file named only .uc or in something close to it, and now and then unclean,
-// with a segment . or .., a doubled / or a / at either end.
+// plainNames have no dot, so that a segment of them is never a .uc file.
+var plainNames = rapid.StringMatching(`[a-z][a-z0-9-]{0,6}`)
+
+func dirs(t *rapid.T, names *rapid.Generator[string]) []string {
+	return rapid.SliceOfN(names, 0, 2).Draw(t, "dirs")
+}
+
+// sourcePath draws the segments of a clean path to a .uc file under top.
+func sourcePath(t *rapid.T, top string) []string {
+	return append(append([]string{top}, dirs(t, dirNames)...), fileNames.Draw(t, "name")+".uc")
+}
+
+func kindOf(kind FileKind) *FileKind { return &kind }
+
+// validPaths draw the segments of a system, a component and a corpus path.
+var validPaths = map[FileKind]func(t *rapid.T) []string{
+	FileKindSystem: func(*rapid.T) []string { return []string{"design", "system.uc"} },
+	FileKindComponent: func(t *rapid.T) []string {
+		return rapid.Custom(func(t *rapid.T) []string { return sourcePath(t, "design") }).
+			Filter(func(segs []string) bool { return strings.Join(segs, "/") != systemFilePath }).Draw(t, "component")
+	},
+	FileKindCorpus: func(t *rapid.T) []string { return sourcePath(t, "corpus") },
+}
+
+func validPath(t *rapid.T) []string { return validPaths[fileKinds[uniform(t, len(fileKinds))]](t) }
+
+func validClass(kind FileKind) func(t *rapid.T) KindSample {
+	return func(t *rapid.T) KindSample { return KindSample{strings.Join(validPaths[kind](t), "/"), kindOf(kind)} }
+}
+
+// kindClasses build a path of one class: a system, component or corpus
+// path with its kind, or one that breaks one condition of docs/language.md §5.1.
+var kindClasses = []func(t *rapid.T) KindSample{
+	validClass(FileKindSystem), validClass(FileKindComponent), validClass(FileKindCorpus),
+	// The first segment is neither design nor corpus, or the path is one file name.
+	func(t *rapid.T) KindSample {
+		top := rapid.OneOf(rapid.SampledFrom([]string{"designs", "Design", "corpora", "docs", "design.uc", "src"}),
+			plainNames.Filter(func(s string) bool { return s != "design" && s != "corpus" })).Draw(t, "top")
+		if rapid.Bool().Draw(t, "one segment") {
+			return KindSample{fileNames.Draw(t, "name") + ".uc", nil}
+		}
+		return KindSample{strings.Join(sourcePath(t, top), "/"), nil}
+	},
+	// The file's extension is not .uc.
+	func(t *rapid.T) KindSample {
+		segs := append([]string{rapid.SampledFrom([]string{"design", "corpus"}).Draw(t, "top")}, dirs(t, dirNames)...)
+		ext := rapid.SampledFrom([]string{".UC", ".Uc", ".ucx", ".uc.bak", ".txt", ".u", ".go"}).Draw(t, "extension")
+		return KindSample{strings.Join(append(segs, plainNames.Draw(t, "name")+ext), "/"), nil}
+	},
+	// The file is named only .uc.
+	func(t *rapid.T) KindSample {
+		segs := append([]string{rapid.SampledFrom([]string{"design", "corpus"}).Draw(t, "top")}, dirs(t, dirNames)...)
+		return KindSample{strings.Join(append(segs, ".uc"), "/"), nil}
+	},
+	// The path names a directory: no segment is a file.
+	func(t *rapid.T) KindSample {
+		segs := append([]string{rapid.SampledFrom([]string{"design", "corpus"}).Draw(t, "top")}, dirs(t, plainNames)...)
+		return KindSample{strings.Join(segs, "/"), nil}
+	},
+	// A segment . or .. stands somewhere in a valid path.
+	func(t *rapid.T) KindSample {
+		segs := validPath(t)
+		segs = slices.Insert(segs, rapid.IntRange(0, len(segs)).Draw(t, "at"), rapid.SampledFrom([]string{".", ".."}).Draw(t, "segment"))
+		return KindSample{strings.Join(segs, "/"), nil}
+	},
+	// An empty segment stands somewhere in a valid path: a doubled /, or a / at either end.
+	func(t *rapid.T) KindSample {
+		segs := validPath(t)
+		segs = slices.Insert(segs, rapid.IntRange(0, len(segs)).Draw(t, "at"), "")
+		return KindSample{strings.Join(segs, "/"), nil}
+	},
+}
+
+// genKindSample first draws the class of a path, a valid one or one reason
+// to reject it, each as likely, and then builds a path of that class.
 //
-//uc:generates syntax.kind-of-follows-path.path
-func genKindPath() *rapid.Generator[string] {
-	drawn := rapid.Custom(func(t *rapid.T) string {
-		segs := []string{rapid.SampledFrom(pathTops).Draw(t, "top")}
-		for range rapid.IntRange(0, 2).Draw(t, "dirs") {
-			segs = append(segs, pathNames.Filter(func(s string) bool { return s != "" }).Draw(t, "dir"))
-		}
-		if rapid.IntRange(0, 5).Draw(t, "file?") > 0 {
-			base := pathNames.Draw(t, "name") + rapid.SampledFrom(pathExtensions).Draw(t, "extension")
-			if base == "" {
-				base = "x"
-			}
-			segs = append(segs, base)
-		}
-		if rapid.IntRange(0, 3).Draw(t, "unclean?") == 0 {
-			// An empty segment doubles a / or, at either end, adds one.
-			segs = slices.Insert(segs, rapid.IntRange(0, len(segs)).Draw(t, "at"), rapid.SampledFrom([]string{".", "..", ""}).Draw(t, "segment"))
-		}
-		return strings.Join(segs, "/")
-	})
-	edges := rapid.SampledFrom([]string{"design/system.uc", "design/sub/system.uc", "corpus/system.uc", "system.uc",
-		"design/.uc", "corpus/.uc", "corpus/sub/.uc", "design/..uc", "design/system.UC", "design/system.ucx", "design", "corpus", "design.uc",
-		"design/./system.uc", "design//x.uc", "design/../design/x.uc", "./design/x.uc", "/design/x.uc", "design/x.uc/", "corpus/sub/../x.uc"})
-	return rapid.OneOf(edges, drawn, drawn, drawn)
+//uc:generates syntax.kind-of-follows-path.sample
+func genKindSample() *rapid.Generator[KindSample] {
+	return rapid.Custom(func(t *rapid.T) KindSample { return kindClasses[uniform(t, len(kindClasses))](t) })
 }

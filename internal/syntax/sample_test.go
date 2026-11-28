@@ -463,10 +463,16 @@ func genFileOf(t *rapid.T, kind FileKind) *File {
 // segment, a summary or a number in the tree, which stands at its token.
 // When elseApart is set and the mark is a branch, its else starts a line of
 // its own below the } of the branch before it.
+//
+// With canonical set it draws nothing and writes every layout choice as
+// docs/language.md §3 P1–P6 fix it, so that it writes the canonical text of the tree.
 type writer struct {
 	t    *rapid.T
 	b    strings.Builder
 	line []string
+
+	canonical bool
+	depth     int // the blocks and broken values open around the current line
 
 	mark        any
 	markComment string
@@ -512,19 +518,24 @@ func (w *writer) flush() {
 		w.comment = ""
 	}
 	start := w.b.Len()
-	w.b.WriteString(w.spaces("indent", 6))
+	if w.canonical {
+		w.b.WriteString(strings.Repeat("  ", w.depth))
+	} else {
+		w.b.WriteString(w.spaces("indent", 6))
+	}
 	for i, tok := range w.line {
 		if i > 0 {
-			sep := w.spaces("sep", 2)
-			if sep == "" && needsSpace(w.line[i-1], tok) {
-				sep = " "
-			}
-			w.b.WriteString(sep)
+			w.b.WriteString(w.gap(w.line[i-1], tok))
 		}
 		if w.marking && i == w.markToken {
 			w.markColumn, w.marking = w.b.Len()-start+w.markOffset+1, false
 		}
 		w.b.WriteString(tok)
+	}
+	if w.canonical {
+		w.b.WriteByte('\n')
+		w.line = w.line[:0]
+		return
 	}
 	w.b.WriteString(w.spaces("trailing", 2))
 	w.b.WriteByte('\n')
@@ -532,6 +543,19 @@ func (w *writer) flush() {
 	for range max(0, rapid.IntRange(-2, 2).Draw(w.t, "blank")) {
 		w.b.WriteString(w.spaces("blankSpaces", 2) + "\n")
 	}
+}
+
+// gap is what the writer puts between two tokens on a line: the canonical
+// gap, or zero to two spaces, at least one where the tokens would lex as one.
+func (w *writer) gap(a, b string) string {
+	if w.canonical {
+		return canonicalGap(a, b)
+	}
+	sep := w.spaces("sep", 2)
+	if sep == "" && needsSpace(a, b) {
+		sep = " "
+	}
+	return sep
 }
 
 // needsSpace tells whether two tokens written together would lex as one.
@@ -577,21 +601,32 @@ func (w *writer) args(as []Lower) {
 func writeBlock[L any](w *writer, ls []L) {
 	w.tok("{")
 	w.flush()
+	w.depth++
 	for _, l := range ls {
 		w.node(l)
 	}
+	w.depth--
 	w.tok("}")
 }
 
 // optBlock writes an optional block, which may be left out when it is empty.
 func writeOptBlock[L any](w *writer, ls []L) {
-	if len(ls) == 0 && rapid.Bool().Draw(w.t, "noBraces") {
+	if len(ls) == 0 && (w.canonical || rapid.Bool().Draw(w.t, "noBraces")) {
 		return
 	}
 	writeBlock(w, ls)
 }
 
 func (w *writer) file(f *File) {
+	if w.canonical {
+		for i, d := range f.Decls {
+			if i > 0 && !isComment(f.Decls[i-1]) {
+				w.b.WriteByte('\n')
+			}
+			w.node(d)
+		}
+		return
+	}
 	for range max(0, rapid.IntRange(-2, 2).Draw(w.t, "leadingBlanks")) {
 		w.b.WriteString(w.spaces("blankSpaces", 2) + "\n")
 	}
@@ -860,6 +895,9 @@ func (w *writer) typeExpr(t TypeExpr) {
 // number spells a canonical number with leading zeros, trailing zeros in its
 // fraction, or a minus on zero, all of which parsing normalizes away.
 func (w *writer) number(n Number) string {
+	if w.canonical {
+		return string(n)
+	}
 	sign, digits := "", string(n)
 	if strings.HasPrefix(digits, "-") {
 		sign, digits = "-", digits[1:]
@@ -876,6 +914,10 @@ func (w *writer) number(n Number) string {
 
 // value writes v; between its items it may break the line.
 func (w *writer) value(v Value) {
+	if w.canonical {
+		w.canonicalValue(v, "")
+		return
+	}
 	w.at(v)
 	open, items, closer := parts(v)
 	switch v := v.(type) {

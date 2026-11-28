@@ -15,7 +15,7 @@ type NotADesignFile error "路径按 language.md §5.1 的分类不是本语言�
 type File object "一个设计文件或录制文件的语法树：路径、种类，以及带位置的语法成分和注释；语法成分的类型不在设计中声明" {
   field path: string
   field kind: FileKind
-  op print() -> bytes "按规范格式打印"
+  op print() -> bytes pure "按规范格式打印"
 }
 
 type Source record "一个源文件：仓库中的相对路径、按路径得到的种类和原始字节" {
@@ -36,14 +36,32 @@ type ExprParsed record "单条表达式的解析结果：没有诊断时有语�
   field diagnostics: list<diag.Diagnostic>
 }
 
-type Sample record "format-is-stable 和 expression-format-is-stable 的输入：一个合法的设计文件或录制文件的种类和文本" {
-  field kind: FileKind
-  field text: string
+type KindSample record "kind-of-follows-path 的输入：一个路径，以及按 language.md §5.1 的分类它应得的种类；kind 为 none 表示这个路径不是本语言的源文件" {
+  field path: string
+  field kind: optional<FileKind>
 }
 
-type Broken record "syntax 中三条拒绝非法文本的性质的输入：做了一处违规改动的合法文件的种类和文本，改动所在的行和列，以及应当得到的诊断码" {
+type RawText record "parse-is-total 的输入：一段源字节 src，以及 src 按换行切成的各行的字节数 widths，键是从 1 起的行号" {
+  field src: bytes
+  field widths: map<int, int>
+}
+
+type Sample record "format-is-stable 的输入：一个合法的设计文件或录制文件的种类、路径和随意排版的文本，以及同一棵语法树按 language.md 的 P1 至 P6 写出的规范文本" {
   field kind: FileKind
+  field path: string
+  field text: bytes
+  field canonical: bytes
+}
+
+type ExprSample record "expression-format-is-stable 的输入：一棵表达式树每个复合子表达式都带括号的文本，以及同一棵树只留下必需的括号的规范文本" {
   field text: string
+  field canonical: string
+}
+
+type Broken record "syntax 中三条拒绝非法文本的性质的输入：做了一处违规改动的合法文件的种类、路径和字节，改动所在的行和列，以及应当得到的诊断码" {
+  field kind: FileKind
+  field path: string
+  field text: bytes
   field line: int
   field column: int
   field code: string
@@ -73,96 +91,115 @@ flow parse-entry-describes-outcome "用户直接调用 parse：没有诊断时�
   }
 }
 
-property kind-of-follows-path invariant "kindOf 按 language.md §5.1 的分类由路径给出文件的种类，不是本语言源文件的路径得到 NotADesignFile" {
+property kind-of-follows-path postcondition "kindOf 对 sample.kind 不为 none 的路径给出 sample.kind，对 sample.kind 为 none 的路径抛出 NotADesignFile" {
   about kindOf
-  forall path: string generated "路径：约四分之一取自固定的边界情形（不在 design/ 下或嵌套的 system.uc、只有目录、只叫 .uc 的文件、扩展名大小写不同或相近、含 .、.. 或空段、以 / 开头或结尾），其余由 design、corpus 或其他首段和零至两段目录拼成，约六分之五再接带各种扩展名的文件名，其中约四分之一另插入 .、.. 或空段"
-  manual "需要按 / 切分路径并检查每一段，表达式没有字符串切分"
+  forall sample: KindSample generated "等概率取九类之一再按这一类构造路径，三类合法的是系统文件 design/system.uc，以及 design/ 或 corpus/ 下零至两层目录中的组件文件或录制文件，文件名是 .、..、system 或其他不为空的名称接 .uc，目录名可以含 .，kind 是这一类的种类；六类不合法的 kind 为 none，分别是首段不是 design 或 corpus 的 .uc 路径或只有一段的 .uc 文件名、扩展名是 .UC、.ucx、.txt 等而不是 .uc 的文件、文件名只是 .uc 的文件、只有 design 或 corpus 和零至两层目录而没有文件的路径、在合法的路径中某处插入一段 . 或 ..，以及在合法的路径中某处插入一段空的段，即开头、中间或结尾多一个 /"
+  call kindOf(sample.path)
+  ensure sample.kind == none implies raised(NotADesignFile)
+  ensure sample.kind != none implies not raised(NotADesignFile) and result == sample.kind
   case system-file {
-    path = "design/system.uc"
+    sample = {path: "design/system.uc", kind: system}
   }
   case nested-component {
-    path = "design/order/pricing.uc"
+    sample = {path: "design/order/pricing.uc", kind: component}
+  }
+  case nested-system-name {
+    sample = {path: "design/order/system.uc", kind: component}
+  }
+  case dotted-name {
+    sample = {path: "design/..uc", kind: component}
   }
   case recorded-input {
-    path = "corpus/order/total-is-sum.uc"
+    sample = {path: "corpus/order/total-is-sum.uc", kind: corpus}
   }
   case outside-design {
-    path = "src/order.go"
+    sample = {path: "src/order.go", kind: none}
   }
   case missing-name {
-    path = "design/.uc"
+    sample = {path: "design/.uc", kind: none}
   }
   case unclean-path {
-    path = "design/order/../pricing.uc"
+    sample = {path: "design/order/../pricing.uc", kind: none}
+  }
+  case trailing-slash {
+    sample = {path: "design/order.uc/", kind: none}
   }
 }
 
-property parse-is-total invariant "解析任何字节都正常返回而不 panic：没有诊断时给出路径和种类与输入相同的语法树，有诊断时每条的诊断码形如 syntax.<名称>、原因和修正不为空、位置在输入路径的文件之内，并且诊断按行、列和诊断码排序" {
+property parse-is-total postcondition "解析任何字节都正常返回：没有诊断时语法树的路径和种类与输入相同，每条诊断都在输入路径上、原因和修正不为空，行是 raw.src 的一行，列在 1 与这一行的字节数加一之间；与 parse-result-is-described 不同，位置还不超出 raw.src 的末行和所在行的末尾" {
   about parse
   forall path: string generated "1 至 64 个任意字符、不超过 64 字节的路径"
   forall kind: FileKind generated "三种文件种类之一"
-  forall src: bytes generated "不超过 4096 字节的输入，来自四种来源之一：任意字节，语法片段（含制表符、CR、NUL 和不完整的 UTF-8）的拼接，对合法文件做一至四处编辑（复制、删除、交换或插入行，或替换几个字节），或合法文件的截断"
-  manual "需要按换行切分源字节，得出行数和每行的长度来判断诊断的位置在文件之内，表达式没有字节切分"
+  forall raw: RawText generated "src 不超过 4096 字节，来自四种来源之一：任意字节，语法片段（含制表符、CR、NUL 和不完整的 UTF-8）的拼接，对 format-is-stable 取的合法文件的文本做一至四处编辑（复制、删除、交换或插入行，或替换几个字节），或这样的文本的截断；widths 是 src 按换行切成的各行的字节数"
+  call parse(path, kind, raw.src)
+  ensure size(result.diagnostics) == 0 implies result.file != none and result.file.path == path and result.file.kind == kind
+  ensure all(d in result.diagnostics: d.position.path == path and size(d.message) > 0 and size(d.fix) > 0)
+  ensure all(d in result.diagnostics: d.position.line in raw.widths and d.position.column >= 1 and d.position.column <= raw.widths[d.position.line] + 1)
 }
 
-property format-is-stable relation "合法的文本 s 解析后打印得到 t：t 是规范格式，t 解析出的语法树与 s 的相同，t 再解析再打印仍是 t" {
+property format-is-stable postcondition "合法的文本 sample.text 解析没有诊断，打印得到 sample.canonical，sample.canonical 解析也没有诊断，打印仍是 sample.canonical" {
   about parse, File.print
-  forall sample: Sample generated "一个合法的文件：约三分之一是 expression-format-is-stable 的含随机表达式的组件文件，其余是随机种类、带随机注释的随机语法树，写成文本时随意取缩进、记号间和行尾的空格、空行、零至两个结尾换行、空的可选块是否写花括号、值是否在项之间换行和带结尾逗号，数的写法可带多余的前导零、小数末尾的零或写成 -0"
-  manual "需要比较忽略位置的两棵语法树，表达式不能构造或比较语法树"
+  forall sample: Sample generated "一个合法的文件，路径与种类相符（系统文件为 design/system.uc，其余为 design/ 或 corpus/ 下零至两层目录中的随机名称）：约三分之一是一份组件文件，其中一条性质的 ensure 是 expression-format-is-stable 取的随机表达式，text 中每个复合子表达式都带括号，canonical 中只留必需的括号；其余是随机种类、带随机注释的随机语法树，text 随意取缩进、记号间和行尾的空格、空行、零至两个结尾换行、空的可选块是否写花括号、值是否在项之间换行和带结尾逗号，数的写法可带多余的前导零、小数末尾的零或写成 -0，canonical 在每一处都按 P1 至 P6 取规范的写法"
+  call parse(sample.path, sample.kind, sample.text)
+  ensure size(result.diagnostics) == 0
+  ensure result.file.print() == sample.canonical
+  ensure size(parse(sample.path, sample.kind, sample.canonical).diagnostics) == 0
+  ensure parse(sample.path, sample.kind, sample.canonical).file.print() == sample.canonical
   case container-named-in {
     sample = {
       kind: component,
+      path: "design/sample.uc",
       text: "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure raised(in.A)\n}\n",
+      canonical: "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure raised(in.A)\n}\n",
     }
   }
   case container-named-in-call {
     sample = {
       kind: component,
+      path: "design/sample.uc",
       text: "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure size(in.items) == 1\n}\n",
+      canonical: "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure size(in.items) == 1\n}\n",
     }
   }
 }
 
-property rejects-broken-text postcondition "合法的文件做一处违反某条规则的改动之后，解析在改动所在的行和列给出这条规则的诊断，并且不给出语法树" {
+property rejects-broken-text postcondition "合法的文件做一处违反某条规则的改动之后，解析不给出语法树，并在改动所在的文件、行和列给出这条规则的诊断" {
   about parse
-  forall broken: Broken generated "一个随机的合法文件，在随机的一处做了违反 language.md 某条规则的改动，附改动所在的行、列和应当得到的诊断码；约三分之一是 contract-syntax-rejects-invalid-claims 的改动"
-  forall path: string generated "与 broken.kind 相符的一条固定路径"
-  forall src: bytes generated "broken.text 的 UTF-8 字节"
-  call parse(path, broken.kind, src)
+  forall broken: Broken generated "一个随机的合法文件，在随机的一处做了违反 language.md 某条规则的改动，附与种类相符的随机路径、改动所在的行和列以及应当得到的诊断码；约三分之一是 contract-syntax-rejects-invalid-claims 的改动"
+  call parse(broken.path, broken.kind, broken.text)
   ensure result.file == none
-  ensure any(d in result.diagnostics: d.code == broken.code and d.position.line == broken.line and d.position.column == broken.column)
+  ensure any(d in result.diagnostics: d.code == broken.code and d.position.path == broken.path and d.position.line == broken.line and d.position.column == broken.column)
 }
 
-property expression-format-is-stable relation "ensure 是随机表达式的组件文件解析后打印得到 t：t 是规范格式，t 解析出的语法树与原文件的相同，t 再解析再打印仍是 t；与 expression-text-is-stable 不同，表达式经整份文件解析，不经 parseExpr" {
-  about parse, File.print
-  forall sample: Sample generated "一份固定的组件文件，其中一条性质的 ensure 是至多四层嵌套的随机表达式，用到全部二元运算符、not、字段和下标访问、两个实参的调用、量化式、old、raised 和 failure，每个复合子表达式都带括号，表达式不必类型正确"
-  manual "需要比较忽略位置的两棵语法树，表达式不能构造或比较语法树；谓词复用 format-is-stable 的手写谓词"
+property expression-format-is-stable postcondition "复合子表达式都带括号的表达式 sample.text 经 parseExpr 没有诊断，exprText 得到 sample.canonical，sample.canonical 再经 parseExpr 和 exprText 仍是它自己；与 expression-text-is-stable 不同，规范文本由生成器从同一棵表达式树给出" {
+  about parseExpr, exprText
+  forall sample: ExprSample generated "一棵至多四层的随机表达式树：最后一层之上约五分之四的子表达式是复合的，其中约三分之一是二元运算，各种形式和运算符等概率，用到数、字符串、名称、true、false、none、result、全部二元运算符、not、字段和下标访问、两个实参的调用、量化式、old、raised 和 failure，text 中每个复合子表达式都带括号，canonical 按 language.md 的文法中各层的优先级只在必需处带括号，implies 向右结合，比较不连写，其余向左结合，表达式不必类型正确"
+  call parseExpr("expression.uc", sample.text)
+  ensure size(result.diagnostics) == 0
+  ensure exprText(result.expr) == sample.canonical
+  ensure exprText(parseExpr("expression.uc", sample.canonical).expr) == sample.canonical
   case container-named-in {
-    sample = {
-      kind: component,
-      text: "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure raised(in.A)\n}\n",
-    }
+    sample = {text: "raised(in.A)", canonical: "raised(in.A)"}
+  }
+  case redundant-brackets {
+    sample = {text: "((a + b) + (c * d))", canonical: "a + b + c * d"}
   }
 }
 
-property contract-syntax-rejects-invalid-claims postcondition "黑盒契约或流程有一处违反 language.md 的 G0、G13、G15 至 G18 或 L6 时，解析不给出语法树，并在出错处的行列给出所违反规则的诊断" {
+property contract-syntax-rejects-invalid-claims postcondition "黑盒契约或流程有一处违反 language.md 的 G0、G13、G15 至 G18 或 L6 时，解析不给出语法树，并在出错处的文件、行和列给出所违反规则的诊断" {
   about parse
-  forall broken: Broken generated "一条固定的黑盒契约，性质名随机，做十一种改动之一：删去 ensure 或 call，加上 manual、changes none、不是时长的 within 或带运算的 changes，符号改名为 size，== 两边去掉空格，改成以 alt 开头或没有步骤的流程，或改用 observation-syntax-rejects-malformed-paths 的一处改动；附应得的诊断码和行列"
-  forall path: string generated "与 broken.kind 相符的一条固定路径"
-  forall src: bytes generated "broken.text 的 UTF-8 字节"
-  call parse(path, broken.kind, src)
+  forall broken: Broken generated "一个只含一条黑盒契约的组件文件：组件、性质、about 和 call 中的类型与操作的名称随机，一至三个内置类型的符号，第一个传给被测调用，一至三条 ensure 各比较 result、符号或零至 999 的数中的两个；再等概率做十一种改动之一：删去全部 ensure 或 call，加上 manual 或 changes none 或不是时长的 within，把一个符号改名为表达式的关键字，一条 ensure 的比较运算符两边去掉空格，加上带运算的 changes，改成以 alt 开头或没有步骤的流程，或改用 observation-syntax-rejects-malformed-paths 的一处改动，并附 design/ 下的随机路径、应得的诊断码和行列"
+  call parse(broken.path, broken.kind, broken.text)
   ensure result.file == none
-  ensure any(d in result.diagnostics: d.code == broken.code and d.position.line == broken.line and d.position.column == broken.column)
+  ensure any(d in result.diagnostics: d.code == broken.code and d.position.path == broken.path and d.position.line == broken.line and d.position.column == broken.column)
 }
 
-property observation-syntax-rejects-malformed-paths postcondition "直接观察路径中有一段名称写成大驼峰或带短横线时，解析不给出语法树，并在这一段的行列给出 syntax.invalid-name" {
+property observation-syntax-rejects-malformed-paths postcondition "直接观察路径中有一段名称写成大驼峰或带短横线时，解析不给出语法树，并在这一段的文件、行和列给出 syntax.invalid-name" {
   about parse
-  forall broken: Broken generated "一份固定的组件文件，其中黑盒契约的 observe 列出一至四条直接观察路径，每条一至五段小驼峰名称，其中一段换成大驼峰名称或带短横线的名称，附这一段的行列和诊断码 syntax.invalid-name"
-  forall path: string generated "与 broken.kind 相符的一条固定路径"
-  forall src: bytes generated "broken.text 的 UTF-8 字节"
-  call parse(path, broken.kind, src)
+  forall broken: Broken generated "一份组件文件，其中名称随机的黑盒契约的 observe 列出一至四条直接观察路径，每条一至五段小驼峰名称，其中一段换成大驼峰名称或带短横线的名称，附 design/ 下的随机路径、这一段的行列和诊断码 syntax.invalid-name"
+  call parse(broken.path, broken.kind, broken.text)
   ensure result.file == none
-  ensure any(d in result.diagnostics: d.code == broken.code and d.position.line == broken.line and d.position.column == broken.column)
+  ensure any(d in result.diagnostics: d.code == broken.code and d.position.path == broken.path and d.position.line == broken.line and d.position.column == broken.column)
 }
 
 property parse-result-is-described postcondition "parse 的结果合乎输入：没有诊断时语法树的路径和种类与输入相同，每条诊断都在输入路径上、行列不小于 1、原因和修正都不为空" {

@@ -8,17 +8,19 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/alecthomas/participle/v2/lexer"
 	"pgregory.net/rapid"
 )
 
 // Broken is a valid file with one edit that breaks a rule of docs/language.md:
-// its kind, its text, the line and byte column of the edit, and the code of
-// the rule's diagnostic.
+// its kind, a path that fits the kind, its bytes, the line and byte column of
+// the edit, and the code of the rule's diagnostic.
 //
 //uc:realizes syntax.Broken
 type Broken struct {
 	Kind   FileKind
-	Text   string
+	Path   string
+	Text   []byte
 	Line   int
 	Column int
 	Code   string
@@ -53,13 +55,14 @@ func uniform(t *rapid.T, n int) int {
 func inserted(code string, chars *rapid.Generator[string]) breakage {
 	return func(t *rapid.T) Broken {
 		s := genSample().Draw(t, "sample")
+		text := string(s.Text)
 		var bounds []int
-		for i := range s.Text {
+		for i := range text {
 			bounds = append(bounds, i)
 		}
-		at := rapid.SampledFrom(append(bounds, len(s.Text))).Draw(t, "at")
-		line, column := lineColumn(s.Text, at)
-		return Broken{s.Kind, s.Text[:at] + chars.Draw(t, "char") + s.Text[at:], line, column, code}
+		at := rapid.SampledFrom(append(bounds, len(text))).Draw(t, "at")
+		line, column := lineColumn(text, at)
+		return newBroken(t, s.Kind, text[:at]+chars.Draw(t, "char")+text[at:], line, column, code)
 	}
 }
 
@@ -93,7 +96,7 @@ func edited(code string, kinds []FileKind, sites func(f *File) []edit) breakage 
 	return func(t *rapid.T) Broken {
 		f, mark := editedTree(t, kinds, sites)
 		text, line, column := written(&writer{t: t, mark: mark}, f)
-		return Broken{f.Kind, text, line, column, code}
+		return newBroken(t, f.Kind, text, line, column, code)
 	}
 }
 
@@ -115,6 +118,8 @@ func written(w *writer, f *File) (string, int, int) {
 	}
 	return w.b.String(), w.markLine, w.markColumn
 }
+
+var posType = reflect.TypeFor[lexer.Position]()
 
 // site is a value in a tree and the type of the struct that holds it.
 type site struct {
@@ -695,7 +700,7 @@ func trailingComment(t *rapid.T) Broken {
 		return each(sitesWhere(f, isLine), func(_ *rapid.T, s site) any { return s.v.Interface() })
 	})
 	text, line, column := written(&writer{t: t, mark: node, markComment: "//" + rapid.StringOfN(genRune(), 0, 12, -1).Draw(t, "comment")}, f)
-	return Broken{f.Kind, text, line, column, "syntax.trailing-comment"}
+	return newBroken(t, f.Kind, text, line, column, "syntax.trailing-comment")
 }
 
 // misplacedElse writes the else of a random branch of a random alt on a line
@@ -717,7 +722,7 @@ func misplacedElse(t *rapid.T) Broken {
 		})...)
 	})
 	text, line, column := written(&writer{t: t, mark: mark, elseApart: true}, f)
-	return Broken{f.Kind, text, line, column, "syntax.misplaced-else"}
+	return newBroken(t, f.Kind, text, line, column, "syntax.misplaced-else")
 }
 
 // rawLines are lines the writer writes as they are, for edits that no tree
@@ -898,8 +903,8 @@ func afterClose(t *rapid.T) *rawLines {
 // unexpectedEnd ends a valid sample with a block that the file ends inside.
 func unexpectedEnd(t *rapid.T) Broken {
 	s := genSample().Draw(t, "sample")
-	text := strings.TrimRight(s.Text, "\n ") + "\n\ntype " + string(genUpper(t, "type")) + " record " + label(t) + " {\n  label " + string(genKebab(t, "label")) + "\n"
-	return Broken{s.Kind, text, strings.Count(text, "\n") + 1, 1, "syntax.unexpected-end"}
+	text := strings.TrimRight(string(s.Text), "\n ") + "\n\ntype " + string(genUpper(t, "type")) + " record " + label(t) + " {\n  label " + string(genKebab(t, "label")) + "\n"
+	return newBroken(t, s.Kind, text, strings.Count(text, "\n")+1, 1, "syntax.unexpected-end")
 }
 
 var (

@@ -1,420 +1,196 @@
 package syntax
 
 import (
-	"bytes"
-	"cmp"
-	"fmt"
-	"reflect"
-	"regexp"
-	"slices"
 	"strings"
 
-	"github.com/alecthomas/participle/v2/lexer"
 	"github.com/mattn/go-runewidth"
 	"pgregory.net/rapid"
 )
 
-// Sample is a valid file: its kind and its text.
+// Sample is a valid file: its kind, its path, its text with random layout,
+// and the canonical text of the same tree.
 //
 //uc:realizes syntax.Sample
 type Sample struct {
-	Kind FileKind
-	Text string
+	Kind      FileKind
+	Path      string
+	Text      []byte
+	Canonical []byte
 }
 
-var samplePaths = map[FileKind]string{
-	FileKindSystem:    "design/system.uc",
-	FileKindComponent: "design/sample.uc",
-	FileKindCorpus:    "corpus/sample.uc",
+// genPathOf draws a path that fits kind: design/system.uc for the system
+// file, and a .uc file in zero to two directories under design/ or corpus/
+// for a component or corpus file.
+func genPathOf(t *rapid.T, kind FileKind) string {
+	top := map[FileKind]string{FileKindSystem: "design", FileKindComponent: "design", FileKindCorpus: "corpus"}[kind]
+	if kind == FileKindSystem {
+		return systemFilePath
+	}
+	return rapid.Custom(func(t *rapid.T) string {
+		segs := append([]string{top}, rapid.SliceOfN(kebabNames, 0, 2).Draw(t, "dirs")...)
+		return strings.Join(append(segs, kebabNames.Draw(t, "name")+".uc"), "/")
+	}).Filter(func(p string) bool { return p != systemFilePath }).Draw(t, "path")
 }
 
-// genSample draws a random valid syntax tree and writes it with random legal layout.
+// genSample draws a tree and writes it twice: with random legal layout, and
+// with every layout choice canonical. A third of the trees are a component
+// whose property's claim is a random expression.
 //
 //uc:generates syntax.format-is-stable.sample
 func genSample() *rapid.Generator[Sample] {
 	return rapid.Custom(func(t *rapid.T) Sample {
 		if rapid.IntRange(0, 2).Draw(t, "expression") == 0 {
-			return expressionSample(t)
+			e := genExprTree(t, 3)
+			return Sample{Kind: FileKindComponent, Path: genPathOf(t, FileKindComponent),
+				Text: []byte(expressionFile(bracketed(e))), Canonical: []byte(expressionFile(canonicalExpr(e, 0)))}
 		}
 		f := genFile(t)
-		w := &writer{t: t}
-		w.file(f)
-		return Sample{Kind: f.Kind, Text: w.b.String()}
+		random, canonical := &writer{t: t}, &writer{t: t, canonical: true}
+		random.file(f)
+		canonical.file(f)
+		return Sample{Kind: f.Kind, Path: genPathOf(t, f.Kind), Text: []byte(random.b.String()), Canonical: []byte(canonical.b.String())}
 	})
 }
 
-//uc:checks syntax.format-is-stable
-func checkFormatIsStable(t rapid.TB, sample Sample) {
-	path := samplePaths[sample.Kind]
-	first := Parse(path, sample.Kind, []byte(sample.Text))
-	if len(first.Diagnostics) > 0 {
-		t.Fatalf("the valid text s got diagnostics:%s\ns:\n%s", describeDiagnostics(first), sample.Text)
-	}
-	printed := first.File.Print()
-	if problem := cmp.Or(canonicalProblem(printed), spacingProblem(printed), numberProblem(printed), valueLayoutProblem(printed)); problem != "" {
-		t.Fatalf("t, printed from s, is not canonical: %s\nt:\n%s", problem, printed)
-	}
-	second := Parse(path, sample.Kind, printed)
-	if len(second.Diagnostics) > 0 {
-		t.Fatalf("t, printed from s, got diagnostics:%s\nt:\n%s", describeDiagnostics(second), printed)
-	}
-	if where := treeDifference(reflect.ValueOf(first.File), reflect.ValueOf(second.File), "File"); where != "" {
-		t.Fatalf("t parses into another tree than s, first at %s\ns:\n%s\nt:\n%s", where, sample.Text, printed)
-	}
-	if again := second.File.Print(); !bytes.Equal(again, printed) {
-		t.Fatalf("t parsed and printed again is not t\nt:\n%s\nprinted again:\n%s", printed, again)
-	}
+// expressionFile is a canonical component file whose one property claims expr.
+func expressionFile(expr string) string {
+	return "component sample \"Expression fixture\" {\n  focus core\n  paths \"*.go\"\n}\n\nproperty expression invariant \"Expression normalization\" {\n  about compute\n  ensure " + expr + "\n}\n"
 }
 
-func describeDiagnostics(p Parsed) string {
+// valueColumns measures display width as docs/language.md §3 P6 counts it:
+// East Asian wide characters take two columns.
+var valueColumns = &runewidth.Condition{EastAsianWidth: false, StrictEmojiNeutral: true}
+
+// valueWidth is the width P6 lets a value line take.
+const valueWidth = 100
+
+// canonicalGap is the space P3 puts between two tokens on one line: none
+// before a comma, a colon, a closing bracket, an opening parenthesis or angle
+// bracket, and around a dot or a range; none after an opening bracket; one
+// everywhere else, around ->, ->>, =, emits and after a comma or a colon included.
+func canonicalGap(a, b string) string {
+	switch b {
+	case ",", ":", ")", "]", ">", "}", ".", "..", "(", "<":
+		return ""
+	}
+	switch a {
+	case "(", "[", "<", "{", ".", "..":
+		return ""
+	}
+	return " "
+}
+
+// canonicalLine joins tokens with the gaps of canonicalGap.
+func canonicalLine(toks []string) string {
 	var b strings.Builder
-	for _, d := range p.Diagnostics {
-		fmt.Fprintf(&b, "\n  %d:%d: %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
+	for i, tok := range toks {
+		if i > 0 {
+			b.WriteString(canonicalGap(toks[i-1], tok))
+		}
+		b.WriteString(tok)
 	}
 	return b.String()
 }
 
-var posType = reflect.TypeFor[lexer.Position]()
-
-// treeDifference returns the path of the first place where two trees differ,
-// ignoring positions and the difference between a nil and an empty slice.
-func treeDifference(a, b reflect.Value, path string) string {
-	if a.Type() != b.Type() {
-		return path + " (its type)"
-	}
-	if a.Type() == posType {
-		return ""
-	}
-	if a.Type() == reflect.TypeFor[expression]() {
-		x, y := a.Interface().(expression), b.Interface().(expression)
-		return treeDifference(reflect.ValueOf(x.Expr()), reflect.ValueOf(y.Expr()), path+".normalized")
-	}
-	switch a.Kind() {
-	case reflect.Pointer, reflect.Interface:
-		if a.IsNil() || b.IsNil() {
-			if a.IsNil() != b.IsNil() {
-				return path
-			}
-			return ""
-		}
-		return treeDifference(a.Elem(), b.Elem(), path)
-	case reflect.Struct:
-		for i := range a.NumField() {
-			if d := treeDifference(a.Field(i), b.Field(i), path+"."+a.Type().Field(i).Name); d != "" {
-				return d
-			}
-		}
-		return ""
-	case reflect.Slice:
-		if a.Len() != b.Len() {
-			return path + " (its length)"
-		}
-		for i := range a.Len() {
-			if d := treeDifference(a.Index(i), b.Index(i), fmt.Sprintf("%s[%d]", path, i)); d != "" {
-				return d
-			}
-		}
-		return ""
-	}
-	if !a.Equal(b) {
-		return path
-	}
-	return ""
+// canonicalItem is an item of a bracketed value: its name or key, if any, and its value.
+type canonicalItem struct {
+	name  string
+	value Value
 }
 
-// canonicalProblem describes how text breaks the layout of docs/language.md §3,
-// or returns "": no tab or CR, no trailing space, one final newline, each
-// line indented two spaces per open block or bracket, no blank line inside a
-// block, exactly one blank line between top-level items, and comments right
-// above what follows them.
-func canonicalProblem(text []byte) string {
-	s := string(text)
-	switch {
-	case !strings.HasSuffix(s, "\n"):
-		return "the file does not end with a newline"
-	case strings.HasSuffix(s, "\n\n"):
-		return "the file ends with a blank line"
-	case strings.ContainsAny(s, "\t\r"):
-		return "it contains a tab or a carriage return"
-	}
-	lines := strings.Split(strings.TrimSuffix(s, "\n"), "\n")
-	var depth int
-	for i, l := range lines {
-		n := i + 1
-		if l == "" {
+// canonicalParts splits a bracketed value into what opens it, its items and
+// what closes it; a value of no brackets has none.
+func canonicalParts(v Value) (string, []canonicalItem, string) {
+	var items []canonicalItem
+	switch v := v.(type) {
+	case *EncodedValue:
+		return "encoded(", []canonicalItem{{value: v.Value}}, ")"
+	case *ListValue:
+		for _, x := range v.Items {
+			items = append(items, canonicalItem{value: x})
+		}
+		return "[", items, "]"
+	case *BraceValue:
+		for _, e := range v.Entries {
+			key := ""
 			switch {
-			case i == 0 || lines[i-1] == "":
-				return fmt.Sprintf("line %d: an extra blank line", n)
-			case depth > 0:
-				return fmt.Sprintf("line %d: a blank line inside a block or a value", n)
-			case strings.HasPrefix(lines[i-1], "//"):
-				return fmt.Sprintf("line %d: a blank line between a comment and what follows it", n)
+			case e.Key.Name != nil:
+				key = string(*e.Key.Name)
+			case e.Key.String != nil:
+				key = quote(string(*e.Key.String))
+			default:
+				key = string(*e.Key.Number)
 			}
-			continue
+			items = append(items, canonicalItem{key, e.Value})
 		}
-		if strings.HasSuffix(l, " ") {
-			return fmt.Sprintf("line %d: a trailing space", n)
+		return "{", items, "}"
+	case *CallValue:
+		for _, a := range v.Args {
+			items = append(items, canonicalItem{string(a.Name), a.Value})
 		}
-		body := strings.TrimLeft(l, " ")
-		comment := strings.HasPrefix(body, "//")
-		if !comment && strings.ContainsRune("}])", rune(body[0])) {
-			if depth == 0 {
-				return fmt.Sprintf("line %d: an extra closing bracket", n)
-			}
-			depth--
-		}
-		if indent := len(l) - len(body); indent != 2*depth {
-			return fmt.Sprintf("line %d: an indentation of %d spaces instead of %d", n, indent, 2*depth)
-		}
-		startsItem := depth == 0 && !strings.ContainsRune("}])", rune(body[0])) && i > 0 && !strings.HasPrefix(lines[i-1], "//")
-		if startsItem && lines[i-1] != "" {
-			return fmt.Sprintf("line %d: a top-level declaration without exactly one blank line before it", n)
-		}
-		if !comment && strings.ContainsRune("{[(", rune(body[len(body)-1])) {
-			depth++
-		}
+		return string(v.Op) + "(", items, ")"
 	}
-	if depth > 0 {
-		return "a block or a value is not closed"
-	}
-	return ""
+	return "", nil, ""
 }
 
-// spacingProblem describes the first pair of tokens on one line of text whose
-// gap breaks the spacing of docs/language.md §3, or returns "".
-func spacingProblem(text []byte) string {
-	lines := strings.Split(string(text), "\n")
-	lex, err := ucLexer.LexString("", string(text))
-	if err != nil {
-		return "the printed text does not lex: " + err.Error()
+// canonicalFlat writes a value on one line: its items apart by a comma and a
+// space, with no comma after the last.
+func canonicalFlat(v Value) string {
+	switch v := v.(type) {
+	case *NumberValue:
+		return string(v.Text)
+	case *StringValue:
+		return quote(string(v.Text))
+	case *BoolValue:
+		if v.Value {
+			return "true"
+		}
+		return "false"
+	case *NoneValue:
+		return "none"
+	case *NameValue:
+		return string(v.Name)
 	}
-	var tokens []lexer.Token
-	for {
-		tok, err := lex.Next()
-		if err != nil || tok.EOF() {
-			break
+	open, items, closer := canonicalParts(v)
+	flat := make([]string, len(items))
+	for i, it := range items {
+		flat[i] = it.name
+		if it.name != "" {
+			flat[i] += ": "
 		}
-		if tok.Type != symbols["Whitespace"] {
-			tokens = append(tokens, tok)
-		}
+		flat[i] += canonicalFlat(it.value)
 	}
-	var before, prev lexer.Token
-	line := 1
-	for i, tok := range tokens {
-		switch tok.Type {
-		case symbols["NL"], symbols["Comment"]:
-			before, prev = lexer.Token{}, lexer.Token{}
-			line = tok.Pos.Line + strings.Count(tok.Value, "\n")
-			continue
-		}
-		if prev.Value != "" {
-			want := wantGap(prev, tok)
-			if line <= len(lines) && expressionLine(lines[line-1]) {
-				var after lexer.Token
-				if i+1 < len(tokens) {
-					after = tokens[i+1]
-				}
-				want = expressionGap(before, prev, tok, after)
-			}
-			if gap := tok.Pos.Offset - prev.Pos.Offset - len(prev.Value); gap != want {
-				return fmt.Sprintf("line %d: %d spaces between %s and %s instead of %d", line, gap, prev.Value, tok.Value, want)
-			}
-		}
-		before, prev = prev, tok
-	}
-	return ""
+	return open + strings.Join(flat, ", ") + closer
 }
 
-// expressionLine tells whether the line is a clause written with
-// expressions. A first word followed by = starts an assignment whatever the
-// word is (docs/language.md §3), so a case assigning a symbol named call is
-// not a call clause.
-func expressionLine(line string) bool {
-	trimmed := strings.TrimSpace(line)
-	for _, prefix := range []string{"ensure ", "requires ", "call ", "changes "} {
-		if rest, ok := strings.CutPrefix(trimmed, prefix); ok {
-			return !strings.HasPrefix(rest, "=")
+// canonicalValue writes v, then suffix, after the tokens of the current line:
+// on that line when it then fits in valueWidth columns with its indentation,
+// and otherwise broken, each item on a line of its own one level deeper with
+// a comma after it (P6).
+func (w *writer) canonicalValue(v Value, suffix string) {
+	flat := canonicalFlat(v)
+	open, items, closer := canonicalParts(v)
+	line := append(append([]string{}, w.line...), flat)
+	if suffix != "" {
+		line = append(line, suffix)
+	}
+	if len(items) == 0 || 2*w.depth+valueColumns.StringWidth(canonicalLine(line)) <= valueWidth {
+		w.tok(line[len(w.line):]...)
+		return
+	}
+	w.tok(open)
+	w.flush()
+	w.depth++
+	for _, it := range items {
+		if it.name != "" {
+			w.tok(it.name, ":")
 		}
+		w.canonicalValue(it.value, ",")
+		w.flush()
 	}
-	return false
-}
-
-// expressionGap is the gap between the tokens a and b on a line of
-// expressions, where before is the token ahead of a, empty when a starts the
-// line, and after the token behind b. A word is a keyword or an operator by
-// its place, not by its spelling (L7): the clause keyword starts the line, a
-// word after a dot is a field or an operation, and a word before a dot is a
-// container's name. Anywhere else ensure, requires and call are names, and a
-// name takes its arguments without a space.
-func expressionGap(before, a, b, after lexer.Token) int {
-	if a.Value == "," || a.Value == ":" {
-		return 1
+	w.depth--
+	w.tok(closer)
+	if suffix != "" {
+		w.tok(suffix)
 	}
-	if a.Value == "." || b.Value == "." {
-		return 0
-	}
-	if b.Value == "[" {
-		return 0
-	}
-	named := before.Value == "."
-	operators := []string{"==", "!=", "<", "<=", ">", ">=", "+", "-", "*", "/", "and", "or", "implies", "in"}
-	if !named && slices.Contains(operators, a.Value) || after.Value != "." && slices.Contains(operators, b.Value) {
-		return 1
-	}
-	clause := before.Value == "" && slices.Contains([]string{"ensure", "requires", "call"}, a.Value)
-	if b.Value == "(" && !named && (clause || a.Value == "not") {
-		return 1
-	}
-	return wantGap(a, b)
-}
-
-// wantGap is the number of spaces §3 puts between two tokens on one line: none
-// before a comma, a colon, a closing bracket and around a dot or a range, none
-// inside brackets and before an opening parenthesis or angle bracket, and one
-// everywhere else, around ->, ->>, =, emits and after a comma or a colon included.
-func wantGap(a, b lexer.Token) int {
-	punct := func(t lexer.Token, values ...string) bool {
-		return (t.Type == symbols["Punct"] || t.Type == symbols["DotDot"]) && slices.Contains(values, t.Value)
-	}
-	switch {
-	case punct(b, ",", ":", ")", "]", ">", "}", ".", "..", "(", "<"):
-		return 0
-	case punct(a, "(", "[", "<", "{", ".", ".."):
-		return 0
-	}
-	return 1
-}
-
-// canonicalNumber is the canonical form of a number (docs/language.md §2): no
-// leading zeros in the integer part, no -0, and a fraction without trailing
-// zeros beyond its first digit.
-var canonicalNumberForm = regexp.MustCompile(`^(0(\.(0|[0-9]*[1-9]))?|-0\.[0-9]*[1-9]|-?[1-9][0-9]*(\.(0|[0-9]*[1-9]))?)$`)
-
-// numberProblem describes the first number of text that is not in its canonical form, or returns "".
-func numberProblem(text []byte) string {
-	lex, err := ucLexer.LexString("", string(text))
-	if err != nil {
-		return "the printed text does not lex: " + err.Error()
-	}
-	for {
-		tok, err := lex.Next()
-		if err != nil || tok.EOF() {
-			return ""
-		}
-		if tok.Type == symbols["Number"] && !canonicalNumberForm.MatchString(tok.Value) {
-			return fmt.Sprintf("line %d: the number %s is not in its canonical form", tok.Pos.Line, tok.Value)
-		}
-	}
-}
-
-// valueColumns measures display width with its own instance of the printer's
-// fixed condition: East Asian wide characters take two columns.
-var valueColumns = &runewidth.Condition{EastAsianWidth: false, StrictEmojiNeutral: true}
-
-const valueWidth = 100
-
-// valueLayoutProblem describes the first line of a value in canonical text
-// that breaks docs/language.md §3 P6, or returns "": a line wider than 100
-// columns that still holds a bracketed value with items, or a value broken
-// across lines that would fit on one line at its indentation.
-func valueLayoutProblem(text []byte) string {
-	lines := strings.Split(strings.TrimSuffix(string(text), "\n"), "\n")
-	for i, inValue := range valueLines(lines) {
-		if !inValue {
-			continue
-		}
-		toks := tokensOf(lines[i])
-		if len(toks) == 0 {
-			continue
-		}
-		if width := valueColumns.StringWidth(lines[i]); width > valueWidth && holdsItems(toks) {
-			return fmt.Sprintf("line %d is %d columns wide, yet it holds a bracketed value with items, which should be broken", i+1, width)
-		}
-		if slices.Contains([]string{"[", "{", "("}, toks[len(toks)-1].Value) {
-			if flat, width := flattened(lines, i); width <= valueWidth {
-				return fmt.Sprintf("line %d starts a value broken across lines that fits in %d columns on one line: %s", i+1, width, flat)
-			}
-		}
-	}
-	return ""
-}
-
-// valueLines marks the lines that hold values: the lines of case blocks, comments aside.
-func valueLines(lines []string) []bool {
-	marks := make([]bool, len(lines))
-	caseIndent := -1
-	for i, l := range lines {
-		body := strings.TrimLeft(l, " ")
-		indent := len(l) - len(body)
-		switch toks := tokensOf(body); {
-		case caseIndent >= 0 && indent == caseIndent && body == "}":
-			caseIndent = -1
-		case caseIndent >= 0:
-			marks[i] = !strings.HasPrefix(body, "//")
-		case len(toks) >= 3 && toks[0].Value == "case" && toks[1].Type == symbols["Ident"] && toks[len(toks)-1].Value == "{":
-			caseIndent = indent
-		}
-	}
-	return marks
-}
-
-// tokensOf lexes one line, without spaces.
-func tokensOf(line string) []lexer.Token {
-	lex, err := ucLexer.LexString("", line)
-	if err != nil {
-		return nil
-	}
-	var toks []lexer.Token
-	for {
-		tok, err := lex.Next()
-		if err != nil || tok.EOF() {
-			return toks
-		}
-		if tok.Type != symbols["Whitespace"] {
-			toks = append(toks, tok)
-		}
-	}
-}
-
-// holdsItems tells whether a bracket opens and closes on the line with something between.
-func holdsItems(toks []lexer.Token) bool {
-	var open []int
-	for i, tok := range toks {
-		switch tok.Value {
-		case "[", "{", "(":
-			open = append(open, i)
-		case "]", "}", ")":
-			if len(open) > 0 && open[len(open)-1] < i-1 {
-				return true
-			}
-			if len(open) > 0 {
-				open = open[:len(open)-1]
-			}
-		}
-	}
-	return false
-}
-
-// flattened writes the value that line i starts and the lines indented
-// below it end on one line, as the printer would, and returns it with its
-// width at the indentation of line i.
-func flattened(lines []string, i int) (string, int) {
-	indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
-	flat := strings.TrimLeft(lines[i], " ")
-	for _, l := range lines[i+1:] {
-		body := strings.TrimLeft(l, " ")
-		switch {
-		case body == "":
-		case strings.ContainsRune("[{(", rune(flat[len(flat)-1])):
-			flat += body
-		case strings.ContainsRune("]})", rune(body[0])):
-			flat = strings.TrimSuffix(flat, ",") + body
-		default:
-			flat += " " + body
-		}
-		if len(l)-len(body) == indent {
-			break
-		}
-	}
-	return flat, indent + valueColumns.StringWidth(flat)
 }
