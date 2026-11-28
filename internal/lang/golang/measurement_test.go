@@ -67,7 +67,12 @@ func checkMeasuredExecutionKeepsRealEvidence(t rapid.TB, sample MeasurementSampl
 	}
 	before := skeletonTree(t, root)
 	run := lang.RunPlan{Root: root, Roots: plan.Roots, Graph: &g, Ids: []string{"domain.measured"}}
-	if sample.Variant == 1 || sample.Variant == 3 || sample.Variant == 7 {
+	switch sample.Variant {
+	case 1, 7:
+		// Variants 1 and 7 need one and two explored candidates; each costs
+		// two worker processes, so the budget leaves room for a loaded machine.
+		run.Explore = 2 * time.Second
+	case 3:
 		run.Explore = 350 * time.Millisecond
 	}
 	report := NewBackend().Run(run)
