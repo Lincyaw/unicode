@@ -410,7 +410,7 @@ func (w *world) designType(c *comp, id, form, code, file string, ops []string) *
 	for _, op := range ops {
 		o := &dop{id: id + "." + op, home: c, owner: t}
 		o.signature, o.codeSignature = w.signaturePair(objectOf(c))
-		w.node(o.id, graph.LayerDesign, graph.NodeKindOp, "op", w.designFile(c), map[string][]string{"signature": {o.signature}})
+		w.node(o.id, graph.LayerDesign, graph.NodeKindOp, "op", w.designFile(c), w.opAttrs(o.signature))
 		w.declared(graph.EdgeKindContains, id, o.id)
 		o.kind = methodForm(form)
 		o.code = w.function(code, code+"."+upper(op), op, o.codeSignature, o.kind)
@@ -428,6 +428,16 @@ func (w *world) designType(c *comp, id, form, code, file string, ops []string) *
 	}
 	w.types = append(w.types, t)
 	return t
+}
+
+// opAttrs are the attrs of a design operation with the signature: about a
+// third are declared pure, which the code, having no direct effects, keeps.
+func (w *world) opAttrs(signature string) map[string][]string {
+	attrs := map[string][]string{"signature": {signature}}
+	if uniform(w.t, 3) == 0 {
+		attrs["pure"] = []string{"true"}
+	}
+	return attrs
 }
 
 // implementations adds one or two code types that implement an interface's
@@ -489,7 +499,7 @@ func (w *world) directOp(c *comp, id, code, file, opName string) *dop {
 	if c != nil {
 		parent = c.id
 	}
-	w.node(id, graph.LayerDesign, graph.NodeKindOp, "op", w.designFile(c), map[string][]string{"signature": {o.signature}})
+	w.node(id, graph.LayerDesign, graph.NodeKindOp, "op", w.designFile(c), w.opAttrs(o.signature))
 	w.declared(graph.EdgeKindContains, parent, id)
 	o.code = w.function(file, code, opName, o.codeSignature, "func")
 	w.declared(graph.EdgeKindRealizes, o.code, id)

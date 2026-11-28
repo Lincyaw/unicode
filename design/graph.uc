@@ -40,6 +40,13 @@ type NodeKind enum "节点的种类（model.md §3）" {
   value review
 }
 
+type Effect enum "效果的种类（model.md §3.1）：时间或随机数、文件系统、进程和网络" {
+  value time
+  value fs
+  value process
+  value network
+}
+
 type EdgeKind enum "边的种类（model.md §4）" {
   value contains
   value uses
@@ -107,6 +114,7 @@ type Graph object "一张图：节点按标识索引，边按种类、起点和�
   op edges() -> list<Edge> pure "全部边，按种类、起点、终点排序"
   op digest(id: string) -> string pure "节点自身内容的 SHA-256：种类、形式、摘要和属性的规范编码，不含子节点"
   op encode() -> bytes pure "编码成确定的 JSON 快照（model.md §8）"
+  op effects() -> map<string, list<Effect>> pure "按 model.md §9 D8 求出的效果：每个代码层操作和每个有实现的设计层操作的标识，对应它的效果种类，按 time、fs、process、network 的次序，没有效果时为空的列表"
 }
 
 type Fragment record "可以整体加入图中的一组节点和边，例如一种语言的后端抽取出的代码层" {
@@ -147,6 +155,11 @@ type EdgeChange record "一条边的差别：种类、起点、终点、差别�
 type Comparison record "两张图的差别：新增、删除和修改的节点，按标识排序；新增、删除和修改的边，按种类、起点、终点排序" {
   field nodes: list<NodeChange>
   field edges: list<EdgeChange>
+}
+
+type EffectSample record "effects-follow-calls 的输入：一张推导过的图，以及按 model.md §9 D8 的定义直接算出的每个操作的效果" {
+  field snapshot: Graph
+  field expected: map<string, list<Effect>>
 }
 
 type FingerprintSample record "fingerprints-separate-inputs-and-artifacts 的输入：一张图，加上运行产物的同一张图，移动了一处源位置的同一张图，以及一条边、改了出处和来源的这条边和改了属性的这条边" {
@@ -247,4 +260,11 @@ property fingerprints-separate-inputs-and-artifacts postcondition "执行输入�
   ensure result != inputDigest(sample.moved)
   ensure edgeDigest(sample.edge) == edgeDigest(sample.relocatedEdge)
   ensure edgeDigest(sample.edge) != edgeDigest(sample.changedEdge)
+}
+
+property effects-follow-calls postcondition "effects 给出的每个操作的效果，与按 model.md §9 D8 的定义直接算出的 sample.expected 相同" {
+  about Graph.effects
+  forall sample: EffectSample generated "derive-matches-definition 那样的随机图另加零至六条边（各有一半机会是从结构体到接口的实现接口边或结构体之间的继承边），每个具体函数和方法约一半带随机的非空直接效果，推导过，以及沿 calls、从被调用的抽象方法到实现该接口的结构体自己的或最近继承来的同名方法、从设计层操作到实现它的代码层操作逐个函数求出的效果"
+  call sample.snapshot.effects()
+  ensure result == sample.expected
 }

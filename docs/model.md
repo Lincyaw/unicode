@@ -410,7 +410,7 @@
 | D5 | 由性质验证 | `graph.derive-matches-definition` |
 | D6 | 由性质验证 | `graph.derive-matches-definition`、`lang.golang.extracts-generated-module` |
 | D7 | 由性质验证 | `graph.derive-matches-definition` |
-| D8 | 待做：Go 后端抽取直接效果，图按 D8 推导效果 | — |
+| D8 | 由性质验证 | `graph.effects-follow-calls` |
 | 1 | `design.unresolved-reference`、`design.wrong-reference-kind` | `design.rejects-broken-design` |
 | 2 | `design.duplicate-name` | `design.rejects-broken-design` |
 | 3 | `design.missing-system-file`、`design.missing-parent` | `design.rejects-broken-design` |
@@ -449,7 +449,7 @@
 | 36 | 由性质验证：评审指纹决定观察适配器变化后的待审状态 | `review.evaluation-follows-content` |
 | 37 | `check.runtime-counterexample`、`check.runtime-purity-violation`；运行时的当前证据中的反例待做：M8 | `evidence.attachment-preserves-input-identity`、`evidence.recordings-are-replayable` |
 | 38 | `design.invalid-codec`、`design.value-type-mismatch`、`lang.golang.input-codec-failed` | `design.codecs-are-typed`、`evidence.recordings-are-replayable` |
-| 39 | 待做：效果推导之后由 `check` 报 check.effect-in-pure-op | — |
+| 39 | `check.effect-in-pure-op` | `check.rejects-broken-graph`、`check.reports-effects-in-pure-ops` |
 | 40 | 待做：派生输入和效果推导之后由 `check` 报 check.derived-input-value、check.missing-generated-value 和 check.nondeterministic-derivation | — |
 | 41 | 待做：Go 驱动换次序再调用，不同时报 lang.golang.order-dependence | — |
 | 42 | 待做：`unicode test --since` 的版本差分，不同时报 run.undeclared-change | — |

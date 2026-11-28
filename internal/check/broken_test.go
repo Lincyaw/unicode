@@ -1,6 +1,7 @@
 package check
 
 import (
+	"fmt"
 	"math/bits"
 	"slices"
 	"strings"
@@ -479,6 +480,50 @@ var breakages = []breakage{
 		w.edge(graph.EdgeKindGenerates, twin, k.id, graph.SourceDeclared, map[string][]string{"symbols": {"s"}})
 		return k.id
 	}},
+	{"check.effect-in-pure-op", func(w *world) string {
+		// A pure operation whose realization, or a method it dispatches to,
+		// has an effect directly or through a helper it calls.
+		o := choose(w, w.ops)
+		w.setAttr(o.id, "pure", []string{"true"})
+		effectful := o.code
+		if o.kind == "abstract" {
+			effectful = w.implMethod(o.owner, name(o.id))
+		}
+		if o.home != nil && uniform(w.t, 2) == 0 {
+			helper := w.function(w.fileOfCode(effectful), pkgOf(effectful)+".EffectHelper", "effectHelper", "()", "func")
+			w.call(effectful, helper)
+			effectful = helper
+		}
+		w.setAttr(effectful, "directEffects", []string{choose(w, []string{"time", "fs", "process", "network"})})
+		return o.id
+	}},
+}
+
+// genEffectfulSnapshot draws a conforming world, gives about a quarter of
+// its concrete functions and methods a random non-empty set of direct
+// effects, and derives it.
+//
+//uc:generates check.reports-effects-in-pure-ops.snapshot
+func genEffectfulSnapshot() *rapid.Generator[*graph.Graph] {
+	return rapid.Custom(func(t *rapid.T) *graph.Graph {
+		w := newWorld(t)
+		for i, n := range w.f.Nodes {
+			if n.Layer != graph.LayerCode || n.Kind != graph.NodeKindOp || n.Form == "abstract" || uniform(t, 4) != 0 {
+				continue
+			}
+			kinds := w.subset("directEffects", []string{"time", "fs", "process", "network"})
+			if len(kinds) == 0 {
+				kinds = []string{"fs"}
+			}
+			w.f.Nodes[i].Attrs["directEffects"] = kinds
+		}
+		g := graph.NewGraph()
+		if err := g.AddFragment(w.f); err != nil {
+			panic(fmt.Sprintf("cannot construct a conforming graph sample: %v", err))
+		}
+		g.Derive()
+		return &g
+	})
 }
 
 // signatureOf writes a signature from its parameters and what follows them.

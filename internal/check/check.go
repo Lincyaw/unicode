@@ -20,10 +20,10 @@ type Checked struct {
 }
 
 // Conform checks, on a derived graph, the constraints that need the code
-// (docs/design.md §5.3): docs/model.md §10 rules 12, 14 to 20 and 22, and
-// that each generated symbol has exactly one generates binding (rule 24). It
-// checks Go test entry points (rule 21) and each named observation's adapter
-// (rule 34). It gives every declared
+// (docs/design.md §5.3): docs/model.md §10 rules 12, 14 to 20, 22 and 39,
+// and that each generated symbol has exactly one generates binding (rule
+// 24). It checks Go test entry points (rule 21) and each named observation's
+// adapter (rule 34). It gives every declared
 // item its status (§6): missing where the code lacks
 // it, stub where its function is a skeleton, contradicted where the code
 // disagrees with it, and verified otherwise. Rule 28 is checked by gen.
@@ -42,6 +42,7 @@ func Conform(g *graph.Graph) Checked {
 	c.drivers()
 	c.steps()
 	c.runtimeEvidence()
+	c.purity(g.Effects())
 	slices.SortFunc(c.diags, func(a, b diag.Diagnostic) int {
 		return cmp.Or(cmp.Compare(a.Position.Path, b.Position.Path), cmp.Compare(a.Position.Line, b.Position.Line),
 			cmp.Compare(a.Position.Column, b.Position.Column), cmp.Compare(a.Code, b.Code),
